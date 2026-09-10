@@ -1,5 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { criarTokenSessao, getCookie, setSessionCookie } from "./session";
+import { criarTokenSessao, getCookie, setSessionCookie, clearSessionCookie, verificarTokenSessao } from "./session";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -8,35 +8,19 @@ const JANELA_SEGUNDOS = 15 * 60;
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      ...headers,
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
   });
 }
 
-function apenasDigitos(valor: string): string {
-  return valor.replace(/\D/g, "");
-}
+function apenasDigitos(valor: string): string { return valor.replace(/\D/g, ""); }
 
 async function gerarChaveRateLimit(request: Request, secret: string): Promise<string> {
   const ip = request.headers.get("CF-Connecting-IP")?.trim()
     || request.headers.get("x-real-ip")?.trim()
     || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     || "unknown";
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const assinatura = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`login:${ip}`),
-  );
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const assinatura = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`login:${ip}`));
   let binary = "";
   for (const byte of new Uint8Array(assinatura)) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -44,22 +28,14 @@ async function gerarChaveRateLimit(request: Request, secret: string): Promise<st
 
 async function loginCliente(request: Request, env: Env): Promise<Response> {
   let body: { cpf?: string; dataNascimento?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return json({ erro: "Requisição inválida." }, 400);
-  }
-
+  try { body = await request.json(); } catch { return json({ erro: "Requisição inválida." }, 400); }
   const { cpf, dataNascimento } = body;
-  if (!cpf || !dataNascimento) {
-    return json({ erro: "Preencha CPF e data de nascimento." }, 400);
-  }
+  if (!cpf || !dataNascimento) return json({ erro: "Preencha CPF e data de nascimento." }, 400);
 
   const cpfLimpo = apenasDigitos(cpf);
   if (cpfLimpo.length !== 11 || !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
     return json({ erro: "CPF ou data de nascimento inválidos." }, 401);
   }
-
   if (!env.CLIENTE_SESSION_SECRET) {
     console.error("CLIENTE_SESSION_SECRET não configurada.");
     return json({ erro: "Serviço temporariamente indisponível." }, 503);
@@ -68,49 +44,27 @@ async function loginCliente(request: Request, env: Env): Promise<Response> {
   try {
     const supabase = createServiceSupabaseClient(env);
     const rateLimitKey = await gerarChaveRateLimit(request, env.CLIENTE_SESSION_SECRET);
-
     const { data: podeTentar, error: rateLimitError } = await supabase.rpc("login_pode_tentar", {
-      p_chave: rateLimitKey,
-      p_max_falhas: MAX_TENTATIVAS,
-      p_janela_segundos: JANELA_SEGUNDOS,
+      p_chave: rateLimitKey, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS,
     });
-
     if (rateLimitError) {
       console.error("Falha no rate limit do login:", rateLimitError);
       return json({ erro: "Não foi possível validar o acesso agora. Tente novamente em instantes." }, 503);
     }
+    if (!Boolean(podeTentar)) return json({ erro: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente." }, 429);
 
-    if (!Boolean(podeTentar)) {
-      return json({ erro: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente." }, 429);
-    }
-
-    const { data: cliente, error } = await supabase
-      .from("clientes")
-      .select("id, ativo")
-      .eq("cpf", cpfLimpo)
-      .eq("data_nascimento", dataNascimento)
-      .maybeSingle();
-
+    const { data: cliente, error } = await supabase.from("clientes").select("id, ativo")
+      .eq("cpf", cpfLimpo).eq("data_nascimento", dataNascimento).maybeSingle();
     if (error || !cliente) {
-      await supabase.rpc("login_registrar_falha", {
-        p_chave: rateLimitKey,
-        p_max_falhas: MAX_TENTATIVAS,
-        p_janela_segundos: JANELA_SEGUNDOS,
-      });
+      await supabase.rpc("login_registrar_falha", { p_chave: rateLimitKey, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS });
       return json({ erro: "CPF ou data de nascimento não encontrados. Confira os dados ou fale com a clínica." }, 401);
     }
-
     if (!cliente.ativo) {
-      await supabase.rpc("login_registrar_falha", {
-        p_chave: rateLimitKey,
-        p_max_falhas: MAX_TENTATIVAS,
-        p_janela_segundos: JANELA_SEGUNDOS,
-      });
+      await supabase.rpc("login_registrar_falha", { p_chave: rateLimitKey, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS });
       return json({ erro: "Seu acesso está temporariamente indisponível. Fale com a clínica." }, 403);
     }
 
     await supabase.rpc("login_limpar_rate_limit", { p_chave: rateLimitKey });
-
     const token = await criarTokenSessao(cliente.id, env.CLIENTE_SESSION_SECRET);
     const headers = new Headers({ "Cache-Control": "no-store" });
     headers.append("Set-Cookie", setSessionCookie(token, new URL(request.url).protocol === "https:"));
@@ -124,33 +78,23 @@ async function loginCliente(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const secure = url.protocol === "https:";
 
     if (url.pathname === "/api/health" && request.method === "GET") {
-      return json({
-        ok: true,
-        service: "sra-luck-api",
-        runtime: "cloudflare-workers",
-        supabaseConfigured: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY),
-      });
+      return json({ ok: true, service: "sra-luck-api", runtime: "cloudflare-workers", supabaseConfigured: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) });
     }
-
-    if (url.pathname === "/api/cliente/auth" && request.method === "POST") {
-      return loginCliente(request, env);
-    }
+    if (url.pathname === "/api/cliente/auth" && request.method === "POST") return loginCliente(request, env);
 
     if (url.pathname === "/api/cliente/session" && request.method === "GET") {
       if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503);
-      const token = getCookie(request, COOKIE_NAME);
-      const payload = await import("./session").then(({ verificarTokenSessao }) =>
-        verificarTokenSessao(token, env.CLIENTE_SESSION_SECRET!),
-      );
-      return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false });
+      const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+      return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
     }
 
-    return json({
-      ok: false,
-      error: "ROTA_NAO_ENCONTRADA",
-      message: "A API solicitada ainda não foi migrada para o Cloudflare Worker.",
-    }, 404);
+    if (url.pathname === "/api/cliente/logout" && request.method === "POST") {
+      return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(secure), "Cache-Control": "no-store" });
+    }
+
+    return json({ ok: false, error: "ROTA_NAO_ENCONTRADA", message: "A API solicitada ainda não foi migrada para o Cloudflare Worker." }, 404);
   },
 } satisfies ExportedHandler<Env>;
