@@ -64,6 +64,13 @@ const vite = spawn(npmCommand, ["run", "dev"], {
   cwd,
   stdio: "inherit",
   shell: false,
+  windowsHide: false,
+});
+
+vite.on("error", (error) => {
+  console.error("[dev-sync] Não foi possível iniciar o Vite:", error);
+  stopping = true;
+  process.exit(1);
 });
 
 vite.on("exit", (code, signal) => {
@@ -78,7 +85,7 @@ function stop(signal) {
   if (stopping) return;
   stopping = true;
   clearInterval(timer);
-  vite.kill(signal);
+  if (!vite.killed) vite.kill(signal);
 }
 
 process.on("SIGINT", () => stop("SIGINT"));
