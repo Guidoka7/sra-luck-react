@@ -1,0 +1,19 @@
+{
+  "id": "/agenda",
+  "name": "Sra. Luck",
+  "short_name": "Sra. Luck",
+  "description": "Aplicativo da Sra. Luck para clientes.",
+  "lang": "pt-BR",
+  "start_url": "/agenda",
+  "scope": "/agenda",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "portrait",
+  "background_color": "#fbf7f4",
+  "theme_color": "#7A2632",
+  "icons": [
+    {"src":"/icons/sra-luck-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"/icons/sra-luck-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ],
+  "prefer_related_applications": false
+}

@@ -1,0 +1,358 @@
+/* SRA LUCK — correções de estabilidade visual para PWA/mobile.
+   Este arquivo não muda a identidade visual; apenas impede overflow,
+   encolhimento incorreto e controles difíceis de usar em Android/iPhone. */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-shell {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  color: rgb(var(--text-main));
+}
+
+.admin-shell main {
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-shell input,
+.admin-shell textarea,
+.admin-shell select {
+  color: rgb(var(--text-main));
+  color-scheme: light;
+}
+
+html.dark .admin-shell input,
+html.dark .admin-shell textarea,
+html.dark .admin-shell select {
+  color-scheme: dark;
+}
+
+.client-app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.client-app > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.client-app .mobile-app-frame,
+.client-app main,
+.client-app section,
+.client-app article,
+.client-app header,
+.client-app nav {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.client-app button {
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  .admin-shell {
+    overflow-x: hidden;
+  }
+
+  .admin-shell main {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  .admin-shell .overflow-x-auto {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .client-app {
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+
+  .client-app .mobile-app-frame {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .client-app .grid-cols-7 {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .client-app .grid-cols-7 > * {
+    min-width: 0;
+  }
+
+  .client-app .aspect-square {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .client-app input,
+  .client-app select,
+  .client-app textarea {
+    font-size: 16px;
+  }
+
+  .client-app .flex > .min-w-0,
+  .admin-shell .flex > .min-w-0 {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .admin-shell main {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .client-app .grid-cols-3 {
+    gap: 0.375rem;
+  }
+
+  .client-app .grid-cols-7 {
+    gap: 0.25rem;
+  }
+
+  .client-app .grid-cols-7 > button {
+    border-radius: 0.875rem;
+    font-size: 0.8125rem;
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+html:not(.dark) {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* =========================================================
+   RESPONSIVIDADE REAL POR DISPOSITIVO
+   ========================================================= */
+
+/* Celular/PWA: ocupa a largura real do aparelho, sem moldura falsa. */
+html[data-device="mobile"] .client-app,
+html[data-device="mobile"][data-display-mode="standalone"] .client-app {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+html[data-device="mobile"] .client-app .mobile-app-frame,
+html[data-device="tablet"] .client-app .mobile-app-frame {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Tablet: usa a largura disponível com margens confortáveis. */
+html[data-device="tablet"] .client-app {
+  padding-left: clamp(1rem, 3vw, 2.5rem);
+  padding-right: clamp(1rem, 3vw, 2.5rem);
+}
+
+/* Desktop: layout próprio, centralizado e compacto — não estica os cards
+   do aplicativo até as bordas do monitor. O fallback por viewport abaixo
+   também cobre o primeiro paint antes do DeviceRuntime rodar. */
+html[data-device="desktop"] .client-app {
+  padding-left: clamp(1.5rem, 3vw, 3rem);
+  padding-right: clamp(1.5rem, 3vw, 3rem);
+}
+
+html[data-device="desktop"] .client-app .mobile-app-frame {
+  width: min(100%, 1100px) !important;
+  max-width: 1100px !important;
+}
+
+/* Fallback independente do JavaScript: desktop nunca fica full-width.
+   Isso evita o layout "gigante" durante o primeiro render/hidratação e
+   continua funcionando mesmo se o detector de dispositivo atrasar. */
+@media (min-width: 1024px) {
+  .client-app {
+    padding-left: clamp(1.5rem, 3vw, 3rem) !important;
+    padding-right: clamp(1.5rem, 3vw, 3rem) !important;
+  }
+
+  .client-app .mobile-app-frame {
+    width: min(100%, 1100px) !important;
+    max-width: 1100px !important;
+  }
+}
+
+html[data-device="desktop"] .client-app header {
+  margin-bottom: 1.25rem;
+}
+
+html[data-device="desktop"] .client-app .client-content-grid {
+  width: 100%;
+}
+
+/* PWA instalado: respeitar notch/barras de sistema, sem criar moldura. */
+html[data-display-mode="standalone"] body {
+  min-height: 100dvh;
+}
+
+html[data-display-mode="standalone"] .client-app {
+  min-height: 100dvh;
+}
+
+@media (pointer: coarse) {
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Admin em desktop: ocupa o espaço disponível; em telas menores,
+   o menu lateral já é convertido em menu móvel pelo layout. */
+html[data-device="desktop"] .admin-shell main {
+  min-width: 0;
+}
+
+html[data-device="mobile"] .admin-shell main,
+html[data-device="tablet"] .admin-shell main {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* =========================================================
+   ADMIN — TEMA VISUAL CONSISTENTE
+   ========================================================= */
+
+/*
+ * MODO CLARO
+ * O problema restante estava nos componentes legados que usam gray/slate/zinc
+ * diretamente. O dark já possuía normalização ampla; o light não. Estas regras
+ * fazem SOMENTE esses utilitários neutros respeitarem o sistema SRA LUCK.
+ * Cores semânticas (emerald/red/amber etc.) não são alteradas.
+ */
+html:not(.dark) .admin-shell [class~="text-gray-950"],
+html:not(.dark) .admin-shell [class~="text-gray-900"],
+html:not(.dark) .admin-shell [class~="text-gray-800"],
+html:not(.dark) .admin-shell [class~="text-gray-700"],
+html:not(.dark) .admin-shell [class~="text-gray-600"],
+html:not(.dark) .admin-shell [class~="text-slate-950"],
+html:not(.dark) .admin-shell [class~="text-slate-900"],
+html:not(.dark) .admin-shell [class~="text-slate-800"],
+html:not(.dark) .admin-shell [class~="text-slate-700"],
+html:not(.dark) .admin-shell [class~="text-slate-600"],
+html:not(.dark) .admin-shell [class~="text-zinc-950"],
+html:not(.dark) .admin-shell [class~="text-zinc-900"],
+html:not(.dark) .admin-shell [class~="text-zinc-800"],
+html:not(.dark) .admin-shell [class~="text-zinc-700"],
+html:not(.dark) .admin-shell [class~="text-zinc-600"] {
+  color: rgb(var(--text-main));
+}
+
+html:not(.dark) .admin-shell [class~="text-gray-500"],
+html:not(.dark) .admin-shell [class~="text-gray-400"],
+html:not(.dark) .admin-shell [class~="text-slate-500"],
+html:not(.dark) .admin-shell [class~="text-slate-400"],
+html:not(.dark) .admin-shell [class~="text-zinc-500"],
+html:not(.dark) .admin-shell [class~="text-zinc-400"] {
+  color: rgb(var(--text-soft));
+}
+
+html:not(.dark) .admin-shell [class~="bg-gray-50"],
+html:not(.dark) .admin-shell [class~="bg-gray-100"],
+html:not(.dark) .admin-shell [class~="bg-slate-50"],
+html:not(.dark) .admin-shell [class~="bg-slate-100"],
+html:not(.dark) .admin-shell [class~="bg-zinc-50"],
+html:not(.dark) .admin-shell [class~="bg-zinc-100"] {
+  background-color: rgb(var(--surface-1));
+}
+
+html:not(.dark) .admin-shell [class~="border-gray-100"],
+html:not(.dark) .admin-shell [class~="border-gray-200"],
+html:not(.dark) .admin-shell [class~="border-slate-100"],
+html:not(.dark) .admin-shell [class~="border-slate-200"],
+html:not(.dark) .admin-shell [class~="border-zinc-100"],
+html:not(.dark) .admin-shell [class~="border-zinc-200"] {
+  border-color: rgb(var(--color-burgundy) / 0.12);
+}
+
+/* Dark: neutral utility classes inherit the graphite palette. */
+html.dark .admin-shell [class~="text-gray-950"],
+html.dark .admin-shell [class~="text-gray-900"],
+html.dark .admin-shell [class~="text-gray-800"],
+html.dark .admin-shell [class~="text-gray-700"],
+html.dark .admin-shell [class~="text-gray-600"],
+html.dark .admin-shell [class~="text-gray-500"],
+html.dark .admin-shell [class~="text-slate-950"],
+html.dark .admin-shell [class~="text-slate-900"],
+html.dark .admin-shell [class~="text-slate-800"],
+html.dark .admin-shell [class~="text-slate-700"],
+html.dark .admin-shell [class~="text-slate-600"],
+html.dark .admin-shell [class~="text-slate-500"],
+html.dark .admin-shell [class~="text-slate-400"],
+html.dark .admin-shell [class~="text-zinc-950"],
+html.dark .admin-shell [class~="text-zinc-900"],
+html.dark .admin-shell [class~="text-zinc-800"],
+html.dark .admin-shell [class~="text-zinc-700"],
+html.dark .admin-shell [class~="text-zinc-600"],
+html.dark .admin-shell [class~="text-zinc-500"],
+html.dark .admin-shell [class~="text-zinc-400"] {
+  color: rgb(var(--text-main));
+}
+
+html.dark .admin-shell [class~="bg-gray-50"],
+html.dark .admin-shell [class~="bg-gray-100"],
+html.dark .admin-shell [class~="bg-gray-200"],
+html.dark .admin-shell [class~="bg-slate-50"],
+html.dark .admin-shell [class~="bg-slate-100"],
+html.dark .admin-shell [class~="bg-slate-200"],
+html.dark .admin-shell [class~="bg-zinc-50"],
+html.dark .admin-shell [class~="bg-zinc-100"],
+html.dark .admin-shell [class~="bg-zinc-200"] {
+  background-color: rgb(var(--surface-1));
+}
+
+html.dark .admin-shell [class~="border-gray-100"],
+html.dark .admin-shell [class~="border-gray-200"],
+html.dark .admin-shell [class~="border-slate-100"],
+html.dark .admin-shell [class~="border-slate-200"],
+html.dark .admin-shell [class~="border-zinc-100"],
+html.dark .admin-shell [class~="border-zinc-200"] {
+  border-color: rgb(255 255 255 / 0.10);
+}

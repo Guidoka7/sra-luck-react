@@ -1,0 +1,67 @@
+/* SRA LUCK — correção definitiva de rolagem no cliente/mobile/PWA.
+   A tela da cliente deve usar a rolagem nativa do documento em qualquer
+   navegador móvel e também quando instalada como PWA. */
+html,
+body {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+  min-height: 100% !important;
+  max-height: none !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  position: static !important;
+}
+
+.client-app {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  height: auto !important;
+  min-height: 100dvh !important;
+  max-height: none !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto !important;
+}
+
+.client-app .mobile-app-frame {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 1023px) {
+  html[data-device="mobile"],
+  html[data-device="tablet"],
+  html[data-display-mode="standalone"] {
+    overflow-y: auto !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  html[data-device="mobile"] body,
+  html[data-device="tablet"] body,
+  html[data-display-mode="standalone"] body {
+    overflow-y: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    touch-action: pan-y !important;
+  }
+}
+
+/* Nenhum elemento estrutural da tela da cliente deve capturar a rolagem
+   vertical inteira. Componentes que realmente precisam de scroll próprio
+   podem sobrescrever esta regra localmente. */
+html[data-device="mobile"] .client-app main,
+html[data-device="mobile"] .client-app section,
+html[data-device="mobile"] .client-app article,
+html[data-device="tablet"] .client-app main,
+html[data-device="tablet"] .client-app section,
+html[data-device="tablet"] .client-app article {
+  max-height: none !important;
+  overflow-y: visible !important;
+}

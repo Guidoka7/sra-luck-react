@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="circle"><circle cx="256" cy="256" r="238"/></clipPath>
+  </defs>
+  <circle cx="256" cy="256" r="246" fill="#111318" stroke="#C9A45B" stroke-width="8"/>
+  <circle cx="256" cy="256" r="232" fill="#111318"/>
+  <image href="/brand/sra-luck-mark.png" x="92" y="92" width="328" height="328" preserveAspectRatio="xMidYMid meet" clip-path="url(#circle)"/>
+</svg>

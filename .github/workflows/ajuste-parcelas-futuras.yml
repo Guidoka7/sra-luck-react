@@ -1,0 +1,63 @@
+name: Ajuste parcelas futuras
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  ajustar:
+    if: !contains(github.event.head_commit.message, '[parcelas-futuras-ajustadas]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ajustar fluxo de pagamento das parcelas futuras
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/cliente/TabBoletos.tsx')
+          s = p.read_text()
+
+          old = 'if (!aberto || !boleto || !valores?.isVencida) return null;'
+          new = 'if (!aberto || !boleto || !valores) return null;'
+          s = s.replace(old, new, 1)
+
+          old = '<p className="mt-0.5 text-[11px] text-clay/55 dark:text-[#a4a0a2]">Vencida há {valores.diasEmAtraso} dia{valores.diasEmAtraso === 1 ? "" : "s"} · {formatarMoeda(valores.valorHoje)} para pagar hoje</p>'
+          new = '<p className="mt-0.5 text-[11px] text-clay/55 dark:text-[#a4a0a2]">{valores.isVencida ? `Vencida há ${valores.diasEmAtraso} dia${valores.diasEmAtraso === 1 ? "" : "s"}` : "Parcela em aberto"} · {formatarMoeda(valores.valorHoje)} para pagar hoje</p>'
+          s = s.replace(old, new, 1)
+
+          old = '{valores.isVencida && <button type="button" onClick={onResolverClick} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose/20 bg-white px-3 py-2.5 text-xs font-semibold text-burgundy shadow-sm transition-all duration-100 hover:border-rose/35 hover:bg-rose/5 active:scale-[0.99] dark:border-rose/20 dark:bg-[#151719] dark:text-[#ebe8e9] dark:hover:bg-rose/8"><WalletCards className="h-4 w-4 text-rose" />Resolver esta parcela</button>}'
+          new = '{boleto.status === "nao_pago" && onResolverClick && <button type="button" onClick={onResolverClick} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose/20 bg-white px-3 py-2.5 text-xs font-semibold text-burgundy shadow-sm transition-all duration-100 hover:border-rose/35 hover:bg-rose/5 active:scale-[0.99] dark:border-rose/20 dark:bg-[#151719] dark:text-[#ebe8e9] dark:hover:bg-rose/8"><WalletCards className="h-4 w-4 text-rose" />Pagar agora</button>}'
+          s = s.replace(old, new, 1)
+
+          start = '    {/* Parcelas futuras/em aberto mantêm as ações antigas. Parcelas vencidas usam o novo resolver. */}'
+          end = '    {boleto.status === "pago" && boleto.data_pagamento &&'
+          a = s.index(start)
+          b = s.index(end, a)
+          replacement = '''    {boleto.status === "nao_pago" && !valores.isVencida && onResolverClick && <button type="button" onClick={onResolverClick} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose/20 bg-white px-3 py-2.5 text-xs font-semibold text-burgundy shadow-sm transition-all duration-100 hover:border-rose/35 hover:bg-rose/5 active:scale-[0.99] dark:border-rose/20 dark:bg-[#151719] dark:text-[#ebe8e9] dark:hover:bg-rose/8"><WalletCards className="h-4 w-4 text-rose" />Pagar agora</button>}\n\n'''
+          s = s[:a] + replacement + s[b:]
+
+          old = 'onResolverClick={() => { if (calcularValores(b, pagamento).isVencida) { setBoletoSelecionado(b.id); setResolverAberto(true); } }}'
+          new = 'onResolverClick={() => { setBoletoSelecionado(b.id); setResolverAberto(true); }}'
+          s = s.replace(old, new, 1)
+
+          old = 'Parcelas futuras continuam com as opções de PIX, boleto e envio do comprovante. As vencidas usam o resolver de pagamento.'
+          new = 'Clique em “Pagar agora” para abrir as opções de PIX, boleto ou “Já paguei”.'
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+      - name: Verificar alteração
+        run: |
+          grep -n "Pagar agora" src/components/cliente/TabBoletos.tsx
+          grep -n "if (!aberto || !boleto || !valores)" src/components/cliente/TabBoletos.tsx
+      - name: Commitar ajuste
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/cliente/TabBoletos.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: centralizar pagamento das parcelas futuras [parcelas-futuras-ajustadas]"
+          git push

@@ -1,0 +1,61 @@
+name: One-time UI cleanup
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  remove-orcamento-summary:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove resumo da agenda de liberação
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/admin/PrevisaoLiberacaoFinanceiraInteligente.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          text = text.replace(
+              'import { ResumoOrcamentoMensal } from "@/components/admin/ResumoOrcamentoMensal";\n',
+              ''
+          )
+
+          block = '''          <ResumoOrcamentoMensal
+            ano={ano}
+            mes={mes}
+            onSelecionarMes={(novoAno, novoMes) => {
+              setAno(novoAno);
+              setMes(novoMes);
+              setDataSelecionada(null);
+            }}
+          />
+
+'''
+          if block not in text:
+              raise SystemExit('Bloco ResumoOrcamentoMensal não encontrado; nenhuma alteração feita.')
+
+          text = text.replace(block, '', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verificar remoção
+        run: |
+          ! grep -n "ResumoOrcamentoMensal\|Orçamento das próximas liberações" src/components/admin/PrevisaoLiberacaoFinanceiraInteligente.tsx
+
+      - name: Commitar alteração e remover workflow temporário
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/one-time-remove-orcamento.yml
+          git add src/components/admin/PrevisaoLiberacaoFinanceiraInteligente.tsx .github/workflows/one-time-remove-orcamento.yml
+          git commit -m "Remove resumo de orçamento da agenda de liberação"
+          git push

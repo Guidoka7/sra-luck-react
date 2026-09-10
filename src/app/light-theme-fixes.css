@@ -1,0 +1,94 @@
+/* SRA LUCK — LIGHT THEME CONTRAST PASS */
+
+html:not(.dark) .admin-shell { color: rgb(var(--text-main)); }
+html:not(.dark) .admin-shell [class~="text-pearl"],
+html:not(.dark) .admin-shell [class~="text-white"] { color: rgb(var(--text-main)) !important; }
+html:not(.dark) .admin-shell .text-pearl\/80,
+html:not(.dark) .admin-shell .text-pearl\/75,
+html:not(.dark) .admin-shell .text-pearl\/72,
+html:not(.dark) .admin-shell .text-pearl\/70,
+html:not(.dark) .admin-shell .text-pearl\/65,
+html:not(.dark) .admin-shell .text-pearl\/60,
+html:not(.dark) .admin-shell .text-pearl\/55,
+html:not(.dark) .admin-shell .text-pearl\/50 { color: rgb(var(--color-clay) / 0.80) !important; }
+html:not(.dark) .admin-shell .text-pearl\/45,
+html:not(.dark) .admin-shell .text-pearl\/40,
+html:not(.dark) .admin-shell .text-pearl\/35,
+html:not(.dark) .admin-shell .text-pearl\/30 { color: rgb(var(--color-clay) / 0.68) !important; }
+html:not(.dark) .admin-shell .text-white\/80,
+html:not(.dark) .admin-shell .text-white\/70,
+html:not(.dark) .admin-shell .text-white\/60,
+html:not(.dark) .admin-shell .text-white\/55,
+html:not(.dark) .admin-shell .text-white\/50,
+html:not(.dark) .admin-shell .text-white\/45,
+html:not(.dark) .admin-shell .text-white\/40,
+html:not(.dark) .admin-shell .text-white\/35,
+html:not(.dark) .admin-shell .text-white\/30 { color: rgb(var(--color-clay) / 0.78) !important; }
+html:not(.dark) .admin-shell [class~="text-burgundy"] { color: rgb(var(--color-burgundy)) !important; }
+html:not(.dark) .admin-shell .text-burgundy\/78,
+html:not(.dark) .admin-shell .text-burgundy\/60,
+html:not(.dark) .admin-shell .text-burgundy\/55 { color: rgb(var(--color-burgundy) / 0.90) !important; }
+html:not(.dark) .admin-shell .text-burgundy\/45,
+html:not(.dark) .admin-shell .text-burgundy\/40,
+html:not(.dark) .admin-shell .text-burgundy\/38 { color: rgb(var(--color-burgundy) / 0.74) !important; }
+html:not(.dark) .admin-shell [class~="text-success"],
+html:not(.dark) .admin-shell [class*="text-emerald-"] { color: rgb(var(--color-success)) !important; }
+html:not(.dark) .admin-shell [class~="text-alert"],
+html:not(.dark) .admin-shell [class*="text-red-"] { color: rgb(var(--color-alert)) !important; }
+html:not(.dark) .admin-shell [class~="text-gold"] { color: rgb(var(--color-gold)) !important; }
+html:not(.dark) .admin-shell [class~="text-gray-950"],
+html:not(.dark) .admin-shell [class~="text-gray-900"],
+html:not(.dark) .admin-shell [class~="text-gray-800"],
+html:not(.dark) .admin-shell [class~="text-gray-700"],
+html:not(.dark) .admin-shell [class~="text-gray-600"],
+html:not(.dark) .admin-shell [class~="text-gray-500"],
+html:not(.dark) .admin-shell [class~="text-gray-400"],
+html:not(.dark) .admin-shell [class~="text-slate-950"],
+html:not(.dark) .admin-shell [class~="text-slate-900"],
+html:not(.dark) .admin-shell [class~="text-slate-800"],
+html:not(.dark) .admin-shell [class~="text-slate-700"],
+html:not(.dark) .admin-shell [class~="text-slate-600"],
+html:not(.dark) .admin-shell [class~="text-slate-500"],
+html:not(.dark) .admin-shell [class~="text-slate-400"],
+html:not(.dark) .admin-shell [class~="text-zinc-950"],
+html:not(.dark) .admin-shell [class~="text-zinc-900"],
+html:not(.dark) .admin-shell [class~="text-zinc-800"],
+html:not(.dark) .admin-shell [class~="text-zinc-700"],
+html:not(.dark) .admin-shell [class~="text-zinc-600"],
+html:not(.dark) .admin-shell [class~="text-zinc-500"],
+html:not(.dark) .admin-shell [class~="text-zinc-400"],
+html:not(.dark) .admin-shell [class~="text-black"] { color: rgb(var(--text-main)) !important; }
+html:not(.dark) .admin-shell [class~="text-clay"] { color: rgb(var(--text-main)) !important; }
+html:not(.dark) .admin-shell [class~="bg-burgundy"].text-pearl,
+html:not(.dark) .admin-shell [class~="bg-burgundy"].text-white,
+html:not(.dark) .admin-shell [class~="bg-burgundy-light"].text-pearl,
+html:not(.dark) .admin-shell [class~="bg-burgundy-light"].text-white { color: rgb(var(--color-pearl)) !important; }
+html:not(.dark) .admin-shell h1,
+html:not(.dark) .admin-shell h2,
+html:not(.dark) .admin-shell h3 { color: rgb(var(--color-burgundy)); }
+html:not(.dark) .admin-shell input,
+html:not(.dark) .admin-shell textarea,
+html:not(.dark) .admin-shell select { color: rgb(var(--text-main)); }
+html.dark .admin-shell h1,
+html.dark .admin-shell h2,
+html.dark .admin-shell h3 { color: revert-layer; }
+
+/* DARK: foregrounds claros usados pelos calendários e componentes compartilhados. */
+html.dark .text-cream,
+html.dark [class~="text-cream"] { color: rgb(255 253 252) !important; }
+html.dark [class*="text-cream/"] { color: rgb(255 253 252) !important; }
+html.dark [class~="text-black"],
+html.dark [class*="text-black/"] { color: rgb(255 253 252) !important; }
+
+/* Datas/horários e controles dos calendários: nenhum foreground herdado pode ficar preto. */
+html.dark button.text-cream,
+html.dark button[class*="text-cream/"],
+html.dark button.text-black,
+html.dark button[class*="text-black/"] { color: rgb(255 253 252) !important; }
+
+/* Placeholders e campos no tema escuro. */
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: rgb(255 253 252 / 0.55) !important; }
+html.dark input,
+html.dark textarea,
+html.dark select { color-scheme: dark; }

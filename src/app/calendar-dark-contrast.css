@@ -1,0 +1,33 @@
+/* SRA LUCK — calendar dark-mode contrast fix.
+   Tailwind dark variants remain in the class attribute as "dark:text-*",
+   so selectors for plain .text-* do not match them. */
+html.dark [class~="dark:text-cream"],
+html.dark [class~="dark:text-white"] {
+  color: rgb(247 245 246) !important;
+}
+
+html.dark [class~="dark:text-pearl/30"] {
+  color: rgb(247 245 246 / 0.62) !important;
+}
+
+html.dark [class~="dark:text-pearl/75"],
+html.dark [class~="dark:text-pearl/80"],
+html.dark [class~="dark:text-pearl/85"] {
+  color: rgb(247 245 246 / 0.90) !important;
+}
+
+html.dark [class~="dark:text-clay/70"],
+html.dark [class~="dark:text-clay/75"],
+html.dark [class~="dark:text-clay/80"] {
+  color: rgb(218 214 215 / 0.86) !important;
+}
+
+html.dark [class~="dark:hover:text-cream"]:hover {
+  color: rgb(247 245 246) !important;
+}
+
+/* Calendar headings/month labels must never use the dark surface value
+   of --color-cream as a foreground. */
+html.dark [class~="dark:text-cream"] {
+  color: rgb(247 245 246) !important;
+}
