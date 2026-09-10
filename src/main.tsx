@@ -2,6 +2,8 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgendaPage } from "./pages/AgendaPage";
 import { LoginPage } from "./pages/LoginPage";
+import { AdminLoginPage } from "./pages/AdminLoginPage";
+import { AdminVisaoGeralPage } from "./pages/AdminVisaoGeralPage";
 import "./app/globals.css";
 
 function App() {
@@ -22,6 +24,12 @@ function App() {
 
   if (path === "/login") return <LoginPage />;
   if (path === "/agenda") return <AgendaPage />;
+  if (path === "/admin/login") return <AdminLoginPage />;
+  if (path === "/admin" || path === "/admin/") {
+    window.history.replaceState({}, "", "/admin/visao-geral");
+    return <AdminVisaoGeralPage />;
+  }
+  if (path === "/admin/visao-geral") return <AdminVisaoGeralPage />;
 
   return (
     <main className="min-h-screen bg-bloom px-6 flex items-center justify-center">
