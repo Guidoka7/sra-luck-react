@@ -16,6 +16,7 @@ import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import "./app/globals.css";
 import "./styles/typography.css";
+import "./styles/admin-desktop.css";
 
 function AdminPanelRoute({ path }: { path: string }) {
   const normalized = path.replace(/\/+$/, "") || "/admin/visao-geral";
