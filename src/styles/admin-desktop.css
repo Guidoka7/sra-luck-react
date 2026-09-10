@@ -1,79 +1,160 @@
 /* Desktop-only visual system for the administrative portal. Client PWA is intentionally untouched. */
 .admin-web-shell {
+  --admin-sidebar-width: 264px;
+  --admin-gap: 20px;
   font-family: var(--font-sans), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  min-width: 1024px;
+  min-width: 1180px;
+  min-height: 100vh;
+  background: #f7f3f1;
+  color: rgb(var(--color-clay));
 }
+
+.admin-web-shell,
+.admin-web-shell * { box-sizing: border-box; }
+
 .admin-web-shell h1,
 .admin-web-shell h2,
 .admin-web-shell h3,
 .admin-web-shell h4 {
   font-family: var(--font-display), Fraunces, Georgia, serif;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
 }
-.admin-web-shell .admin-main {
-  min-width: 0;
-  flex: 1 1 auto;
-  width: calc(100% - 276px);
-  max-width: none;
-  padding: 0 0 2rem;
-}
+
 .admin-web-shell .admin-sidebar {
   position: sticky;
-  top: 1rem;
-  height: calc(100vh - 2rem);
-  width: 252px;
-  min-width: 252px;
+  top: 20px;
+  height: calc(100vh - 40px);
+  width: var(--admin-sidebar-width);
+  min-width: var(--admin-sidebar-width);
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  border-radius: 22px;
 }
+
+.admin-web-shell .admin-desktop-content {
+  width: calc(100% - var(--admin-sidebar-width) - var(--admin-gap));
+  min-width: 0;
+}
+
+.admin-web-shell .admin-topbar {
+  min-height: 72px;
+  border-radius: 18px;
+  border: 1px solid rgba(122,38,50,.09);
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 12px 38px -28px rgba(66,28,35,.38);
+}
+
+.admin-web-shell .admin-main {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 0 0 32px;
+}
+
+.admin-web-shell .admin-main > * {
+  width: 100%;
+  max-width: none;
+}
+
+.admin-web-shell .admin-page-title,
+.admin-web-shell [data-admin-title] {
+  font-family: var(--font-display), Fraunces, Georgia, serif;
+  letter-spacing: -0.035em;
+}
+
+/* Desktop navigation: larger hit areas, restrained hierarchy and clear active state. */
 .admin-web-shell .admin-sidebar nav a {
-  min-height: 52px;
+  min-height: 54px;
+  border: 1px solid transparent;
 }
+
+.admin-web-shell .admin-sidebar nav a:hover {
+  transform: translateX(2px);
+}
+
+.admin-web-shell .admin-sidebar nav a[aria-current="page"] {
+  box-shadow: 0 14px 28px -18px rgba(122,38,50,.62);
+}
+
+/* Tables are intentionally dense enough for desktop operations while remaining readable. */
 .admin-web-shell table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: .8125rem;
 }
+
 .admin-web-shell th {
   white-space: nowrap;
-  font-size: .6875rem;
+  font-size: .67rem;
+  line-height: 1.2;
   font-weight: 700;
-  letter-spacing: .075em;
+  letter-spacing: .09em;
   text-transform: uppercase;
   color: rgb(var(--color-burgundy) / .58);
 }
-.admin-web-shell td {
-  vertical-align: middle;
-}
+
+.admin-web-shell td { vertical-align: middle; }
+
+.admin-web-shell tbody tr { transition: background-color .15s ease; }
+.admin-web-shell tbody tr:hover { background: rgba(122,38,50,.025); }
+
 .admin-web-shell input,
 .admin-web-shell select,
 .admin-web-shell textarea {
   font-family: inherit;
+  min-height: 40px;
 }
+
 .admin-web-shell button,
 .admin-web-shell a {
   -webkit-tap-highlight-color: transparent;
 }
+
+.admin-web-shell button:focus-visible,
+.admin-web-shell a:focus-visible,
+.admin-web-shell input:focus-visible,
+.admin-web-shell select:focus-visible,
+.admin-web-shell textarea:focus-visible {
+  outline: 2px solid rgba(122,38,50,.42);
+  outline-offset: 2px;
+}
+
 .admin-web-shell .surface-glass {
-  box-shadow: 0 18px 45px -32px rgb(var(--shadow-rgb) / .32);
-}
-.admin-web-shell .admin-page-title,
-.admin-web-shell [data-admin-title] {
-  font-family: var(--font-display), Fraunces, Georgia, serif;
+  box-shadow: 0 18px 50px -34px rgba(66,28,35,.32);
 }
 
-@media (min-width: 1440px) {
-  .admin-web-shell .admin-main {
-    width: calc(100% - 276px);
-  }
+/* Prevent accidental mobile/PWA visual compression inside the backoffice. */
+.admin-web-shell .overflow-x-auto {
+  scrollbar-width: thin;
 }
 
-@media (max-width: 1100px) {
-  .admin-web-shell { min-width: 960px; }
-  .admin-web-shell .admin-sidebar { width: 224px; min-width: 224px; }
-  .admin-web-shell .admin-main { width: calc(100% - 244px); }
+.admin-web-shell .grid {
+  min-width: 0;
 }
 
-html.dark .admin-web-shell th {
-  color: rgb(var(--color-rose) / .72);
+html.dark .admin-web-shell {
+  background: #0b0a0c;
+  color: #e8dcda;
+}
+
+html.dark .admin-web-shell .admin-topbar {
+  border-color: rgba(255,255,255,.08);
+  background: rgba(21,19,23,.9);
+  box-shadow: 0 18px 50px -36px rgba(0,0,0,.8);
+}
+
+html.dark .admin-web-shell tbody tr:hover { background: rgba(255,255,255,.025); }
+html.dark .admin-web-shell th { color: rgb(var(--color-rose) / .72); }
+
+@media (min-width: 1600px) {
+  .admin-web-shell { --admin-sidebar-width: 276px; --admin-gap: 24px; }
+  .admin-web-shell .admin-topbar { min-height: 76px; }
+}
+
+@media (max-width: 1280px) {
+  .admin-web-shell { min-width: 1180px; }
+  .admin-web-shell { --admin-sidebar-width: 248px; --admin-gap: 16px; }
+  .admin-web-shell .admin-sidebar { top: 16px; height: calc(100vh - 32px); }
 }
