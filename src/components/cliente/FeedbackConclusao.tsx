@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, ExternalLink, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const GOOGLE_REVIEW_URL = process.env.NEXT_PUBLIC_GOOGLE_REVIEW_URL || "https://www.google.com/search?q=Sra+Luck+Cirurgias+avalia%C3%A7%C3%B5es";
+const GOOGLE_REVIEW_URL = import.meta.env.VITE_GOOGLE_REVIEW_URL || "https://www.google.com/search?q=Sra+Luck+Cirurgias+avalia%C3%A7%C3%B5es";
 
 export function FeedbackConclusao({ onFechar }: { onFechar?: () => void }) {
   const [nota, setNota] = useState(0);
