@@ -40,7 +40,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   const agendamentoId = ativo?.id ?? concluido?.id ?? null;
   const { data: remarcacoes } = agendamentoId ? await supabase.from("solicitacoes_remarcacao_agendamento").select("id, tipo, status, data_solicitada, horario_termos, observacao, created_at, updated_at").eq("cliente_id", cliente.id).eq("agendamento_id", agendamentoId).order("created_at", { ascending: false }) : { data: [] as any[] };
 
-  const testDate = getCookie(request, "sra_luck_test_date");
+  const testDate = getCookie(request, "sra_luck_test_date") ?? undefined;
   const hoje = dataValida(testDate) ? testDate! : new Date().toISOString().slice(0, 10);
   const { data: datasDisponiveis } = await supabase.from("datas").select("id, data, vagas_totais").eq("status", "disponivel").gte("data", hoje).order("data", { ascending: true });
   const { data: agendamentosAtivos } = await supabase.from("agendamentos").select("data_id").eq("status", "confirmado");
