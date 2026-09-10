@@ -4,15 +4,42 @@ import { AgendaPage } from "./pages/AgendaPage";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
 import { AdminVisaoGeralPage } from "./pages/AdminVisaoGeralPage";
+import AdminLayout from "./app/admin/(painel)/layout";
+import AdminAgendaPage from "./app/admin/(painel)/agenda/page";
+import AdminClientesPage from "./app/admin/(painel)/clientes/page";
+import AdminPagamentosPage from "./app/admin/(painel)/pagamentos/page";
+import AdminParcelasPage from "./app/admin/(painel)/parcelas/page";
+import AdminRelatoriosPage from "./app/admin/(painel)/relatorios/page";
+import AdminConfiguracoesPage from "./app/admin/(painel)/configuracoes/page";
 import "./app/globals.css";
+
+function AdminPanelRoute({ path }: { path: string }) {
+  const normalized = path.replace(/\/+$/, "") || "/admin/visao-geral";
+  let page: React.ReactNode;
+  switch (normalized) {
+    case "/admin/agenda": page = <AdminAgendaPage />; break;
+    case "/admin/clientes": page = <AdminClientesPage />; break;
+    case "/admin/pagamentos": page = <AdminPagamentosPage />; break;
+    case "/admin/parcelas": page = <AdminParcelasPage />; break;
+    case "/admin/relatorios": page = <AdminRelatoriosPage />; break;
+    case "/admin/configuracoes": page = <AdminConfiguracoesPage />; break;
+    case "/admin/visao-geral":
+    default: page = <AdminVisaoGeralPage />; break;
+  }
+  return <AdminLayout>{page}</AdminLayout>;
+}
 
 function App() {
   const [path, setPath] = useState(window.location.pathname);
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname);
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    const onNavigate = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onNavigate);
+    window.addEventListener("app:navigate", onNavigate);
+    return () => {
+      window.removeEventListener("popstate", onNavigate);
+      window.removeEventListener("app:navigate", onNavigate);
+    };
   }, []);
 
   useEffect(() => {
@@ -25,11 +52,7 @@ function App() {
   if (path === "/login") return <LoginPage />;
   if (path === "/agenda") return <AgendaPage />;
   if (path === "/admin/login") return <AdminLoginPage />;
-  if (path === "/admin" || path === "/admin/") {
-    window.history.replaceState({}, "", "/admin/visao-geral");
-    return <AdminVisaoGeralPage />;
-  }
-  if (path === "/admin/visao-geral") return <AdminVisaoGeralPage />;
+  if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/")) return <AdminPanelRoute path={path} />;
 
   return (
     <main className="min-h-screen bg-bloom px-6 flex items-center justify-center">
