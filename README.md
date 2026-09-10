@@ -15,7 +15,8 @@ libera as datas com as vagas de cada dia e acompanha o orçamento do mês
 2. Vá em **SQL Editor > New query**, cole todo o conteúdo de
    `supabase/schema.sql` e clique em **Run**.
 3. Se o banco já existe, execute também as migrations numeradas em ordem,
-   incluindo `supabase/migration_016_seguranca_concorrencia.sql`.
+   incluindo `supabase/migration_016_seguranca_concorrencia.sql` e
+   `supabase/migration_017_agendamento_atomico.sql`.
 4. Vá em **Authentication > Users > Add user** e crie o usuário do admin
    (o e-mail/senha que a equipe vai usar para entrar em `/admin/login`).
 5. Vá em **Project Settings > API** e copie:
@@ -75,9 +76,9 @@ O botão **Verificar atrasos agora** permite executar a mesma rotina manualmente
 - Execute `supabase/migration_014_performance.sql` no Supabase para aplicar os índices de desempenho.
 
 ### Segurança e concorrência
-- Execute `supabase/migration_016_seguranca_concorrencia.sql` no Supabase.
-- Ela adiciona rate limit persistente ao login da cliente (8 falhas em 15 minutos por origem) e operações atômicas para impedir duas clientes de ocuparem a mesma data de cirurgia.
-- A migration `015_web_push` continua sendo a migration de Web Push; a proteção de segurança usa o número `016` para evitar conflito de numeração.
+- Execute `supabase/migration_016_seguranca_concorrencia.sql` no Supabase para o rate limit persistente do login e o agendamento atômico da cirurgia.
+- Execute `supabase/migration_017_agendamento_atomico.sql` para garantir que a reserva da data de assinatura também seja atômica no banco.
+- A migration `015_web_push` continua sendo a migration de Web Push; `016` e `017` são as correções de segurança/concorrência.
 
 ## Notificações do sistema no celular (Web Push)
 
