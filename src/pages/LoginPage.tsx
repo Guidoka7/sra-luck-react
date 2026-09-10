@@ -17,6 +17,7 @@ export function LoginPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (loading) return;
     setErro(null);
     setLoading(true);
     try {
@@ -24,8 +25,16 @@ export function LoginPage() {
         method: "POST",
         body: JSON.stringify({ cpf, dataNascimento: nascimento }),
       });
-      window.history.pushState({}, "", "/agenda");
-      window.dispatchEvent(new PopStateEvent("popstate"));
+
+      const sessao = await apiJson<{ autenticado: boolean }>("/api/cliente/session", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!sessao.autenticado) {
+        throw new Error("Não foi possível iniciar sua sessão. Tente novamente.");
+      }
+
+      window.location.replace("/agenda");
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível confirmar seus dados.");
     } finally {
@@ -50,7 +59,7 @@ export function LoginPage() {
               <input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" type="date" autoComplete="bday" value={nascimento} onChange={(e) => setNascimento(e.target.value)} required />
             </label>
             {erro && <div role="alert" className="rounded-2xl border border-alert/20 bg-alert/5 px-4 py-3 text-sm text-alert">{erro}</div>}
-            <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50">
+            <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">
               {loading ? "Entrando…" : "Entrar"}
             </button>
           </form>
