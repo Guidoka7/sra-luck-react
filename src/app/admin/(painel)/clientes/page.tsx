@@ -9,7 +9,6 @@ import { SkeletonCards } from "@/components/ui/Skeleton";
 import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
 import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
-import { createClientSupabaseClient } from "@/lib/supabase/client";
 import type { Cliente } from "@/types/database";
 import { ModalClienteCompactoV3 } from "@/components/admin/ModalClienteCompactoV3";
 
@@ -20,8 +19,8 @@ function AgendaClienteCompacta({ cliente }: { cliente: Cliente }) { if (cliente.
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]); const [carregando, setCarregando] = useState(true); const [erro, setErro] = useState<string | null>(null); const [busca, setBusca] = useState(""); const [visualizacao, setVisualizacao] = useState<"lista" | "cards">("lista"); const [modal, setModal] = useState<Cliente | null | false>(false);
   async function carregar(force = false) { const url = "/api/admin/clientes"; const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null; if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true); setErro(null); try { const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url); setClientes(data.clientes ?? []); } catch (e: any) { if (!cached) { setErro(e?.message ?? "Falha ao carregar clientes."); setClientes([]); } } finally { setCarregando(false); } }
-  useEffect(() => { carregar(); const intervalo=setInterval(()=>carregar(true),30000); const supabase=createClientSupabaseClient(); const canal=supabase.channel("agenda-clientes-lista").on("broadcast",{event:"datas_atualizadas"},()=>carregar(true)).subscribe(); return ()=>{clearInterval(intervalo);supabase.removeChannel(canal);}; }, []);
-  const filtradas = useMemo(() => { const termo = busca.trim().toLowerCase(); if (!termo) return clientes; return clientes.filter((c) => c.nome_completo.toLowerCase().includes(termo)); }, [clientes, busca]); const fecharESalvar = () => { setModal(false); carregar(true); };
+  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
+  const filtradas = useMemo(() => { const termo = busca.trim().toLowerCase(); if (!termo) return clientes; return clientes.filter((c) => c.nome_completo.toLowerCase().includes(termo)); }, [clientes, busca]); const fecharESalvar = () => { setModal(false); void carregar(true); };
 
   return <div className="space-y-5 pb-8">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-rose">Gestão</p><h1 className="mt-1 text-2xl font-semibold text-burgundy sm:text-3xl">Clientes</h1><p className="mt-1 text-sm text-clay/50">Perfil, crédito, parcelas e andamento dos termos em um único espaço.</p></div><Button onClick={() => setModal(null)}><Plus className="h-4 w-4" /> Nova cliente</Button></div>
