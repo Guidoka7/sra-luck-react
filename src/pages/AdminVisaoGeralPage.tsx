@@ -14,7 +14,6 @@ const moeda = (value: number) => new Intl.NumberFormat("pt-BR", { style: "curren
 const data = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`)) : "—";
 
 async function carregar(): Promise<Data> {
-  await apiJson<{ autenticado: boolean }>("/api/admin/session", { method: "GET", cache: "no-store" });
   return apiJson<Data>("/api/admin/visao-geral", { method: "GET", cache: "no-store" });
 }
 
