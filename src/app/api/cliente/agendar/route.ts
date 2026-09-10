@@ -18,25 +18,54 @@ export async function POST(req: NextRequest) {
   const { data: cliente } = await supabase.from("clientes").select("id, valor_contrato").eq("id", sessao.clienteId).single();
   if (!cliente) return NextResponse.json({ erro: "Cliente não encontrada." }, { status: 404 });
 
-  const { data: jaTem } = await supabase.from("agendamentos").select("id").eq("cliente_id", cliente.id).eq("status", "confirmado").maybeSingle();
-  if (jaTem) return NextResponse.json({ erro: "Você já tem uma data confirmada. Fale conosco para remarcar." }, { status: 409 });
+  // A reserva e a validação de capacidade acontecem dentro de uma única
+  // transação no banco, evitando overbooking em requisições concorrentes.
+  const { data: agendamentoId, error: agendamentoError } = await supabase.rpc("agendar_data", {
+    p_cliente_id: cliente.id,
+    p_data_id: dataId,
+    p_valor_contrato: cliente.valor_contrato,
+    p_horario_termos: horario,
+  });
 
-  const { data: dataAlvo } = await supabase.from("datas").select("id, data, vagas_totais, status").eq("id", dataId).single();
-  if (!dataAlvo || dataAlvo.status !== "disponivel") return NextResponse.json({ erro: "Essa data não está mais disponível." }, { status: 409 });
+  if (agendamentoError) {
+    const mensagem = agendamentoError.message ?? "";
+    if (mensagem.includes("DATA_INDISPONIVEL")) {
+      return NextResponse.json({ erro: "Essa data não está mais disponível." }, { status: 409 });
+    }
+    if (mensagem.includes("CLIENTE_JA_AGENDADA")) {
+      return NextResponse.json({ erro: "Você já tem uma data confirmada. Fale conosco para remarcar." }, { status: 409 });
+    }
+    if (mensagem.includes("VAGAS_ESGOTADAS")) {
+      return NextResponse.json({ erro: "As vagas dessa data acabaram de se esgotar." }, { status: 409 });
+    }
+    console.error("Falha ao confirmar agendamento:", agendamentoError);
+    return NextResponse.json({ erro: "Não foi possível confirmar sua data. Tente novamente." }, { status: 500 });
+  }
 
-  const { count } = await supabase.from("agendamentos").select("id", { count: "exact", head: true }).eq("data_id", dataId).eq("status", "confirmado");
-  if ((count ?? 0) >= dataAlvo.vagas_totais) return NextResponse.json({ erro: "As vagas dessa data acabaram de se esgotar." }, { status: 409 });
+  const { data: dataAlvo } = await supabase
+    .from("datas")
+    .select("id, data")
+    .eq("id", dataId)
+    .single();
 
-  const { data: novoAgendamento, error } = await supabase.from("agendamentos").insert({ cliente_id: cliente.id, data_id: dataId, valor_contrato: cliente.valor_contrato, status: "confirmado", horario_termos: horario }).select("id").single();
-  if (error) return NextResponse.json({ erro: "Não foi possível confirmar sua data. Tente novamente." }, { status: 500 });
-
-  await supabase.from("solicitacoes_liberacao_financeira").update({ agendamento_id: novoAgendamento.id }).eq("cliente_id", cliente.id).in("status", ["pendente", "em_analise", "aprovada"]).is("agendamento_id", null);
+  await supabase.from("solicitacoes_liberacao_financeira").update({ agendamento_id: agendamentoId }).eq("cliente_id", cliente.id).in("status", ["pendente", "em_analise", "aprovada"]).is("agendamento_id", null);
 
   try {
-    await supabase.channel("agenda-clientes").send({ type: "broadcast", event: "datas_atualizadas", payload: { acao: "agendamento_confirmado", data: dataAlvo.data, dataId: dataAlvo.id, clienteId: cliente.id, agendamentoId: novoAgendamento.id, horario } });
+    await supabase.channel("agenda-clientes").send({
+      type: "broadcast",
+      event: "datas_atualizadas",
+      payload: {
+        acao: "agendamento_confirmado",
+        data: dataAlvo?.data,
+        dataId,
+        clienteId: cliente.id,
+        agendamentoId,
+        horario,
+      },
+    });
   } catch (erroBroadcast) {
     console.error("Falha ao publicar atualização do agendamento:", erroBroadcast);
   }
 
-  return NextResponse.json({ ok: true, agendamentoId: novoAgendamento.id, data: dataAlvo.data, horario });
+  return NextResponse.json({ ok: true, agendamentoId, data: dataAlvo?.data, horario });
 }
