@@ -20,6 +20,15 @@
   letter-spacing: -0.03em;
 }
 
+/* Fixed overlays must never inherit a transformed ancestor from page-entry animations. */
+.admin-web-shell .animate-fadeUp,
+.admin-web-shell .animate-fadeUp * {
+  animation: none !important;
+}
+.admin-web-shell .animate-fadeUp {
+  transform: none !important;
+}
+
 .admin-web-shell .admin-sidebar {
   position: sticky;
   top: 20px;
@@ -63,21 +72,14 @@
   letter-spacing: -0.035em;
 }
 
-/* Desktop navigation: larger hit areas, restrained hierarchy and clear active state. */
 .admin-web-shell .admin-sidebar nav a {
   min-height: 54px;
   border: 1px solid transparent;
 }
 
-.admin-web-shell .admin-sidebar nav a:hover {
-  transform: translateX(2px);
-}
+.admin-web-shell .admin-sidebar nav a:hover { transform: translateX(2px); }
+.admin-web-shell .admin-sidebar nav a[aria-current="page"] { box-shadow: 0 14px 28px -18px rgba(122,38,50,.62); }
 
-.admin-web-shell .admin-sidebar nav a[aria-current="page"] {
-  box-shadow: 0 14px 28px -18px rgba(122,38,50,.62);
-}
-
-/* Tables are intentionally dense enough for desktop operations while remaining readable. */
 .admin-web-shell table {
   width: 100%;
   border-collapse: separate;
@@ -96,21 +98,14 @@
 }
 
 .admin-web-shell td { vertical-align: middle; }
-
 .admin-web-shell tbody tr { transition: background-color .15s ease; }
 .admin-web-shell tbody tr:hover { background: rgba(122,38,50,.025); }
 
 .admin-web-shell input,
 .admin-web-shell select,
-.admin-web-shell textarea {
-  font-family: inherit;
-  min-height: 40px;
-}
-
+.admin-web-shell textarea { font-family: inherit; min-height: 40px; }
 .admin-web-shell button,
-.admin-web-shell a {
-  -webkit-tap-highlight-color: transparent;
-}
+.admin-web-shell a { -webkit-tap-highlight-color: transparent; }
 
 .admin-web-shell button:focus-visible,
 .admin-web-shell a:focus-visible,
@@ -121,30 +116,21 @@
   outline-offset: 2px;
 }
 
-.admin-web-shell .surface-glass {
-  box-shadow: 0 18px 50px -34px rgba(66,28,35,.32);
+.admin-web-shell .surface-glass { box-shadow: 0 18px 50px -34px rgba(66,28,35,.32); }
+.admin-web-shell .overflow-x-auto { scrollbar-width: thin; }
+.admin-web-shell .grid { min-width: 0; }
+
+/* A belt-and-suspenders layer for legacy modals that still use fixed positioning directly. */
+.admin-web-shell [role="dialog"] {
+  isolation: isolate;
 }
 
-/* Prevent accidental mobile/PWA visual compression inside the backoffice. */
-.admin-web-shell .overflow-x-auto {
-  scrollbar-width: thin;
-}
-
-.admin-web-shell .grid {
-  min-width: 0;
-}
-
-html.dark .admin-web-shell {
-  background: #0b0a0c;
-  color: #e8dcda;
-}
-
+html.dark .admin-web-shell { background: #0b0a0c; color: #e8dcda; }
 html.dark .admin-web-shell .admin-topbar {
   border-color: rgba(255,255,255,.08);
   background: rgba(21,19,23,.9);
   box-shadow: 0 18px 50px -36px rgba(0,0,0,.8);
 }
-
 html.dark .admin-web-shell tbody tr:hover { background: rgba(255,255,255,.025); }
 html.dark .admin-web-shell th { color: rgb(var(--color-rose) / .72); }
 
@@ -154,7 +140,6 @@ html.dark .admin-web-shell th { color: rgb(var(--color-rose) / .72); }
 }
 
 @media (max-width: 1280px) {
-  .admin-web-shell { min-width: 1180px; }
-  .admin-web-shell { --admin-sidebar-width: 248px; --admin-gap: 16px; }
+  .admin-web-shell { min-width: 1180px; --admin-sidebar-width: 248px; --admin-gap: 16px; }
   .admin-web-shell .admin-sidebar { top: 16px; height: calc(100vh - 32px); }
 }
