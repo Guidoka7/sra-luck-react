@@ -18,14 +18,12 @@ export function LoginPage() {
     setErro(null);
     setLoading(true);
     try {
-      // O Worker cria a sessão em cookie HttpOnly. Não fazemos uma segunda
-      // requisição antes da navegação, evitando uma corrida entre o Set-Cookie
-      // da resposta de autenticação e a primeira leitura da sessão.
       await apiJson("/api/cliente/auth", {
         method: "POST",
         body: JSON.stringify({ cpf, dataNascimento: nascimento }),
       });
-      window.location.replace("/agenda");
+      window.history.pushState({}, "", "/agenda");
+      window.dispatchEvent(new Event("app:navigate"));
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível confirmar seus dados.");
     } finally {
