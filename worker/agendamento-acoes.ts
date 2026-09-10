@@ -12,6 +12,12 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function mesmaOrigem(request: Request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return origin === new URL(request.url).origin; } catch { return false; }
+}
+
 async function clienteSessao(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   return verificarTokenSessao(getCookie(request, CLIENTE_COOKIE), env.CLIENTE_SESSION_SECRET);
@@ -35,6 +41,7 @@ function erroRpc(error: any) {
 export async function clienteAgendamentoAcao(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/cliente/agendamento/reagendar" && url.pathname !== "/api/cliente/agendamento/cancelar") return null;
+  if (!mesmaOrigem(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const sessao = await clienteSessao(request, env);
   if (!sessao) return json({ erro: "Sessão expirada." }, 401);
   const db = createServiceSupabaseClient(env);
@@ -76,6 +83,7 @@ export async function adminAgendamentoAcao(request: Request, env: Env): Promise<
   const match = url.pathname.match(/^\/api\/admin\/agendamentos\/([^/]+)$/);
   if (!match) return null;
   if (request.method !== "PATCH") return json({ erro: "Método não permitido." }, 405);
+  if (!mesmaOrigem(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   if (!(await adminSessao(request, env))) return json({ erro: "Sessão administrativa expirada." }, 401);
 
   const agendamentoId = decodeURIComponent(match[1]);
