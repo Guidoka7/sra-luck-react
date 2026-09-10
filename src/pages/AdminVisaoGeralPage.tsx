@@ -23,13 +23,36 @@ type Data = {
   proximasLiberacoesFinanceiras: Item[];
 };
 
-const moeda = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+const moeda = (value: number) => {
+  try {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      Number.isFinite(value) ? value : 0,
+    );
+  } catch {
+    return "R$ 0,00";
+  }
+};
 
-const data = (value: string | null | undefined) =>
-  value
-    ? new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`))
-    : "—";
+function data(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const texto = String(value).trim();
+  if (!texto) return "—";
+
+  // Supabase pode retornar tanto YYYY-MM-DD quanto timestamp ISO.
+  const candidato = /^\d{4}-\d{2}-\d{2}$/.test(texto)
+    ? `${texto}T12:00:00`
+    : texto;
+  const parsed = new Date(candidato);
+
+  if (Number.isNaN(parsed.getTime())) return "—";
+
+  try {
+    return new Intl.DateTimeFormat("pt-BR").format(parsed);
+  } catch {
+    return "—";
+  }
+}
 
 async function carregar(): Promise<Data> {
   const result = await apiJson<Partial<Data>>("/api/admin/visao-geral", {
@@ -75,15 +98,15 @@ function Bloco({
         </div>
       ) : (
         <div className="space-y-2">
-          {items.map((item) => (
+          {items.map((item, index) => (
             <div
-              key={item.boletoId || item.agendamentoId || item.clienteId}
+              key={item.boletoId || item.agendamentoId || `${item.clienteId}-${index}`}
               className="flex items-center justify-between gap-3 rounded-2xl border border-rose/10 bg-blush/20 px-4 py-3"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-burgundy">{item.nome}</p>
+                <p className="truncate text-sm font-medium text-burgundy">{item.nome || "Cliente"}</p>
                 <p className="text-xs text-clay/50">
-                  {item.numeroParcela ? `Parcela ${item.numeroParcela}/${item.totalParcelas} · ` : ""}
+                  {item.numeroParcela ? `Parcela ${item.numeroParcela}/${item.totalParcelas ?? "—"} · ` : ""}
                   {data(item.dataPagamento || item.data || item.dataPrevisao)}
                 </p>
               </div>
