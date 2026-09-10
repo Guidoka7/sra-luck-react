@@ -5,6 +5,11 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react(), cloudflare()],
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: true,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
