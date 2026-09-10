@@ -7,6 +7,17 @@ async function auth(request: Request, env: Env) { if (!env.CLIENTE_SESSION_SECRE
 
 export async function adminNotificacoes(request: Request, env: Env): Promise<Response | null> {
  const path = new URL(request.url).pathname;
+ if (path.match(/^\/api\/admin\/boletos\/[^/]+\/comprovante$/) && request.method === "GET") {
+  const denied = await auth(request, env); if (denied) return denied;
+  const match = path.match(/^\/api\/admin\/boletos\/([^/]+)\/comprovante$/); const id = decodeURIComponent(match![1]);
+  const db = createServiceSupabaseClient(env);
+  const { data: boleto, error: boletoError } = await db.from("boletos").select("comprovante_url").eq("id", id).maybeSingle();
+  if (boletoError) { console.error("Erro ao buscar comprovante administrativo:", boletoError); return json({ erro: "Não foi possível localizar o comprovante." }, 500); }
+  if (!boleto?.comprovante_url) return json({ erro: "Comprovante não encontrado." }, 404);
+  const { data, error } = await db.storage.from("boletos-clientes").createSignedUrl(boleto.comprovante_url, 300);
+  if (error || !data?.signedUrl) { console.error("Erro ao gerar URL assinada do comprovante:", error); return json({ erro: "Não foi possível gerar o link do comprovante." }, 500); }
+  return Response.redirect(data.signedUrl, 302);
+ }
  if (!path.startsWith("/api/admin/notificacoes")) return null;
  const denied = await auth(request, env); if (denied) return denied;
  const db = createServiceSupabaseClient(env);
