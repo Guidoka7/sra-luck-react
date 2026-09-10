@@ -6,15 +6,6 @@ function formatCpf(value: string) {
   return digits.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 
-async function confirmarSessaoCliente() {
-  for (let tentativa = 0; tentativa < 3; tentativa += 1) {
-    const sessao = await apiJson<{ autenticado: boolean }>("/api/cliente/session", { method: "GET", cache: "no-store" });
-    if (sessao.autenticado) return true;
-    if (tentativa < 2) await new Promise((resolve) => window.setTimeout(resolve, 150));
-  }
-  return false;
-}
-
 export function LoginPage() {
   const [cpf, setCpf] = useState("");
   const [nascimento, setNascimento] = useState("");
@@ -27,8 +18,13 @@ export function LoginPage() {
     setErro(null);
     setLoading(true);
     try {
-      await apiJson("/api/cliente/auth", { method: "POST", body: JSON.stringify({ cpf, dataNascimento: nascimento }) });
-      if (!(await confirmarSessaoCliente())) throw new Error("Não foi possível iniciar sua sessão. Tente novamente.");
+      // O Worker cria a sessão em cookie HttpOnly. Não fazemos uma segunda
+      // requisição antes da navegação, evitando uma corrida entre o Set-Cookie
+      // da resposta de autenticação e a primeira leitura da sessão.
+      await apiJson("/api/cliente/auth", {
+        method: "POST",
+        body: JSON.stringify({ cpf, dataNascimento: nascimento }),
+      });
       window.location.replace("/agenda");
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível confirmar seus dados.");
