@@ -14,9 +14,11 @@ libera as datas com as vagas de cada dia e acompanha o orçamento do mês
 1. Crie um projeto novo no Supabase.
 2. Vá em **SQL Editor > New query**, cole todo o conteúdo de
    `supabase/schema.sql` e clique em **Run**.
-3. Vá em **Authentication > Users > Add user** e crie o usuário do admin
+3. Se o banco já existe, execute também as migrations numeradas em ordem,
+   incluindo `supabase/migration_016_seguranca_concorrencia.sql`.
+4. Vá em **Authentication > Users > Add user** e crie o usuário do admin
    (o e-mail/senha que a equipe vai usar para entrar em `/admin/login`).
-4. Vá em **Project Settings > API** e copie:
+5. Vá em **Project Settings > API** e copie:
    - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
    - `anon public key` → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role key` → `SUPABASE_SERVICE_ROLE_KEY` (nunca exponha essa
@@ -71,6 +73,11 @@ O botão **Verificar atrasos agora** permite executar a mesma rotina manualmente
 
 ### Desempenho
 - Execute `supabase/migration_014_performance.sql` no Supabase para aplicar os índices de desempenho.
+
+### Segurança e concorrência
+- Execute `supabase/migration_016_seguranca_concorrencia.sql` no Supabase.
+- Ela adiciona rate limit persistente ao login da cliente (8 falhas em 15 minutos por origem) e operações atômicas para impedir duas clientes de ocuparem a mesma data de cirurgia.
+- A migration `015_web_push` continua sendo a migration de Web Push; a proteção de segurança usa o número `016` para evitar conflito de numeração.
 
 ## Notificações do sistema no celular (Web Push)
 
