@@ -12,7 +12,7 @@ function run(command, args, options = {}) {
       cwd,
       stdio: options.silent ? ["ignore", "pipe", "pipe"] : "inherit",
       shell: false,
-      ...options,
+      windowsHide: false,
     });
 
     let stdout = "";
