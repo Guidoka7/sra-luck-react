@@ -1,4 +1,6 @@
-/* Tipografia oficial da interface: a implementação Next usa Fraunces + Inter. */
+/* Tipografia oficial da interface: Fraunces para títulos e Inter para interface. */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
   --font-display: "Fraunces", Georgia, serif;
   --font-heading: "Fraunces", Georgia, serif;
@@ -13,6 +15,7 @@ input,
 textarea,
 select {
   font-family: var(--font-sans);
+  font-synthesis: none;
 }
 
 h1,
@@ -22,6 +25,7 @@ h4,
 h5,
 h6 {
   font-family: var(--font-heading);
+  font-weight: 500;
 }
 
 .font-display,
@@ -34,18 +38,16 @@ h6 {
   font-family: var(--font-sans);
 }
 
-/* O backoffice é web/desktop. A área de cliente continua sendo a única área PWA. */
+/* Backoffice: exclusivamente web/desktop. A área da cliente é a única PWA. */
 .admin-web-shell {
-  min-width: 1080px;
+  min-width: 1024px;
   min-height: 100dvh;
 }
 
 .admin-web-shell .admin-sidebar {
   position: sticky;
-  top: 12px;
-  height: calc(100vh - 24px);
-  width: 268px;
-  flex: 0 0 268px;
+  top: 16px;
+  height: calc(100vh - 32px);
 }
 
 .admin-web-shell .admin-main {
@@ -63,7 +65,7 @@ h6 {
   width: 100%;
 }
 
-@media (max-width: 1079px) {
+@media (max-width: 1023px) {
   .admin-web-shell {
     overflow-x: auto;
   }
