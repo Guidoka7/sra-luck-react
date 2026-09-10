@@ -11,7 +11,18 @@ O projeto está sendo migrado de **Next.js** para:
 - **Supabase** — PostgreSQL, Storage, Realtime e serviços de dados;
 - **GitHub** — versionamento e CI.
 
-A configuração segue o modelo oficial de React + Vite com Cloudflare Workers, usando `@cloudflare/vite-plugin` e `wrangler`. O frontend é servido como SPA e as rotas `/api/*` serão migradas gradualmente para o Worker.
+A configuração segue o modelo oficial de React + Vite com Cloudflare Workers, usando `@cloudflare/vite-plugin` e `wrangler`. O frontend é servido como SPA e as rotas `/api/*` estão sendo migradas gradualmente para o Worker.
+
+## Guia rápido para edição por IA
+
+Antes de alterar fluxos, design ou funcionalidades, leia nesta ordem:
+
+1. `AGENTS.md` — regras para IA, segurança e migração;
+2. `docs/AI-CODEMAP.md` — onde localizar cada tipo de mudança;
+3. `docs/MIGRATION-MAP.md` — estado da migração por domínio;
+4. `docs/ARCHITECTURE.md` — arquitetura detalhada e estado real do código.
+
+O objetivo é permitir que uma IA encontre rapidamente a camada correta sem confundir código React/Worker ativo com o legado Next ainda mantido como referência.
 
 ### Comandos principais
 
@@ -59,20 +70,17 @@ As páginas e APIs existentes do Next.js permanecem no repositório temporariame
 
 - A chave `service_role` nunca deve chegar ao navegador.
 - O frontend acessa o Supabase com a chave pública e usa o Worker para operações privilegiadas.
-- O login por CPF + nascimento e as regras de sessão serão migrados das rotas Next.js para o Worker.
+- O login por CPF + nascimento e as regras de sessão estão sendo migrados para o Worker.
 - O agendamento atômico permanece protegido pelas funções SQL já adicionadas ao Supabase.
 
 ## Próximas etapas da migração
 
-1. Migrar login da cliente para Worker + React.
-2. Migrar sessão/middleware para autenticação adequada ao SPA.
-3. Migrar `/api/cliente/*` para `worker/routes/*`.
-4. Migrar páginas `login`, `agenda` e área administrativa para React.
-5. Migrar uploads e boletos para Worker + Supabase Storage.
-6. Migrar Web Push para o Worker.
-7. Remover dependências e arquivos exclusivos do Next.js.
-8. Configurar deploy/preview do Cloudflare e secrets de produção.
-9. Rodar CI completo e só então remover definitivamente o runtime antigo.
+1. Validar equivalência funcional dos fluxos já migrados.
+2. Migrar as rotas e telas ainda dependentes do runtime Next.
+3. Consolidar uploads, boletos, notificações e Web Push no Worker.
+4. Remover arquivos legados somente após equivalência funcional confirmada.
+5. Consolidar deploy/preview no Cloudflare e secrets de produção.
+6. Rodar CI completo antes da limpeza final do runtime antigo.
 
 ## UI
 
