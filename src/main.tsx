@@ -13,7 +13,9 @@ import AdminRelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import AdminConfiguracoesPage from "./app/admin/(painel)/configuracoes/page";
 import AdminNotificacoesPage from "./app/admin/(painel)/notificacoes/page";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
+import { PwaRegister } from "./components/ui/PwaRegister";
 import "./app/globals.css";
+import "./styles/typography.css";
 
 function AdminPanelRoute({ path }: { path: string }) {
   const normalized = path.replace(/\/+$/, "") || "/admin/visao-geral";
@@ -42,7 +44,7 @@ function App() {
   }, []);
   useEffect(() => { if (path === "/") { window.history.replaceState({}, "", "/login"); setPath("/login"); } }, [path]);
   if (path === "/login") return <LoginPage />;
-  if (path === "/agenda") return <AgendaPage />;
+  if (path === "/agenda") return <><PwaRegister /><AgendaPage /></>;
   if (path === "/admin/login") return <AdminLoginPage />;
   if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/")) return <AdminPanelRoute path={path} />;
   return <main className="min-h-screen bg-bloom px-6 flex items-center justify-center"><section className="surface-glass luxury-ring max-w-md rounded-3xl p-8 text-center"><img src="/brand/sra-luck-mark.png" alt="Sra. Luck" className="mx-auto mb-4 h-12 w-12" /><h1 className="text-xl font-semibold text-burgundy">Página não encontrada</h1><p className="mt-2 text-sm text-clay/60">A área solicitada não existe neste portal.</p><a href="/login" className="mt-5 inline-flex rounded-full bg-burgundy px-5 py-2.5 text-xs uppercase tracking-label text-pearl">Ir para o login</a></section></main>;
