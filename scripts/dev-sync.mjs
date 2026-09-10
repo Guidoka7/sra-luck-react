@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 
 const intervalMs = Number(process.env.DEV_SYNC_INTERVAL_MS ?? 5000);
 const cwd = process.cwd();
@@ -6,9 +7,8 @@ let stopping = false;
 let syncing = false;
 
 function run(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const executable = process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
-    const child = spawn(executable, args, {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, {
       cwd,
       stdio: options.silent ? ["ignore", "pipe", "pipe"] : "inherit",
       shell: false,
@@ -24,14 +24,15 @@ function run(command, args, options = {}) {
 
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
+      if (code === 0) resolvePromise({ stdout, stderr });
       else reject(new Error(`${command} ${args.join(" ")} terminou com código ${code}.\n${stderr}`));
     });
   });
 }
 
 async function isClean() {
-  const { stdout } = await run("git", ["status", "--porcelain"], { silent: true });
+  const git = process.platform === "win32" ? "git.exe" : "git";
+  const { stdout } = await run(git, ["status", "--porcelain"], { silent: true });
   return stdout.trim() === "";
 }
 
@@ -44,13 +45,14 @@ async function syncOnce() {
       return;
     }
 
-    await run("git", ["fetch", "origin", "main"], { silent: true });
-    const { stdout: local } = await run("git", ["rev-parse", "HEAD"], { silent: true });
-    const { stdout: remote } = await run("git", ["rev-parse", "origin/main"], { silent: true });
+    const git = process.platform === "win32" ? "git.exe" : "git";
+    await run(git, ["fetch", "origin", "main"], { silent: true });
+    const { stdout: local } = await run(git, ["rev-parse", "HEAD"], { silent: true });
+    const { stdout: remote } = await run(git, ["rev-parse", "origin/main"], { silent: true });
 
     if (local.trim() === remote.trim()) return;
 
-    await run("git", ["merge", "--ff-only", "origin/main"]);
+    await run(git, ["merge", "--ff-only", "origin/main"]);
     console.log("\n[dev-sync] Código atualizado do GitHub. O Vite/HMR recarregará as alterações automaticamente.\n");
   } catch (error) {
     console.warn("[dev-sync] Sincronização adiada:", error instanceof Error ? error.message : error);
@@ -59,8 +61,10 @@ async function syncOnce() {
   }
 }
 
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const vite = spawn(npmCommand, ["run", "dev"], {
+// Não usamos `npm.cmd` para iniciar o Vite: no Windows + Node 24 isso pode
+// resultar em `spawn EINVAL`. Executamos o CLI do Vite diretamente pelo Node.
+const viteCli = resolve(cwd, "node_modules", "vite", "bin", "vite.js");
+const vite = spawn(process.execPath, [viteCli], {
   cwd,
   stdio: "inherit",
   shell: false,
