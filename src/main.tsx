@@ -11,6 +11,7 @@ import AdminPagamentosPage from "./app/admin/(painel)/pagamentos/page";
 import AdminParcelasPage from "./app/admin/(painel)/parcelas/page";
 import AdminRelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import AdminConfiguracoesPage from "./app/admin/(painel)/configuracoes/page";
+import MonitoramentoPage from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import AdminNotificacoesPage from "./app/admin/(painel)/notificacoes/page";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { PwaRegister } from "./components/ui/PwaRegister";
@@ -28,6 +29,7 @@ function AdminPanelRoute({ path }: { path: string }) {
     case "/admin/parcelas": page = <AdminParcelasPage />; break;
     case "/admin/relatorios": page = <AdminRelatoriosPage />; break;
     case "/admin/notificacoes": page = <AdminNotificacoesPage />; break;
+    case "/admin/configuracoes/monitoramento": page = <MonitoramentoPage />; break;
     case "/admin/configuracoes": page = <AdminConfiguracoesPage />; break;
     case "/admin/visao-geral":
     default: page = <AdminVisaoGeralPage />; break;
