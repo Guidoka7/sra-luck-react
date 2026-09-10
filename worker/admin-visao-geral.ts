@@ -49,11 +49,16 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       }
     }
 
+    const comprovantes = (comprovantesRes.data ?? []) as any[];
+    const agendamentos = (agendamentosRes.data ?? []) as any[];
+    const revisao = (revisaoRes.data ?? []) as any[];
+    const liberacoes = (liberacaoRes.data ?? []) as any[];
+
     return json({
-      comprovantesPendentes: (comprovantesRes.data ?? []).map((b) => ({ boletoId: b.id, clienteId: b.cliente_id, nome: b.clientes?.nome_completo ?? "Cliente", numeroParcela: b.numero_parcela, totalParcelas: b.total_parcelas, valor: Number(b.valor), dataPagamento: b.data_pagamento })),
-      proximosAgendamentos: (agendamentosRes.data ?? []).map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", data: a.datas?.data ?? null, valorContrato: Number(a.valor_contrato), temPrevisaoLiberacao: Boolean(a.previsao_liberacao_financeira) })),
-      clientesAguardandoLiberacao: (revisaoRes.data ?? []).map((c) => ({ clienteId: c.id, nome: c.nome_completo, valorContrato: Number(c.valor_contrato), quantidadeParcelas: c.quantidade_parcelas, porcentagemPagamento: porcentagens.get(c.id) ?? 0, dataAtingiuPercentual: c.data_atingiu_percentual })),
-      proximasLiberacoesFinanceiras: (liberacaoRes.data ?? []).map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", valorContrato: Number(a.valor_contrato), dataPrevisao: a.previsao_liberacao_financeira })),
+      comprovantesPendentes: comprovantes.map((b) => ({ boletoId: b.id, clienteId: b.cliente_id, nome: b.clientes?.nome_completo ?? "Cliente", numeroParcela: b.numero_parcela, totalParcelas: b.total_parcelas, valor: Number(b.valor), dataPagamento: b.data_pagamento })),
+      proximosAgendamentos: agendamentos.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", data: a.datas?.data ?? null, valorContrato: Number(a.valor_contrato), temPrevisaoLiberacao: Boolean(a.previsao_liberacao_financeira) })),
+      clientesAguardandoLiberacao: revisao.map((c) => ({ clienteId: c.id, nome: c.nome_completo, valorContrato: Number(c.valor_contrato), quantidadeParcelas: c.quantidade_parcelas, porcentagemPagamento: porcentagens.get(c.id) ?? 0, dataAtingiuPercentual: c.data_atingiu_percentual })),
+      proximasLiberacoesFinanceiras: liberacoes.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", valorContrato: Number(a.valor_contrato), dataPrevisao: a.previsao_liberacao_financeira })),
     });
   } catch (error) {
     console.error("Falha na visão geral administrativa:", error);
