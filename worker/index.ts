@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenSessao, getCookie, setSessionCookie, clearSessionCookie, verificarTokenSessao } from "./session";
 import { agenda, agendar, agendarCirurgia, json as apiJson } from "./client-agenda";
+import { handleClienteBoletos } from "./client-boletos";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -51,6 +52,9 @@ export default {
     if (url.pathname === "/api/cliente/agenda" && request.method === "GET") return agenda(request, env);
     if (url.pathname === "/api/cliente/agendar" && request.method === "POST") return agendar(request, env);
     if (url.pathname === "/api/cliente/agendar-cirurgia" && request.method === "POST") return agendarCirurgia(request, env);
+    if (url.pathname === "/api/cliente/boletos" && request.method === "GET") return handleClienteBoletos(request, env);
+    const boletoMatch = url.pathname.match(/^\/api\/cliente\/boletos\/([^/]+)\/(anexar|arquivo|comprovante)$/);
+    if (boletoMatch) return handleClienteBoletos(request, env, decodeURIComponent(boletoMatch[1]), boletoMatch[2] as "anexar" | "arquivo" | "comprovante");
     return apiJson({ ok: false, error: "ROTA_NAO_ENCONTRADA", message: "A API solicitada não existe." }, 404);
   },
 } satisfies ExportedHandler<Env>;
