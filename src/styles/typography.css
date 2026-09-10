@@ -1,0 +1,70 @@
+/* Tipografia oficial da interface: a implementação Next usa Fraunces + Inter. */
+:root {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-heading: "Fraunces", Georgia, serif;
+  --font-script: "Fraunces", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+.font-display,
+.font-heading,
+.font-script {
+  font-family: var(--font-display);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+/* O backoffice é web/desktop. A área de cliente continua sendo a única área PWA. */
+.admin-web-shell {
+  min-width: 1080px;
+  min-height: 100dvh;
+}
+
+.admin-web-shell .admin-sidebar {
+  position: sticky;
+  top: 12px;
+  height: calc(100vh - 24px);
+  width: 268px;
+  flex: 0 0 268px;
+}
+
+.admin-web-shell .admin-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.admin-web-shell .admin-mobile-header,
+.admin-web-shell .admin-mobile-overlay,
+.admin-web-shell .admin-mobile-close {
+  display: none !important;
+}
+
+.admin-web-shell table {
+  width: 100%;
+}
+
+@media (max-width: 1079px) {
+  .admin-web-shell {
+    overflow-x: auto;
+  }
+}
