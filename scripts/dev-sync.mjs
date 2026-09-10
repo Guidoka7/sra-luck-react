@@ -7,10 +7,11 @@ let syncing = false;
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const executable = process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
+    const child = spawn(executable, args, {
       cwd,
       stdio: options.silent ? ["ignore", "pipe", "pipe"] : "inherit",
-      shell: process.platform === "win32",
+      shell: false,
       ...options,
     });
 
@@ -39,6 +40,7 @@ async function syncOnce() {
   syncing = true;
   try {
     if (!(await isClean())) {
+      console.warn("[dev-sync] Alterações locais detectadas; sincronização automática pausada.");
       return;
     }
 
@@ -57,10 +59,11 @@ async function syncOnce() {
   }
 }
 
-const vite = spawn("npm", ["run", "dev"], {
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const vite = spawn(npmCommand, ["run", "dev"], {
   cwd,
   stdio: "inherit",
-  shell: true,
+  shell: false,
 });
 
 vite.on("exit", (code, signal) => {
