@@ -1,110 +1,79 @@
 # Sra. Luck — Cirurgia Programada
 
-Sistema de agendamento para a Sra. Luck: a cliente entra com **CPF + data de
-nascimento** e escolhe, dentre as datas liberadas pela clínica, o dia da sua
-cirurgia — sem links, sem senha para lembrar. O admin cadastra as clientes,
-libera as datas com as vagas de cada dia e acompanha o orçamento do mês
-(meta de R$ 100.000, que fica vermelha se for ultrapassada).
+Sistema de agendamento para a Sra. Luck: a cliente entra com **CPF + data de nascimento** e escolhe, dentre as datas liberadas pela clínica, o dia da sua cirurgia — sem links, sem senha para lembrar. O admin cadastra as clientes, libera as datas com as vagas de cada dia e acompanha o orçamento do mês.
 
-## 1. Pré-requisitos
-- Node.js 18 ou superior
-- Uma conta gratuita em https://supabase.com
+## Arquitetura atual em migração
 
-## 2. Configurar o Supabase
-1. Crie um projeto novo no Supabase.
-2. Vá em **SQL Editor > New query**, cole todo o conteúdo de
-   `supabase/schema.sql` e clique em **Run**.
-3. Se o banco já existe, execute também as migrations numeradas em ordem,
-   incluindo `supabase/migration_016_seguranca_concorrencia.sql` e
-   `supabase/migration_017_agendamento_atomico.sql`.
-4. Vá em **Authentication > Users > Add user** e crie o usuário do admin
-   (o e-mail/senha que a equipe vai usar para entrar em `/admin/login`).
-5. Vá em **Project Settings > API** e copie:
-   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon public key` → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role key` → `SUPABASE_SERVICE_ROLE_KEY` (nunca exponha essa
-     chave no navegador — ela só é usada nas rotas de servidor)
+O projeto está sendo migrado de **Next.js** para:
 
-## 3. Configurar o projeto
-1. Copie `.env.local.example` para `.env.local` e preencha os valores acima.
-2. Em `CLIENTE_SESSION_SECRET`, gere uma string aleatória longa (por
-   exemplo, rode `openssl rand -hex 32` no terminal) — ela assina a sessão
-   de login da cliente.
+- **React + Vite** — frontend SPA;
+- **Cloudflare Workers** — APIs/backend e lógica protegida;
+- **Supabase** — PostgreSQL, Storage, Realtime e serviços de dados;
+- **GitHub** — versionamento e CI.
 
-## 4. Rodar localmente
+A configuração segue o modelo oficial de React + Vite com Cloudflare Workers, usando `@cloudflare/vite-plugin` e `wrangler`. O frontend é servido como SPA e as rotas `/api/*` serão migradas gradualmente para o Worker.
+
+### Comandos principais
+
 ```bash
 npm install
 npm run dev
+npm run build
+npm run preview
+npm run deploy
 ```
-Acesse:
-- `http://localhost:3000` — página inicial
-- `http://localhost:3000/login` — acesso da cliente (CPF + nascimento)
-- `http://localhost:3000/admin/login` — acesso da equipe
 
-## 5. Fluxo de uso
-1. No painel admin, cadastre a cliente em **Clientes**: nome completo, CPF,
-   data de nascimento e o valor do contrato dela.
-2. Em **Agenda**, clique num dia do calendário para liberá-lo e definir
-   quantas vagas ele tem.
-3. A cliente entra em `/login` com CPF + data de nascimento e escolhe uma
-   das datas liberadas — ao confirmar, ela vê uma tela de celebração com a
-   data escolhida.
-4. No **Painel**, acompanhe a barra de orçamento do mês: soma o valor de
-   contrato de cada cliente agendada e fica vermelha se passar de
-   R$ 100.000 (ela nunca bloqueia o agendamento, é só um alerta visual).
+### Variáveis de ambiente
 
-## Estrutura
-- `src/app/admin` — painel administrativo (protegido por Supabase Auth)
-- `src/app/agenda` e `src/app/login` — área da cliente (sessão própria por
-  CPF + nascimento, sem usar o Supabase Auth)
-- `src/app/api` — rotas de servidor que fazem todo o acesso ao banco
-- `supabase/schema.sql` — schema completo do banco de dados
+O frontend usa apenas variáveis públicas com prefixo `VITE_`:
 
-## Automação de notificações
+```text
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_GOOGLE_REVIEW_URL=
+```
 
-A automação de parcelas atrasadas foi integrada ao painel em **Notificações → Automação**.
+Segredos como `SUPABASE_SERVICE_ROLE_KEY` e `CLIENTE_SESSION_SECRET` devem ficar exclusivamente no Cloudflare Worker, configurados como secrets. **Nunca coloque a service role key em uma variável `VITE_*`.**
 
-1. Execute `supabase/migration_013_notificacoes_automaticas.sql` no SQL Editor do Supabase.
-2. Configure `NOTIFICACOES_APP_URL=http://localhost:3000` e `NOTIFICACOES_CRON_SECRET=<segredo-forte>` no ambiente.
-3. Com o Next.js rodando, inicie o worker com `npm run notificacoes`.
-4. O worker verifica a cada 30 minutos; o intervalo definido no painel é aplicado por parcela, evitando reenvios antes da hora.
-5. Os envios ficam registrados em `notificacao_logs`, com cliente, data, tipo e status.
+### Estado da migração
 
-O botão **Verificar atrasos agora** permite executar a mesma rotina manualmente pelo painel.
+A fundação do novo runtime já está criada:
 
-### Desempenho
-- Execute `supabase/migration_014_performance.sql` no Supabase para aplicar os índices de desempenho.
+- `vite.config.ts` — integração Vite + Cloudflare;
+- `wrangler.jsonc` — configuração do Worker e fallback SPA;
+- `worker/index.ts` — entrada das APIs Cloudflare;
+- `src/main.tsx` — entrada React;
+- `src/lib/supabase-vite.ts` — cliente Supabase do navegador;
+- `tsconfig.worker.json` — tipos do runtime Workers.
 
-### Segurança e concorrência
-- Execute `supabase/migration_016_seguranca_concorrencia.sql` no Supabase para o rate limit persistente do login e o agendamento atômico da cirurgia.
-- Execute `supabase/migration_017_agendamento_atomico.sql` para garantir que a reserva da data de assinatura também seja atômica no banco.
-- A migration `015_web_push` continua sendo a migration de Web Push; `016` e `017` são as correções de segurança/concorrência.
+As páginas e APIs existentes do Next.js permanecem no repositório temporariamente para permitir uma migração gradual. Elas não devem ser consideradas a arquitetura final.
 
-## Notificações do sistema no celular (Web Push)
+## Supabase
 
-A área da cliente agora pode pedir permissão para notificações do sistema e registrar o dispositivo para receber Web Push mesmo com o app em segundo plano/fechado.
+1. Crie um projeto no Supabase.
+2. Execute `supabase/schema.sql` em um banco novo ou as migrations numeradas em um banco existente.
+3. Para bancos existentes, mantenha as migrations `016` e `017` de segurança/concorrência.
+4. Configure a URL e a chave pública no frontend e os segredos do backend no Worker.
 
-### Configuração no PC que roda o servidor
+## Segurança
 
-1. Instale a nova dependência:
-   `npm install`
-2. Gere as chaves VAPID:
-   `npm run gerar-vapid`
-3. Coloque no `.env.local`:
-   - `WEB_PUSH_VAPID_SUBJECT=mailto:seu-email@empresa.com`
-   - `WEB_PUSH_VAPID_PUBLIC_KEY=...`
-   - `WEB_PUSH_VAPID_PRIVATE_KEY=...`
-4. Execute a migration `supabase/migration_015_web_push.sql` no Supabase.
-5. Reinicie o Next.js.
+- A chave `service_role` nunca deve chegar ao navegador.
+- O frontend acessa o Supabase com a chave pública e usa o Worker para operações privilegiadas.
+- O login por CPF + nascimento e as regras de sessão serão migrados das rotas Next.js para o Worker.
+- O agendamento atômico permanece protegido pelas funções SQL já adicionadas ao Supabase.
 
-### Requisitos do celular
+## Próximas etapas da migração
 
-Web Push exige contexto seguro. Para teste pela rede Wi-Fi usando `http://192.168.x.x:3000`, o site pode abrir normalmente, mas o navegador normalmente **não permite Push/Notificações do sistema nesse endereço HTTP**. Para receber notificações com o app fechado, use HTTPS ou um ambiente de desenvolvimento considerado seguro pelo navegador. No iPhone/iPad, o Web Push funciona para o app web instalado na Tela de Início (iOS/iPadOS 16.4+).
-
-A permissão é solicitada por um botão dentro da área da cliente. Depois de autorizada, a assinatura fica vinculada à cliente e ao dispositivo. Os envios manuais, automáticos de parcelas atrasadas e de previsão de liberação usam essa assinatura.
+1. Migrar login da cliente para Worker + React.
+2. Migrar sessão/middleware para autenticação adequada ao SPA.
+3. Migrar `/api/cliente/*` para `worker/routes/*`.
+4. Migrar páginas `login`, `agenda` e área administrativa para React.
+5. Migrar uploads e boletos para Worker + Supabase Storage.
+6. Migrar Web Push para o Worker.
+7. Remover dependências e arquivos exclusivos do Next.js.
+8. Configurar deploy/preview do Cloudflare e secrets de produção.
+9. Rodar CI completo e só então remover definitivamente o runtime antigo.
 
 ## UI
 
-O painel administrativo e a área da cliente foram ajustados para uma apresentação mais compacta e organizada, com redução agressiva de espaçamentos e elementos visuais. O resumo **Orçamento das próximas liberações** foi removido da Agenda de Liberação.
-
-<!-- deploy trigger: 2026-08-20 -->
+A identidade visual existente da Sra. Luck continua sendo preservada durante a migração. Os assets de marca permanecem em `public/brand`.
