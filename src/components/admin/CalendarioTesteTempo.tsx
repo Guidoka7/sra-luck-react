@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CalendarClock, RotateCcw, X } from "lucide-react";
+import { Portal } from "@/components/ui/Portal";
 
 const KEY = "sra-luck-test-date";
 
@@ -40,7 +41,7 @@ export function CalendarioTesteTempo() {
       <CalendarClock className="h-4 w-4 text-gold" /> {ativo ? `Teste: ${data.split("-").reverse().join("/")}` : "Calendário de teste"}
     </button>
 
-    {aberto && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+    {aberto && <Portal><div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
       <div className="w-full max-w-sm rounded-2xl border border-gold/20 bg-white p-5 shadow-2xl dark:bg-[#1b1d20]">
         <div className="flex items-start justify-between gap-3">
           <div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-rose">Ambiente de teste</p><h2 className="mt-1 font-heading text-lg text-burgundy dark:text-cream">Simular passagem do tempo</h2></div>
@@ -52,6 +53,6 @@ export function CalendarioTesteTempo() {
         <button type="button" onClick={() => aplicar(data)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-burgundy px-4 py-3 text-xs font-bold uppercase tracking-label text-cream"><CalendarClock className="h-4 w-4" /> Aplicar data de teste</button>
         {ativo && <button type="button" onClick={desativar} className="mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-rose/15 px-4 py-2.5 text-xs font-semibold text-burgundy dark:text-cream"><RotateCcw className="h-3.5 w-3.5" /> Voltar para a data real</button>}
       </div>
-    </div>}
+    </div></Portal>}
   </>;
 }
