@@ -15,6 +15,7 @@ let ultimoEm = 0;
 let instalado = false;
 let fetchOriginal: typeof window.fetch | null = null;
 const ENDPOINT = "/api/monitoramento/erro";
+const QUEUE_KEY = "sra_luck_monitoramento_pendente";
 const SENSIVE = /cpf|senha|password|token|secret|authorization|cookie|session|payload/i;
 
 function normalizarErro(value: unknown) {
@@ -28,6 +29,40 @@ function sanitizarDetalhes(value?: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !SENSIVE.test(key)).slice(0, 30));
 }
 
+function enfileirar(payload: string) {
+  try {
+    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    const atualizada = [...fila.slice(-19), JSON.parse(payload)];
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(atualizada));
+  } catch { /* nunca interromper a aplicação por causa do monitoramento */ }
+}
+
+async function enviar(payload: string) {
+  try {
+    if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: "application/json" }))) return true;
+  } catch { /* fallback abaixo */ }
+  if (!fetchOriginal) return false;
+  try {
+    const response = await fetchOriginal(ENDPOINT, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+    return response.ok;
+  } catch { return false; }
+}
+
+async function reenviarFila() {
+  if (typeof window === "undefined") return;
+  try {
+    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]") as unknown[];
+    if (!fila.length) return;
+    const restantes: unknown[] = [];
+    for (const item of fila.slice(-20)) {
+      const ok = await enviar(JSON.stringify(item));
+      if (!ok) restantes.push(item);
+    }
+    if (restantes.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(restantes));
+    else localStorage.removeItem(QUEUE_KEY);
+  } catch { /* manter a fila para a próxima oportunidade */ }
+}
+
 export function registrarErro(evento: EventoErro) {
   if (typeof window === "undefined") return;
   const mensagem = evento.mensagem?.trim().slice(0, 1200);
@@ -38,16 +73,14 @@ export function registrarErro(evento: EventoErro) {
   ultimo = assinatura;
   ultimoEm = agora;
   const payload = JSON.stringify({ ...evento, mensagem, origem: evento.origem || "frontend", rota: window.location.pathname, ambiente: import.meta.env.MODE, detalhes: sanitizarDetalhes(evento.detalhes) });
-  try {
-    if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: "application/json" }))) return;
-  } catch { /* fallback */ }
-  void fetchOriginal?.(ENDPOINT, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true }).catch(() => undefined);
+  void enviar(payload).then((ok) => { if (!ok) enfileirar(payload); });
 }
 
 export function instalarMonitoramentoGlobal() {
   if (typeof window === "undefined" || instalado) return () => undefined;
   instalado = true;
   fetchOriginal = window.fetch.bind(window);
+  void reenviarFila();
   const originalConsoleError = console.error;
 
   const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: "critical", codigo: "GLOBAL_JS_ERROR", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
@@ -84,6 +117,7 @@ export function instalarMonitoramentoGlobal() {
   window.addEventListener("error", onError);
   window.addEventListener("error", onResourceError, true);
   window.addEventListener("unhandledrejection", onRejection);
+  window.addEventListener("online", () => void reenviarFila());
   return () => {
     window.removeEventListener("error", onError);
     window.removeEventListener("error", onResourceError, true);
