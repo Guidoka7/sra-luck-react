@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CalendarClock, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
-import { supabase } from "../lib/supabase-vite";
+import { apiJson } from "../lib/api";
 
 type Item = {
   boletoId?: string; clienteId: string; agendamentoId?: string; nome: string;
@@ -14,13 +14,8 @@ const moeda = (value: number) => new Intl.NumberFormat("pt-BR", { style: "curren
 const data = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T12:00:00`)) : "—";
 
 async function carregar(): Promise<Data> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) throw new Error("Sessão administrativa expirada.");
-  const response = await fetch("/api/admin/visao-geral", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.erro || "Não foi possível carregar a visão geral.");
-  return body as Data;
+  await apiJson<{ autenticado: boolean }>("/api/admin/session", { method: "GET", cache: "no-store" });
+  return apiJson<Data>("/api/admin/visao-geral", { method: "GET", cache: "no-store" });
 }
 
 function Bloco({ title, description, items, icon: Icon, empty }: { title: string; description: string; items: Item[]; icon: typeof ReceiptText; empty: string }) {
