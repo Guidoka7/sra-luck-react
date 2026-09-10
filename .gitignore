@@ -12,6 +12,13 @@
 
 # production
 /build
+/dist/
+
+# Cloudflare Workers local state
+/.wrangler/
+
+# legacy frontend build/dependencies
+/frontend/
 
 # netlify
 /.netlify
