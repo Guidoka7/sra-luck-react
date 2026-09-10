@@ -1,0 +1,60 @@
+import { useEffect, useState } from "react";
+
+function currentPath() {
+  return window.location.pathname;
+}
+
+export function usePathname() {
+  const [path, setPath] = useState(currentPath);
+  useEffect(() => {
+    const sync = () => setPath(currentPath());
+    window.addEventListener("popstate", sync);
+    window.addEventListener("app:navigate", sync);
+    return () => {
+      window.removeEventListener("popstate", sync);
+      window.removeEventListener("app:navigate", sync);
+    };
+  }, []);
+  return path;
+}
+
+export function useSearchParams() {
+  const [search, setSearch] = useState(() => window.location.search);
+  useEffect(() => {
+    const sync = () => setSearch(window.location.search);
+    window.addEventListener("popstate", sync);
+    window.addEventListener("app:navigate", sync);
+    return () => {
+      window.removeEventListener("popstate", sync);
+      window.removeEventListener("app:navigate", sync);
+    };
+  }, []);
+  return new URLSearchParams(search);
+}
+
+export function useRouter() {
+  return {
+    push(path: string) {
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new Event("app:navigate"));
+    },
+    replace(path: string) {
+      window.history.replaceState({}, "", path);
+      window.dispatchEvent(new Event("app:navigate"));
+    },
+    refresh() {
+      window.dispatchEvent(new Event("app:navigate"));
+    },
+    back() {
+      window.history.back();
+    },
+    prefetch() {
+      return Promise.resolve();
+    },
+  };
+}
+
+export function redirect(path: string): never {
+  window.location.replace(path);
+  throw new Error("NAVIGATED");
+}
