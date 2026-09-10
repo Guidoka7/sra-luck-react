@@ -14,7 +14,9 @@ import AdminConfiguracoesPage from "./app/admin/(painel)/configuracoes/page";
 import MonitoramentoPage from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import AdminNotificacoesPage from "./app/admin/(painel)/notificacoes/page";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
+import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
+import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
@@ -53,10 +55,16 @@ function App() {
   return <main className="min-h-screen bg-bloom px-6 flex items-center justify-center"><section className="surface-glass luxury-ring max-w-md rounded-3xl p-8 text-center"><img src="/brand/sra-luck-mark.png" alt="Sra. Luck" className="mx-auto mb-4 h-12 w-12" /><h1 className="text-xl font-semibold text-burgundy">Página não encontrada</h1><p className="mt-2 text-sm text-clay/60">A área solicitada não existe neste portal.</p><a href="/login" className="mt-5 inline-flex rounded-full bg-burgundy px-5 py-2.5 text-xs uppercase tracking-label text-pearl">Ir para o login</a></section></main>;
 }
 
+const cleanupMonitoramento = instalarMonitoramentoGlobal();
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </ThemeProvider>
   </StrictMode>,
 );
+
+void cleanupMonitoramento;
