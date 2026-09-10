@@ -1,5 +1,4 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { exigirAdmin } from "./admin-auth";
 
 const LIMITE_ITENS = 8;
 
@@ -10,10 +9,7 @@ function json(data: unknown, status = 200) {
   });
 }
 
-export async function adminVisaoGeral(request: Request, env: Env): Promise<Response> {
-  const authError = await exigirAdmin(request, env);
-  if (authError) return authError;
-
+export async function adminVisaoGeral(_request: Request, env: Env): Promise<Response> {
   try {
     const supabase = createServiceSupabaseClient(env);
     const hoje = new Date();
@@ -56,9 +52,9 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
 
     return json({
       comprovantesPendentes: comprovantes.map((b) => ({ boletoId: b.id, clienteId: b.cliente_id, nome: b.clientes?.nome_completo ?? "Cliente", numeroParcela: b.numero_parcela, totalParcelas: b.total_parcelas, valor: Number(b.valor), dataPagamento: b.data_pagamento })),
-      proximosAgendamentos: agendamentos.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", data: a.datas?.data ?? null, valorContrato: Number(a.valor_contrato), temPrevisaoLiberacao: Boolean(a.previsao_liberacao_financeira) })),
-      clientesAguardandoLiberacao: revisao.map((c) => ({ clienteId: c.id, nome: c.nome_completo, valorContrato: Number(c.valor_contrato), quantidadeParcelas: c.quantidade_parcelas, porcentagemPagamento: porcentagens.get(c.id) ?? 0, dataAtingiuPercentual: c.data_atingiu_percentual })),
-      proximasLiberacoesFinanceiras: liberacoes.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", valorContrato: Number(a.valor_contrato), dataPrevisao: a.previsao_liberacao_financeira })),
+      proximosAgendamentos: agendamentos.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", data: a.datas?.data ?? null, valor: Number(a.valor_contrato), quantidadeParcelas: null, porcentagemPagamento: null })),
+      clientesAguardandoLiberacao: revisao.map((c) => ({ clienteId: c.id, nome: c.nome_completo, valor: Number(c.valor_contrato), quantidadeParcelas: c.quantidade_parcelas, porcentagemPagamento: porcentagens.get(c.id) ?? 0, data: c.data_atingiu_percentual })),
+      proximasLiberacoesFinanceiras: liberacoes.map((a) => ({ agendamentoId: a.id, clienteId: a.cliente_id, nome: a.clientes?.nome_completo ?? "Cliente", valor: Number(a.valor_contrato), dataPrevisao: a.previsao_liberacao_financeira })),
     });
   } catch (error) {
     console.error("Falha na visão geral administrativa:", error);
