@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { CalendarRange, Cog, LayoutDashboard, LineChart, LogOut, Menu, Receipt, Users, X, WalletCards } from "lucide-react";
-import { createClientSupabaseClient } from "@/lib/supabase/client";
 import { Wordmark } from "@/components/ui/Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -55,7 +54,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => { cancelado = true; if (usaIdleCallback) window.cancelIdleCallback?.(idle as number); else window.clearTimeout(idle as number); };
   }, [router]);
 
-  async function sair() { const supabase = createClientSupabaseClient(); await supabase.auth.signOut(); router.push("/admin/login"); router.refresh(); }
+  async function sair() {
+    try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); }
+    finally { router.replace("/admin/login"); }
+  }
 
   return (
     <div className="admin-shell admin-compact min-h-screen bg-bloom dark:bg-[#0b0a0c]">
