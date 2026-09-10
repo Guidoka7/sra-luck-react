@@ -13,6 +13,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      "next/navigation": path.resolve(__dirname, "src/shims/next-navigation.ts"),
+      "next/link": path.resolve(__dirname, "src/shims/next-link.tsx"),
+      "next/image": path.resolve(__dirname, "src/shims/next-image.tsx"),
     },
   },
 });
