@@ -3,10 +3,16 @@ import { apiJson } from "../lib/api";
 
 function formatCpf(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
-  return digits
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  return digits.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+async function confirmarSessaoCliente() {
+  for (let tentativa = 0; tentativa < 3; tentativa += 1) {
+    const sessao = await apiJson<{ autenticado: boolean }>("/api/cliente/session", { method: "GET", cache: "no-store" });
+    if (sessao.autenticado) return true;
+    if (tentativa < 2) await new Promise((resolve) => window.setTimeout(resolve, 150));
+  }
+  return false;
 }
 
 export function LoginPage() {
@@ -21,19 +27,8 @@ export function LoginPage() {
     setErro(null);
     setLoading(true);
     try {
-      await apiJson("/api/cliente/auth", {
-        method: "POST",
-        body: JSON.stringify({ cpf, dataNascimento: nascimento }),
-      });
-
-      const sessao = await apiJson<{ autenticado: boolean }>("/api/cliente/session", {
-        method: "GET",
-        cache: "no-store",
-      });
-      if (!sessao.autenticado) {
-        throw new Error("Não foi possível iniciar sua sessão. Tente novamente.");
-      }
-
+      await apiJson("/api/cliente/auth", { method: "POST", body: JSON.stringify({ cpf, dataNascimento: nascimento }) });
+      if (!(await confirmarSessaoCliente())) throw new Error("Não foi possível iniciar sua sessão. Tente novamente.");
       window.location.replace("/agenda");
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível confirmar seus dados.");
@@ -50,18 +45,10 @@ export function LoginPage() {
           <h1 className="mb-1 text-center text-2xl text-burgundy">Bem-vinda de volta</h1>
           <p className="mb-7 text-center text-sm leading-6 text-clay/60">Entre com seus dados para ver sua agenda.</p>
           <form onSubmit={submit} className="flex flex-col gap-5">
-            <label className="block">
-              <span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">CPF</span>
-              <input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" inputMode="numeric" autoComplete="username" placeholder="000.000.000-00" value={cpf} maxLength={14} onChange={(e) => setCpf(formatCpf(e.target.value))} required />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">Data de nascimento</span>
-              <input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" type="date" autoComplete="bday" value={nascimento} onChange={(e) => setNascimento(e.target.value)} required />
-            </label>
+            <label className="block"><span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">CPF</span><input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" inputMode="numeric" autoComplete="username" placeholder="000.000.000-00" value={cpf} maxLength={14} onChange={(e) => setCpf(formatCpf(e.target.value))} required /></label>
+            <label className="block"><span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">Data de nascimento</span><input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" type="date" autoComplete="bday" value={nascimento} onChange={(e) => setNascimento(e.target.value)} required /></label>
             {erro && <div role="alert" className="rounded-2xl border border-alert/20 bg-alert/5 px-4 py-3 text-sm text-alert">{erro}</div>}
-            <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">
-              {loading ? "Entrando…" : "Entrar"}
-            </button>
+            <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">{loading ? "Entrando…" : "Entrar"}</button>
           </form>
         </section>
         <p className="mt-6 text-center text-xs text-clay/40">Seus dados de acesso foram cadastrados pela nossa equipe.<br />Em caso de dúvida, fale conosco.</p>
