@@ -1,0 +1,79 @@
+/* Desktop-only visual system for the administrative portal. Client PWA is intentionally untouched. */
+.admin-web-shell {
+  font-family: var(--font-sans), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  min-width: 1024px;
+}
+.admin-web-shell h1,
+.admin-web-shell h2,
+.admin-web-shell h3,
+.admin-web-shell h4 {
+  font-family: var(--font-display), Fraunces, Georgia, serif;
+  letter-spacing: -0.025em;
+}
+.admin-web-shell .admin-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  width: calc(100% - 276px);
+  max-width: none;
+  padding: 0 0 2rem;
+}
+.admin-web-shell .admin-sidebar {
+  position: sticky;
+  top: 1rem;
+  height: calc(100vh - 2rem);
+  width: 252px;
+  min-width: 252px;
+  overflow-y: auto;
+}
+.admin-web-shell .admin-sidebar nav a {
+  min-height: 52px;
+}
+.admin-web-shell table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .8125rem;
+}
+.admin-web-shell th {
+  white-space: nowrap;
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+  color: rgb(var(--color-burgundy) / .58);
+}
+.admin-web-shell td {
+  vertical-align: middle;
+}
+.admin-web-shell input,
+.admin-web-shell select,
+.admin-web-shell textarea {
+  font-family: inherit;
+}
+.admin-web-shell button,
+.admin-web-shell a {
+  -webkit-tap-highlight-color: transparent;
+}
+.admin-web-shell .surface-glass {
+  box-shadow: 0 18px 45px -32px rgb(var(--shadow-rgb) / .32);
+}
+.admin-web-shell .admin-page-title,
+.admin-web-shell [data-admin-title] {
+  font-family: var(--font-display), Fraunces, Georgia, serif;
+}
+
+@media (min-width: 1440px) {
+  .admin-web-shell .admin-main {
+    width: calc(100% - 276px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .admin-web-shell { min-width: 960px; }
+  .admin-web-shell .admin-sidebar { width: 224px; min-width: 224px; }
+  .admin-web-shell .admin-main { width: calc(100% - 244px); }
+}
+
+html.dark .admin-web-shell th {
+  color: rgb(var(--color-rose) / .72);
+}
