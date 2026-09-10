@@ -11,6 +11,14 @@ function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...headers } });
 }
 function apenasDigitos(valor: string): string { return valor.replace(/\D/g, ""); }
+function mesmaOrigem(request: Request): boolean {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return origin === new URL(request.url).origin; } catch { return false; }
+}
+function bloquearCrossSite(request: Request): Response | null {
+  return mesmaOrigem(request) ? null : json({ erro: "Requisição de origem não autorizada." }, 403);
+}
 async function gerarChaveRateLimit(request: Request, secret: string): Promise<string> {
   const ip = request.headers.get("CF-Connecting-IP")?.trim() || request.headers.get("x-real-ip")?.trim() || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -19,6 +27,7 @@ async function gerarChaveRateLimit(request: Request, secret: string): Promise<st
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 async function loginCliente(request: Request, env: Env): Promise<Response> {
+  const origemInvalida = bloquearCrossSite(request); if (origemInvalida) return origemInvalida;
   let body: { cpf?: string; dataNascimento?: string };
   try { body = await request.json(); } catch { return json({ erro: "Requisição inválida." }, 400); }
   const { cpf, dataNascimento } = body;
@@ -48,13 +57,13 @@ export default {
     if (url.pathname === "/api/health" && request.method === "GET") return json({ ok: true, service: "sra-luck-api", runtime: "cloudflare-workers", supabaseConfigured: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) });
     if (url.pathname === "/api/cliente/auth" && request.method === "POST") return loginCliente(request, env);
     if (url.pathname === "/api/cliente/session" && request.method === "GET") { if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503); const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET); return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" }); }
-    if (url.pathname === "/api/cliente/logout" && request.method === "POST") return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(secure), "Cache-Control": "no-store" });
+    if (url.pathname === "/api/cliente/logout" && request.method === "POST") { const origemInvalida = bloquearCrossSite(request); if (origemInvalida) return origemInvalida; return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(secure), "Cache-Control": "no-store" }); }
     if (url.pathname === "/api/cliente/agenda" && request.method === "GET") return agenda(request, env);
-    if (url.pathname === "/api/cliente/agendar" && request.method === "POST") return agendar(request, env);
-    if (url.pathname === "/api/cliente/agendar-cirurgia" && request.method === "POST") return agendarCirurgia(request, env);
+    if (url.pathname === "/api/cliente/agendar" && request.method === "POST") { const origemInvalida = bloquearCrossSite(request); if (origemInvalida) return origemInvalida; return agendar(request, env); }
+    if (url.pathname === "/api/cliente/agendar-cirurgia" && request.method === "POST") { const origemInvalida = bloquearCrossSite(request); if (origemInvalida) return origemInvalida; return agendarCirurgia(request, env); }
     if (url.pathname === "/api/cliente/boletos" && request.method === "GET") return handleClienteBoletos(request, env);
     const boletoMatch = url.pathname.match(/^\/api\/cliente\/boletos\/([^/]+)\/(anexar|arquivo|comprovante)$/);
-    if (boletoMatch) return handleClienteBoletos(request, env, decodeURIComponent(boletoMatch[1]), boletoMatch[2] as "anexar" | "arquivo" | "comprovante");
+    if (boletoMatch) { if (request.method === "POST" || request.method === "DELETE") { const origemInvalida = bloquearCrossSite(request); if (origemInvalida) return origemInvalida; } return handleClienteBoletos(request, env, decodeURIComponent(boletoMatch[1]), boletoMatch[2] as "anexar" | "arquivo" | "comprovante"); }
     return apiJson({ ok: false, error: "ROTA_NAO_ENCONTRADA", message: "A API solicitada não existe." }, 404);
   },
 } satisfies ExportedHandler<Env>;
