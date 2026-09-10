@@ -17,6 +17,5 @@
     "jsx": "react-jsx",
     "types": ["vite/client"]
   },
-  "include": ["src/main.tsx", "src/vite-env.d.ts"],
-  "references": [{ "path": "./tsconfig.worker.json" }]
+  "include": ["src/main.tsx", "src/vite-env.d.ts"]
 }
