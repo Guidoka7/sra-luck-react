@@ -30,7 +30,7 @@ async function assinarPayload(payload: Record<string, unknown>, secret: string):
   return `${payloadStr}.${await hmac(payloadStr, secret)}`;
 }
 
-async function verificarPayload<T extends Record<string, unknown>>(token: string | null | undefined, secret: string, maxAgeSeconds: number): Promise<T | null> {
+async function verificarPayload<T extends object>(token: string | null | undefined, secret: string, maxAgeSeconds: number): Promise<T | null> {
   if (!token) return null;
   const [payloadStr, signature] = token.split(".");
   if (!payloadStr || !signature) return null;
