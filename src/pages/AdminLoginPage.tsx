@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase-vite";
 
 export function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -8,9 +7,12 @@ export function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.replace("/admin/visao-geral");
-    });
+    fetch("/api/admin/session", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (response.ok && body.autenticado) window.location.replace("/admin/visao-geral");
+      })
+      .catch(() => undefined);
   }, []);
 
   async function entrar(event: React.FormEvent) {
@@ -25,21 +27,10 @@ export function AdminLoginPage() {
         body: JSON.stringify({ email: email.trim(), senha }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body.access_token || !body.refresh_token) {
+      if (!response.ok) {
         setErro(body.erro || "Não foi possível entrar no painel administrativo.");
         return;
       }
-
-      const { error } = await supabase.auth.setSession({
-        access_token: body.access_token,
-        refresh_token: body.refresh_token,
-      });
-      if (error) {
-        console.error("Falha ao criar sessão administrativa no navegador:", error);
-        setErro("Não foi possível iniciar a sessão administrativa. Tente novamente.");
-        return;
-      }
-
       window.location.replace("/admin/visao-geral");
     } catch (error) {
       console.error("Falha no login administrativo:", error);
