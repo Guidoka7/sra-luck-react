@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "notificacoes": "node scripts/notificacoes-cron.mjs",
     "gerar-vapid": "node scripts/gerar-vapid.mjs"
   },
