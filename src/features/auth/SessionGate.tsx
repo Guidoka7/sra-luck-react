@@ -5,9 +5,17 @@ interface SessionGateProps {
   children: ReactNode;
 }
 
+function previewPermitido(): boolean {
+  const host = window.location.hostname.toLowerCase();
+  return host.endsWith(".vercel.app") || host === "localhost" || host === "127.0.0.1";
+}
+
 export function SessionGate({ audience, children }: SessionGateProps) {
   const [state, setState] = useState<"checking" | "ok" | "denied">("checking");
-  const preview = useMemo(() => new URLSearchParams(window.location.search).get("preview") === "1", []);
+  const preview = useMemo(() => {
+    const solicitado = new URLSearchParams(window.location.search).get("preview") === "1";
+    return solicitado && previewPermitido();
+  }, []);
 
   useEffect(() => {
     if (preview) {
