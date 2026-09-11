@@ -1,7 +1,9 @@
 const COOKIE_NAME = "cliente_session";
 const ADMIN_COOKIE_NAME = "admin_session";
+const STAFF_COOKIE_NAME = "staff_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const ADMIN_MAX_AGE_SECONDS = 60 * 60 * 8;
+const STAFF_MAX_AGE_SECONDS = 60 * 60 * 12;
 
 function base64urlEncode(value: string): string {
   const bytes = new TextEncoder().encode(value);
@@ -60,6 +62,13 @@ export interface AdminSessionPayload {
   iat: number;
 }
 
+export interface StaffSessionPayload {
+  staffId: string;
+  authUserId: string;
+  role: "vendedora" | "sdr" | "financeiro" | "gestao" | "admin";
+  iat: number;
+}
+
 export async function criarTokenSessao(clienteId: string, secret: string): Promise<string> {
   return assinarPayload({ clienteId, iat: Date.now() }, secret);
 }
@@ -76,6 +85,15 @@ export async function criarTokenAdmin(adminId: string, secret: string): Promise<
 export async function verificarTokenAdmin(token: string | null | undefined, secret: string): Promise<AdminSessionPayload | null> {
   const payload = await verificarPayload<AdminSessionPayload>(token, secret, ADMIN_MAX_AGE_SECONDS);
   return payload?.adminId ? payload : null;
+}
+
+export async function criarTokenStaff(staffId: string, authUserId: string, role: StaffSessionPayload["role"], secret: string): Promise<string> {
+  return assinarPayload({ staffId, authUserId, role, iat: Date.now() }, secret);
+}
+
+export async function verificarTokenStaff(token: string | null | undefined, secret: string): Promise<StaffSessionPayload | null> {
+  const payload = await verificarPayload<StaffSessionPayload>(token, secret, STAFF_MAX_AGE_SECONDS);
+  return payload?.staffId && payload?.authUserId && payload?.role ? payload : null;
 }
 
 export function getCookie(request: Request, name: string): string | null {
@@ -103,4 +121,12 @@ export function clearAdminSessionCookie(secure: boolean): string {
   return `${ADMIN_COOKIE_NAME}=; Max-Age=0; Path=/api/admin; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-export { COOKIE_NAME, ADMIN_COOKIE_NAME, MAX_AGE_SECONDS, ADMIN_MAX_AGE_SECONDS };
+export function setStaffSessionCookie(token: string, secure: boolean): string {
+  return `${STAFF_COOKIE_NAME}=${token}; Max-Age=${STAFF_MAX_AGE_SECONDS}; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export function clearStaffSessionCookie(secure: boolean): string {
+  return `${STAFF_COOKIE_NAME}=; Max-Age=0; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export { COOKIE_NAME, ADMIN_COOKIE_NAME, STAFF_COOKIE_NAME, MAX_AGE_SECONDS, ADMIN_MAX_AGE_SECONDS, STAFF_MAX_AGE_SECONDS };
