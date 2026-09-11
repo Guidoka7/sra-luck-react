@@ -13,11 +13,13 @@ create table if not exists public.financeiro_recebimentos (
   data_pagamento date,
   forma_pagamento text,
   instituicao_conta text,
-  origem text not null check (origem in ('manual', 'comprovante', 'banco', 'mercado_pago', 'conta_azul')),
+  origem text not null check (origem in ('manual', 'comprovante', 'historico', 'banco', 'mercado_pago', 'conta_azul')),
   status_validacao text not null check (status_validacao in ('pendente', 'validado', 'rejeitado')),
   comprovante_url text,
   external_payment_id text,
   external_reference text,
+  origem_boleto text,
+  instituicao_financeira text,
   observacao text,
   motivo_rejeicao text,
   idempotency_key text not null unique,
@@ -36,7 +38,7 @@ create table if not exists public.financeiro_recebimentos (
     status_validacao <> 'validado'
     or (
       data_pagamento is not null
-      and forma_pagamento is not null
+      and (forma_pagamento is not null or origem = 'historico')
       and round(valor_recebido, 2) = round(valor_original + juros + multa - desconto, 2)
       and validado_por is not null
       and validado_em is not null
@@ -58,6 +60,51 @@ create index if not exists idx_financeiro_recebimentos_validacao
 create unique index if not exists uniq_financeiro_recebimento_validado_boleto
   on public.financeiro_recebimentos (boleto_id)
   where status_validacao = 'validado';
+
+-- Compatibilidade historica: boletos ja pagos antes da criacao do ledger.
+-- A leitura dinamica preserva os campos que existem no banco conectado sem
+-- impedir que um ambiente historico sem essas colunas execute a migration.
+-- Este INSERT nao atualiza boletos, portanto nao dispara nova baixa, comissao
+-- ou recalculo de elegibilidade. ON CONFLICT torna o backfill repetivel.
+do $backfill$
+declare
+  v_origem_boleto text := 'null::text';
+  v_instituicao_financeira text := 'null::text';
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'boletos' and column_name = 'origem_boleto'
+  ) then
+    v_origem_boleto := 'b.origem_boleto::text';
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'boletos' and column_name = 'instituicao_financeira'
+  ) then
+    v_instituicao_financeira := 'b.instituicao_financeira::text';
+  end if;
+
+  execute format($sql$
+    insert into public.financeiro_recebimentos (
+      boleto_id, cliente_id, valor_original, juros, multa, desconto, valor_recebido,
+      data_pagamento, forma_pagamento, instituicao_conta, origem, status_validacao,
+      comprovante_url, origem_boleto, instituicao_financeira, idempotency_key,
+      criado_por, validado_por, validado_em
+    )
+    select
+      b.id, b.cliente_id, b.valor, 0, 0, 0, b.valor,
+      b.data_pagamento, null, %2$s, 'historico', 'validado',
+      b.comprovante_url, %1$s, %2$s,
+      'migration-033:historico-pago:' || b.id::text,
+      'migration:033', 'migration:033', now()
+    from public.boletos b
+    where b.status = 'pago'
+      and b.data_pagamento is not null
+    on conflict do nothing
+  $sql$, v_origem_boleto, v_instituicao_financeira);
+end;
+$backfill$;
 
 create or replace function public.financeiro_set_updated_at()
 returns trigger

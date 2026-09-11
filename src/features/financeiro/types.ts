@@ -65,6 +65,8 @@ export interface Recebimento {
   data_pagamento: string | null;
   forma_pagamento: string | null;
   origem: string;
+  origem_boleto: string | null;
+  instituicao_financeira: string | null;
   status_validacao: string;
   observacao: string | null;
   motivo_rejeicao: string | null;

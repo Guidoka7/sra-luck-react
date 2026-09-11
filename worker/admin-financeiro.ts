@@ -6,7 +6,7 @@ type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
 const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas)";
-const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
+const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,origem_boleto,instituicao_financeira,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -81,8 +81,8 @@ function apresentarRecebivel(boleto: any, recebimento?: any) {
     valorRecebido: recebimento?.status_validacao === "validado" ? dinheiro(recebimento.valor_recebido) : null,
     status: statusCalculado(boleto),
     formaPagamento: recebimento?.forma_pagamento ?? null,
-    origem: recebimento?.origem ?? "interno",
-    instituicaoConta: recebimento?.instituicao_conta ?? null,
+    origem: recebimento?.origem_boleto ?? recebimento?.origem ?? "interno",
+    instituicaoConta: recebimento?.instituicao_financeira ?? recebimento?.instituicao_conta ?? null,
     dataPagamento: recebimento?.data_pagamento ?? boleto.data_pagamento ?? null,
     comprovante: boleto.comprovante_url ?? recebimento?.comprovante_url ?? null,
     externalId: recebimento?.external_payment_id ?? null,
