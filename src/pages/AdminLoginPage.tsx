@@ -29,12 +29,12 @@ export function AdminLoginPage() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.ok) {
-        setErro(body.erro || (isVercelPreview ? "O login real ainda depende do backend Cloudflare. Use o modo de demonstração abaixo." : "Não foi possível entrar no painel administrativo."));
+        setErro(body.erro || "Não foi possível entrar no painel administrativo.");
         return;
       }
       window.location.replace("/admin/visao-geral");
     } catch {
-      setErro(isVercelPreview ? "O login real ainda depende do backend Cloudflare. Use o modo de demonstração abaixo." : "Não foi possível conectar ao servidor. Tente novamente.");
+      setErro("Não foi possível conectar ao servidor. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -64,8 +64,8 @@ export function AdminLoginPage() {
         </form>
         {isVercelPreview && (
           <div className="mt-6 border-t border-rose/15 pt-5 text-center">
-            <p className="mb-3 text-xs leading-5 text-clay/55">Ambiente de demonstração: navegue pelo novo painel sem autenticação real.</p>
-            <a href="/admin/visao-geral?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Testar painel admin</a>
+            <p className="mb-3 text-xs leading-5 text-clay/55">Quer apenas conferir o visual do painel sem usar uma conta administrativa?</p>
+            <a href="/admin/visao-geral?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Abrir demonstração</a>
           </div>
         )}
       </section>
