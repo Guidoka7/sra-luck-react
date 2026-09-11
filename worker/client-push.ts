@@ -70,6 +70,19 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
     }
 
     const db = createServiceSupabaseClient(env);
+    const { data: existente, error: erroConsulta } = await db
+      .from("web_push_subscriptions")
+      .select("cliente_id")
+      .eq("endpoint", endpoint)
+      .maybeSingle();
+    if (erroConsulta) {
+      console.error("Falha ao validar assinatura push existente:", erroConsulta);
+      return json({ erro: "Não foi possível validar este dispositivo." }, 500);
+    }
+    if (existente && existente.cliente_id !== client) {
+      return json({ erro: "Este dispositivo já possui uma assinatura vinculada." }, 409);
+    }
+
     const { error } = await db.from("web_push_subscriptions").upsert({
       cliente_id: client,
       endpoint,
