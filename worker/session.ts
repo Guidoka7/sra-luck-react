@@ -52,16 +52,8 @@ async function verificarPayload<T extends object>(token: string | null | undefin
   }
 }
 
-export interface ClienteSessionPayload {
-  clienteId: string;
-  iat: number;
-}
-
-export interface AdminSessionPayload {
-  adminId: string;
-  iat: number;
-}
-
+export interface ClienteSessionPayload { clienteId: string; iat: number; }
+export interface AdminSessionPayload { adminId: string; iat: number; }
 export interface StaffSessionPayload {
   staffId: string;
   authUserId: string;
@@ -69,32 +61,12 @@ export interface StaffSessionPayload {
   iat: number;
 }
 
-export async function criarTokenSessao(clienteId: string, secret: string): Promise<string> {
-  return assinarPayload({ clienteId, iat: Date.now() }, secret);
-}
-
-export async function verificarTokenSessao(token: string | null | undefined, secret: string): Promise<ClienteSessionPayload | null> {
-  const payload = await verificarPayload<ClienteSessionPayload>(token, secret, MAX_AGE_SECONDS);
-  return payload?.clienteId ? payload : null;
-}
-
-export async function criarTokenAdmin(adminId: string, secret: string): Promise<string> {
-  return assinarPayload({ adminId, iat: Date.now() }, secret);
-}
-
-export async function verificarTokenAdmin(token: string | null | undefined, secret: string): Promise<AdminSessionPayload | null> {
-  const payload = await verificarPayload<AdminSessionPayload>(token, secret, ADMIN_MAX_AGE_SECONDS);
-  return payload?.adminId ? payload : null;
-}
-
-export async function criarTokenStaff(staffId: string, authUserId: string, role: StaffSessionPayload["role"], secret: string): Promise<string> {
-  return assinarPayload({ staffId, authUserId, role, iat: Date.now() }, secret);
-}
-
-export async function verificarTokenStaff(token: string | null | undefined, secret: string): Promise<StaffSessionPayload | null> {
-  const payload = await verificarPayload<StaffSessionPayload>(token, secret, STAFF_MAX_AGE_SECONDS);
-  return payload?.staffId && payload?.authUserId && payload?.role ? payload : null;
-}
+export async function criarTokenSessao(clienteId: string, secret: string): Promise<string> { return assinarPayload({ clienteId, iat: Date.now() }, secret); }
+export async function verificarTokenSessao(token: string | null | undefined, secret: string): Promise<ClienteSessionPayload | null> { const payload = await verificarPayload<ClienteSessionPayload>(token, secret, MAX_AGE_SECONDS); return payload?.clienteId ? payload : null; }
+export async function criarTokenAdmin(adminId: string, secret: string): Promise<string> { return assinarPayload({ adminId, iat: Date.now() }, secret); }
+export async function verificarTokenAdmin(token: string | null | undefined, secret: string): Promise<AdminSessionPayload | null> { const payload = await verificarPayload<AdminSessionPayload>(token, secret, ADMIN_MAX_AGE_SECONDS); return payload?.adminId ? payload : null; }
+export async function criarTokenStaff(staffId: string, authUserId: string, role: StaffSessionPayload["role"], secret: string): Promise<string> { return assinarPayload({ staffId, authUserId, role, iat: Date.now() }, secret); }
+export async function verificarTokenStaff(token: string | null | undefined, secret: string): Promise<StaffSessionPayload | null> { const payload = await verificarPayload<StaffSessionPayload>(token, secret, STAFF_MAX_AGE_SECONDS); return payload?.staffId && payload?.authUserId && payload?.role ? payload : null; }
 
 export function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get("Cookie") || "";
@@ -105,28 +77,11 @@ export function getCookie(request: Request, name: string): string | null {
   return null;
 }
 
-export function setSessionCookie(token: string, secure: boolean): string {
-  return `${COOKIE_NAME}=${token}; Max-Age=${MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-export function clearSessionCookie(secure: boolean): string {
-  return `${COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-export function setAdminSessionCookie(token: string, secure: boolean): string {
-  return `${ADMIN_COOKIE_NAME}=${token}; Max-Age=${ADMIN_MAX_AGE_SECONDS}; Path=/api/admin; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-export function clearAdminSessionCookie(secure: boolean): string {
-  return `${ADMIN_COOKIE_NAME}=; Max-Age=0; Path=/api/admin; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-export function setStaffSessionCookie(token: string, secure: boolean): string {
-  return `${STAFF_COOKIE_NAME}=${token}; Max-Age=${STAFF_MAX_AGE_SECONDS}; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-export function clearStaffSessionCookie(secure: boolean): string {
-  return `${STAFF_COOKIE_NAME}=; Max-Age=0; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
+export function setSessionCookie(token: string, secure: boolean): string { return `${COOKIE_NAME}=${token}; Max-Age=${MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
+export function clearSessionCookie(secure: boolean): string { return `${COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
+export function setAdminSessionCookie(token: string, secure: boolean): string { return `${ADMIN_COOKIE_NAME}=${token}; Max-Age=${ADMIN_MAX_AGE_SECONDS}; Path=/api; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
+export function clearAdminSessionCookie(secure: boolean): string { return `${ADMIN_COOKIE_NAME}=; Max-Age=0; Path=/api; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
+export function setStaffSessionCookie(token: string, secure: boolean): string { return `${STAFF_COOKIE_NAME}=${token}; Max-Age=${STAFF_MAX_AGE_SECONDS}; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
+export function clearStaffSessionCookie(secure: boolean): string { return `${STAFF_COOKIE_NAME}=; Max-Age=0; Path=/api/equipe; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`; }
 
 export { COOKIE_NAME, ADMIN_COOKIE_NAME, STAFF_COOKIE_NAME, MAX_AGE_SECONDS, ADMIN_MAX_AGE_SECONDS, STAFF_MAX_AGE_SECONDS };
