@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, Users } from "lucide-react";
+import { requestJson } from "../../lib/http";
 import "../../styles/staff-pwa.css";
 import "../../styles/staff-login.css";
 
@@ -14,14 +15,10 @@ export function StaffLoginPage() {
     setErro(null);
     setLoading(true);
     try {
-      const response = await fetch("/api/equipe/auth", {
+      await requestJson<{ ok?: boolean }>("/api/equipe/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ email, senha }),
-      });
-      const data = await response.json().catch(() => ({})) as { erro?: string };
-      if (!response.ok) throw new Error(data.erro || "Não foi possível entrar.");
+        body: JSON.stringify({ email: email.trim(), senha }),
+      }, { timeoutMs: 10_000 });
       window.location.href = "/equipe";
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível entrar.");
@@ -38,8 +35,8 @@ export function StaffLoginPage() {
         <h1>Portal da equipe</h1>
         <p>Acesse seus treinamentos, metas, comissões e informações da sua função.</p>
         <form onSubmit={submit}>
-          <label><span><Mail size={15}/>E-mail corporativo</span><input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} autoComplete="email" required /></label>
-          <label><span><LockKeyhole size={15}/>Senha</span><input type="password" value={senha} onChange={(e)=>setSenha(e.target.value)} autoComplete="current-password" required /></label>
+          <label><span><Mail size={15}/>E-mail corporativo</span><input type="email" maxLength={320} value={email} onChange={(e)=>setEmail(e.target.value)} autoComplete="email" required /></label>
+          <label><span><LockKeyhole size={15}/>Senha</span><input type="password" maxLength={1024} value={senha} onChange={(e)=>setSenha(e.target.value)} autoComplete="current-password" required /></label>
           {erro && <div className="st-login-error">{erro}</div>}
           <button type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar no portal"}</button>
         </form>
