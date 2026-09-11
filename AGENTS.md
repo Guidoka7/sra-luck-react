@@ -2,6 +2,10 @@
 
 Este arquivo é o contrato operacional para qualquer IA ou engenheiro que altere este repositório.
 
+## Branch de trabalho
+
+A partir de 11/09/2026, `develop` é a base de desenvolvimento e testes aprovada pelo responsável pelo projeto. Iniciar novas alterações a partir dela e entregar as atualizações nela. Não atualizar `main` nem promover para produção sem autorização explícita. A antiga `develop` está preservada em `backup/develop-before-dashboard-20260911`.
+
 ## 1. Missão do projeto
 
 `sra-luck-react` é o produto oficial em evolução da Sra. Luck. A arquitetura alvo é **React + Vite no frontend, Cloudflare Workers no backend e Supabase para dados/serviços persistentes**.
@@ -37,7 +41,7 @@ A prioridade para decisões é:
 2. princípios de produto e experiência em `docs/PRODUCT-PRINCIPLES.md`;
 3. fluxo evolutivo aprovado em `docs/EVOLUTION-ROADMAP.md` e `docs/FLOWS.md`;
 4. comportamento comprovado no `sra-luck-pwa/main` para funções existentes;
-5. implementação ativa do `sra-luck-react/main`;
+5. implementação consolidada do `sra-luck-react/develop`;
 6. documentação técnica complementar.
 
 Quando uma regra nova contradizer o PWA, a regra nova documentada vence. O PWA continua sendo referência de comportamento para tudo que não foi explicitamente substituído.
