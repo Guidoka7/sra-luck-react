@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "../../lib/api";
-import { CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, FileText, Gift, Home, Paperclip, ReceiptText, Sparkles, Star, UserRound, WalletCards } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, CreditCard, FileText, Gift, Home, Paperclip, ReceiptText, Sparkles, Star, UserRound, WalletCards } from "lucide-react";
 import { perks } from "../credit-ops/sample-data";
 import "../../styles/client-credit.css";
 
