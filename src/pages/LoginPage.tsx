@@ -11,6 +11,7 @@ export function LoginPage() {
   const [nascimento, setNascimento] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const isVercelPreview = window.location.hostname.toLowerCase().endsWith(".vercel.app");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -44,6 +45,12 @@ export function LoginPage() {
             {erro && <div role="alert" className="rounded-2xl border border-alert/20 bg-alert/5 px-4 py-3 text-sm text-alert">{erro}</div>}
             <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">{loading ? "Entrando…" : "Entrar"}</button>
           </form>
+          {isVercelPreview && (
+            <div className="mt-6 border-t border-rose/15 pt-5 text-center">
+              <p className="mb-3 text-xs leading-5 text-clay/55">Ambiente de demonstração: o backend ainda não está conectado à Vercel.</p>
+              <a href="/agenda?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Testar o app sem login</a>
+            </div>
+          )}
         </section>
         <p className="mt-6 text-center text-xs text-clay/40">Seus dados de acesso foram cadastrados pela nossa equipe.<br />Em caso de dúvida, fale conosco.</p>
       </div>
