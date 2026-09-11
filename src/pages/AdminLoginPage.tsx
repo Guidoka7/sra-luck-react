@@ -5,6 +5,7 @@ export function AdminLoginPage() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
+  const isVercelPreview = window.location.hostname.toLowerCase().endsWith(".vercel.app");
 
   useEffect(() => {
     fetch("/api/admin/session", { credentials: "same-origin", cache: "no-store" })
@@ -27,14 +28,13 @@ export function AdminLoginPage() {
         body: JSON.stringify({ email: email.trim(), senha }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setErro(body.erro || "Não foi possível entrar no painel administrativo.");
+      if (!response.ok || !body?.ok) {
+        setErro(body.erro || (isVercelPreview ? "O login real ainda depende do backend Cloudflare. Use o modo de demonstração abaixo." : "Não foi possível entrar no painel administrativo."));
         return;
       }
       window.location.replace("/admin/visao-geral");
-    } catch (error) {
-      console.error("Falha no login administrativo:", error);
-      setErro("Não foi possível conectar ao servidor. Tente novamente.");
+    } catch {
+      setErro(isVercelPreview ? "O login real ainda depende do backend Cloudflare. Use o modo de demonstração abaixo." : "Não foi possível conectar ao servidor. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -62,6 +62,12 @@ export function AdminLoginPage() {
             {loading ? "Entrando…" : "Entrar"}
           </button>
         </form>
+        {isVercelPreview && (
+          <div className="mt-6 border-t border-rose/15 pt-5 text-center">
+            <p className="mb-3 text-xs leading-5 text-clay/55">Ambiente de demonstração: navegue pelo novo painel sem autenticação real.</p>
+            <a href="/admin/visao-geral?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Testar painel admin</a>
+          </div>
+        )}
       </section>
     </main>
   );
