@@ -69,5 +69,5 @@ export async function requireStaff(request: Request, env: Env): Promise<AuthResu
   if (!key) return { ok: false, response: json({ erro: "Serviço de autenticação indisponível." }, 503) };
   const session = await verificarTokenStaff(getCookie(request, "staff_session"), key);
   if (!session) return { ok: false, response: json({ erro: "Sua sessão da equipe expirou. Entre novamente." }, 401) };
-  return { ok: true, actor: { type: "equipe", id: session.staffId, role: session.perfil } };
+  return { ok: true, actor: { type: "equipe", id: session.staffId, role: session.role } };
 }
