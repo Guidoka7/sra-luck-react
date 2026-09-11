@@ -13,7 +13,8 @@ Use esta ordem para entender o projeto.
 7. [`MIGRATION-MAP.md`](./MIGRATION-MAP.md) — migração PWA → React/Worker.
 8. [`EVOLUTION-ROADMAP.md`](./EVOLUTION-ROADMAP.md) — evolução até o MVP.
 9. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — estado arquitetural detalhado e riscos.
-10. [`AUDIT-PWA-REACT-2026-09-11.md`](./AUDIT-PWA-REACT-2026-09-11.md) — auditoria inicial de equivalência, regressões e riscos P0–P3.
+10. [`FINANCEIRO-UNIFICADO.md`](./FINANCEIRO-UNIFICADO.md) — especificação da nova central financeira, migração de Pagamentos/Parcelas e preparação para bancos, RD Station, Conta Azul e Mercado Pago.
+11. [`AUDIT-PWA-REACT-2026-09-11.md`](./AUDIT-PWA-REACT-2026-09-11.md) — auditoria inicial de equivalência, regressões e riscos P0–P3.
 
 ## Codex
 
