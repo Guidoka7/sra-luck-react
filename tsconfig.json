@@ -18,7 +18,10 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "next/navigation": ["src/shims/next-navigation.ts"],
+      "next/link": ["src/shims/next-link.tsx"],
+      "next/image": ["src/shims/next-image.tsx"]
     }
   },
   "include": ["src/main.tsx", "src/vite-env.d.ts"]
