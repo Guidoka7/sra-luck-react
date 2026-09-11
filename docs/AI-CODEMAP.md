@@ -140,15 +140,17 @@ Manter separado valor base/crédito de receita administrativa.
 
 Procurar:
 
-- páginas de Pagamentos/Financeiro;
+- `src/features/financeiro/` e a rota `/admin/financeiro`;
+- `worker/admin-financeiro.ts` — resumo, recebíveis, validações e baixa manual;
 - `worker/admin-finance.ts`;
 - `worker/admin-parcelas.ts`;
 - `worker/client-boletos.ts`;
-- tabelas/eventos de pagamento;
+- `financeiro_recebimentos` e `boletos`;
 - providers bancários;
 - Conta Azul/Mercado Pago.
 
 Toda baixa precisa de identidade da parcela, origem, idempotência e auditoria.
+As rotas antigas `/admin/pagamentos` e `/admin/parcelas` são apenas redirects para abas do Financeiro Unificado.
 
 ### Agenda e termos
 
