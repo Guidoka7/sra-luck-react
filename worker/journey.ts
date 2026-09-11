@@ -1,6 +1,64 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 
+type CreditStage =
+  | "nova_venda"
+  | "aguardando_conferencia"
+  | "formacao_saldo"
+  | "proxima_meta"
+  | "meta_atingida"
+  | "levantamento_financeiro"
+  | "forma_pagamento_liberada"
+  | "termos_agendados"
+  | "aguardando_quitacao"
+  | "quitado"
+  | "agenda_cirurgica_liberada"
+  | "cirurgia_agendada"
+  | "concluido"
+  | "cancelado";
+
+interface ContractRow {
+  id: string;
+  cliente_id: string;
+  valor_contrato: number | string | null;
+  percentual_minimo: number | string;
+  etapa: CreditStage;
+  data_atingiu_percentual?: string | null;
+  agenda_cirurgica_liberar_em?: string | null;
+  formas_quitacao_disponiveis?: string[] | null;
+  quitado_em?: string | null;
+  [key: string]: unknown;
+}
+
+interface InstallmentRow {
+  id: string;
+  status: string;
+  valor: number | string | null;
+  valor_recebido?: number | string | null;
+  data_vencimento?: string | null;
+  numero_parcela: number;
+  total_parcelas?: number | null;
+  boleto_url?: string | null;
+  comprovante_url?: string | null;
+  banco_emissor?: string | null;
+}
+
+interface AgendaWindowRow {
+  id: string;
+  tipo: "termos" | "cirurgia";
+  data: string;
+  horario_inicio: string;
+  horario_fim?: string | null;
+  vagas: number;
+  status: string;
+  observacao?: string | null;
+  [key: string]: unknown;
+}
+
+interface AgendaBookingRow {
+  janela_id: string;
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -9,13 +67,25 @@ function json(data: unknown, status = 200) {
 }
 
 async function parseBody(request: Request): Promise<Record<string, unknown>> {
-  try { return await request.json(); } catch { return {}; }
+  try {
+    return await request.json() as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
   if (!origin) return true;
-  try { return origin === new URL(request.url).origin; } catch { return false; }
+  try {
+    return origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 async function adminId(request: Request, env: Env) {
@@ -30,7 +100,7 @@ async function clientId(request: Request, env: Env) {
   return session?.clienteId ?? null;
 }
 
-async function activeContract(db: ReturnType<typeof createServiceSupabaseClient>, clienteId: string) {
+async function activeContract(db: ReturnType<typeof createServiceSupabaseClient>, clienteId: string): Promise<ContractRow | null> {
   const { data, error } = await db
     .from("contratos_credito")
     .select("*")
@@ -40,22 +110,48 @@ async function activeContract(db: ReturnType<typeof createServiceSupabaseClient>
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return data ? data as unknown as ContractRow : null;
 }
 
-async function financialProgress(db: ReturnType<typeof createServiceSupabaseClient>, contract: any) {
-  const { data: parcelas, error } = await db
+async function financialProgress(db: ReturnType<typeof createServiceSupabaseClient>, contract: ContractRow) {
+  const { data, error } = await db
     .from("boletos")
     .select("id,status,valor,valor_recebido,data_vencimento,numero_parcela,total_parcelas,boleto_url,comprovante_url,banco_emissor")
     .eq("contrato_credito_id", contract.id)
     .order("numero_parcela");
   if (error) throw error;
-  const paid = (parcelas ?? [])
-    .filter((p: any) => p.status === "pago")
-    .reduce((sum: number, p: any) => sum + Number(p.valor_recebido ?? p.valor ?? 0), 0);
+
+  const parcelas = (data ?? []) as unknown as InstallmentRow[];
+  const parcelasPagas = parcelas.filter((parcela) => parcela.status === "pago");
+  const paid = parcelasPagas.reduce(
+    (sum, parcela) => sum + Number(parcela.valor_recebido ?? parcela.valor ?? 0),
+    0,
+  );
   const total = Number(contract.valor_contrato ?? 0);
-  const percent = total > 0 ? Math.round((paid / total) * 10000) / 100 : 0;
-  return { parcelas: parcelas ?? [], paid, total, percent, remaining: Math.max(0, total - paid) };
+  const totalInstallments = parcelas.reduce(
+    (maior, parcela) => Math.max(maior, Number(parcela.total_parcelas ?? 0)),
+    parcelas.length,
+  );
+  const paidInstallments = parcelasPagas.length;
+  const percent = totalInstallments > 0
+    ? Math.round((paidInstallments / totalInstallments) * 1000) / 10
+    : 0;
+  const threshold = Number(contract.percentual_minimo ?? 60);
+  const requiredInstallments = totalInstallments > 0
+    ? Math.ceil((totalInstallments * threshold) / 100)
+    : 0;
+
+  return {
+    parcelas,
+    paid,
+    total,
+    percent,
+    remaining: Math.max(0, total - paid),
+    paidInstallments,
+    totalInstallments,
+    remainingInstallments: Math.max(0, totalInstallments - paidInstallments),
+    requiredInstallments,
+  };
 }
 
 export async function journeyApi(request: Request, env: Env): Promise<Response | null> {
@@ -137,9 +233,10 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       const signedAt = typeof b.assinadoEm === "string" ? b.assinadoEm : new Date().toISOString();
       const { data: current, error: currentError } = await db.from("contratos_credito").select("quitado_em").eq("id", contractId).single();
       if (currentError) return json({ erro: currentError.message }, 404);
+      const currentContract = current as unknown as Pick<ContractRow, "quitado_em"> | null;
       const { data, error } = await db.from("contratos_credito").update({
         termos_assinados_em: signedAt,
-        etapa: current?.quitado_em ? "quitado" : "aguardando_quitacao",
+        etapa: currentContract?.quitado_em ? "quitado" : "aguardando_quitacao",
         updated_at: new Date().toISOString(),
       }).eq("id", contractId).select("*").single();
       if (error) return json({ erro: error.message }, 400);
@@ -175,30 +272,55 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
     const clienteId = await clientId(request, env);
     if (!clienteId) return json({ erro: "Sessão expirada." }, 401);
     const db = createServiceSupabaseClient(env);
-    let contract: any;
-    try { contract = await activeContract(db, clienteId); } catch (error: any) { return json({ erro: error?.message ?? "Erro ao buscar contrato." }, 500); }
+    let contract: ContractRow | null;
+    try {
+      contract = await activeContract(db, clienteId);
+    } catch (error: unknown) {
+      return json({ erro: errorMessage(error, "Erro ao buscar contrato.") }, 500);
+    }
     if (!contract) return json({ contrato: null }, 404);
 
     if (path === "/api/cliente/journey" && request.method === "GET") {
       const today = new Date().toISOString().slice(0, 10);
       if (contract.etapa === "quitado" && contract.agenda_cirurgica_liberar_em && contract.agenda_cirurgica_liberar_em <= today) {
         const { data: refreshed } = await db.from("contratos_credito").update({ etapa: "agenda_cirurgica_liberada", updated_at: new Date().toISOString() }).eq("id", contract.id).select("*").single();
-        if (refreshed) contract = refreshed;
+        if (refreshed) contract = refreshed as unknown as ContractRow;
       }
       try {
         const progress = await financialProgress(db, contract);
+        const thresholdReached = progress.totalInstallments > 0 && progress.percent + 0.0001 >= Number(contract.percentual_minimo);
+        if (thresholdReached && ["formacao_saldo", "proxima_meta"].includes(contract.etapa)) {
+          const { data: promoted, error: promoteError } = await db.from("contratos_credito").update({
+            etapa: "meta_atingida",
+            data_atingiu_percentual: contract.data_atingiu_percentual || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", contract.id).select("*").single();
+          if (!promoteError && promoted) contract = promoted as unknown as ContractRow;
+        }
         return json({ contrato: contract, ...progress });
-      } catch (error: any) { return json({ erro: error?.message ?? "Erro ao calcular progresso." }, 500); }
+      } catch (error: unknown) {
+        return json({ erro: errorMessage(error, "Erro ao calcular progresso.") }, 500);
+      }
     }
 
     if (path === "/api/cliente/journey/request-terms" && request.method === "POST") {
-      let progress;
-      try { progress = await financialProgress(db, contract); } catch (error: any) { return json({ erro: error?.message ?? "Erro ao calcular progresso." }, 500); }
-      if (progress.percent + 0.0001 < Number(contract.percentual_minimo)) {
-        return json({ erro: `O percentual mínimo de ${contract.percentual_minimo}% ainda não foi atingido.` }, 409);
+      let progress: Awaited<ReturnType<typeof financialProgress>>;
+      try {
+        progress = await financialProgress(db, contract);
+      } catch (error: unknown) {
+        return json({ erro: errorMessage(error, "Erro ao calcular progresso.") }, 500);
+      }
+      if (progress.totalInstallments <= 0 || progress.percent + 0.0001 < Number(contract.percentual_minimo)) {
+        return json({
+          erro: `O percentual mínimo de ${contract.percentual_minimo}% das parcelas ainda não foi atingido.`,
+          parcelasPagas: progress.paidInstallments,
+          parcelasNecessarias: progress.requiredInstallments,
+          totalParcelas: progress.totalInstallments,
+        }, 409);
       }
       const today = new Date().toISOString().slice(0, 10);
-      const { data: deadlineData } = await db.rpc("adicionar_dias_uteis", { p_data: today, p_dias: 5 });
+      const { data: deadlineData, error: deadlineError } = await db.rpc("adicionar_dias_uteis", { p_data: today, p_dias: 5 });
+      if (deadlineError) return json({ erro: "Não foi possível calcular o prazo do levantamento financeiro." }, 500);
       const { data, error } = await db.from("contratos_credito").update({
         etapa: "levantamento_financeiro",
         data_atingiu_percentual: contract.data_atingiu_percentual || new Date().toISOString(),
@@ -235,13 +357,22 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
           return json({ janelas: [], bloqueado: true, liberarEm: contract.agenda_cirurgica_liberar_em ?? null });
         }
       }
-      const { data: windows, error } = await db.from("agenda_janelas").select("*").eq("tipo", tipo).eq("status", "disponivel").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
+      const { data: windowsData, error } = await db.from("agenda_janelas").select("*").eq("tipo", tipo).eq("status", "disponivel").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
       if (error) return json({ erro: error.message }, 500);
-      const ids = (windows ?? []).map((w: any) => w.id);
-      const { data: bookings } = ids.length ? await db.from("agenda_reservas_credito").select("janela_id").in("janela_id", ids).in("status", ["agendado", "confirmado"]) : { data: [] as any[] };
+      const windows = (windowsData ?? []) as unknown as AgendaWindowRow[];
+      const ids = windows.map((window) => window.id);
+      const bookingsResult = ids.length
+        ? await db.from("agenda_reservas_credito").select("janela_id").in("janela_id", ids).in("status", ["agendado", "confirmado"])
+        : { data: [] as AgendaBookingRow[], error: null };
+      if (bookingsResult.error) return json({ erro: "Não foi possível consultar a ocupação da agenda." }, 500);
+      const bookings = (bookingsResult.data ?? []) as unknown as AgendaBookingRow[];
       const count = new Map<string, number>();
-      for (const booking of bookings ?? []) count.set(booking.janela_id, (count.get(booking.janela_id) ?? 0) + 1);
-      return json({ janelas: (windows ?? []).map((w: any) => ({ ...w, vagasRestantes: Math.max(0, Number(w.vagas) - (count.get(w.id) ?? 0)) })).filter((w: any) => w.vagasRestantes > 0) });
+      for (const booking of bookings) count.set(booking.janela_id, (count.get(booking.janela_id) ?? 0) + 1);
+      return json({
+        janelas: windows
+          .map((window) => ({ ...window, vagasRestantes: Math.max(0, Number(window.vagas) - (count.get(window.id) ?? 0)) }))
+          .filter((window) => window.vagasRestantes > 0),
+      });
     }
 
     if (path === "/api/cliente/journey/schedule" && request.method === "POST") {
