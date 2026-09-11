@@ -1,6 +1,11 @@
 import type { ImgHTMLAttributes } from "react";
 
-type Props = ImgHTMLAttributes<HTMLImageElement> & { src: string | { src: string }; fill?: boolean; priority?: boolean; quality?: number };
+type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
+  src: string | { src: string };
+  fill?: boolean;
+  priority?: boolean;
+  quality?: number;
+};
 
 export default function Image({ src, fill, priority: _priority, quality: _quality, ...props }: Props) {
   const resolved = typeof src === "string" ? src : src.src;
