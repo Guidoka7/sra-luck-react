@@ -23,8 +23,9 @@ Antes de uma alteração relevante, ler:
 3. [`docs/PWA-FUNCTIONAL-BASELINE.md`](./docs/PWA-FUNCTIONAL-BASELINE.md) — o que o sistema anterior já faz e deve ser preservado/evoluído;
 4. [`docs/FLOWS.md`](./docs/FLOWS.md) — fluxos operacionais ponta a ponta;
 5. [`docs/AI-CODEMAP.md`](./docs/AI-CODEMAP.md) — onde localizar cada domínio no código;
-6. [`docs/EVOLUTION-ROADMAP.md`](./docs/EVOLUTION-ROADMAP.md) — sequência de evolução até MVP;
-7. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — estado arquitetural e riscos conhecidos.
+6. [`docs/MIGRATION-MAP.md`](./docs/MIGRATION-MAP.md) — mapa PWA → React/Worker;
+7. [`docs/EVOLUTION-ROADMAP.md`](./docs/EVOLUTION-ROADMAP.md) — sequência de evolução até MVP;
+8. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — estado arquitetural e riscos conhecidos.
 
 ## Princípio de evolução
 
@@ -41,7 +42,7 @@ validar equivalência
     ↓
 aplicar evolução aprovada
     ↓
-testar + Preview
+validar + Preview
     ↓
 remover legado somente quando seguro
 ```
@@ -57,16 +58,17 @@ Design, backend, fluxos e regras devem permanecer **maleáveis e fáceis de edit
 - A regra antiga de 90 dias após termos é legado quando conflitar com o fluxo novo.
 - Regra atual: após **termos assinados + quitação confirmada**, a agenda cirúrgica é liberada após **5 dias úteis**, de acordo com a política vigente/configurável.
 
-## Comandos principais
+## Comandos principais atuais
 
 ```bash
 npm ci
 npm run dev
 npm run lint
-npm run test
 npm run build
 npm run preview
 ```
+
+O projeto deve ganhar/expandir testes automatizados como parte do hardening; não assumir que um script `npm test` exista sem conferir o `package.json` atual.
 
 Use `npm run deploy` somente no fluxo de deploy explicitamente aprovado.
 
@@ -122,7 +124,7 @@ Uma função operacional não está pronta só porque existe na interface. Confo
 - autenticação/permissão;
 - tratamento de erro;
 - auditoria/idempotência em fluxos críticos;
-- testes adequados;
+- testes adequados ao risco;
 - TypeScript/lint/build verdes;
 - validação em Preview quando houver impacto visual/operacional.
 
