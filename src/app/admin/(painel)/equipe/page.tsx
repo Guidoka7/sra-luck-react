@@ -27,10 +27,6 @@ const CARGOS: Array<{ value: Cargo; label: string; descricao: string }> = [
   { value: "administrativo", label: "Administrativo", descricao: "Acesso administrativo autorizado no servidor." },
 ];
 
-function labelCargo(cargo: Cargo) {
-  return CARGOS.find((item) => item.value === cargo)?.label ?? cargo;
-}
-
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -135,14 +131,14 @@ export default function EquipeAdminPage() {
             <div key={item.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[1.3fr_.8fr_.55fr] lg:items-center">
               <div className="flex min-w-0 items-center gap-3">
                 <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", item.ativo ? "bg-success/10 text-success" : "bg-clay/8 text-clay/35")}>
-                  {item.ativo ? <UserRoundCheck className="h-4.5 w-4.5"/> : <UserRoundX className="h-4.5 w-4.5"/>}
+                  {item.ativo ? <UserRoundCheck className="h-[18px] w-[18px]"/> : <UserRoundX className="h-[18px] w-[18px]"/>}
                 </span>
                 <div className="min-w-0"><p className="truncate text-sm font-semibold text-burgundy dark:text-pearl">{item.nome}</p><p className="truncate text-xs text-clay/50 dark:text-pearl/45">{item.email}</p><div className="mt-1 flex items-center gap-1.5"><span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-label", item.ativo ? "bg-success/8 text-success" : "bg-clay/8 text-clay/40")}>{item.ativo ? "Ativo" : "Desativado"}</span>{item.cargo === "administrativo" && <span className="inline-flex items-center gap-1 rounded-full bg-burgundy/8 px-2 py-0.5 text-[9px] font-bold uppercase tracking-label text-burgundy"><ShieldCheck className="h-3 w-3"/> Admin</span>}</div></div>
               </div>
 
               <div><Label htmlFor={`cargo-${item.id}`}>Cargo</Label><select id={`cargo-${item.id}`} value={item.cargo} disabled={salvando === item.id} onChange={(event) => void atualizar(item.id, { cargo: event.target.value as Cargo })} className="mt-1 h-10 w-full rounded-xl border border-rose/12 bg-white px-3 text-sm text-burgundy outline-none focus:border-burgundy/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-pearl">{CARGOS.map((opcao) => <option key={opcao.value} value={opcao.value}>{opcao.label}</option>)}</select></div>
 
-              <div className="flex lg:justify-end"><Button size="sm" variant={item.ativo ? "secondary" : "default"} loading={salvando === item.id} onClick={() => { const acao = item.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${item.nome}?`)) void atualizar(item.id, { ativo: !item.ativo }); }}>{item.ativo ? "Desativar" : "Ativar"}</Button></div>
+              <div className="flex lg:justify-end"><Button size="sm" variant={item.ativo ? "secondary" : "primary"} loading={salvando === item.id} onClick={() => { const acao = item.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${item.nome}?`)) void atualizar(item.id, { ativo: !item.ativo }); }}>{item.ativo ? "Desativar" : "Ativar"}</Button></div>
             </div>
           ))}
         </div>
