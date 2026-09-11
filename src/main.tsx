@@ -6,6 +6,7 @@ import { AgendaPage } from "./pages/AgendaPage";
 import { AdminCreditOperations } from "./features/credit-ops/AdminCreditOperations";
 import { ClientCreditApp } from "./features/client/ClientCreditApp";
 import { StaffPwa } from "./features/staff/StaffPwa";
+import { StaffLoginPage } from "./features/staff/StaffLoginPage";
 import { SessionGate } from "./features/auth/SessionGate";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
@@ -40,7 +41,8 @@ function App() {
     return <SessionGate audience="cliente"><PwaRegister /><ClientCreditApp /></SessionGate>;
   }
   if (path === "/agenda-legado") return <SessionGate audience="cliente"><PwaRegister /><AgendaPage /></SessionGate>;
-  if (path === "/equipe" || path.startsWith("/equipe/")) return <><PwaRegister /><StaffPwa /></>;
+  if (path === "/equipe/login") return <StaffLoginPage />;
+  if (path === "/equipe" || path.startsWith("/equipe/")) return <SessionGate audience="equipe"><PwaRegister /><StaffPwa /></SessionGate>;
   if (path === "/admin/login") return <AdminLoginPage />;
   if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/")) {
     return <SessionGate audience="admin"><AdminCreditOperations path={path} /></SessionGate>;
