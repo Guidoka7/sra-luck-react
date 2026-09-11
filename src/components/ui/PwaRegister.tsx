@@ -1,14 +1,11 @@
-"use client";
-
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
 
-/** Ativa recursos PWA exclusivamente na área de cliente (/agenda). */
+/** Ativa os recursos PWA nas áreas React de cliente e colaboradores. */
 export function PwaRegister() {
-  const pathname = usePathname();
-
   useEffect(() => {
-    if (!pathname?.startsWith("/agenda")) return;
+    const pathname = window.location.pathname;
+    const areaPwa = pathname.startsWith("/agenda") || pathname.startsWith("/app") || pathname.startsWith("/cliente") || pathname.startsWith("/equipe");
+    if (!areaPwa) return;
 
     let manifestLink = document.querySelector<HTMLLinkElement>('link[data-sra-luck-client-manifest="true"]');
     if (!manifestLink) {
@@ -23,20 +20,17 @@ export function PwaRegister() {
     if (!appleTitle) {
       appleTitle = document.createElement("meta");
       appleTitle.name = "apple-mobile-web-app-title";
-      appleTitle.content = "Sra. Luck";
+      appleTitle.content = pathname.startsWith("/equipe") ? "Sra. Luck Equipe" : "Sra. Luck";
       appleTitle.dataset.sraLuckClientPwa = "title";
       document.head.appendChild(appleTitle);
     }
 
     if (!("serviceWorker" in navigator)) return;
-
     let ativo = true;
-    const avisar = () => {
-      if (ativo) window.dispatchEvent(new Event("sra-luck-pwa-ready"));
-    };
+    const avisar = () => { if (ativo) window.dispatchEvent(new Event("sra-luck-pwa-ready")); };
 
     navigator.serviceWorker
-      .register("/simulador-iphone-sw.js", { scope: "/agenda", updateViaCache: "none" })
+      .register("/simulador-iphone-sw.js", { scope: "/", updateViaCache: "none" })
       .then(async (registration) => {
         try { await registration.update(); } catch {}
         try { await navigator.serviceWorker.ready; } catch {}
@@ -50,7 +44,7 @@ export function PwaRegister() {
       ativo = false;
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     };
-  }, [pathname]);
+  }, []);
 
   return null;
 }
