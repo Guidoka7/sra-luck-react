@@ -6,12 +6,19 @@ Use esta ordem para entender o projeto.
 
 1. [`../AGENTS.md`](../AGENTS.md) — contrato de engenharia e regras para IA.
 2. [`BUSINESS-RULES.md`](./BUSINESS-RULES.md) — regras de negócio atuais.
-3. [`PWA-FUNCTIONAL-BASELINE.md`](./PWA-FUNCTIONAL-BASELINE.md) — funcionalidades do sistema anterior que servem de baseline.
-4. [`FLOWS.md`](./FLOWS.md) — fluxos ponta a ponta.
-5. [`AI-CODEMAP.md`](./AI-CODEMAP.md) — onde localizar cada parte do código.
-6. [`MIGRATION-MAP.md`](./MIGRATION-MAP.md) — migração PWA → React/Worker.
-7. [`EVOLUTION-ROADMAP.md`](./EVOLUTION-ROADMAP.md) — evolução até o MVP.
-8. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — estado arquitetural detalhado e riscos.
+3. [`PRODUCT-PRINCIPLES.md`](./PRODUCT-PRINCIPLES.md) — identidade, UX e padrão visual/operacional.
+4. [`PWA-FUNCTIONAL-BASELINE.md`](./PWA-FUNCTIONAL-BASELINE.md) — funcionalidades do sistema anterior que servem de baseline.
+5. [`FLOWS.md`](./FLOWS.md) — fluxos ponta a ponta.
+6. [`AI-CODEMAP.md`](./AI-CODEMAP.md) — onde localizar cada parte do código.
+7. [`MIGRATION-MAP.md`](./MIGRATION-MAP.md) — migração PWA → React/Worker.
+8. [`EVOLUTION-ROADMAP.md`](./EVOLUTION-ROADMAP.md) — evolução até o MVP.
+9. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — estado arquitetural detalhado e riscos.
+
+## Codex
+
+- [`CODEX-BOOTSTRAP-PROMPT.md`](./CODEX-BOOTSTRAP-PROMPT.md) — primeira instrução recomendada para o Codex auditar e assumir o projeto sem criar funções superficiais.
+
+Depois da auditoria inicial, cada tarefa do Codex deve partir de uma especificação coerente de frontend + backend + banco + critérios de aceitação.
 
 ## Documentos complementares existentes
 
@@ -23,6 +30,8 @@ Use esta ordem para entender o projeto.
 ## Regra de atualização
 
 Mudou regra de negócio? Atualize `BUSINESS-RULES.md`.
+
+Mudou padrão visual/experiência? Atualize `PRODUCT-PRINCIPLES.md`.
 
 Mudou fluxo? Atualize `FLOWS.md`.
 
