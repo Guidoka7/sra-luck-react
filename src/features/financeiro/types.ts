@@ -32,6 +32,7 @@ export interface Recebivel {
   clienteId: string;
   cliente: string;
   cpf: string | null;
+  vendedora: string | null;
   numeroParcela: number;
   totalParcelas: number;
   vencimento: string | null;
