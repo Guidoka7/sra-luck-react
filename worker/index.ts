@@ -4,6 +4,7 @@ import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
 import { agenda, agendar, agendarCirurgia, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
+import { clientPushApi } from "./client-push";
 import { adminVisaoGeral } from "./admin-visao-geral";
 import { adminApi } from "./admin-api";
 import { adminParcelas } from "./admin-parcelas";
@@ -245,6 +246,8 @@ export default {
       });
     }
 
+    const push = await clientPushApi(request, env);
+    if (push) return push;
     const integrations = await integrationsApi(request, env);
     if (integrations) return integrations;
     const staff = await staffApi(request, env);

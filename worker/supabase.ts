@@ -5,6 +5,12 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   CLIENTE_SESSION_SECRET?: string;
 
+  // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
+  // permanecem exclusivamente no backend quando o envio for ativado futuramente.
+  WEB_PUSH_VAPID_PUBLIC_KEY?: string;
+  WEB_PUSH_VAPID_PRIVATE_KEY?: string;
+  WEB_PUSH_VAPID_SUBJECT?: string;
+
   // Integrações — manter exclusivamente como secrets/vars do Worker.
   RD_WEBHOOK_SECRET?: string;
   RD_API_ACCESS_TOKEN?: string;
