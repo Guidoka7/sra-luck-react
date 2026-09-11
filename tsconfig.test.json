@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noEmit": false,
+    "outDir": ".test-build",
+    "rootDir": ".",
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": [
+    "worker/providers/**/*.ts",
+    "worker/middleware/logger.ts",
+    "worker/middleware/retry.ts",
+    "worker/validation.ts",
+    "worker/supabase.ts",
+    "tests/**/*.ts"
+  ]
+}
