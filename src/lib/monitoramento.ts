@@ -16,7 +16,7 @@ let instalado = false;
 let fetchOriginal: typeof window.fetch | null = null;
 const ENDPOINT = "/api/monitoramento/erro";
 const QUEUE_KEY = "sra_luck_monitoramento_pendente";
-const SENSIVE = /cpf|senha|password|token|secret|authorization|cookie|session|payload/i;
+const SENSITIVE = /cpf|senha|password|token|secret|authorization|cookie|session|payload/i;
 
 function normalizarErro(value: unknown) {
   if (value instanceof Error) return { mensagem: value.message || "Erro desconhecido", stack: value.stack };
@@ -26,32 +26,37 @@ function normalizarErro(value: unknown) {
 
 function sanitizarDetalhes(value?: Record<string, unknown>) {
   if (!value) return {};
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !SENSIVE.test(key)).slice(0, 30));
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !SENSITIVE.test(key)).slice(0, 30));
 }
 
 function enfileirar(payload: string) {
   try {
-    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
-    const atualizada = [...fila.slice(-19), JSON.parse(payload)];
+    const parsed: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    const fila = Array.isArray(parsed) ? parsed : [];
+    const atualizada = [...fila.slice(-19), JSON.parse(payload) as unknown];
     localStorage.setItem(QUEUE_KEY, JSON.stringify(atualizada));
-  } catch { /* nunca interromper a aplicação por causa do monitoramento */ }
+  } catch { return; }
 }
 
 async function enviar(payload: string) {
   try {
     if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: "application/json" }))) return true;
-  } catch { /* fallback abaixo */ }
+  } catch { return false; }
   if (!fetchOriginal) return false;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5_000);
   try {
-    const response = await fetchOriginal(ENDPOINT, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+    const response = await fetchOriginal(ENDPOINT, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true, signal: controller.signal });
     return response.ok;
   } catch { return false; }
+  finally { window.clearTimeout(timeout); }
 }
 
 async function reenviarFila() {
   if (typeof window === "undefined") return;
   try {
-    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]") as unknown[];
+    const parsed: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    const fila = Array.isArray(parsed) ? parsed : [];
     if (!fila.length) return;
     const restantes: unknown[] = [];
     for (const item of fila.slice(-20)) {
@@ -60,7 +65,7 @@ async function reenviarFila() {
     }
     if (restantes.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(restantes));
     else localStorage.removeItem(QUEUE_KEY);
-  } catch { /* manter a fila para a próxima oportunidade */ }
+  } catch { return; }
 }
 
 export function registrarErro(evento: EventoErro) {
@@ -81,9 +86,8 @@ export function instalarMonitoramentoGlobal() {
   instalado = true;
   fetchOriginal = window.fetch.bind(window);
   void reenviarFila();
-  const originalConsoleError = console.error;
 
-  const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: "critical", codigo: "GLOBAL_JS_ERROR", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
+  const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error instanceof Error ? event.error.stack : undefined, nivel: "critical", codigo: "GLOBAL_JS_ERROR", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
   const onRejection = (event: PromiseRejectionEvent) => { const erro = normalizarErro(event.reason); registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "UNHANDLED_REJECTION", nivel: "critical" }); };
   const onResourceError = (event: Event) => {
     const target = event.target as HTMLImageElement | HTMLScriptElement | HTMLLinkElement | null;
@@ -92,19 +96,15 @@ export function instalarMonitoramentoGlobal() {
     registrarErro({ mensagem: `Falha ao carregar recurso${source ? `: ${source}` : ""}`, codigo: "RESOURCE_LOAD_ERROR", nivel: "error", detalhes: { tag: target.tagName, recurso: source?.slice(0, 500) } });
   };
 
-  console.error = (...args: unknown[]) => {
-    originalConsoleError(...args);
-    const erro = normalizarErro(args[0]);
-    registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "CONSOLE_ERROR", nivel: "error", detalhes: { argumentos: args.slice(1).map((x) => normalizarErro(x).mensagem).join(" | ").slice(0, 2500) } });
-  };
-
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const original = fetchOriginal;
+    if (!original) throw new Error("Cliente HTTP indisponível.");
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const metodo = init?.method || (input instanceof Request ? input.method : "GET");
-    if (url.includes(ENDPOINT)) return fetchOriginal!(input, init);
+    if (url.includes(ENDPOINT)) return original(input, init);
     const inicio = Date.now();
     try {
-      const response = await fetchOriginal!(input, init);
+      const response = await original(input, init);
       if (!response.ok) registrarErro({ origem: "api", nivel: response.status >= 500 ? "critical" : "error", codigo: "API_HTTP_ERROR", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
       return response;
     } catch (error) {
@@ -117,12 +117,13 @@ export function instalarMonitoramentoGlobal() {
   window.addEventListener("error", onError);
   window.addEventListener("error", onResourceError, true);
   window.addEventListener("unhandledrejection", onRejection);
-  window.addEventListener("online", () => void reenviarFila());
+  const onOnline = () => void reenviarFila();
+  window.addEventListener("online", onOnline);
   return () => {
     window.removeEventListener("error", onError);
     window.removeEventListener("error", onResourceError, true);
     window.removeEventListener("unhandledrejection", onRejection);
-    console.error = originalConsoleError;
+    window.removeEventListener("online", onOnline);
     if (fetchOriginal) window.fetch = fetchOriginal;
     fetchOriginal = null;
     instalado = false;
