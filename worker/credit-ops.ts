@@ -1,6 +1,20 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 
+interface InstallmentSummaryRow {
+  id: string;
+  numero_parcela: number;
+  total_parcelas?: number | null;
+  valor?: number | string | null;
+  status: string;
+  data_vencimento?: string | null;
+  data_pagamento?: string | null;
+  valor_recebido?: number | string | null;
+  comprovante_url?: string | null;
+  boleto_url?: string | null;
+  banco_emissor?: string | null;
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -9,13 +23,21 @@ function json(data: unknown, status = 200) {
 }
 
 async function body(request: Request): Promise<Record<string, unknown>> {
-  try { return await request.json(); } catch { return {}; }
+  try {
+    return await request.json() as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 function mesmaOrigem(request: Request) {
   const origin = request.headers.get("Origin");
   if (!origin) return true;
-  try { return origin === new URL(request.url).origin; } catch { return false; }
+  try {
+    return origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
 }
 
 async function exigirAdmin(request: Request, env: Env) {
@@ -79,11 +101,18 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       const b = await body(request);
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       const map: Record<string, string> = {
-        campanha: "campanha", origem: "origem", modalidade: "modalidade", etapa: "etapa",
-        percentualMinimo: "percentual_minimo", saldoFinalApurado: "saldo_final_apurado",
-        formaQuitacao: "forma_quitacao", pagarNoDiaTermos: "pagar_no_dia_termos",
-        previsaoAtingirPercentual: "previsao_atingir_percentual", termosAssinadosEm: "termos_assinados_em",
-        agendaCirurgicaLiberarEm: "agenda_cirurgica_liberar_em", cirurgiaEm: "cirurgia_em",
+        campanha: "campanha",
+        origem: "origem",
+        modalidade: "modalidade",
+        etapa: "etapa",
+        percentualMinimo: "percentual_minimo",
+        saldoFinalApurado: "saldo_final_apurado",
+        formaQuitacao: "forma_quitacao",
+        pagarNoDiaTermos: "pagar_no_dia_termos",
+        previsaoAtingirPercentual: "previsao_atingir_percentual",
+        termosAssinadosEm: "termos_assinados_em",
+        agendaCirurgicaLiberarEm: "agenda_cirurgica_liberar_em",
+        cirurgiaEm: "cirurgia_em",
       };
       for (const [from, to] of Object.entries(map)) if (b[from] !== undefined) patch[to] = b[from];
       const { data, error } = await db.from("contratos_credito").update(patch).eq("id", decodeURIComponent(contract[1])).select("*").single();
@@ -93,7 +122,8 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
 
     if (path === "/api/admin/credit-ops/finance/daily" && request.method === "GET") {
       const day = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
-      const start = `${day}T00:00:00.000Z`, end = `${day}T23:59:59.999Z`;
+      const start = `${day}T00:00:00.000Z`;
+      const end = `${day}T23:59:59.999Z`;
       const [paid, proofs, overdue, events] = await Promise.all([
         db.from("boletos").select("*, clientes(id,nome_completo)").gte("recebido_em", start).lte("recebido_em", end).order("recebido_em", { ascending: false }),
         db.from("comprovantes_pagamento").select("*, clientes(id,nome_completo), boletos(id,numero_parcela,total_parcelas,valor,banco_emissor)").in("status", ["aguardando_validacao", "em_analise"]).order("created_at", { ascending: false }).limit(200),
@@ -122,8 +152,12 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (path === "/api/admin/credit-ops/rewards" && request.method === "POST") {
       const b = await body(request);
       const { data, error } = await db.from("clube_recompensas").insert({
-        titulo: b.titulo, descricao: b.descricao || null, categoria: b.categoria || null,
-        pontos: Number(b.pontos), estoque: b.estoque === undefined ? null : Number(b.estoque), ativo: b.ativo !== false,
+        titulo: b.titulo,
+        descricao: b.descricao || null,
+        categoria: b.categoria || null,
+        pontos: Number(b.pontos),
+        estoque: b.estoque === undefined ? null : Number(b.estoque),
+        ativo: b.ativo !== false,
       }).select("*").single();
       if (error) return json({ erro: error.message }, 400);
       return json({ recompensa: data }, 201);
@@ -142,8 +176,12 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (path === "/api/admin/credit-ops/team/commission-rules" && request.method === "POST") {
       const b = await body(request);
       const { data, error } = await db.from("comissao_regras").insert({
-        perfil: b.perfil, nome: b.nome, tipo: b.tipo, valor: Number(b.valor),
-        meta_base: b.metaBase === undefined ? null : Number(b.metaBase), configuracao: b.configuracao || {},
+        perfil: b.perfil,
+        nome: b.nome,
+        tipo: b.tipo,
+        valor: Number(b.valor),
+        meta_base: b.metaBase === undefined ? null : Number(b.metaBase),
+        configuracao: b.configuracao || {},
       }).select("*").single();
       if (error) return json({ erro: error.message }, 400);
       return json({ regra: data }, 201);
@@ -152,8 +190,13 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (path === "/api/admin/credit-ops/team/trainings" && request.method === "POST") {
       const b = await body(request);
       const { data, error } = await db.from("treinamentos").insert({
-        titulo: b.titulo, descricao: b.descricao || null, tipo: b.tipo || "texto", conteudo_url: b.conteudoUrl || null,
-        conteudo_texto: b.conteudoTexto || null, perfis: Array.isArray(b.perfis) ? b.perfis : ["todos"], obrigatorio: Boolean(b.obrigatorio),
+        titulo: b.titulo,
+        descricao: b.descricao || null,
+        tipo: b.tipo || "texto",
+        conteudo_url: b.conteudoUrl || null,
+        conteudo_texto: b.conteudoTexto || null,
+        perfis: Array.isArray(b.perfis) ? b.perfis : ["todos"],
+        obrigatorio: Boolean(b.obrigatorio),
       }).select("*").single();
       if (error) return json({ erro: error.message }, 400);
       return json({ treinamento: data }, 201);
@@ -174,10 +217,40 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       const { data: contrato, error } = await db.from("contratos_credito").select("*").eq("cliente_id", clienteId).neq("etapa", "cancelado").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (error) return json({ erro: error.message }, 500);
       if (!contrato) return json({ contrato: null });
-      const { data: parcelas } = await db.from("boletos").select("id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,valor_recebido,comprovante_url,boleto_url,banco_emissor").eq("cliente_id", clienteId).order("numero_parcela");
-      const recebidos = (parcelas ?? []).filter((p: any) => p.status === "pago").reduce((s: number, p: any) => s + Number(p.valor_recebido ?? p.valor ?? 0), 0);
-      const percentual = Number(contrato.valor_contrato) > 0 ? Math.round((recebidos / Number(contrato.valor_contrato)) * 10000) / 100 : 0;
-      return json({ contrato, parcelas: parcelas ?? [], recebido: recebidos, percentual });
+
+      const { data: parcelasData, error: parcelasError } = await db
+        .from("boletos")
+        .select("id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,valor_recebido,comprovante_url,boleto_url,banco_emissor")
+        .eq("cliente_id", clienteId)
+        .order("numero_parcela");
+      if (parcelasError) return json({ erro: parcelasError.message }, 500);
+
+      const parcelas = (parcelasData ?? []) as unknown as InstallmentSummaryRow[];
+      const pagas = parcelas.filter((parcela) => parcela.status === "pago");
+      const recebidos = pagas.reduce((soma, parcela) => soma + Number(parcela.valor_recebido ?? parcela.valor ?? 0), 0);
+      const totalParcelas = parcelas.reduce(
+        (maior, parcela) => Math.max(maior, Number(parcela.total_parcelas ?? 0)),
+        parcelas.length,
+      );
+      const parcelasPagas = pagas.length;
+      const percentual = totalParcelas > 0
+        ? Math.round((parcelasPagas / totalParcelas) * 1000) / 10
+        : 0;
+      const percentualMinimo = Number(contrato.percentual_minimo ?? 60);
+      const parcelasNecessarias = totalParcelas > 0
+        ? Math.ceil((totalParcelas * percentualMinimo) / 100)
+        : 0;
+
+      return json({
+        contrato,
+        parcelas,
+        recebido: recebidos,
+        percentual,
+        parcelasPagas,
+        totalParcelas,
+        parcelasNecessarias,
+        parcelasRestantesParaMeta: Math.max(0, parcelasNecessarias - parcelasPagas),
+      });
     }
 
     if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
@@ -194,7 +267,9 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       const nome = String(b.nome ?? "").trim();
       if (!nome) return json({ erro: "Informe o nome da pessoa indicada." }, 400);
       const { data, error } = await db.from("indicacoes_clientes").insert({
-        indicador_cliente_id: clienteId, nome_indicado: nome, telefone_indicado: b.telefone || null,
+        indicador_cliente_id: clienteId,
+        nome_indicado: nome,
+        telefone_indicado: b.telefone || null,
       }).select("*").single();
       if (error) return json({ erro: error.message }, 400);
       return json({ indicacao: data }, 201);
@@ -210,7 +285,8 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       ]);
       if (rewardError || pointsError) return json({ erro: (rewardError ?? pointsError)?.message }, 500);
       if (!reward) return json({ erro: "Recompensa indisponível." }, 404);
-      const current = Number(points?.saldo ?? 0), cost = Number(reward.pontos);
+      const current = Number(points?.saldo ?? 0);
+      const cost = Number(reward.pontos);
       if (current < cost) return json({ erro: "Saldo de pontos insuficiente." }, 400);
       const next = current - cost;
       const { error: upsertError } = await db.from("cliente_pontos").upsert({ cliente_id: clienteId, saldo: next, updated_at: new Date().toISOString() });
