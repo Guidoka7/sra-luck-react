@@ -4,7 +4,6 @@ import { LoginPage } from "./pages/LoginPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
 import { AgendaPage } from "./pages/AgendaPage";
 import { AdminCreditOperations } from "./features/credit-ops/AdminCreditOperations";
-import { ClientCreditApp } from "./features/client/ClientCreditApp";
 import { StaffPwa } from "./features/staff/StaffPwa";
 import { StaffLoginPage } from "./features/staff/StaffLoginPage";
 import { SessionGate } from "./features/auth/SessionGate";
@@ -37,10 +36,9 @@ function App() {
   }, [path]);
 
   if (path === "/login") return <LoginPage />;
-  if (path === "/agenda" || path === "/app" || path === "/cliente") {
-    return <SessionGate audience="cliente"><PwaRegister /><ClientCreditApp /></SessionGate>;
+  if (path === "/agenda" || path === "/app" || path === "/cliente" || path === "/agenda-legado") {
+    return <SessionGate audience="cliente"><PwaRegister /><AgendaPage /></SessionGate>;
   }
-  if (path === "/agenda-legado") return <SessionGate audience="cliente"><PwaRegister /><AgendaPage /></SessionGate>;
   if (path === "/equipe/login") return <StaffLoginPage />;
   if (path === "/equipe" || path.startsWith("/equipe/")) return <SessionGate audience="equipe"><PwaRegister /><StaffPwa /></SessionGate>;
   if (path === "/admin/login") return <AdminLoginPage />;
