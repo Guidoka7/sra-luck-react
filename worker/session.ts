@@ -65,7 +65,7 @@ export interface AdminSessionPayload {
 export interface StaffSessionPayload {
   staffId: string;
   authUserId: string;
-  role: "vendedora" | "sdr" | "financeiro" | "gestao" | "admin";
+  role: "vendedora" | "sdr" | "financeiro" | "administrativo";
   iat: number;
 }
 
