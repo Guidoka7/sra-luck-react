@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { BirthDatePicker } from "../components/auth/BirthDatePicker";
 import { apiJson } from "../lib/api";
 
 function formatCpf(value: string) {
@@ -40,15 +41,21 @@ export function LoginPage() {
           <h1 className="mb-1 text-center text-2xl text-burgundy">Bem-vinda de volta</h1>
           <p className="mb-7 text-center text-sm leading-6 text-clay/60">Entre com seus dados para ver sua agenda.</p>
           <form onSubmit={submit} className="flex flex-col gap-5">
-            <label className="block"><span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">CPF</span><input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" inputMode="numeric" autoComplete="username" placeholder="000.000.000-00" value={cpf} maxLength={14} onChange={(e) => setCpf(formatCpf(e.target.value))} required /></label>
-            <label className="block"><span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">Data de nascimento</span><input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" type="date" autoComplete="bday" value={nascimento} onChange={(e) => setNascimento(e.target.value)} required /></label>
+            <label className="block">
+              <span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">CPF</span>
+              <input className="w-full rounded-2xl border border-rose/20 bg-white/90 px-4 py-3 text-clay outline-none focus:ring-4 focus:ring-rose/12" inputMode="numeric" autoComplete="username" placeholder="000.000.000-00" value={cpf} maxLength={14} onChange={(e) => setCpf(formatCpf(e.target.value))} required />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-[0.68rem] uppercase tracking-label text-burgundy/62">Data de nascimento</span>
+              <BirthDatePicker value={nascimento} onChange={setNascimento} required />
+            </label>
             {erro && <div role="alert" className="rounded-2xl border border-alert/20 bg-alert/5 px-4 py-3 text-sm text-alert">{erro}</div>}
-            <button disabled={loading} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">{loading ? "Entrando…" : "Entrar"}</button>
+            <button disabled={loading || !nascimento} className="mt-2 inline-flex items-center justify-center rounded-full bg-burgundy px-6 py-3 text-sm font-medium uppercase tracking-[0.18em] text-pearl transition hover:bg-burgundy-light disabled:cursor-not-allowed disabled:opacity-50" type="submit">{loading ? "Entrando…" : "Entrar"}</button>
           </form>
           {isVercelPreview && (
             <div className="mt-6 border-t border-rose/15 pt-5 text-center">
-              <p className="mb-3 text-xs leading-5 text-clay/55">Ambiente de demonstração: o backend ainda não está conectado à Vercel.</p>
-              <a href="/agenda?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Testar o app sem login</a>
+              <p className="mb-3 text-xs leading-5 text-clay/55">Quer apenas conferir o visual e a navegação desta versão?</p>
+              <a href="/agenda?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy">Abrir demonstração</a>
             </div>
           )}
         </section>
