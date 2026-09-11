@@ -100,11 +100,6 @@ declare
   v_desconto numeric(12,2) := round(coalesce(p_desconto, 0), 2);
   v_total numeric(12,2);
 begin
-  select * into v_recebimento
-  from public.financeiro_recebimentos
-  where idempotency_key = p_idempotency_key;
-  if found then return v_recebimento; end if;
-
   if p_data_pagamento is null then raise exception 'Data do pagamento obrigatoria'; end if;
   if p_forma_pagamento not in ('pix', 'dinheiro', 'transferencia', 'boleto', 'cartao', 'cheque', 'outro') then
     raise exception 'Forma de pagamento invalida';
@@ -113,6 +108,14 @@ begin
 
   select * into v_boleto from public.boletos where id = p_boleto_id for update;
   if not found then raise exception 'Parcela nao encontrada'; end if;
+
+  -- A consulta da chave ocorre depois do lock para que retries concorrentes
+  -- retornem o mesmo lançamento, em vez de disputarem o INSERT único.
+  select * into v_recebimento
+  from public.financeiro_recebimentos
+  where idempotency_key = p_idempotency_key;
+  if found then return v_recebimento; end if;
+
   if v_boleto.status = 'pago' then raise exception 'Parcela ja liquidada'; end if;
 
   v_total := round(v_boleto.valor + v_juros + v_multa - v_desconto, 2);
@@ -159,11 +162,6 @@ declare
   v_boleto public.boletos%rowtype;
   v_recebimento public.financeiro_recebimentos%rowtype;
 begin
-  select * into v_recebimento
-  from public.financeiro_recebimentos
-  where idempotency_key = p_idempotency_key;
-  if found then return v_recebimento; end if;
-
   if p_acao not in ('confirmar', 'rejeitar') then raise exception 'Acao de validacao invalida'; end if;
   if p_acao = 'rejeitar' and nullif(btrim(p_observacao), '') is null then
     raise exception 'Motivo da rejeicao obrigatorio';
@@ -171,6 +169,12 @@ begin
 
   select * into v_boleto from public.boletos where id = p_boleto_id for update;
   if not found then raise exception 'Parcela nao encontrada'; end if;
+
+  select * into v_recebimento
+  from public.financeiro_recebimentos
+  where idempotency_key = p_idempotency_key;
+  if found then return v_recebimento; end if;
+
   if v_boleto.status <> 'pendente_confirmacao' then raise exception 'Comprovante nao esta pendente de validacao'; end if;
 
   if p_acao = 'confirmar' then
