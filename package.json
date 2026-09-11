@@ -8,10 +8,13 @@
     "dev:auto": "node scripts/dev-sync.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy",
-    "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit && node scripts/quality-gate.mjs",
+    "test": "node -e \"require('fs').rmSync('.test-build',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test .test-build/tests/providers/*.test.js .test-build/tests/integration/*.test.js",
+    "check": "npm run lint && npm run test && npm run build",
+    "deploy": "npm run check && wrangler deploy",
     "notificacoes": "node scripts/notificacoes-cron.mjs",
-    "gerar-vapid": "node scripts/gerar-vapid.mjs"
+    "gerar-vapid": "node scripts/gerar-vapid.mjs",
+    "setup:local": "node scripts/setup-local.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
