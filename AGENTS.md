@@ -10,6 +10,8 @@ O repositório `Guidoka7/sra-luck-pwa` na branch `main` é a **baseline funciona
 
 A baseline não é uma prisão técnica. O objetivo é preservar conhecimento e equivalência funcional enquanto o novo produto é reorganizado, modernizado e evoluído.
 
+O resultado precisa transmitir a Sra. Luck como uma operação **profissional, confiável, inteligente, acolhedora e simples de usar**, sem aparência genérica de dashboard, template, clínica ou protótipo de IA.
+
 ## 2. Regra principal
 
 Antes de alterar uma funcionalidade já existente, rastrear obrigatoriamente:
@@ -32,10 +34,11 @@ Nunca redesenhar uma tela apagando funções silenciosamente.
 A prioridade para decisões é:
 
 1. regra de negócio atual documentada em `docs/BUSINESS-RULES.md`;
-2. fluxo evolutivo aprovado em `docs/EVOLUTION-ROADMAP.md` e `docs/FLOWS.md`;
-3. comportamento comprovado no `sra-luck-pwa/main` para funções existentes;
-4. implementação ativa do `sra-luck-react/main`;
-5. documentação técnica complementar.
+2. princípios de produto e experiência em `docs/PRODUCT-PRINCIPLES.md`;
+3. fluxo evolutivo aprovado em `docs/EVOLUTION-ROADMAP.md` e `docs/FLOWS.md`;
+4. comportamento comprovado no `sra-luck-pwa/main` para funções existentes;
+5. implementação ativa do `sra-luck-react/main`;
+6. documentação técnica complementar.
 
 Quando uma regra nova contradizer o PWA, a regra nova documentada vence. O PWA continua sendo referência de comportamento para tudo que não foi explicitamente substituído.
 
@@ -49,14 +52,16 @@ Quando uma regra nova contradizer o PWA, a regra nova documentada vence. O PWA c
 - Chamadas HTTP devem passar por clientes/serviços claros.
 - Estados de carregamento, vazio, erro, sucesso e permissão devem ser explícitos.
 - Light/dark mode e identidade visual são capacidades permanentes e não podem ser removidas por redesign.
+- Nenhum botão, CTA, filtro, modal ou etapa de fluxo pode ser criado sem comportamento real ou estado explicitamente indisponível.
 
 ### Backend
 
 - `worker/index.ts` deve ser roteador/compositor, não depósito de regras.
 - Separar rotas, serviços de domínio, validação, autenticação, providers e observabilidade.
 - Segredos nunca chegam ao navegador.
-- Operações financeiras e de agenda precisam ser idempotentes ou protegidas contra duplicidade/concor­rência.
+- Operações financeiras e de agenda precisam ser idempotentes ou protegidas contra duplicidade/concorrência.
 - Regras sensíveis devem ter uma única implementação autoritativa.
+- Toda ação de interface que modifica estado deve possuir caminho de backend/persistência coerente antes de ser considerada pronta.
 
 ### Supabase
 
@@ -101,7 +106,11 @@ Antes de mudar uma tela existente:
 
 Se uma função ainda não tiver backend completo, não criar botão que finja funcionamento. Deve aparecer como indisponível/planejada ou não entrar no runtime principal.
 
-## 7. Proibição de mocks operacionais
+## 7. Proibição de superficialidade e mocks operacionais
+
+**NUNCA criar nada artificial ou superficial no produto operacional.**
+
+Uma tela bonita sem regra real não é feature. Um botão que não faz nada não é implementação. Um fluxo que termina em estado local sem persistência não é fluxo concluído.
 
 Não usar `sample-data`, valores fictícios ou arrays estáticos como fonte de verdade em telas operacionais.
 
@@ -114,7 +123,28 @@ Mocks são permitidos somente em:
 
 Nunca misturar mock com produção sem sinalização inequívoca.
 
-## 8. Regras de negócio críticas
+## 8. Coerência obrigatória entre frontend e backend
+
+Antes de implementar uma interação nova, definir o contrato completo:
+
+`intenção do usuário → UI → validação frontend → endpoint → autorização → validação backend → regra de domínio → persistência → auditoria/evento → resposta → atualização da UI`
+
+Para cada botão/ação, responder antes de codificar:
+
+- o que exatamente acontece ao clicar?
+- qual endpoint executa?
+- quem pode executar?
+- qual dado é validado?
+- qual tabela/RPC/serviço é alterado?
+- como evitar duplicidade/conflito?
+- qual feedback aparece em sucesso?
+- qual feedback aparece em erro?
+- o resultado permanece após reload?
+- existe histórico/auditoria quando necessário?
+
+Se essas respostas não existirem, não construir a ação como se estivesse pronta.
+
+## 9. Regras de negócio críticas
 
 - Sra. Luck não é clínica; é facilitadora/intermediadora financeira.
 - A receita da empresa vem da **taxa administrativa** embutida nas parcelas.
@@ -124,7 +154,7 @@ Nunca misturar mock com produção sem sinalização inequívoca.
 
 Detalhes completos: `docs/BUSINESS-RULES.md`.
 
-## 9. Integrações
+## 10. Integrações
 
 Integrações externas devem usar adapters/providers claros.
 
@@ -141,25 +171,26 @@ Domínios previstos:
 
 Nenhuma regra específica de fornecedor deve vazar para componentes de UI.
 
-## 10. Fluxo profissional de alteração
+## 11. Fluxo profissional de alteração
 
 Para cada tarefa relevante:
 
-1. entender a solicitação;
-2. consultar `AGENTS.md`, `BUSINESS-RULES.md`, `PWA-FUNCTIONAL-BASELINE.md`, `AI-CODEMAP.md` e o fluxo aplicável;
+1. entender a solicitação e seus critérios de aceitação;
+2. consultar `AGENTS.md`, `BUSINESS-RULES.md`, `PRODUCT-PRINCIPLES.md`, `PWA-FUNCTIONAL-BASELINE.md`, `AI-CODEMAP.md` e o fluxo aplicável;
 3. consultar o PWA quando houver funcionalidade antecedente;
-4. limitar escopo;
-5. criar/usar branch de trabalho;
-6. implementar;
-7. rodar TypeScript/lint/test/build pertinentes;
-8. revisar diff procurando regressão funcional;
-9. publicar Preview;
-10. aguardar validação quando a mudança for visual/operacional relevante;
-11. só então considerar merge.
+4. mapear frontend + backend + banco antes de editar;
+5. limitar escopo;
+6. criar/usar branch de trabalho;
+7. implementar o fluxo completo, não só a aparência;
+8. rodar TypeScript/lint/test/build pertinentes;
+9. revisar diff procurando regressão funcional e visual;
+10. publicar Preview;
+11. aguardar validação quando a mudança for visual/operacional relevante;
+12. só então considerar merge.
 
 Evitar alterações gigantes que misturem vários domínios sem necessidade.
 
-## 11. Definition of Done
+## 12. Definition of Done
 
 Uma função só está pronta quando, conforme aplicável:
 
@@ -175,20 +206,27 @@ Uma função só está pronta quando, conforme aplicável:
 - não remove comportamento anterior aprovado;
 - tem teste adequado ao risco;
 - passa TypeScript/lint/build;
-- foi testada no Preview para fluxos de interface.
+- foi testada no Preview para fluxos de interface;
+- foi conferida contra o processo real da Sra. Luck.
 
-## 12. Design e UX
+## 13. Design e UX
 
 O design pode e deve evoluir, mas precisa continuar facilmente editável.
 
 - Centralizar tokens de cores, tipografia, raio, spacing e estados.
 - Não espalhar cores hex e estilos críticos em dezenas de telas.
 - Preservar a identidade Sra. Luck já aprovada enquanto houver equivalência funcional.
-- Cliente: mobile-first, simples, elegante, acolhedor e direto.
-- Admin: desktop-first, profissional, denso o suficiente para operação, responsivo.
+- A interface deve ser intuitiva sem esconder informação operacional importante.
+- Evitar excesso de cards, gradientes, badges ou elementos decorativos sem função.
+- Hierarquia visual deve destacar próxima ação, status e pendência real.
+- Cliente: mobile-first, simples, elegante, acolhedor, inteligente e direto.
+- Admin: desktop-first, profissional, eficiente, responsivo e orientado à operação.
 - Não transformar o app da cliente em um dashboard administrativo.
+- Não transformar o admin em um protótipo visual genérico sem densidade operacional.
 
-## 13. Segurança
+Detalhes: `docs/PRODUCT-PRINCIPLES.md`.
+
+## 14. Segurança
 
 - Nunca commitar segredos.
 - `VITE_*` é público por definição.
@@ -196,7 +234,7 @@ O design pode e deve evoluir, mas precisa continuar facilmente editável.
 - Logs não devem armazenar credenciais, tokens ou dados sensíveis desnecessários.
 - Webhooks precisam validar autenticidade quando o provedor oferecer mecanismo de assinatura/token.
 
-## 14. Regra para código legado
+## 15. Regra para código legado
 
 Não apagar código Next/legado apenas porque parece antigo.
 
@@ -210,6 +248,16 @@ Antes de remover:
 
 Depois da equivalência comprovada, remover legado é desejável para reduzir complexidade.
 
-## 15. Meta do projeto
+## 16. Relação de trabalho
+
+O ChatGPT/Sol atua como **engenheiro/arquiteto/revisor do projeto**: transforma necessidade de negócio em especificação técnica coerente, acompanha arquitetura, verifica regressões e revisa o resultado.
+
+O Codex atua como **executor de engenharia**: lê a especificação e o repositório, implementa, testa, corrige e prepara PRs.
+
+O executor não deve inventar produto fora do escopo. Quando encontrar ambiguidade que altera regra de negócio, deve parar, documentar a dúvida e pedir decisão em vez de improvisar.
+
+## 17. Meta do projeto
 
 Chegar a um MVP publicável, funcional e profissional, sem atalhos que deixem telas falsas. O projeto deve permanecer organizado para que uma IA futura localize rapidamente qualquer regra, fluxo, componente, API, provider ou migration e consiga evoluí-lo sem desorganizar o sistema.
+
+O critério final não é “parece pronto”; é **funciona como processo real da Sra. Luck, ponta a ponta, com padrão visual e técnico profissional**.
