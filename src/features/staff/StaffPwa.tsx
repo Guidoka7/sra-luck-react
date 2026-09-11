@@ -1,21 +1,203 @@
-import { useMemo, useState } from "react";
-import { BadgeDollarSign, BookOpenCheck, CheckCircle2, ChevronRight, Home, Medal, PlayCircle, Target, UserRound } from "lucide-react";
-import { trainings } from "../credit-ops/sample-data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BadgeDollarSign, BookOpenCheck, CheckCircle2, ChevronRight, Home, LogOut, Medal, PlayCircle, RefreshCw, UserRound } from "lucide-react";
 import "../../styles/staff-pwa.css";
 
-type Role="Vendedora"|"SDR"|"Financeiro"|"Gestão"|"Admin / Diretoria";
-type Tab="inicio"|"comissoes"|"treinamentos"|"metas"|"perfil";
+type Cargo = "vendedora" | "sdr" | "financeiro" | "administrativo";
+type Tab = "inicio" | "comissoes" | "treinamentos" | "perfil";
 
-export function StaffPwa(){
- const [tab,setTab]=useState<Tab>("inicio");
- const [role,setRole]=useState<Role>(()=>(localStorage.getItem("sra-staff-role") as Role)||"Vendedora");
- const cfg=useMemo(()=>roleConfig(role),[role]);
- const tabs=[['inicio','Início',Home],['comissoes','Comissões',BadgeDollarSign],['treinamentos','Treinamentos',BookOpenCheck],['metas','Metas',Target],['perfil','Perfil',UserRound]] as const;
- return <div className="st-app"><header><div><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><div><small>Portal da equipe</small><strong>Olá, Bianca</strong></div></div><span>{role}</span></header><main>{tab==='inicio'&&<StaffHome role={role} cfg={cfg} setTab={setTab}/>} {tab==='comissoes'&&<Commissions role={role} cfg={cfg}/>} {tab==='treinamentos'&&<Trainings role={role}/>} {tab==='metas'&&<Goals role={role} cfg={cfg}/>} {tab==='perfil'&&<Profile role={role} setRole={r=>{setRole(r);localStorage.setItem('sra-staff-role',r)}}/>}</main><nav>{tabs.map(([id,label,Icon])=><button className={tab===id?'active':''} key={id} onClick={()=>setTab(id)}><Icon size={18}/><span>{label}</span></button>)}</nav></div>
+type Regra = {
+  id: string;
+  cargo: Cargo;
+  nome: string;
+  tipo: "valor_fixo" | "percentual" | "faixa";
+  valor: number | string;
+  meta_base: number | string | null;
+  configuracao?: Record<string, unknown> | null;
+};
+
+type Comissao = {
+  id: string;
+  referencia_tipo: string | null;
+  referencia_id: string | null;
+  base_calculo: number | string | null;
+  valor_comissao: number | string;
+  status: "prevista" | "validada" | "paga" | "cancelada";
+  competencia: string;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type Treinamento = {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  tipo: "video" | "imagem" | "texto" | "misto";
+  conteudo_url: string | null;
+  conteudo_texto: string | null;
+  obrigatorio: boolean;
+  progresso: number;
+  concluidoEm: string | null;
+};
+
+type StaffData = {
+  colaborador: { id: string; nome: string; email: string; cargo: Cargo; permissoes: string[] };
+  regraAtual: Regra | null;
+  competencia: string;
+  comissaoPrevista: number;
+  basePeriodo: number;
+  metricas: { eventos: number; validados: number; pagos: number };
+  comissoes: Comissao[];
+  treinamentos: Treinamento[];
+};
+
+const tabs = [
+  ["inicio", "Início", Home],
+  ["comissoes", "Comissões", BadgeDollarSign],
+  ["treinamentos", "Treinamentos", BookOpenCheck],
+  ["perfil", "Perfil", UserRound],
+] as const;
+
+function labelCargo(cargo: Cargo) {
+  if (cargo === "vendedora") return "Vendedora";
+  if (cargo === "sdr") return "SDR";
+  if (cargo === "financeiro") return "Financeiro";
+  return "Administrativo";
 }
-function roleConfig(role:Role){if(role==='SDR')return{commission:'R$ 680,00',rule:'R$ 10 por comparecimento',goal:'68 comparecimentos',progress:82,headline:'Você está a 15 comparecimentos da sua meta do mês.'};if(role==='Financeiro')return{commission:'R$ 2.146,30',rule:'1,69% sobre atraso recuperado',goal:'R$ 90.000 recuperados',progress:76,headline:'R$ 68.400 recuperados. Continue avançando para a próxima faixa.'};if(role==='Gestão'||role==='Admin / Diretoria')return{commission:'—',rule:'Visão gerencial',goal:'Performance da operação',progress:88,headline:'Acompanhe a evolução da equipe e os indicadores da operação.'};return{commission:'R$ 1.400,00',rule:'R$ 100 por 1ª parcela paga',goal:'18 primeiras parcelas',progress:78,headline:'14 contratos já geraram comissão neste mês.'}}
-function StaffHome({role,cfg,setTab}:{role:Role;cfg:ReturnType<typeof roleConfig>;setTab:(t:Tab)=>void}){return <div className="st-stack"><section className="st-hero"><div><small>{role}</small><h1>Seu desempenho em um só lugar.</h1><p>{cfg.headline}</p></div><Medal/></section><div className="st-kpis"><article><small>Comissão prevista</small><b>{cfg.commission}</b><span>{cfg.rule}</span></article><article><small>Meta atual</small><b>{cfg.progress}%</b><span>{cfg.goal}</span></article></div><section className="st-card"><div className="st-title"><div><h2>Progresso do mês</h2><p>{cfg.goal}</p></div><strong>{cfg.progress}%</strong></div><div className="st-progress"><i style={{width:`${cfg.progress}%`}}/></div><button onClick={()=>setTab('metas')}>Ver detalhes da meta <ChevronRight size={15}/></button></section><section className="st-card"><div className="st-title"><div><h2>Continue aprendendo</h2><p>Treinamentos recomendados para seu perfil.</p></div></div>{trainings.slice(0,3).map(t=><div className="st-learning" key={t.id}><PlayCircle/><div><strong>{t.title}</strong><small>{t.kind} · {t.duration}</small></div><span>{t.progress}%</span></div>)}<button onClick={()=>setTab('treinamentos')}>Ver todos os treinamentos <ChevronRight size={15}/></button></section><section className="st-card"><div className="st-title"><div><h2>Atividades recentes</h2><p>Eventos que impactaram sua remuneração.</p></div></div>{[['Contrato CTR-2026-0482','Primeira parcela paga · + R$ 100'],['Treinamento concluído','Jornada Sra. Luck'],['Meta atualizada','14 de 18 eventos validados']].map(([a,b])=><div className="st-activity" key={a}><CheckCircle2/><div><strong>{a}</strong><small>{b}</small></div></div>)}</section></div>}
-function Commissions({role,cfg}:{role:Role;cfg:ReturnType<typeof roleConfig>}){const entries=role==='SDR'?[['Renata Oliveira','Compareceu','R$ 10,00'],['Juliana Costa','Compareceu','R$ 10,00'],['Mariana Silva','Compareceu','R$ 10,00']]:role==='Financeiro'?[['Carteira setembro','R$ 28.300 recuperados','R$ 478,27'],['Carteira agosto','R$ 21.800 recuperados','R$ 368,42'],['Acordos especiais','R$ 14.700 recuperados','R$ 248,43']]:[['CTR-2026-0482 · Renata','1ª parcela paga','R$ 100,00'],['CTR-2026-0310 · Carlos','1ª parcela paga','R$ 100,00'],['CTR-2026-0296 · Juliana','1ª parcela paga','R$ 100,00']];return <div className="st-stack"><div className="st-section"><h1>Comissões</h1><p>Acompanhe eventos validados e previsão do mês.</p></div><section className="st-commission-hero"><small>Previsto para setembro</small><h2>{cfg.commission}</h2><p>{cfg.rule}</p></section><section className="st-card"><h2>Como funciona</h2><p className="st-copy">{role==='Vendedora'?'Você recebe R$ 100 quando a primeira parcela do contrato vendido é confirmada como paga.':role==='SDR'?'Você recebe R$ 10 por agendamento com comparecimento confirmado, com ou sem fechamento.':role==='Financeiro'?'Inicialmente, 1,69% sobre o valor em atraso recuperado, considerando a meta base de R$ 90 mil. As faixas podem ser alteradas pela gestão.':'Acesso gerencial para acompanhar regras e consolidação das comissões.'}</p></section><section className="st-card"><h2>Eventos do período</h2>{entries.map(r=><article className="st-entry" key={r[0]}><div><strong>{r[0]}</strong><small>{r[1]}</small></div><b>{r[2]}</b></article>)}</section></div>}
-function Trainings({role}:{role:Role}){return <div className="st-stack"><div className="st-section"><h1>Treinamentos</h1><p>Conteúdos da Sra. Luck para desenvolvimento contínuo.</p></div>{trainings.map(t=><section className="st-card st-course" key={t.id}><div className="st-course-art"><PlayCircle/></div><div><span>{t.audience==='Todos'||t.audience===role?'Recomendado':'Conteúdo complementar'}</span><h2>{t.title}</h2><p>{t.kind} · {t.duration}</p><div className="st-progress"><i style={{width:`${t.progress}%`}}/></div><small>{t.progress}% concluído</small></div><button>Continuar <ChevronRight size={14}/></button></section>)}</div>}
-function Goals({role,cfg}:{role:Role;cfg:ReturnType<typeof roleConfig>}){const rows=role==='Vendedora'?[['Contratos vendidos','18'],['1ª parcela paga','14'],['Aguardando 1ª parcela','4']]:role==='SDR'?[['Agendamentos','83'],['Comparecimentos','68'],['No-show','15']]:role==='Financeiro'?[['Carteira recuperada','R$ 68.400'],['Meta base','R$ 90.000'],['Comissão estimada','R$ 1.155,96']]:[['Equipe ativa','24'],['Metas no verde','18'],['Pontos de atenção','6']];return <div className="st-stack"><div className="st-section"><h1>Metas</h1><p>Indicadores e objetivos da sua função.</p></div><section className="st-goal-ring"><div style={{background:`conic-gradient(#987244 ${cfg.progress*3.6}deg,#e8ddcd 0)`}}><span><b>{cfg.progress}%</b><small>da meta</small></span></div><h2>{cfg.goal}</h2><p>{cfg.headline}</p></section><section className="st-card"><h2>Indicadores do mês</h2>{rows.map(r=><article className="st-entry" key={r[0]}><strong>{r[0]}</strong><b>{r[1]}</b></article>)}</section></div>}
-function Profile({role,setRole}:{role:Role;setRole:(r:Role)=>void}){const roles:Role[]=['Vendedora','SDR','Financeiro','Gestão','Admin / Diretoria'];return <div className="st-stack"><div className="st-section"><h1>Meu perfil</h1><p>Acesso, função e preferências do portal.</p></div><section className="st-card st-profile"><div className="st-avatar">BS</div><h2>Bianca Souza</h2><span>{role}</span><small>bianca@sraluck.com.br</small></section><section className="st-card"><h2>Prévia de perfis</h2><p className="st-copy">Enquanto a autenticação por função é finalizada, use esta seleção para visualizar como o PWA se adapta a cada cargo.</p><div className="st-role-list">{roles.map(r=><button className={r===role?'active':''} key={r} onClick={()=>setRole(r)}>{r}{r===role&&<CheckCircle2 size={15}/>}</button>)}</div></section></div>}
+
+function moeda(value: number | string | null | undefined) {
+  return Number(value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function iniciais(nome: string) {
+  return nome.split(/\s+/).filter(Boolean).slice(0, 2).map((parte) => parte[0]?.toUpperCase()).join("") || "SL";
+}
+
+function regraTexto(regra: Regra | null) {
+  if (!regra) return "Nenhuma regra de comissão ativa para este cargo.";
+  if (regra.tipo === "percentual") {
+    const meta = regra.meta_base ? ` · meta base ${moeda(regra.meta_base)}` : "";
+    return `${Number(regra.valor).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% · ${regra.nome}${meta}`;
+  }
+  return `${moeda(regra.valor)} · ${regra.nome}`;
+}
+
+function headline(cargo: Cargo, eventos: number) {
+  if (cargo === "vendedora") return eventos ? `${eventos} evento(s) de comissão registrado(s) neste mês.` : "As comissões aparecem aqui quando os eventos elegíveis forem confirmados.";
+  if (cargo === "sdr") return eventos ? `${eventos} comparecimento(s) já impactaram sua comissão neste mês.` : "Comparecimentos confirmados entram automaticamente no seu histórico de comissão.";
+  if (cargo === "financeiro") return eventos ? `${eventos} recuperação(ões) registrada(s) no período.` : "Recuperações elegíveis aparecem aqui após a confirmação do pagamento.";
+  return "Acompanhe seu acesso, treinamentos e informações operacionais da equipe.";
+}
+
+function dataCurta(value: string) {
+  return new Date(value).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, { ...init, cache: "no-store", credentials: "same-origin", headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) } });
+  const body = await response.json().catch(() => ({})) as T & { erro?: string };
+  if (response.status === 401) {
+    window.location.replace("/equipe/login");
+    throw new Error("Sessão expirada.");
+  }
+  if (!response.ok) throw new Error(body.erro ?? "Não foi possível concluir a operação.");
+  return body;
+}
+
+export function StaffPwa() {
+  const [tab, setTab] = useState<Tab>("inicio");
+  const [data, setData] = useState<StaffData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvandoTreinamento, setSalvandoTreinamento] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      const body = await fetchJson<StaffData>("/api/equipe/me");
+      setData(body);
+      setErro(null);
+    } catch (error) {
+      if (error instanceof Error && error.message !== "Sessão expirada.") setErro(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void carregar(); }, [carregar]);
+
+  async function sair() {
+    try { await fetch("/api/equipe/logout", { method: "POST", credentials: "same-origin" }); }
+    finally { window.location.replace("/equipe/login"); }
+  }
+
+  async function concluirTreinamento(treinamentoId: string) {
+    setSalvandoTreinamento(treinamentoId);
+    setErro(null);
+    try {
+      await fetchJson(`/api/equipe/trainings/${encodeURIComponent(treinamentoId)}/progress`, {
+        method: "PATCH",
+        body: JSON.stringify({ progresso: 100 }),
+      });
+      await carregar();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não foi possível atualizar o treinamento.");
+    } finally {
+      setSalvandoTreinamento(null);
+    }
+  }
+
+  if (loading) {
+    return <main className="st-app"><div className="st-loading"><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><span>Carregando portal da equipe...</span></div></main>;
+  }
+
+  if (!data) {
+    return <main className="st-app"><div className="st-loading"><strong>Não foi possível carregar seu portal.</strong><span>{erro ?? "Tente novamente em instantes."}</span><button onClick={() => { setLoading(true); void carregar(); }}><RefreshCw size={14}/> Tentar novamente</button></div></main>;
+  }
+
+  const cargo = data.colaborador.cargo;
+  const pendentes = data.treinamentos.filter((item) => item.progresso < 100).length;
+
+  return (
+    <div className="st-app">
+      <header>
+        <div><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><div><small>Portal da equipe</small><strong>Olá, {data.colaborador.nome.split(" ")[0]}</strong></div></div>
+        <span>{labelCargo(cargo)}</span>
+      </header>
+      <main>
+        {erro && <div className="st-error">{erro}</div>}
+        {tab === "inicio" && <StaffHome data={data} pendentes={pendentes} setTab={setTab}/>} 
+        {tab === "comissoes" && <Commissions data={data}/>} 
+        {tab === "treinamentos" && <Trainings treinamentos={data.treinamentos} salvando={salvandoTreinamento} onConcluir={concluirTreinamento}/>} 
+        {tab === "perfil" && <Profile data={data} onSair={sair}/>} 
+      </main>
+      <nav>{tabs.map(([id, label, Icon]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+    </div>
+  );
+}
+
+function StaffHome({ data, pendentes, setTab }: { data: StaffData; pendentes: number; setTab: (tab: Tab) => void }) {
+  const ultimos = data.comissoes.filter((item) => item.status !== "cancelada").slice(0, 3);
+  return <div className="st-stack">
+    <section className="st-hero"><div><small>{labelCargo(data.colaborador.cargo)}</small><h1>Seu trabalho, com dados reais.</h1><p>{headline(data.colaborador.cargo, data.metricas.eventos)}</p></div><Medal/></section>
+    <div className="st-kpis"><article><small>Comissão prevista</small><b>{moeda(data.comissaoPrevista)}</b><span>{regraTexto(data.regraAtual)}</span></article><article><small>Eventos no mês</small><b>{data.metricas.eventos}</b><span>{data.metricas.pagos} pago(s) · {data.metricas.validados} validado(s)</span></article></div>
+    <section className="st-card"><div className="st-title"><div><h2>Regra atual</h2><p>Configuração válida para o seu cargo.</p></div></div><p className="st-copy st-copy-strong">{regraTexto(data.regraAtual)}</p>{data.regraAtual?.tipo === "percentual" && <p className="st-copy">Base registrada no período: <strong>{moeda(data.basePeriodo)}</strong>.</p>}<button onClick={() => setTab("comissoes")}>Ver comissões <ChevronRight size={15}/></button></section>
+    <section className="st-card"><div className="st-title"><div><h2>Treinamentos</h2><p>{pendentes ? `${pendentes} conteúdo(s) ainda não concluído(s).` : data.treinamentos.length ? "Tudo em dia." : "Nenhum treinamento publicado para seu cargo."}</p></div></div>{data.treinamentos.slice(0, 3).map((t) => <div className="st-learning" key={t.id}><PlayCircle/><div><strong>{t.titulo}</strong><small>{t.tipo} · {t.obrigatorio ? "Obrigatório" : "Opcional"}</small></div><span>{t.progresso}%</span></div>)}<button onClick={() => setTab("treinamentos")}>Abrir treinamentos <ChevronRight size={15}/></button></section>
+    <section className="st-card"><div className="st-title"><div><h2>Atividades recentes</h2><p>Eventos reais que impactaram sua remuneração.</p></div></div>{ultimos.length ? ultimos.map((item) => <div className="st-activity" key={item.id}><CheckCircle2/><div><strong>{item.referencia_tipo?.replace(/_/g, " ") ?? "Evento de comissão"}</strong><small>{dataCurta(item.created_at)} · {item.status}</small></div><b>{moeda(item.valor_comissao)}</b></div>) : <Empty text="Nenhum evento de comissão registrado neste mês."/>}</section>
+  </div>;
+}
+
+function Commissions({ data }: { data: StaffData }) {
+  const entries = useMemo(() => data.comissoes.filter((item) => item.status !== "cancelada"), [data.comissoes]);
+  return <div className="st-stack"><div className="st-section"><h1>Comissões</h1><p>Eventos persistidos e regra vigente do seu cargo.</p></div><section className="st-commission-hero"><small>Previsto no mês</small><h2>{moeda(data.comissaoPrevista)}</h2><p>{regraTexto(data.regraAtual)}</p></section><section className="st-card"><h2>Resumo</h2><div className="st-entry"><strong>Eventos válidos</strong><b>{data.metricas.eventos}</b></div><div className="st-entry"><strong>Validados</strong><b>{data.metricas.validados}</b></div><div className="st-entry"><strong>Pagos</strong><b>{data.metricas.pagos}</b></div>{data.regraAtual?.tipo === "percentual" && <div className="st-entry"><strong>Base do período</strong><b>{moeda(data.basePeriodo)}</b></div>}</section><section className="st-card"><h2>Eventos do período</h2>{entries.length ? entries.map((item) => <article className="st-entry" key={item.id}><div><strong>{item.referencia_tipo?.replace(/_/g, " ") ?? "Comissão"}</strong><small>{dataCurta(item.created_at)} · {item.status}{item.base_calculo != null ? ` · base ${moeda(item.base_calculo)}` : ""}</small></div><b>{moeda(item.valor_comissao)}</b></article>) : <Empty text="Nenhuma comissão registrada para esta competência."/>}</section></div>;
+}
+
+function Trainings({ treinamentos, salvando, onConcluir }: { treinamentos: Treinamento[]; salvando: string | null; onConcluir: (id: string) => void }) {
+  return <div className="st-stack"><div className="st-section"><h1>Treinamentos</h1><p>Conteúdos publicados pela Sra. Luck para o seu cargo.</p></div>{treinamentos.length ? treinamentos.map((t) => <section className="st-card st-course" key={t.id}><div className="st-course-art"><PlayCircle/></div><div><span>{t.obrigatorio ? "Obrigatório" : "Conteúdo disponível"}</span><h2>{t.titulo}</h2><p>{t.descricao ?? t.tipo}</p><div className="st-progress"><i style={{ width: `${Math.max(0, Math.min(100, t.progresso))}%` }}/></div><small>{t.progresso}% concluído</small></div>{t.conteudo_url ? <a className="st-course-link" href={t.conteudo_url} target="_blank" rel="noreferrer">Abrir conteúdo <ChevronRight size={14}/></a> : t.conteudo_texto ? <p className="st-course-text">{t.conteudo_texto}</p> : null}{t.progresso < 100 ? <button disabled={salvando === t.id} onClick={() => onConcluir(t.id)}>{salvando === t.id ? "Salvando..." : "Marcar como concluído"} <CheckCircle2 size={14}/></button> : <div className="st-complete"><CheckCircle2 size={14}/> Concluído</div>}</section>) : <section className="st-card"><Empty text="Nenhum treinamento foi publicado para o seu cargo ainda."/></section>}</div>;
+}
+
+function Profile({ data, onSair }: { data: StaffData; onSair: () => void }) {
+  return <div className="st-stack"><div className="st-section"><h1>Meu perfil</h1><p>Identidade e autorização vindas do cadastro administrativo.</p></div><section className="st-card st-profile"><div className="st-avatar">{iniciais(data.colaborador.nome)}</div><h2>{data.colaborador.nome}</h2><span>{labelCargo(data.colaborador.cargo)}</span><small>{data.colaborador.email}</small></section><section className="st-card"><h2>Acesso</h2><p className="st-copy">Seu cargo é controlado pela administração e validado no servidor a cada sessão. Alterações de cargo ou desativação revogam o acesso sem depender deste aparelho.</p>{data.colaborador.permissoes.length > 0 && <div className="st-permissions">{data.colaborador.permissoes.map((item) => <span key={item}>{item}</span>)}</div>}<button onClick={onSair}><LogOut size={14}/> Sair do portal</button></section></div>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="st-empty">{text}</div>;
+}

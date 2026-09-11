@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, CalendarRange, Cog, LayoutDashboard, LineChart, LogOut, Receipt, Users, WalletCards } from "lucide-react";
+import { Bell, CalendarRange, Cog, LayoutDashboard, LineChart, LogOut, Receipt, UserCog, Users, WalletCards } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -19,6 +19,7 @@ const NAV = [
   { href: "/admin/pagamentos", label: "Pagamentos", icon: Receipt, group: "Gestão" },
   { href: "/admin/parcelas", label: "Parcelas", icon: WalletCards, group: "Gestão" },
   { href: "/admin/relatorios", label: "Relatórios", icon: LineChart, group: "Gestão" },
+  { href: "/admin/equipe", label: "Equipe", icon: UserCog, group: "Gestão" },
   { href: "/admin/notificacoes", label: "Notificações", icon: Bell, group: "Gestão" },
   { href: "/admin/configuracoes", label: "Configurações", icon: Cog, group: "Gestão" },
 ];
@@ -27,6 +28,7 @@ const API_PREFETCH: Record<string, string> = {
   "/admin/visao-geral": "/api/admin/visao-geral",
   "/admin/clientes": "/api/admin/clientes",
   "/admin/pagamentos": "/api/admin/boletos",
+  "/admin/equipe": "/api/admin/staff",
   "/admin/configuracoes": "/api/admin/configuracoes",
   "/admin/notificacoes": "/api/admin/notificacoes/automacao",
 };

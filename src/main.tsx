@@ -19,12 +19,14 @@ import ClientesPage from "./app/admin/(painel)/clientes/page";
 import PagamentosPage from "./app/admin/(painel)/pagamentos/page";
 import ParcelasPage from "./app/admin/(painel)/parcelas/page";
 import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
+import EquipeAdminPage from "./app/admin/(painel)/equipe/page";
 import AdminNotificationsPanel from "./app/admin/(painel)/notificacoes/page";
 import AdminMonitoringPanel from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
+import "./styles/staff-real.css";
 
 function RedirectTo({ to }: { to: string }) {
   useEffect(() => {
@@ -54,11 +56,11 @@ function AdminRoute({ path }: { path: string }) {
   if (path.startsWith("/admin/financeiro") || path.startsWith("/admin/pagamentos")) return <PagamentosPage />;
   if (path.startsWith("/admin/parcelas")) return <ParcelasPage />;
   if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
+  if (path.startsWith("/admin/equipe")) return <EquipeAdminPage />;
   if (path.startsWith("/admin/notificacoes")) return <AdminNotificationsPanel />;
   if (path === "/admin/configuracoes/monitoramento") return <AdminMonitoringPanel />;
   if (path.startsWith("/admin/configuracoes")) return <AdminSettingsPanel />;
   if (path.startsWith("/admin/integracoes")) return <AdminUnavailableModule title="Integrações" />;
-  if (path.startsWith("/admin/equipe")) return <AdminUnavailableModule title="Equipe" />;
   return <VisaoGeralPage />;
 }
 
