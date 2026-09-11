@@ -8,27 +8,146 @@ import { ChevronLeft, ChevronRight, Clock3, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
-export interface DataDisponivel { id: string; data: string; vagasRestantes: number; }
-interface CalendarioAgendamentoProps { datas: DataDisponivel[]; onConfirmar: (dataId: string, horario: string) => void; confirmando: boolean; bloqueado?: boolean; }
-const HORARIOS = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"];
-function parseDataLocal(iso: string): Date { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
+export interface HorarioDisponivel {
+  id: string;
+  horario: string;
+  vagasRestantes?: number;
+}
 
-export function CalendarioAgendamento({ datas, onConfirmar, confirmando, bloqueado = false }: CalendarioAgendamentoProps) {
+export interface DataDisponivel {
+  id: string;
+  data: string;
+  vagasRestantes: number;
+  horarios?: HorarioDisponivel[];
+}
+
+interface CalendarioAgendamentoProps {
+  datas: DataDisponivel[];
+  onConfirmar: (dataOuJanelaId: string, horario: string) => void;
+  confirmando: boolean;
+  bloqueado?: boolean;
+  contexto?: "termos" | "cirurgia";
+}
+
+const HORARIOS_PADRAO = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"];
+
+function parseDataLocal(iso: string): Date {
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  return new Date(ano, mes - 1, dia);
+}
+
+export function CalendarioAgendamento({
+  datas,
+  onConfirmar,
+  confirmando,
+  bloqueado = false,
+  contexto = "termos",
+}: CalendarioAgendamentoProps) {
   const hoje = startOfDay(new Date());
   const inicializado = useRef(false);
-  const [mesAtual, setMesAtual] = useState(() => { const hojeStr = format(hoje, "yyyy-MM-dd"); const futuras = datas.map(d => d.data).filter(d => d >= hojeStr).sort(); return futuras[0] ? startOfMonth(parseDataLocal(futuras[0])) : startOfMonth(hoje); });
-  const [direcao, setDirecao] = useState<1 | -1>(1); const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null); const [horarioSelecionado, setHorarioSelecionado] = useState<string | null>(null);
-  useEffect(() => { if (inicializado.current) return; const primeira = datas.map(d => d.data).filter(d => d >= format(hoje, "yyyy-MM-dd")).sort()[0]; if (primeira) setMesAtual(startOfMonth(parseDataLocal(primeira))); inicializado.current = true; }, [datas, hoje]);
-  const porData = useMemo(() => new Map(datas.map(d => [d.data, d])), [datas]); const primeiroDiaSemana = mesAtual.getDay(); const diasDoMes = getDaysInMonth(mesAtual); const celulas = Array.from({ length: primeiroDiaSemana + diasDoMes }, (_, i) => i < primeiroDiaSemana ? null : i - primeiroDiaSemana + 1); const entradaSelecionada = diaSelecionado ? porData.get(diaSelecionado) : null;
-  function mudarMes(delta: 1 | -1) { setDirecao(delta); setMesAtual(atual => delta === 1 ? addMonths(atual, 1) : subMonths(atual, 1)); setDiaSelecionado(null); setHorarioSelecionado(null); }
-  function selecionarDia(dia: Date) { if (bloqueado || isBefore(dia, hoje)) return; const chave = format(dia, "yyyy-MM-dd"); const entrada = porData.get(chave); if (!entrada || entrada.vagasRestantes <= 0) return; setDiaSelecionado(chave === diaSelecionado ? null : chave); setHorarioSelecionado(null); }
-  return <div className="relative min-w-0"><div className="min-w-0">
-    <div className="mb-3 flex items-center justify-between"><button onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronLeft className="h-4 w-4" /></button><AnimatePresence mode="wait"><motion.h3 key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, y: direcao === 1 ? 8 : -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: direcao === 1 ? -8 : 8 }} className="font-heading text-sm font-semibold capitalize text-burgundy dark:text-cream">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</motion.h3></AnimatePresence><button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronRight className="h-4 w-4" /></button></div>
-    <div className="mx-auto mb-2 grid w-full max-w-[34rem] grid-cols-7 gap-1.5 text-center">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => <span key={d} className="text-[0.58rem] font-semibold uppercase tracking-label text-rose/80">{d}</span>)}</div>
-    <AnimatePresence mode="wait"><motion.div key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, x: direcao === 1 ? 16 : -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: direcao === 1 ? -16 : 16 }} className="mx-auto grid w-full max-w-[34rem] grid-cols-7 gap-1.5">
-      {celulas.map((numero, i) => { if (numero === null) return <span key={`vazio-${i}`} className="aspect-square" />; const dia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), numero); const chave = format(dia, "yyyy-MM-dd"); const entrada = porData.get(chave); const passado = isBefore(dia, hoje); const disponivel = Boolean(entrada && entrada.vagasRestantes > 0 && !passado); const selecionado = chave === diaSelecionado; const ehHoje = isToday(dia); return <button key={chave} onClick={() => selecionarDia(dia)} disabled={!disponivel || bloqueado} style={{ animationDelay: `${i * 8}ms` }} className={cn("group relative aspect-square animate-fadeIn rounded-xl border text-[0.78rem] transition-all sm:text-[0.9rem]", passado && "border-transparent text-clay/30 dark:text-pearl/30", !passado && !disponivel && "cursor-not-allowed border-transparent bg-alert/[0.06] text-alert/55 line-through", disponivel && !selecionado && "border-success/35 bg-success/10 font-medium text-success hover:-translate-y-0.5 hover:border-success/55 hover:bg-success/20", selecionado && "border-2 border-gold bg-burgundy font-semibold text-cream dark:text-white")}><span className={cn("flex h-full w-full items-center justify-center", ehHoje && !selecionado && "rounded-xl ring-2 ring-rose/60 ring-inset")}><span className={cn(ehHoje && !selecionado && "font-bold text-rose")}>{numero}</span></span></button>; })}
-    </motion.div></AnimatePresence>
-    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-rose/10 pt-3 text-[0.62rem] text-clay/70 dark:text-pearl/75"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-success/40 bg-success/15" /> Disponível</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alert/40" /> Agenda lotada</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full ring-2 ring-rose/60" /> Hoje</span></div>
-    <AnimatePresence>{diaSelecionado && entradaSelecionada && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden"><div className="mt-4 border-t border-rose/10 pt-4"><p className="mb-3 flex items-center justify-center gap-2 text-center text-xs text-clay/75 dark:text-pearl/80"><Clock3 className="h-3.5 w-3.5 text-rose" /> Horários para os termos em <span className="font-heading font-semibold text-burgundy dark:text-cream">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</span></p><div className="mx-auto grid max-w-sm grid-cols-3 gap-1.5 sm:grid-cols-4">{HORARIOS.map(h => <button key={h} onClick={() => setHorarioSelecionado(h)} className={cn("rounded-lg border px-2.5 py-2 text-xs font-medium transition", h === horarioSelecionado ? "border-burgundy bg-burgundy text-cream dark:text-white" : "border-rose/20 bg-white text-clay/75 hover:border-rose hover:text-burgundy dark:border-white/10 dark:bg-white/[0.04] dark:text-pearl/80 dark:hover:text-cream")}>{h}</button>)}</div>{horarioSelecionado && <div className="mt-3 flex flex-col items-center gap-2 rounded-xl bg-blush/50 p-3.5 text-center dark:bg-white/[0.045]"><p className="text-xs text-clay/80 dark:text-pearl/85">Você selecionou <strong className="text-burgundy dark:text-cream">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</strong> às <strong className="text-burgundy dark:text-cream">{horarioSelecionado}</strong></p><Button onClick={() => onConfirmar(entradaSelecionada.id, horarioSelecionado)} loading={confirmando} className="dark:text-white"><Sparkles className="h-4 w-4" /> Confirmar data</Button></div>}</div></motion.div>}</AnimatePresence>
-  </div></div>;
+  const [mesAtual, setMesAtual] = useState(() => {
+    const hojeStr = format(hoje, "yyyy-MM-dd");
+    const futuras = datas.map((item) => item.data).filter((data) => data >= hojeStr).sort();
+    return futuras[0] ? startOfMonth(parseDataLocal(futuras[0])) : startOfMonth(hoje);
+  });
+  const [direcao, setDirecao] = useState<1 | -1>(1);
+  const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  const [horarioSelecionado, setHorarioSelecionado] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (inicializado.current) return;
+    const primeira = datas.map((item) => item.data).filter((data) => data >= format(hoje, "yyyy-MM-dd")).sort()[0];
+    if (primeira) setMesAtual(startOfMonth(parseDataLocal(primeira)));
+    inicializado.current = true;
+  }, [datas, hoje]);
+
+  const porData = useMemo(() => new Map(datas.map((item) => [item.data, item])), [datas]);
+  const primeiroDiaSemana = mesAtual.getDay();
+  const diasDoMes = getDaysInMonth(mesAtual);
+  const celulas = Array.from({ length: primeiroDiaSemana + diasDoMes }, (_, index) => index < primeiroDiaSemana ? null : index - primeiroDiaSemana + 1);
+  const entradaSelecionada = diaSelecionado ? porData.get(diaSelecionado) : null;
+  const horarios = entradaSelecionada?.horarios?.length
+    ? entradaSelecionada.horarios.filter((item) => (item.vagasRestantes ?? 1) > 0)
+    : HORARIOS_PADRAO.map((horario) => ({ id: entradaSelecionada?.id ?? horario, horario }));
+  const slotSelecionado = horarios.find((item) => item.horario === horarioSelecionado) ?? null;
+
+  function mudarMes(delta: 1 | -1) {
+    setDirecao(delta);
+    setMesAtual((atual) => delta === 1 ? addMonths(atual, 1) : subMonths(atual, 1));
+    setDiaSelecionado(null);
+    setHorarioSelecionado(null);
+  }
+
+  function selecionarDia(dia: Date) {
+    if (bloqueado || isBefore(dia, hoje)) return;
+    const chave = format(dia, "yyyy-MM-dd");
+    const entrada = porData.get(chave);
+    if (!entrada || entrada.vagasRestantes <= 0) return;
+    setDiaSelecionado(chave === diaSelecionado ? null : chave);
+    setHorarioSelecionado(null);
+  }
+
+  return (
+    <div className="relative min-w-0">
+      <div className="min-w-0">
+        <div className="mb-3 flex items-center justify-between">
+          <button onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronLeft className="h-4 w-4" /></button>
+          <AnimatePresence mode="wait"><motion.h3 key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, y: direcao === 1 ? 8 : -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: direcao === 1 ? -8 : 8 }} className="font-heading text-sm font-semibold capitalize text-burgundy dark:text-cream">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</motion.h3></AnimatePresence>
+          <button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronRight className="h-4 w-4" /></button>
+        </div>
+
+        <div className="mx-auto mb-2 grid w-full max-w-[34rem] grid-cols-7 gap-1.5 text-center">
+          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dia) => <span key={dia} className="text-[0.58rem] font-semibold uppercase tracking-label text-rose/80">{dia}</span>)}
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, x: direcao === 1 ? 16 : -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: direcao === 1 ? -16 : 16 }} className="mx-auto grid w-full max-w-[34rem] grid-cols-7 gap-1.5">
+            {celulas.map((numero, index) => {
+              if (numero === null) return <span key={`vazio-${index}`} className="aspect-square" />;
+              const dia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), numero);
+              const chave = format(dia, "yyyy-MM-dd");
+              const entrada = porData.get(chave);
+              const passado = isBefore(dia, hoje);
+              const disponivel = Boolean(entrada && entrada.vagasRestantes > 0 && !passado);
+              const selecionado = chave === diaSelecionado;
+              const ehHoje = isToday(dia);
+              return (
+                <button key={chave} onClick={() => selecionarDia(dia)} disabled={!disponivel || bloqueado} style={{ animationDelay: `${index * 8}ms` }} className={cn("group relative aspect-square animate-fadeIn rounded-xl border text-[0.78rem] transition-all sm:text-[0.9rem]", passado && "border-transparent text-clay/30 dark:text-pearl/30", !passado && !disponivel && "cursor-not-allowed border-transparent bg-alert/[0.06] text-alert/55 line-through", disponivel && !selecionado && "border-success/35 bg-success/10 font-medium text-success hover:-translate-y-0.5 hover:border-success/55 hover:bg-success/20", selecionado && "border-2 border-gold bg-burgundy font-semibold text-cream dark:text-white")}>
+                  <span className={cn("flex h-full w-full items-center justify-center", ehHoje && !selecionado && "rounded-xl ring-2 ring-rose/60 ring-inset")}><span className={cn(ehHoje && !selecionado && "font-bold text-rose")}>{numero}</span></span>
+                </button>
+              );
+            })}
+          </motion.div>
+        </AnimatePresence>
+
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-rose/10 pt-3 text-[0.62rem] text-clay/70 dark:text-pearl/75">
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-success/40 bg-success/15" /> Disponível</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alert/40" /> Agenda lotada</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full ring-2 ring-rose/60" /> Hoje</span>
+        </div>
+
+        <AnimatePresence>
+          {diaSelecionado && entradaSelecionada && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+              <div className="mt-4 border-t border-rose/10 pt-4">
+                <p className="mb-3 flex items-center justify-center gap-2 text-center text-xs text-clay/75 dark:text-pearl/80">
+                  <Clock3 className="h-3.5 w-3.5 text-rose" />
+                  {contexto === "cirurgia" ? "Horários para a cirurgia em" : "Horários para os termos em"} <span className="font-heading font-semibold text-burgundy dark:text-cream">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</span>
+                </p>
+                <div className="mx-auto grid max-w-sm grid-cols-3 gap-1.5 sm:grid-cols-4">
+                  {horarios.map((item) => <button key={item.id} onClick={() => setHorarioSelecionado(item.horario)} className={cn("rounded-lg border px-2.5 py-2 text-xs font-medium transition", item.horario === horarioSelecionado ? "border-burgundy bg-burgundy text-cream dark:text-white" : "border-rose/20 bg-white text-clay/75 hover:border-rose hover:text-burgundy dark:border-white/10 dark:bg-white/[0.04] dark:text-pearl/80 dark:hover:text-cream")}>{item.horario}</button>)}
+                </div>
+                {horarioSelecionado && slotSelecionado && (
+                  <div className="mt-3 flex flex-col items-center gap-2 rounded-xl bg-blush/50 p-3.5 text-center dark:bg-white/[0.045]">
+                    <p className="text-xs text-clay/80 dark:text-pearl/85">Você selecionou <strong className="text-burgundy dark:text-cream">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</strong> às <strong className="text-burgundy dark:text-cream">{horarioSelecionado}</strong></p>
+                    <Button onClick={() => onConfirmar(slotSelecionado.id, horarioSelecionado)} loading={confirmando} className="dark:text-white"><Sparkles className="h-4 w-4" /> Confirmar data</Button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
 }
