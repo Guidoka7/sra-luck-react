@@ -14,6 +14,7 @@ import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
 import { AdminAppearanceBootstrap, AdminModuleShell, AdminThemeDock } from "./features/admin/AdminModuleShell";
 import { AdminSettingsPanel } from "./features/admin/AdminSettingsPanel";
 import AdminNotificationsPanel from "./app/admin/(painel)/notificacoes/page";
+import AdminMonitoringPanel from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
@@ -48,6 +49,9 @@ function App() {
   if (path === "/admin/login") return <AdminLoginPage />;
   if (path === "/admin/notificacoes" || path.startsWith("/admin/notificacoes/")) {
     return <SessionGate audience="admin"><AdminModuleShell path={path} title="Notificações"><AdminNotificationsPanel /></AdminModuleShell></SessionGate>;
+  }
+  if (path === "/admin/configuracoes/monitoramento") {
+    return <SessionGate audience="admin"><AdminModuleShell path={path} title="Monitoramento"><AdminMonitoringPanel /></AdminModuleShell></SessionGate>;
   }
   if (path === "/admin/configuracoes" || path === "/admin/configuracoes/") {
     return <SessionGate audience="admin"><AdminModuleShell path={path} title="Configurações"><AdminSettingsPanel /></AdminModuleShell></SessionGate>;
