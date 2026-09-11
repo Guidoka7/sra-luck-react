@@ -1,22 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  Activity,
+  AlertTriangle,
   ArrowUpRight,
   CalendarClock,
+  CheckCircle2,
   CircleDollarSign,
   Clock3,
+  FileCheck2,
   RefreshCw,
-  ReceiptText,
   ShieldCheck,
-  UsersRound,
+  TrendingUp,
   Wallet,
 } from "lucide-react";
+import {
+  DualBarChart,
+  EmptyPanel,
+  Panel,
+  SectionHeading,
+} from "@/components/admin/ExecutiveUI";
 import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
-import { SkeletonCards } from "@/components/ui/Skeleton";
 import { formatarMoeda } from "@/lib/utils";
+import type { ResumoFinanceiro } from "@/features/financeiro/types";
+
+type RawItem = Record<string, unknown>;
 
 interface ComprovantePendente {
   boletoId: string;
@@ -59,26 +68,25 @@ interface VisaoGeralData {
   proximasLiberacoesFinanceiras: LiberacaoFinanceira[];
 }
 
-type RawItem = Record<string, unknown>;
-type RawData = Partial<Record<keyof VisaoGeralData, RawItem[]>>;
+type RawVisao = Partial<Record<keyof VisaoGeralData, RawItem[]>>;
 
-const EMPTY: VisaoGeralData = {
+const EMPTY_VISAO: VisaoGeralData = {
   comprovantesPendentes: [],
   proximosAgendamentos: [],
   clientesAguardandoLiberacao: [],
   proximasLiberacoesFinanceiras: [],
 };
 
-function num(value: unknown) {
-  const parsed = Number(value);
+function numero(value: unknown) {
+  const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function str(value: unknown, fallback = "") {
+function texto(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
-function normalize(payload: RawData | null | undefined): VisaoGeralData {
+function normalizarVisao(payload: RawVisao | null | undefined): VisaoGeralData {
   const comprovantes = Array.isArray(payload?.comprovantesPendentes) ? payload.comprovantesPendentes : [];
   const agendamentos = Array.isArray(payload?.proximosAgendamentos) ? payload.proximosAgendamentos : [];
   const aguardando = Array.isArray(payload?.clientesAguardandoLiberacao) ? payload.clientesAguardandoLiberacao : [];
@@ -86,134 +94,174 @@ function normalize(payload: RawData | null | undefined): VisaoGeralData {
 
   return {
     comprovantesPendentes: comprovantes.map((item) => ({
-      boletoId: str(item.boletoId),
-      clienteId: str(item.clienteId),
-      nome: str(item.nome, "Cliente"),
-      numeroParcela: num(item.numeroParcela),
-      totalParcelas: num(item.totalParcelas),
-      valor: num(item.valor),
-      dataPagamento: str(item.dataPagamento) || null,
+      boletoId: texto(item.boletoId),
+      clienteId: texto(item.clienteId),
+      nome: texto(item.nome, "Cliente"),
+      numeroParcela: numero(item.numeroParcela),
+      totalParcelas: numero(item.totalParcelas),
+      valor: numero(item.valor),
+      dataPagamento: texto(item.dataPagamento) || null,
     })),
     proximosAgendamentos: agendamentos.map((item) => ({
-      agendamentoId: str(item.agendamentoId),
-      clienteId: str(item.clienteId),
-      nome: str(item.nome, "Cliente"),
-      data: str(item.data) || null,
-      valorContrato: num(item.valorContrato ?? item.valor),
+      agendamentoId: texto(item.agendamentoId),
+      clienteId: texto(item.clienteId),
+      nome: texto(item.nome, "Cliente"),
+      data: texto(item.data) || null,
+      valorContrato: numero(item.valorContrato ?? item.valor),
     })),
     clientesAguardandoLiberacao: aguardando.map((item) => ({
-      clienteId: str(item.clienteId),
-      nome: str(item.nome, "Cliente"),
-      valorContrato: num(item.valorContrato ?? item.valor),
-      quantidadeParcelas: item.quantidadeParcelas == null ? null : num(item.quantidadeParcelas),
-      porcentagemPagamento: num(item.porcentagemPagamento),
+      clienteId: texto(item.clienteId),
+      nome: texto(item.nome, "Cliente"),
+      valorContrato: numero(item.valorContrato ?? item.valor),
+      quantidadeParcelas: item.quantidadeParcelas == null ? null : numero(item.quantidadeParcelas),
+      porcentagemPagamento: numero(item.porcentagemPagamento),
     })),
     proximasLiberacoesFinanceiras: liberacoes.map((item) => ({
-      agendamentoId: str(item.agendamentoId),
-      clienteId: str(item.clienteId),
-      nome: str(item.nome, "Cliente"),
-      valorContrato: num(item.valorContrato ?? item.valor),
-      dataPrevisao: str(item.dataPrevisao) || null,
+      agendamentoId: texto(item.agendamentoId),
+      clienteId: texto(item.clienteId),
+      nome: texto(item.nome, "Cliente"),
+      valorContrato: numero(item.valorContrato ?? item.valor),
+      dataPrevisao: texto(item.dataPrevisao) || null,
     })),
   };
 }
 
-function date(value: string | null) {
+function dataCurta(value: string | null | undefined) {
   if (!value) return "—";
-  const [ano, mes, dia] = value.slice(0, 10).split("-");
+  const iso = String(value).slice(0, 10);
+  const [ano, mes, dia] = iso.split("-");
   return ano && mes && dia ? `${dia}/${mes}/${ano}` : "—";
 }
 
-function sum(values: number[]) {
-  return values.reduce((total, value) => total + value, 0);
+function periodoLabel(resumo: ResumoFinanceiro | null) {
+  if (!resumo?.periodo) return "Mês atual";
+  return `${dataCurta(resumo.periodo.inicio)} — ${dataCurta(resumo.periodo.fim)}`;
 }
 
-function More({ href, label = "Ver tudo" }: { href: string; label?: string }) {
+function percentual(parte: number, total: number) {
+  if (!total || total <= 0) return 0;
+  return Math.max(0, Math.min(100, (parte / total) * 100));
+}
+
+function money(value: unknown) {
+  return formatarMoeda(numero(value));
+}
+
+function LinkAction({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-burgundy/55 transition hover:bg-blush/60 hover:text-burgundy dark:text-white/40 dark:hover:bg-white/5 dark:hover:text-white/70">
-      {label} <ArrowUpRight className="h-3.5 w-3.5" />
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.13em] text-burgundy/55 transition hover:bg-blush/70 hover:text-burgundy dark:text-white/42 dark:hover:bg-white/6 dark:hover:text-white/75"
+    >
+      {children} <ArrowUpRight className="h-3.5 w-3.5" />
     </Link>
   );
 }
 
-function Section({ title, description, aside, children }: { title: string; description: string; aside?: ReactNode; children: ReactNode }) {
+function Metric({
+  label,
+  value,
+  helper,
+  icon: Icon,
+  emphasis = false,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  icon: typeof CircleDollarSign;
+  emphasis?: boolean;
+}) {
   return (
-    <section className="rounded-2xl border border-white/70 bg-white/78 p-4 shadow-[0_18px_54px_-38px_rgba(122,38,50,0.35)] backdrop-blur-xl dark:border-white/8 dark:bg-[#171519]/88">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold tracking-[-0.015em] text-burgundy dark:text-[#f0dfdc]">{title}</h2>
-          <p className="mt-0.5 text-[11px] leading-4 text-clay/45 dark:text-white/38">{description}</p>
-        </div>
-        {aside}
+    <div className="min-w-0 px-3 py-2.5 first:pl-0 last:pr-0">
+      <div className="flex items-center gap-2">
+        <span className={emphasis ? "text-alert" : "text-burgundy/55 dark:text-rose"}>
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <p className="truncate text-[9px] font-bold uppercase tracking-[0.14em] text-clay/45 dark:text-white/40">{label}</p>
       </div>
-      {children}
-    </section>
+      <p className={`mt-1 truncate text-lg font-semibold tracking-[-0.025em] ${emphasis ? "text-alert" : "text-burgundy dark:text-cream"}`}>{value}</p>
+      <p className="mt-0.5 truncate text-[10px] text-clay/40 dark:text-white/34">{helper}</p>
+    </div>
   );
 }
 
-function Empty({ children }: { children: string }) {
-  return <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-rose/20 bg-blush/20 px-4 py-5 text-center text-xs text-clay/45 dark:border-white/8 dark:bg-white/[0.025] dark:text-white/38">{children}</div>;
-}
-
-function Kpi({ icon: Icon, label, value, helper, href, tone }: { icon: typeof ReceiptText; label: string; value: string; helper: string; href: string; tone: string }) {
+function ActionRow({
+  href,
+  title,
+  detail,
+  value,
+  badge,
+  badgeClass,
+}: {
+  href: string;
+  title: string;
+  detail: string;
+  value?: string;
+  badge: string;
+  badgeClass: string;
+}) {
   return (
-    <Link href={href} className="group rounded-2xl border border-white/70 bg-white/80 p-4 shadow-[0_18px_50px_-36px_rgba(122,38,50,0.35)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-rose/20 dark:border-white/8 dark:bg-[#171519]/90">
-      <div className="flex items-start justify-between gap-3">
-        <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${tone}`}><Icon className="h-4 w-4" /></span>
-        <ArrowUpRight className="h-4 w-4 text-burgundy/25 transition group-hover:text-burgundy/60 dark:text-white/20" />
-      </div>
-      <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.18em] text-burgundy/42 dark:text-white/34">{label}</p>
-      <p className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-burgundy dark:text-[#f3e9e7]">{value}</p>
-      <p className="mt-1 truncate text-[11px] text-clay/48 dark:text-white/40">{helper}</p>
-    </Link>
-  );
-}
-
-function Row({ href, icon: Icon, title, meta, value, status, dot }: { href: string; icon: typeof ReceiptText; title: string; meta: string; value?: string; status: string; dot: string }) {
-  return (
-    <Link href={href} className="flex items-center gap-3 rounded-xl border border-rose/[0.08] bg-blush/[0.18] px-3 py-2.5 transition hover:border-rose/15 hover:bg-blush/38 dark:border-white/5 dark:bg-white/[0.025] dark:hover:bg-white/[0.045]">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 text-burgundy shadow-sm dark:bg-white/6 dark:text-[#dba7a6]"><Icon className="h-3.5 w-3.5" /></span>
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-xl border border-rose/10 bg-blush/20 px-3 py-2.5 transition hover:border-rose/20 hover:bg-blush/45 dark:border-white/6 dark:bg-white/[0.025] dark:hover:bg-white/[0.05]"
+    >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-burgundy dark:text-[#eadbd8]">{title}</p>
-        <p className="mt-0.5 truncate text-[10px] text-clay/43 dark:text-white/34">{meta}</p>
+        <p className="truncate text-xs font-medium text-burgundy dark:text-cream">{title}</p>
+        <p className="mt-0.5 truncate text-[10px] text-clay/45 dark:text-white/36">{detail}</p>
       </div>
       <div className="shrink-0 text-right">
-        {value ? <p className="text-[11px] font-semibold text-burgundy dark:text-[#eadbd8]">{value}</p> : null}
-        <p className="mt-0.5 inline-flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-[0.1em] text-clay/45 dark:text-white/36"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} />{status}</p>
+        {value ? <p className="text-[11px] font-semibold text-burgundy dark:text-cream">{value}</p> : null}
+        <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] ${badgeClass}`}>{badge}</span>
       </div>
     </Link>
   );
 }
 
 export default function VisaoGeralPage() {
-  const [dados, setDados] = useState<VisaoGeralData | null>(null);
+  const [financeiro, setFinanceiro] = useState<ResumoFinanceiro | null>(null);
+  const [visao, setVisao] = useState<VisaoGeralData>(EMPTY_VISAO);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
-  const [erro, setErro] = useState("");
+  const [erroFinanceiro, setErroFinanceiro] = useState("");
+  const [erroOperacao, setErroOperacao] = useState("");
 
   async function carregar(force = false) {
-    const url = "/api/admin/visao-geral";
+    const financeUrl = "/api/admin/financeiro/resumo";
+    const operationUrl = "/api/admin/visao-geral";
+
     if (!force) {
-      const cached = getInstantCache<RawData>(url);
-      if (cached) {
-        setDados(normalize(cached));
-        setCarregando(false);
-      }
+      const cachedFinanceiro = getInstantCache<ResumoFinanceiro>(financeUrl);
+      const cachedVisao = getInstantCache<RawVisao>(operationUrl);
+      if (cachedFinanceiro) setFinanceiro(cachedFinanceiro);
+      if (cachedVisao) setVisao(normalizarVisao(cachedVisao));
+    } else {
+      setAtualizando(true);
     }
 
-    if (force) setAtualizando(true);
-    setErro("");
+    const fetcherFinanceiro = force ? refreshInstant<ResumoFinanceiro> : fetchInstant<ResumoFinanceiro>;
+    const fetcherVisao = force ? refreshInstant<RawVisao> : fetchInstant<RawVisao>;
 
-    try {
-      const payload = force ? await refreshInstant<RawData>(url) : await fetchInstant<RawData>(url);
-      setDados(normalize(payload));
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não foi possível atualizar a visão geral.");
-      setDados((current) => current ?? EMPTY);
-    } finally {
-      setCarregando(false);
-      setAtualizando(false);
+    const [financeResult, operationResult] = await Promise.allSettled([
+      fetcherFinanceiro(financeUrl),
+      fetcherVisao(operationUrl),
+    ]);
+
+    if (financeResult.status === "fulfilled") {
+      setFinanceiro(financeResult.value);
+      setErroFinanceiro("");
+    } else {
+      setErroFinanceiro(financeResult.reason instanceof Error ? financeResult.reason.message : "Resumo financeiro indisponível.");
     }
+
+    if (operationResult.status === "fulfilled") {
+      setVisao(normalizarVisao(operationResult.value));
+      setErroOperacao("");
+    } else {
+      setErroOperacao(operationResult.reason instanceof Error ? operationResult.reason.message : "Pendências operacionais indisponíveis.");
+    }
+
+    setCarregando(false);
+    setAtualizando(false);
   }
 
   useEffect(() => {
@@ -222,94 +270,263 @@ export default function VisaoGeralPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const info = useMemo(() => {
-    const current = dados ?? EMPTY;
-    const comprovantes = sum(current.comprovantesPendentes.map((item) => item.valor));
-    const agenda = sum(current.proximosAgendamentos.map((item) => item.valorContrato));
-    const aguardando = sum(current.clientesAguardandoLiberacao.map((item) => item.valorContrato));
-    const liberacoes = sum(current.proximasLiberacoesFinanceiras.map((item) => item.valorContrato));
-    const bars = [
-      { label: "Validações", value: current.comprovantesPendentes.length, color: "bg-amber-500" },
-      { label: "Agenda", value: current.proximosAgendamentos.length, color: "bg-emerald-500" },
-      { label: "Liberação", value: current.clientesAguardandoLiberacao.length, color: "bg-rose-400" },
-      { label: "Previsões", value: current.proximasLiberacoesFinanceiras.length, color: "bg-burgundy dark:bg-[#c9828b]" },
-    ];
-    return {
-      comprovantes,
-      agenda,
-      aguardando,
-      liberacoes,
-      bars,
-      max: Math.max(...bars.map((item) => item.value), 1),
-      total: bars.reduce((total, item) => total + item.value, 0),
-    };
-  }, [dados]);
+  const totalPeriodo = financeiro?.kpis.aReceber ?? 0;
+  const recebido = financeiro?.kpis.recebido ?? 0;
+  const vencido = financeiro?.kpis.vencido ?? 0;
+  const emAberto = Math.max(0, totalPeriodo - recebido);
+  const taxaRealizacao = percentual(recebido, totalPeriodo);
+  const taxaAtraso = percentual(vencido, totalPeriodo);
 
-  if (carregando && !dados) {
-    return <div className="space-y-4 pb-8"><div className="h-24 animate-pulse rounded-2xl bg-white/55 dark:bg-white/5" /><SkeletonCards count={4} /><div className="grid gap-4 xl:grid-cols-2"><div className="h-64 animate-pulse rounded-2xl bg-white/55 dark:bg-white/5" /><div className="h-64 animate-pulse rounded-2xl bg-white/55 dark:bg-white/5" /></div></div>;
+  if (carregando && !financeiro) {
+    return (
+      <div className="space-y-4 pb-8">
+        <div className="h-20 animate-pulse rounded-2xl bg-white/60 dark:bg-white/5" />
+        <div className="h-32 animate-pulse rounded-2xl bg-white/60 dark:bg-white/5" />
+        <div className="grid gap-4 xl:grid-cols-[1.55fr_.75fr]">
+          <div className="h-72 animate-pulse rounded-2xl bg-white/60 dark:bg-white/5" />
+          <div className="h-72 animate-pulse rounded-2xl bg-white/60 dark:bg-white/5" />
+        </div>
+      </div>
+    );
   }
-
-  const current = dados ?? EMPTY;
 
   return (
     <div className="space-y-4 pb-8">
-      <section className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/80 px-4 py-4 shadow-[0_20px_60px_-40px_rgba(122,38,50,0.40)] backdrop-blur-xl dark:border-white/8 dark:bg-[#171519]/90 sm:px-5">
-        <div className="pointer-events-none absolute -right-14 -top-20 h-48 w-48 rounded-full bg-rose/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-burgundy/45 dark:text-white/35">Dashboard executivo</span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/15 bg-emerald-500/[0.07] px-2 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Dados operacionais</span>
-            </div>
-            <h1 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-burgundy dark:text-[#f2e7e4]">Visão Geral</h1>
-            <p className="mt-1 max-w-3xl text-[11px] leading-4 text-clay/50 dark:text-white/40">Prioridades financeiras, agenda e liberações reunidas em uma leitura rápida da operação.</p>
+      <section className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white/80 px-4 py-4 shadow-[0_18px_56px_-40px_rgba(122,38,50,.38)] backdrop-blur-xl dark:border-white/8 dark:bg-[#171519]/92 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-burgundy/42 dark:text-white/34">Visão executiva</p>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold tracking-[-0.035em] text-burgundy dark:text-cream">Visão Geral</h1>
+            <span className="text-[10px] font-medium text-clay/45 dark:text-white/35">{periodoLabel(financeiro)}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden rounded-xl border border-rose/10 bg-blush/25 px-3 py-2 text-right sm:block dark:border-white/6 dark:bg-white/[0.025]"><p className="text-[9px] uppercase tracking-[0.15em] text-clay/38 dark:text-white/30">Itens monitorados</p><p className="mt-0.5 text-sm font-semibold text-burgundy dark:text-[#eadbd8]">{info.total}</p></div>
-            <button type="button" onClick={() => void carregar(true)} disabled={atualizando} className="inline-flex h-10 items-center gap-2 rounded-xl bg-burgundy px-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-[0_12px_28px_-16px_rgba(122,38,50,0.75)] transition hover:bg-burgundy-dark disabled:opacity-60 dark:bg-[#7f3546]"><RefreshCw className={`h-3.5 w-3.5 ${atualizando ? "animate-spin" : ""}`} />{atualizando ? "Atualizando" : "Atualizar"}</button>
-          </div>
+          <p className="mt-1 text-[11px] text-clay/48 dark:text-white/38">Financeiro, projeção de caixa e filas que exigem ação da equipe.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => void carregar(true)}
+          disabled={atualizando}
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-burgundy/10 bg-white/80 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-burgundy transition hover:bg-blush/60 disabled:opacity-60 dark:border-white/8 dark:bg-white/5 dark:text-cream"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${atualizando ? "animate-spin" : ""}`} />
+          {atualizando ? "Atualizando" : "Atualizar"}
+        </button>
       </section>
 
-      {erro ? <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/15 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200"><span>Falha na última atualização: {erro}</span><button type="button" onClick={() => void carregar(true)} className="shrink-0 font-semibold underline underline-offset-2">Tentar novamente</button></div> : null}
+      {(erroFinanceiro || erroOperacao) ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+          {erroFinanceiro ? `Financeiro: ${erroFinanceiro}` : ""}
+          {erroFinanceiro && erroOperacao ? " · " : ""}
+          {erroOperacao ? `Operação: ${erroOperacao}` : ""}
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi icon={ReceiptText} label="Comprovantes pendentes" value={String(current.comprovantesPendentes.length)} helper={`${formatarMoeda(info.comprovantes)} nos itens exibidos`} href="/admin/financeiro?aba=validacao" tone="bg-gold/25 text-burgundy dark:bg-[#a87b36]/18 dark:text-[#e1bd79]" />
-        <Kpi icon={CalendarClock} label="Próximos agendamentos" value={String(current.proximosAgendamentos.length)} helper={`${formatarMoeda(info.agenda)} nos itens exibidos`} href="/admin/agenda" tone="bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300" />
-        <Kpi icon={UsersRound} label="Aguardando agenda" value={String(current.clientesAguardandoLiberacao.length)} helper={`${formatarMoeda(info.aguardando)} nos itens exibidos`} href="/admin/agenda" tone="bg-rose/15 text-burgundy dark:bg-[#aa6670]/12 dark:text-[#e4aaa8]" />
-        <Kpi icon={Wallet} label="Liberações previstas" value={String(current.proximasLiberacoesFinanceiras.length)} helper={`${formatarMoeda(info.liberacoes)} nos itens exibidos`} href="/admin/agenda?aba=liberacao" tone="bg-burgundy text-white dark:bg-[#7f3546]" />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <Section title="Prioridades financeiras" description="Pendências que exigem validação ou liberação da equipe." aside={<More href="/admin/financeiro?aba=validacao" label="Financeiro" />}>
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div>
-              <div className="mb-2 flex items-center justify-between"><p className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-burgundy/48 dark:text-white/36"><ReceiptText className="h-3.5 w-3.5" />Comprovantes</p><span className="text-[10px] font-semibold text-burgundy dark:text-[#e4cecb]">{current.comprovantesPendentes.length}</span></div>
-              {current.comprovantesPendentes.length === 0 ? <Empty>Nenhum comprovante aguardando validação.</Empty> : <div className="space-y-1.5">{current.comprovantesPendentes.slice(0, 4).map((item) => <Row key={item.boletoId} href="/admin/financeiro?aba=validacao" icon={ReceiptText} title={item.nome} meta={`Parcela ${item.numeroParcela}/${item.totalParcelas || "—"} · ${date(item.dataPagamento)}`} value={formatarMoeda(item.valor)} status="Validar" dot="bg-amber-500" />)}</div>}
-            </div>
-            <div>
-              <div className="mb-2 flex items-center justify-between"><p className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-burgundy/48 dark:text-white/36"><ShieldCheck className="h-3.5 w-3.5" />Liberação de agenda</p><span className="text-[10px] font-semibold text-burgundy dark:text-[#e4cecb]">{current.clientesAguardandoLiberacao.length}</span></div>
-              {current.clientesAguardandoLiberacao.length === 0 ? <Empty>Nenhuma cliente aguardando liberação.</Empty> : <div className="space-y-1.5">{current.clientesAguardandoLiberacao.slice(0, 4).map((item) => <Row key={item.clienteId} href="/admin/agenda" icon={ShieldCheck} title={item.nome} meta={`${item.quantidadeParcelas ?? "—"}x · ${item.porcentagemPagamento}% pago`} value={formatarMoeda(item.valorContrato)} status="Pendente" dot="bg-rose-400" />)}</div>}
-            </div>
+      <Panel className="overflow-hidden p-0 dark:border-white/8 dark:bg-[#171519]/92">
+        <div className="flex flex-col gap-3 border-b border-rose/10 px-4 py-3 dark:border-white/6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-burgundy/40 dark:text-white/32">Financeiro do período</p>
+            <p className="mt-0.5 text-xs text-clay/55 dark:text-white/45">Leitura consolidada dos vencimentos e baixas já registrados.</p>
           </div>
-        </Section>
+          <LinkAction href="/admin/financeiro">Abrir financeiro</LinkAction>
+        </div>
 
-        <Section title="Pulso operacional" description="Distribuição dos itens atualmente monitorados no painel." aside={<Activity className="h-4 w-4 text-burgundy/45 dark:text-white/38" />}>
-          <div className="space-y-3 pt-1">{info.bars.map((item) => { const width = `${Math.max((item.value / info.max) * 100, item.value > 0 ? 10 : 2)}%`; return <div key={item.label}><div className="mb-1 flex items-center justify-between text-[10px]"><span className="text-clay/50 dark:text-white/40">{item.label}</span><span className="font-semibold text-burgundy dark:text-[#eadbd8]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-blush/55 dark:bg-white/6"><div className={`h-full rounded-full transition-all duration-500 ${item.color}`} style={{ width }} /></div></div>; })}</div>
-          <div className="mt-4 grid grid-cols-2 gap-2 border-t border-rose/10 pt-3 dark:border-white/6"><div className="rounded-xl bg-blush/25 px-3 py-2 dark:bg-white/[0.025]"><p className="text-[9px] uppercase tracking-[0.12em] text-clay/35 dark:text-white/28">Financeiro pendente</p><p className="mt-1 text-xs font-semibold text-burgundy dark:text-[#eadbd8]">{formatarMoeda(info.comprovantes)}</p></div><div className="rounded-xl bg-blush/25 px-3 py-2 dark:bg-white/[0.025]"><p className="text-[9px] uppercase tracking-[0.12em] text-clay/35 dark:text-white/28">Liberação prevista</p><p className="mt-1 text-xs font-semibold text-burgundy dark:text-[#eadbd8]">{formatarMoeda(info.liberacoes)}</p></div></div>
-        </Section>
+        {financeiro ? (
+          <>
+            <div className="grid grid-cols-2 divide-x divide-y divide-rose/10 px-4 sm:grid-cols-3 xl:grid-cols-6 xl:divide-y-0 dark:divide-white/6">
+              <Metric label="Recebido" value={money(recebido)} helper="Baixas confirmadas" icon={CheckCircle2} />
+              <Metric label="A receber" value={money(totalPeriodo)} helper="Vencimentos do período" icon={CircleDollarSign} />
+              <Metric label="Em aberto" value={money(emAberto)} helper={`${(100 - taxaRealizacao).toFixed(1)}% do previsto`} icon={Clock3} />
+              <Metric label="Vencido" value={money(vencido)} helper={`${taxaAtraso.toFixed(1)}% do previsto`} icon={AlertTriangle} emphasis={vencido > 0} />
+              <Metric label="Receita adm. realizada" value={money(financeiro.kpis.receitaAdministrativaRealizada)} helper="Proporção das baixas" icon={TrendingUp} />
+              <Metric label="Receita adm. futura" value={money(financeiro.kpis.receitaAdministrativaFutura)} helper="Proporção ainda em aberto" icon={Wallet} />
+            </div>
+
+            <div className="grid gap-3 border-t border-rose/10 px-4 py-3 dark:border-white/6 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div>
+                <div className="flex items-center justify-between gap-3 text-[10px]">
+                  <span className="font-medium text-clay/55 dark:text-white/45">Realização financeira do período</span>
+                  <span className="font-semibold text-burgundy dark:text-cream">{taxaRealizacao.toFixed(1)}%</span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-blush/60 dark:bg-white/7">
+                  <div className="h-full rounded-full bg-success transition-all" style={{ width: `${taxaRealizacao}%` }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-[10px] text-clay/45 dark:text-white/36">
+                <span><strong className="text-burgundy dark:text-cream">{financeiro.kpis.aguardandoValidacao}</strong> aguardando validação</span>
+                {financeiro.truncado ? <span className="text-alert">Base truncada</span> : null}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="p-4"><EmptyPanel title="Resumo financeiro indisponível" description="A dashboard continua disponível; tente atualizar para carregar os indicadores." /></div>
+        )}
+      </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,.75fr)]">
+        <Panel className="p-4 dark:border-white/8 dark:bg-[#171519]/92">
+          <SectionHeading
+            title="Evolução financeira"
+            description="Previsto versus recebido por mês, usando os mesmos dados do Financeiro."
+            aside={financeiro ? <span className="text-[10px] font-semibold text-alert">Vencido: {money(vencido)}</span> : undefined}
+          />
+          {financeiro?.evolucao?.length ? (
+            <DualBarChart
+              data={financeiro.evolucao.map((item) => ({ label: item.label, value: numero(item.previsto), secondaryValue: numero(item.realizado) }))}
+              primaryLabel="Previsto"
+              secondaryLabel="Recebido"
+              primaryColorClassName="bg-burgundy"
+              secondaryColorClassName="bg-success/75"
+            />
+          ) : (
+            <EmptyPanel title="Sem movimento no período" description="Ainda não há vencimentos ou baixas suficientes para formar o evolutivo." />
+          )}
+        </Panel>
+
+        <Panel className="p-4 dark:border-white/8 dark:bg-[#171519]/92">
+          <SectionHeading
+            title="Previsão de caixa"
+            description="Valores em aberto, não suspensos, a partir de hoje."
+            aside={<CalendarClock className="h-4 w-4 text-burgundy/50 dark:text-rose" />}
+          />
+          {financeiro ? (
+            <div className="space-y-2.5">
+              {[
+                { label: "30 dias", value: financeiro.previsao.dias30 },
+                { label: "60 dias", value: financeiro.previsao.dias60 },
+                { label: "90 dias", value: financeiro.previsao.dias90 },
+              ].map((item) => {
+                const max = Math.max(financeiro.previsao.dias90, 1);
+                return (
+                  <div key={item.label} className="rounded-xl border border-rose/10 bg-blush/25 px-3 py-2.5 dark:border-white/6 dark:bg-white/[0.025]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[11px] font-medium text-clay/60 dark:text-white/50">Próximos {item.label}</span>
+                      <span className="text-xs font-semibold text-burgundy dark:text-cream">{money(item.value)}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white dark:bg-white/7">
+                      <div className="h-full rounded-full bg-burgundy dark:bg-rose" style={{ width: `${Math.max(3, percentual(item.value, max))}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="px-1 text-[9px] leading-4 text-clay/38 dark:text-white/30">As faixas são cumulativas: 60 dias inclui os 30 primeiros; 90 dias inclui os períodos anteriores.</p>
+            </div>
+          ) : (
+            <EmptyPanel title="Projeção indisponível" description="Não foi possível carregar a previsão financeira neste momento." />
+          )}
+        </Panel>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Section title="Próximos agendamentos" description="Termos cirúrgicos confirmados na agenda." aside={<More href="/admin/agenda" />}>
-          {current.proximosAgendamentos.length === 0 ? <Empty>Nenhum agendamento confirmado nos próximos dias.</Empty> : <div className="space-y-1.5">{current.proximosAgendamentos.slice(0, 5).map((item) => <Row key={item.agendamentoId} href="/admin/agenda" icon={CalendarClock} title={item.nome} meta={date(item.data)} value={formatarMoeda(item.valorContrato)} status="Confirmado" dot="bg-emerald-500" />)}</div>}
-        </Section>
-        <Section title="Próximas liberações financeiras" description="Previsões definidas, ordenadas pela data mais próxima." aside={<More href="/admin/agenda?aba=liberacao" />}>
-          {current.proximasLiberacoesFinanceiras.length === 0 ? <Empty>Nenhuma liberação financeira prevista.</Empty> : <div className="space-y-1.5">{current.proximasLiberacoesFinanceiras.slice(0, 5).map((item) => <Row key={item.agendamentoId} href="/admin/agenda?aba=liberacao" icon={Clock3} title={item.nome} meta={`Previsão · ${date(item.dataPrevisao)}`} value={formatarMoeda(item.valorContrato)} status="Prevista" dot="bg-burgundy dark:bg-[#c9828b]" />)}</div>}
-        </Section>
+        <Panel className="p-4 dark:border-white/8 dark:bg-[#171519]/92">
+          <SectionHeading
+            title="Ações financeiras pendentes"
+            description="Itens que dependem de conferência ou liberação da equipe."
+            aside={<LinkAction href="/admin/financeiro?aba=validacao">Ver validações</LinkAction>}
+          />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-clay/45 dark:text-white/36"><FileCheck2 className="h-3.5 w-3.5" />Comprovantes</p>
+                <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[9px] font-semibold text-burgundy">{visao.comprovantesPendentes.length}</span>
+              </div>
+              {visao.comprovantesPendentes.length ? (
+                <div className="space-y-1.5">
+                  {visao.comprovantesPendentes.slice(0, 4).map((item) => (
+                    <ActionRow
+                      key={item.boletoId}
+                      href={`/admin/financeiro?aba=validacao&cliente_id=${item.clienteId}`}
+                      title={item.nome}
+                      detail={`Parcela ${item.numeroParcela}/${item.totalParcelas || "—"} · ${dataCurta(item.dataPagamento)}`}
+                      value={money(item.valor)}
+                      badge="Validar"
+                      badgeClass="bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    />
+                  ))}
+                </div>
+              ) : <EmptyPanel title="Fila limpa" description="Nenhum comprovante aguardando validação." />}
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-clay/45 dark:text-white/36"><ShieldCheck className="h-3.5 w-3.5" />Liberação da agenda</p>
+                <span className="rounded-full bg-rose/15 px-2 py-0.5 text-[9px] font-semibold text-burgundy">{visao.clientesAguardandoLiberacao.length}</span>
+              </div>
+              {visao.clientesAguardandoLiberacao.length ? (
+                <div className="space-y-1.5">
+                  {visao.clientesAguardandoLiberacao.slice(0, 4).map((item) => (
+                    <ActionRow
+                      key={item.clienteId}
+                      href="/admin/agenda"
+                      title={item.nome}
+                      detail={`${item.quantidadeParcelas ?? "—"}x · ${item.porcentagemPagamento}% pago`}
+                      value={money(item.valorContrato)}
+                      badge="Liberar"
+                      badgeClass="bg-rose/15 text-burgundy dark:text-rose"
+                    />
+                  ))}
+                </div>
+              ) : <EmptyPanel title="Fila limpa" description="Nenhuma cliente aguardando liberação da agenda." />}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel className="p-4 dark:border-white/8 dark:bg-[#171519]/92">
+          <SectionHeading
+            title="Agenda e liberações próximas"
+            description="Compromissos já confirmados e previsões financeiras mais próximas."
+            aside={<LinkAction href="/admin/agenda">Abrir agenda</LinkAction>}
+          />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-clay/45 dark:text-white/36"><CalendarClock className="h-3.5 w-3.5" />Agendamentos</p>
+                <span className="text-[10px] font-semibold text-burgundy dark:text-cream">{visao.proximosAgendamentos.length}</span>
+              </div>
+              {visao.proximosAgendamentos.length ? (
+                <div className="space-y-1.5">
+                  {visao.proximosAgendamentos.slice(0, 4).map((item) => (
+                    <ActionRow
+                      key={item.agendamentoId}
+                      href="/admin/agenda"
+                      title={item.nome}
+                      detail={dataCurta(item.data)}
+                      value={money(item.valorContrato)}
+                      badge="Confirmado"
+                      badgeClass="bg-success/10 text-success"
+                    />
+                  ))}
+                </div>
+              ) : <EmptyPanel title="Sem próximos eventos" description="Nenhum agendamento confirmado nos próximos dias." />}
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-clay/45 dark:text-white/36"><Wallet className="h-3.5 w-3.5" />Liberações</p>
+                <span className="text-[10px] font-semibold text-burgundy dark:text-cream">{visao.proximasLiberacoesFinanceiras.length}</span>
+              </div>
+              {visao.proximasLiberacoesFinanceiras.length ? (
+                <div className="space-y-1.5">
+                  {visao.proximasLiberacoesFinanceiras.slice(0, 4).map((item) => (
+                    <ActionRow
+                      key={item.agendamentoId}
+                      href="/admin/agenda?aba=liberacao"
+                      title={item.nome}
+                      detail={`Previsão · ${dataCurta(item.dataPrevisao)}`}
+                      value={money(item.valorContrato)}
+                      badge="Prevista"
+                      badgeClass="bg-burgundy/8 text-burgundy dark:bg-white/6 dark:text-rose"
+                    />
+                  ))}
+                </div>
+              ) : <EmptyPanel title="Sem previsões próximas" description="Nenhuma liberação financeira prevista." />}
+            </div>
+          </div>
+        </Panel>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[9px] uppercase tracking-[0.14em] text-clay/35 dark:text-white/28"><span className="inline-flex items-center gap-1.5"><CircleDollarSign className="h-3 w-3" />Valores consolidados somente a partir dos itens exibidos pela API</span><span>Atualização automática a cada 60 segundos</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[9px] uppercase tracking-[0.12em] text-clay/32 dark:text-white/25">
+        <span>Dados financeiros: mesmo resumo usado na aba Financeiro</span>
+        <span>Atualização automática a cada 60 segundos</span>
+      </div>
     </div>
   );
 }
