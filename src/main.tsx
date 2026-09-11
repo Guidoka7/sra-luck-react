@@ -20,6 +20,7 @@ import PagamentosPage from "./app/admin/(painel)/pagamentos/page";
 import ParcelasPage from "./app/admin/(painel)/parcelas/page";
 import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import EquipeAdminPage from "./app/admin/(painel)/equipe/page";
+import IntegracoesAdminPage from "./app/admin/(painel)/integracoes/page";
 import AdminNotificationsPanel from "./app/admin/(painel)/notificacoes/page";
 import AdminMonitoringPanel from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import "./app/globals.css";
@@ -36,17 +37,6 @@ function RedirectTo({ to }: { to: string }) {
   return null;
 }
 
-function AdminUnavailableModule({ title }: { title: string }) {
-  return (
-    <div className="mx-auto max-w-2xl rounded-2xl border border-burgundy/10 bg-white/80 p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-      <h1 className="font-heading text-2xl text-burgundy dark:text-pearl">{title}</h1>
-      <p className="mt-2 text-sm leading-6 text-clay/55 dark:text-pearl/45">
-        Este módulo novo ainda está em integração com o backend. Dados simulados e botões sem ação foram retirados do runtime para não parecerem funções prontas.
-      </p>
-    </div>
-  );
-}
-
 function AdminRoute({ path }: { path: string }) {
   if (path === "/admin" || path === "/admin/") return <RedirectTo to="/admin/visao-geral" />;
   if (path.startsWith("/admin/visao-geral")) return <VisaoGeralPage />;
@@ -57,10 +47,10 @@ function AdminRoute({ path }: { path: string }) {
   if (path.startsWith("/admin/parcelas")) return <ParcelasPage />;
   if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
   if (path.startsWith("/admin/equipe")) return <EquipeAdminPage />;
+  if (path.startsWith("/admin/integracoes")) return <IntegracoesAdminPage />;
   if (path.startsWith("/admin/notificacoes")) return <AdminNotificationsPanel />;
   if (path === "/admin/configuracoes/monitoramento") return <AdminMonitoringPanel />;
   if (path.startsWith("/admin/configuracoes")) return <AdminSettingsPanel />;
-  if (path.startsWith("/admin/integracoes")) return <AdminUnavailableModule title="Integrações" />;
   return <VisaoGeralPage />;
 }
 
