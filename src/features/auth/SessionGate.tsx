@@ -1,29 +1,30 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { requestJson } from "../../lib/http";
 
 interface SessionGateProps {
   audience: "admin" | "cliente" | "equipe";
   children: ReactNode;
 }
 
+interface SessionResponse {
+  autenticado?: boolean;
+}
+
 export function SessionGate({ audience, children }: SessionGateProps) {
   const [state, setState] = useState<"checking" | "ok" | "denied">("checking");
-  const preview = useMemo(() => new URLSearchParams(window.location.search).get("preview") === "1", []);
 
   useEffect(() => {
-    if (preview) {
-      setState("ok");
-      return;
-    }
+    let active = true;
     const endpoint = audience === "admin" ? "/api/admin/session" : audience === "equipe" ? "/api/equipe/session" : "/api/cliente/session";
-    fetch(endpoint, { cache: "no-store", credentials: "same-origin" })
-      .then(async (response) => {
-        if (!response.ok) return false;
-        const data = await response.json().catch(() => ({})) as { autenticado?: boolean };
-        return data.autenticado === true;
+    requestJson<SessionResponse>(endpoint, { cache: "no-store" }, { timeoutMs: 8_000, retries: 1 })
+      .then((data) => {
+        if (active) setState(data.autenticado === true ? "ok" : "denied");
       })
-      .then((ok) => setState(ok ? "ok" : "denied"))
-      .catch(() => setState("denied"));
-  }, [audience, preview]);
+      .catch(() => {
+        if (active) setState("denied");
+      });
+    return () => { active = false; };
+  }, [audience]);
 
   useEffect(() => {
     if (state !== "denied") return;
@@ -31,9 +32,7 @@ export function SessionGate({ audience, children }: SessionGateProps) {
     window.location.replace(login);
   }, [audience, state]);
 
-  if (state === "ok") {
-    return <>{preview && <div style={{position:"fixed",right:10,bottom:84,zIndex:9999,background:"#7f6038",color:"white",fontSize:10,padding:"6px 9px",borderRadius:999}}>Modo preview</div>}{children}</>;
-  }
+  if (state === "ok") return <>{children}</>;
 
   return (
     <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f7f3eb",fontFamily:"Inter,system-ui"}}>
