@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { calcularLiberacaoCirurgica } from "./surgery-release";
+import { adminFinanceiro } from "./admin-financeiro";
 
 type Json = Record<string, any>;
 
@@ -26,6 +27,9 @@ function one<T = any>(value: T | T[] | null | undefined): T | null {
 }
 
 export async function adminFinance(request: Request, env: Env): Promise<Response | null> {
+  const unificado = await adminFinanceiro(request, env);
+  if (unificado) return unificado;
+
   const url = new URL(request.url);
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;

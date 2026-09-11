@@ -124,7 +124,7 @@ Destino:
 - liquidados/vencidos/aguardando/divergências;
 - banco + comprovante + Conta Azul.
 
-Estado: **PORTADO PARCIALMENTE / EVOLUÇÃO PENDENTE**.
+Estado: **UNIFICADO NA FASE 1** em `/admin/financeiro?aba=validacao`; integrações externas e conciliação permanecem pendentes.
 
 ### Parcelas/admin
 
@@ -144,7 +144,7 @@ Destino:
 - idempotência;
 - trilha financeira consistente.
 
-Estado: **PORTADO PARCIALMENTE / PRECISA TESTES**.
+Estado: **UNIFICADO NA FASE 1** em `/admin/financeiro?aba=recebiveis`; geração e manutenção continuam delegadas ao handler existente de parcelas.
 
 ### Agenda admin
 

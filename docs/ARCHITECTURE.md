@@ -227,6 +227,12 @@ parcela interna
 
 Webhooks podem ser entregues mais de uma vez. O efeito financeiro não pode ser duplicado.
 
+Na fase 1 do Financeiro Unificado, `financeiro_recebimentos` é o ledger de baixas e validações. As funções SQL
+`financeiro_baixar_boleto` e `financeiro_validar_comprovante` bloqueiam a parcela, verificam a chave de idempotência,
+registram o evento e atualizam `boletos.status` na mesma transação. O Worker expõe esse contrato somente sob
+`/api/admin/financeiro`; a UI não grava diretamente nas tabelas. Mercado Pago, Conta Azul, RD Station e bancos
+continuam sem conexão ativa.
+
 ## 9. Providers externos
 
 Usar adapters/providers.
