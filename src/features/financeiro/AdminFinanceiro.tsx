@@ -3,7 +3,7 @@ import { CalendarDays, FileInput, Landmark, Plus, RefreshCw, Search, TableProper
 import { toast } from "sonner";
 import { PageHeader, Panel } from "@/components/admin/ExecutiveUI";
 import { Button } from "@/components/ui/Button";
-import { Input, Select } from "@/components/ui/Input";
+import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { financeiroApi } from "./financeiroApi";
 import { FinanceiroOverview } from "./FinanceiroOverview";
