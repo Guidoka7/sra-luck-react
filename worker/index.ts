@@ -10,6 +10,7 @@ import { adminParcelas } from "./admin-parcelas";
 import { adminNotificacoes } from "./admin-notificacoes";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
+import { adminSurgeryFlow } from "./admin-surgery-flow";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
@@ -217,8 +218,6 @@ export default {
       });
     }
 
-    // Gate central: qualquer rota administrativa, inclusive módulos que ainda
-    // possuem guards locais, exige vínculo administrativo ativo no banco.
     if (url.pathname.startsWith("/api/admin/")) {
       const denied = await exigirAdmin(request, env);
       if (denied) return denied;
@@ -271,6 +270,8 @@ export default {
     if (clienteAgendamento) return clienteAgendamento;
     const adminAgendamento = await adminAgendamentoAcao(request, env);
     if (adminAgendamento) return adminAgendamento;
+    const cirurgiaAdmin = await adminSurgeryFlow(request, env);
+    if (cirurgiaAdmin) return cirurgiaAdmin;
 
     if (url.pathname === "/api/cliente/boletos" && request.method === "GET") return handleClienteBoletos(request, env);
     const boletoMatch = url.pathname.match(/^\/api\/cliente\/boletos\/([^/]+)\/(anexar|arquivo|comprovante)$/);
