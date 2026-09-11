@@ -8,7 +8,9 @@ export class ValidationError extends Error {
   }
 }
 
-export type JsonObject = Record<string, unknown>;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type JsonObject = { [key: string]: JsonValue };
 
 export function asObject(value: unknown): JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value)
