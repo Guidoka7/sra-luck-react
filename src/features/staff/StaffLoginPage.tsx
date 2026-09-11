@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, Users } from "lucide-react";
 import "../../styles/staff-pwa.css";
+import "../../styles/staff-login.css";
 
 export function StaffLoginPage() {
   const [email, setEmail] = useState("");
