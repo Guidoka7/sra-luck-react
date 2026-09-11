@@ -186,6 +186,7 @@ export function AdminSettingsPanel() {
         <section className="sl-card sl-settings-card">
           <div className="sl-settings-title"><div className="sl-settings-icon"><MonitorCog size={18} /></div><div><h2>Segurança & monitoramento</h2><p>Auditoria, sessões, webhooks e saúde operacional.</p></div></div>
           <ul className="sl-security-list"><li><ShieldCheck size={15} /> Sessões administrativas protegidas</li><li><ShieldCheck size={15} /> Auditoria de ações críticas</li><li><ShieldCheck size={15} /> Validação de webhooks</li><li><ShieldCheck size={15} /> Rate limit de autenticação</li></ul>
+          <button type="button" className="sl-save-button" onClick={() => { window.history.pushState({}, "", "/admin/configuracoes/monitoramento"); window.dispatchEvent(new Event("app:navigate")); }}><MonitorCog size={15} /> Abrir monitoramento do sistema</button>
         </section>
       </div>
     </div>
