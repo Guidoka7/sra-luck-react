@@ -14,6 +14,7 @@ import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import { AdminSettingsPanel } from "./features/admin/AdminSettingsPanel";
 import AdminLayout from "./app/admin/(painel)/layout";
 import VisaoGeralPage from "./app/admin/(painel)/visao-geral/page";
+import PrevisoesPage from "./app/admin/(painel)/previsoes/page";
 import AgendaAdminPage from "./app/admin/(painel)/agenda/page";
 import ClientesPage from "./app/admin/(painel)/clientes/page";
 import FinanceiroPage from "./app/admin/(painel)/financeiro/page";
@@ -39,6 +40,7 @@ function RedirectTo({ to }: { to: string }) {
 function AdminRoute({ path }: { path: string }) {
   if (path === "/admin" || path === "/admin/") return <RedirectTo to="/admin/visao-geral" />;
   if (path.startsWith("/admin/visao-geral")) return <VisaoGeralPage />;
+  if (path.startsWith("/admin/previsoes")) return <PrevisoesPage />;
   if (path.startsWith("/admin/liberacoes")) return <RedirectTo to="/admin/agenda?aba=liberacao" />;
   if (path.startsWith("/admin/agenda")) return <AgendaAdminPage />;
   if (path.startsWith("/admin/clientes")) return <ClientesPage />;
