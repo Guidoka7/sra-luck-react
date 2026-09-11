@@ -1,386 +1,428 @@
-# Sra. Luck React — Arquitetura
+# Arquitetura oficial — Sra. Luck React
 
-> Fonte de verdade arquitetural baseada no código confirmado no repositório. Este documento não considera a arquitetura ideal como se já estivesse implementada.
+Este documento descreve o estado arquitetural atual e a direção de evolução do `sra-luck-react`.
 
-## 1. Estado de referência e divergência entre branches
+A fonte funcional histórica é `Guidoka7/sra-luck-pwa/main`. A fonte de verdade das regras novas é `docs/BUSINESS-RULES.md`.
 
-No momento desta documentação, as branches não representam exatamente o mesmo estado arquitetural:
-
-- `develop` aponta para `530cd09c4d0c5bf05e9a08a7c4ed016c786fe40e` e ainda contém o runtime Next.js. O `package.json` dessa branch usa `next dev`, `next build` e `next start`, e declara `next` e `@supabase/ssr` como dependências.
-- `main` contém a migração mais avançada para React + Vite + Cloudflare Workers. Nela, `src/main.tsx` é a entrada React, `vite.config.ts` integra Vite com Cloudflare e `wrangler.jsonc` aponta para `worker/index.ts`.
-
-Portanto, **não é correto afirmar que `develop` já possui o runtime React + Vite do `main`**. A arquitetura de destino desta documentação é descrita a partir do runtime migrado existente em `main`, enquanto a situação efetivamente presente em `develop` é registrada como estado legado/de transição.
-
-Este documento foi criado em `develop` exclusivamente como documentação arquitetural e não altera código de runtime.
-
-## 2. Arquitetura atual do runtime migrado
-
-No estado migrado confirmado em `main`, o fluxo principal é:
+## 1. Arquitetura de produto
 
 ```text
-Browser
-  │
-  ▼
+Cliente/Admin/Colaborador
+        │
+        ▼
 React + Vite SPA
-  │
-  ├── páginas e componentes
-  ├── sessão/estado da interface
-  └── chamadas HTTP para /api/*
-          │
-          ▼
+        │
+        │ HTTPS /api/*
+        ▼
 Cloudflare Worker
-  │
-  ├── autenticação/sessões protegidas
-  ├── APIs de cliente
-  ├── APIs administrativas
-  ├── regras de backend
-  └── acesso privilegiado aos dados
-          │
-          ▼
+        │
+        ├── autenticação/autorização
+        ├── regras de domínio
+        ├── providers externos
+        ├── webhooks
+        └── observabilidade/auditoria
+        │
+        ▼
 Supabase
-  │
-  ├── PostgreSQL
-  ├── Storage
-  ├── Realtime
-  └── funções/RPCs SQL
+        ├── PostgreSQL
+        ├── RPCs/constraints
+        ├── RLS
+        ├── Storage
+        └── Realtime
 ```
 
-O `wrangler.jsonc` do runtime migrado declara `worker/index.ts` como entrada do Worker, configura os assets como SPA e faz `/api/*` passar primeiro pelo Worker.
+Preview visual pode ser servido pela Vercel, mas o backend oficial continua sendo o Cloudflare Worker. Adapters em `api/` são infraestrutura de Preview/transição e não devem virar uma segunda arquitetura de backend.
 
-## 3. Frontend
+## 2. Responsabilidades
 
-A entrada React do runtime migrado é `src/main.tsx`.
+### React + Vite
 
-O roteamento atual é feito pelo próprio código da aplicação, observando `window.location.pathname`. As áreas confirmadas são:
+Responsável por:
 
-- `/login` — login da cliente;
-- `/agenda` — área da cliente;
-- `/admin/login` — login administrativo;
-- `/admin/*` — painel administrativo, incluindo agenda, clientes, pagamentos, parcelas, relatórios, notificações, configurações e monitoramento.
+- renderização;
+- navegação SPA;
+- design system;
+- formulários e interação;
+- estado de interface;
+- consumo das APIs;
+- experiência PWA da cliente;
+- feedback de erro/sucesso;
+- acessibilidade/responsividade.
 
-`src/main.tsx` também instala o monitoramento global, `ThemeProvider` e `AppErrorBoundary`.
+Não deve possuir:
 
-A área `/agenda` registra o PWA por meio de `PwaRegister`. Não há evidência, neste documento, de que o painel administrativo seja tratado como PWA.
+- service role;
+- tokens bancários;
+- segredos de webhook;
+- regra financeira autoritativa que exista apenas no browser.
 
-## 4. Estrutura de código atualmente observada
+### Cloudflare Worker
 
-A organização atual não corresponde integralmente a uma arquitetura por domínio `features/services/hooks/config`.
+É a fronteira oficial de backend.
 
-As principais áreas são:
+Responsável por:
+
+- autenticação/sessões;
+- autorização;
+- validação server-side;
+- regras de negócio protegidas;
+- persistência privilegiada;
+- integração com bancos/CRM/financeiro;
+- webhooks;
+- idempotência;
+- rate limiting quando necessário;
+- auditoria e logs estruturados.
+
+### Supabase
+
+Não é apenas armazenamento. Também protege invariantes por:
+
+- constraints;
+- funções/RPCs;
+- RLS;
+- índices;
+- transações/concorrência;
+- Storage;
+- Realtime.
+
+Regra existente no banco deve ser auditada antes de duplicar/substituir no Worker.
+
+## 3. Estado atual do frontend
+
+Entradas/áreas relevantes:
 
 ```text
 src/
-  app/          código de páginas e também superfície herdada do Next
-  pages/        páginas React do runtime migrado
-  components/   componentes de interface e componentes administrativos
-  lib/          bibliotecas, integração e lógica compartilhada
-  types/        tipos
-  styles/       estilos
-  shims/        compatibilidade com algumas APIs/imports originalmente usados pelo Next
-
-worker/
-  index.ts      entrada e roteamento do Cloudflare Worker
-  *.ts          handlers e lógica de backend
-
-supabase/
-  *.sql         schema e migrations do banco
-
-docs/
-  documentação arquitetural e operacional
+  main.tsx            # entrada SPA/roteamento atual
+  pages/              # páginas React do runtime ativo
+  features/           # features extraídas/novas
+  components/         # componentes compartilhados + migrados
+  lib/                # utilidades/clientes compartilhados
+  types/
+  styles/
+  shims/              # compatibilidade temporária
+  app/                # superfície herdada do Next ainda presente
 ```
 
-A existência de uma pasta ou arquivo não significa, por si só, que ele esteja no caminho de execução atual.
+A pasta `src/features/` é a direção oficial para domínios do frontend. Consultar `src/features/README.md`.
 
-## 5. Runtime ativo, legado e código não comprovado
+## 4. Estado atual do Worker
 
-### Runtime ativo confirmado
+Hoje existem handlers diretamente em `worker/`, por exemplo:
 
-No runtime migrado de `main`, são confirmados como pontos de entrada:
+- `admin-api.ts`;
+- `admin-auth.ts`;
+- `admin-finance.ts`;
+- `admin-notificacoes.ts`;
+- `admin-panel.ts`;
+- `admin-parcelas.ts`;
+- `admin-reports.ts`;
+- `client-agenda.ts`;
+- `client-boletos.ts`;
+- `journey.ts`;
+- `credit-ops.ts`;
+- `integrations-core.ts`;
+- outros handlers auxiliares.
 
-- `src/main.tsx` para o navegador;
-- `worker/index.ts` para as APIs do Cloudflare Worker;
-- `wrangler.jsonc` para a configuração do Worker e da entrega SPA.
+Isso é o estado atual, não a organização final.
 
-### Código legado
-
-O repositório ainda contém uma superfície significativa originalmente criada para Next.js, incluindo arquivos em `src/app/api`, `src/middleware.ts`, `src/lib/supabase/server.ts`, `next.config.js` e outros arquivos dependentes do modelo Next.
-
-Esses arquivos **não devem ser considerados automaticamente parte do runtime Vite/Worker**. Antes de remover qualquer um deles, deve-se confirmar seus consumidores, equivalentes no Worker, dependências de banco e relação com fluxos de negócio.
-
-### Código existente, mas não comprovadamente ativo
-
-Arquivos de funcionalidades como notificações, Web Push, feedback, monitoramento e outras integrações não devem ser classificados como funcionalidades efetivamente disponíveis somente porque seus arquivos existem.
-
-A confirmação deve considerar:
-
-1. importação pelo runtime ativo;
-2. rota realmente exposta pelo Worker;
-3. chamada efetiva pela interface;
-4. dependências/configuração necessárias;
-5. persistência ou processamento correspondente no banco;
-6. validação do fluxo, quando houver teste disponível.
-
-## 6. Papel do frontend
-
-O frontend é responsável principalmente por:
-
-- renderização da experiência da cliente e do administrador;
-- navegação da SPA;
-- coleta e apresentação de dados;
-- interação com APIs;
-- estado visual e de interface;
-- registro do PWA na área da cliente;
-- apresentação de erros ao usuário.
-
-Operações privilegiadas não devem depender de segredos entregues ao navegador.
-
-O `package.json` do runtime migrado utiliza Vite para desenvolvimento, build e preview.
-
-## 7. Papel do Cloudflare Worker
-
-O Worker é a camada backend do runtime migrado.
-
-Ele concentra as APIs expostas em `/api/*` e operações que precisam ocorrer fora do navegador, incluindo autenticação/sessões, operações administrativas e acesso privilegiado ao Supabase.
-
-O Worker deve ser tratado como a fronteira entre a interface pública e as operações protegidas.
-
-A implementação atual ainda possui regras distribuídas entre múltiplos handlers. Isso é uma característica do estado atual, não uma indicação de que já exista uma camada de domínio centralizada.
-
-## 8. Papel do Supabase
-
-O Supabase fornece a camada de dados e serviços persistentes.
-
-No projeto existem evidências de uso de:
-
-- PostgreSQL;
-- Storage;
-- Realtime;
-- funções SQL/RPC para operações sensíveis à concorrência;
-- migrations versionadas no diretório `supabase/`.
-
-O banco não deve ser tratado como simples armazenamento passivo: parte das invariantes de negócio e da concorrência de agendamento é implementada no SQL.
-
-A aplicação não deve assumir que uma regra é exclusivamente de frontend ou Worker sem verificar as funções e políticas do banco relacionadas.
-
-## 9. Browser → Worker → Supabase
-
-O fluxo arquitetural pretendido para operações protegidas é:
+A evolução deve ser incremental para:
 
 ```text
-Interface React
-      │
-      │ HTTP /api/*
-      ▼
-Cloudflare Worker
-      │
-      │ autenticação + autorização + regra de backend
-      ▼
-Supabase
-      │
-      ├── dados
-      ├── Storage
-      └── RPC / SQL
+worker/
+  index.ts
+  routes/
+    client/
+    admin/
+    webhooks/
+  domain/
+    contracts/
+    installments/
+    finance/
+    scheduling/
+    journey/
+    commissions/
+    rewards/
+  providers/
+    rd-station/
+    conta-azul/
+    mercado-pago/
+    banks/
+  auth/
+  validation/
+  observability/
+  shared/
 ```
 
-Há, entretanto, código administrativo que também utiliza diretamente o cliente Supabase público/realtime. Portanto, a separação `Browser → Worker → Supabase` **não deve ser considerada absoluta em todo o código atual**.
+Consultar `worker/README.md`.
 
-Essa exceção precisa ser mapeada antes de qualquer tentativa de impor uma camada única ou remover acessos existentes.
+## 5. Domínios de negócio
+
+Os domínios principais do produto são:
+
+- autenticação e permissões;
+- clientes;
+- contratos/políticas;
+- parcelas/cobranças;
+- pagamentos/conciliação;
+- financeiro;
+- jornada de liberação;
+- agenda de termos;
+- agenda cirúrgica;
+- notificações;
+- integrações;
+- colaboradores/comissões/treinamentos;
+- forecast/planejamento;
+- Clube de Vantagens/indicações.
+
+Admin/Cliente são superfícies de produto; regra de negócio compartilhada deve viver em domínio reutilizável quando apropriado.
+
+## 6. Contratos e configurabilidade
+
+Políticas que podem mudar devem ser modeladas de forma configurável/versionável, não espalhadas em condicionais.
+
+Exemplos:
+
+- percentual mínimo;
+- taxa administrativa;
+- prazo de liberação;
+- modalidades;
+- formas de pagamento;
+- comissão;
+- permissões;
+- agenda;
+- notificações;
+- identidade visual.
+
+Um contrato existente deve preservar a política relevante da sua vigência quando uma mudança futura não puder ser retroativa.
+
+## 7. Identidade financeira
+
+Separar sempre:
+
+- valor base/carta/crédito;
+- taxa administrativa;
+- total contratado;
+- valor recebido;
+- receita administrativa;
+- saldo final;
+- eventos de pagamento.
+
+Percentual de elegibilidade usa quantidade de parcelas pagas, não valor financeiro.
+
+## 8. Eventos financeiros e idempotência
+
+Toda operação externa precisa de vínculo estável.
+
+Conceitualmente:
+
+```text
+parcela interna
+   ├── id externo do banco
+   ├── id de pagamento Mercado Pago
+   ├── referência Conta Azul
+   ├── comprovantes
+   └── eventos de liquidação/validação
+```
+
+Webhooks podem ser entregues mais de uma vez. O efeito financeiro não pode ser duplicado.
+
+## 9. Providers externos
+
+Usar adapters/providers.
+
+### Bancos
+
+Contrato comum deve normalizar, conforme suporte de cada banco:
+
+- emissão;
+- consulta;
+- alteração;
+- cancelamento;
+- arquivo/linha digitável;
+- status;
+- liquidação;
+- webhook;
+- erro.
+
+Implementações previstas:
+
+- BRB;
+- Banco do Brasil;
+- Santander;
+- Sicredi;
+- Efí.
+
+### Outros providers
+
+- RD Station CRM;
+- Conta Azul;
+- Mercado Pago.
+
+A UI conhece nossa API, não o contrato específico do provedor.
 
 ## 10. Autenticação
 
-O runtime migrado possui dois conceitos de sessão:
+### Cliente
 
-- sessão da cliente, baseada no fluxo próprio de CPF + data de nascimento e cookie de sessão;
-- sessão administrativa, associada à autenticação administrativa e a um cookie de sessão do Worker.
+- CPF + data de nascimento;
+- sessão segura por cookie HttpOnly;
+- Worker valida sessão nas rotas protegidas.
 
-Os detalhes de autorização e RLS não devem ser inferidos apenas pela existência desses mecanismos. A auditoria identificou necessidade de verificar explicitamente o controle de papel/permissão administrativa antes de considerar a autorização concluída.
+### Admin/colaboradores
 
-Não devem ser colocadas chaves privilegiadas em variáveis `VITE_*` ou no código entregue ao navegador.
+- autenticação forte;
+- papel/permissão explícitos;
+- backend sempre autoriza a ação;
+- esconder menu não substitui autorização.
 
-## 11. APIs
+## 11. Design system
 
-No runtime migrado, as APIs são expostas pelo Worker sob `/api/*`.
+O design é maleável, mas centralizado.
 
-Existem grupos para:
+Precisamos tender a concentrar:
 
-- saúde/runtime;
-- sessão e autenticação da cliente;
-- agenda e agendamento;
-- boletos e arquivos;
-- autenticação/sessão administrativa;
-- visão geral administrativa;
-- clientes;
-- pagamentos e parcelas;
-- datas e agenda administrativa;
-- remarcações;
-- relatórios;
-- notificações;
-- liberação financeira e previsões;
-- monitoramento.
+- cores;
+- tokens semânticos;
+- tipografia;
+- espaçamento;
+- radius;
+- sombras;
+- estados de controles;
+- componentes base.
 
-A lista acima representa grupos confirmados no código auditado; não deve ser interpretada como garantia de que cada rota representa uma funcionalidade de negócio completa ou validada ponta a ponta.
+Light/dark mode são capacidades do produto.
 
-## 12. Onde as regras de negócio estão hoje
+Cliente: mobile-first.
 
-As regras atualmente estão distribuídas entre várias camadas:
+Admin: desktop-first e responsivo.
 
-```text
-Frontend
-  ├── componentes/páginas
-  └── validações e decisões de interface
+## 12. PWA
 
-Worker
-  ├── handlers de API
-  └── regras de backend
+A experiência PWA é prioritária para a cliente.
 
-Supabase
-  ├── funções/RPCs
-  ├── constraints
-  ├── RLS
-  └── migrations/schema
+Capacidades a validar:
 
-Legado Next
-  └── regras e rotas históricas ainda presentes no repositório
-```
+- instalação;
+- service worker;
+- atualizações;
+- Web Push;
+- permissões;
+- comportamento offline somente onde fizer sentido.
 
-Não existe ainda uma única camada de domínio que seja a autoridade universal para todas as regras.
+Não considerar push funcional apenas pela presença de arquivos; provar envio ponta a ponta.
 
-Isso aumenta o risco de duplicação e divergência e é uma das razões para a futura reorganização por domínio precisar ser incremental.
+## 13. Preview e deploy
 
-## 13. Agendamento e concorrência
+### Desenvolvimento/Preview
 
-O banco possui funções/RPCs destinadas a tornar operações de agendamento atômicas e reduzir problemas de concorrência.
-
-Isso é parte importante da arquitetura atual e não deve ser substituído por uma simples validação no frontend.
-
-Qualquer alteração futura que envolva vagas, datas, agendamentos, cirurgia, parcelas, pagamentos ou liberação financeira deve considerar simultaneamente:
-
-- frontend;
-- Worker;
-- RPC/função SQL;
-- constraints;
-- RLS;
-- migrations relacionadas.
-
-## 14. PWA
-
-A área da cliente `/agenda` possui registro de PWA por componente dedicado.
-
-O PWA é uma preocupação específica da experiência da cliente. A presença de arquivos de service worker, manifest ou Web Push não é suficiente para afirmar que todas as notificações ou recursos offline estão operacionalmente comprovados.
-
-## 15. Monitoramento
-
-Existe monitoramento global no frontend migrado e uma API de persistência de erros no Worker/banco.
-
-O monitoramento cobre classes de erros de interface e rede, mas a auditoria não confirmou uma cobertura preventiva completa de todas as falhas de servidor.
-
-Em particular, não se deve considerar um arquivo de monitoramento preventivo existente como prova de execução agendada. A configuração atual auditada do Worker não comprova, por si só, um cron preventivo contínuo.
-
-## 16. Arquitetura alvo
-
-A arquitetura alvo é uma evolução gradual do runtime migrado, não uma reconstrução simultânea.
+Fluxo preferido:
 
 ```text
-Browser
-  │
-  ▼
-React + Vite
-  │
-  ├── features/
-  ├── components/
-  ├── services/
-  ├── hooks/
-  ├── lib/
-  ├── types/
-  └── config/
-          │
-          ▼
-Cloudflare Worker
-  │
-  ├── autenticação/autorização
-  ├── API
-  ├── serviços de domínio
-  └── observabilidade
-          │
-          ▼
-Supabase
-  ├── PostgreSQL
-  ├── RPCs/constraints
-  ├── RLS
-  ├── Storage
-  └── Realtime
+branch
+  ↓
+commit/push
+  ↓
+CI
+  ↓
+Vercel Preview
+  ↓
+validação visual/operacional
 ```
 
-Essa estrutura é **alvo**, não descrição do estado já concluído.
+Para funções que dependem de backend real, o Preview precisa alcançar o Worker/configuração correspondente.
 
-## 17. Estratégia de migração gradual
+### Produção
 
-A migração deve obedecer às seguintes regras:
+Frontend e Worker devem usar configuração de produção separada, com secrets próprios.
 
-1. preservar a identidade visual existente;
-2. não alterar `main` sem autorização explícita;
-3. desenvolver experimentalmente em `develop`;
-4. migrar um domínio por vez;
-5. não apagar código legado apenas por aparência de antiguidade;
-6. antes de remover legado, mapear consumidores, dependências, equivalente no Worker e dependências de banco;
-7. não modificar banco de produção sem autorização;
-8. não criar migrations destrutivas;
-9. validar cada etapa antes de iniciar a próxima;
-10. diferenciar sempre código existente de código comprovadamente ativo.
+Não usar secrets de produção em Preview sem decisão explícita.
 
-A remoção do legado deve ser uma etapa posterior, baseada em evidência de que o fluxo novo substitui completamente o antigo.
+## 14. Legado Next
 
-## 18. Riscos arquiteturais conhecidos
+Ainda existem elementos herdados:
 
-### Alto
+- `src/app/`;
+- `src/middleware.ts`;
+- `next.config.js`;
+- imports/shims relacionados;
+- arquivos Netlify históricos.
 
-- divergência arquitetural entre `develop` e o runtime migrado de `main`;
-- regras distribuídas entre frontend, Worker, SQL e legado Next;
-- autorização administrativa ainda requer validação específica de papel/permissão;
-- ausência de uma camada de testes que prove os fluxos críticos ponta a ponta.
+Eles não representam a arquitetura final.
 
-### Médio
+Também não devem ser apagados em massa sem comprovar que nenhuma função ativa depende deles.
 
-- shims de compatibilidade com imports do Next;
-- componentes e páginas grandes com responsabilidades múltiplas;
-- acesso direto ao Supabase em partes da área administrativa;
-- migrations com histórico de numeração que precisa ser tratado com cuidado antes de qualquer reorganização.
+Consultar `docs/MIGRATION-MAP.md`.
 
-Nenhum desses problemas deve ser corrigido automaticamente apenas por este documento.
+## 15. Banco e migrations
 
-## 19. Regra para futuras IAs
+O histórico de migrations herdado contém numeração repetida. Não renomear migrations antigas cegamente.
 
-Antes de alterar qualquer parte do projeto, a IA deve responder:
+Novas migrations devem seguir sequência inequívoca e documentada.
 
-1. Este arquivo pertence ao runtime ativo?
-2. Qual branch contém o código em questão?
-3. Existe equivalente no Worker?
-4. Existe código legado que implementa a mesma regra?
-5. Existe RPC, constraint, RLS ou migration relacionada?
-6. O fluxo é financeiro, agenda, autenticação, autorização ou dados de cliente?
-7. A alteração pode afetar produção?
-8. O comportamento foi comprovado ou apenas inferido pela existência do arquivo?
+Consultar `supabase/README.md`.
 
-Se a resposta não puder ser comprovada pelo código ou pelos artefatos disponíveis, registrar **NÃO FOI POSSÍVEL CONFIRMAR** em vez de assumir.
+## 16. Testes
 
-## 20. Princípio central
+A estratégia de testes deve crescer junto com os domínios.
 
-O objetivo desta arquitetura não é apagar o passado rapidamente. É tornar a migração rastreável:
+Prioridades:
+
+1. regras puras de negócio;
+2. autenticação/autorização;
+3. parcela/pagamento/idempotência;
+4. transições da jornada;
+5. concorrência da agenda;
+6. providers/webhooks;
+7. fluxos de integração;
+8. E2E dos caminhos principais.
+
+O `package.json` atual precisa ser consultado antes de assumir scripts de teste disponíveis.
+
+## 17. Observabilidade
+
+Precisamos de:
+
+- logs estruturados;
+- request/event IDs;
+- erro de integração com contexto não sensível;
+- métricas operacionais;
+- audit log de mudança crítica;
+- monitoramento frontend;
+- alertas para falhas relevantes.
+
+## 18. Como evoluir sem desorganizar
+
+Para cada domínio:
 
 ```text
-AUDITAR
-   ↓
-IDENTIFICAR RUNTIME
-   ↓
-MAPEAR DEPENDÊNCIAS
-   ↓
-MIGRAR UM DOMÍNIO
-   ↓
-VALIDAR
-   ↓
-COMPROVAR SUBSTITUIÇÃO
-   ↓
-SOMENTE ENTÃO REMOVER LEGADO
+mapear baseline PWA
+      ↓
+mapear implementação React atual
+      ↓
+mapear Worker
+      ↓
+mapear Supabase
+      ↓
+definir autoridade da regra
+      ↓
+refatorar incrementalmente
+      ↓
+validar
+      ↓
+atualizar codemap/documentação
 ```
 
-A arquitetura React + Vite + Cloudflare Worker + Supabase é a direção de evolução. O estado real de cada branch e de cada arquivo deve continuar sendo a autoridade para decisões técnicas.
+Não mover código de vários domínios apenas para atingir uma estrutura “bonita”. Organização é consequência de ownership claro e baixo acoplamento.
+
+## 19. Documentos oficiais
+
+- `/AGENTS.md`
+- `/docs/BUSINESS-RULES.md`
+- `/docs/PWA-FUNCTIONAL-BASELINE.md`
+- `/docs/FLOWS.md`
+- `/docs/AI-CODEMAP.md`
+- `/docs/MIGRATION-MAP.md`
+- `/docs/EVOLUTION-ROADMAP.md`
+
+Quando houver divergência de regra funcional, `BUSINESS-RULES.md` prevalece sobre documentação histórica.

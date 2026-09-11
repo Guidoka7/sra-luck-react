@@ -1,31 +1,82 @@
-# Sra. Luck — Cirurgia Programada
+# Sra. Luck — Plataforma de crédito e jornada cirúrgica
 
-Sistema de agendamento para a Sra. Luck: a cliente entra com **CPF + data de nascimento** e escolhe, dentre as datas liberadas pela clínica, o dia da sua cirurgia — sem links, sem senha para lembrar. O admin cadastra as clientes, libera as datas com as vagas de cada dia e acompanha o orçamento do mês.
+`sra-luck-react` é o produto oficial em evolução da Sra. Luck.
 
-## Arquitetura atual em migração
+A Sra. Luck atua como **facilitadora/intermediadora financeira** para clientes que contratam uma carta/crédito destinada a cirurgia programada. O sistema não deve ser modelado como software de clínica.
 
-O projeto está sendo migrado de **Next.js** para:
+## Arquitetura alvo
 
 - **React + Vite** — frontend SPA;
-- **Cloudflare Workers** — APIs/backend e lógica protegida;
-- **Supabase** — PostgreSQL, Storage, Realtime e serviços de dados;
-- **GitHub** — versionamento e CI.
+- **Cloudflare Workers** — backend/API, autenticação, regras protegidas e integrações;
+- **Supabase** — PostgreSQL, Storage, Realtime, RPCs e persistência;
+- **Vercel Preview** — validação rápida de interface por branch/commit;
+- **GitHub Actions** — CI e validações.
 
-A configuração segue o modelo oficial de React + Vite com Cloudflare Workers, usando `@cloudflare/vite-plugin` e `wrangler`. O frontend é servido como SPA e as rotas `/api/*` serão migradas gradualmente para o Worker.
+O repositório `Guidoka7/sra-luck-pwa`, branch `main`, é a **baseline funcional histórica**. Ele deve ser consultado para preservar comportamentos aprovados enquanto o React reconstrói e evolui o produto.
 
-### Comandos principais
+## Documentação obrigatória para IA/engenharia
 
-```bash
-npm install
-npm run dev
-npm run build
-npm run preview
-npm run deploy
+Antes de uma alteração relevante, ler:
+
+1. [`AGENTS.md`](./AGENTS.md) — contrato de engenharia e regras para IA;
+2. [`docs/BUSINESS-RULES.md`](./docs/BUSINESS-RULES.md) — fonte de verdade das regras atuais;
+3. [`docs/PWA-FUNCTIONAL-BASELINE.md`](./docs/PWA-FUNCTIONAL-BASELINE.md) — o que o sistema anterior já faz e deve ser preservado/evoluído;
+4. [`docs/FLOWS.md`](./docs/FLOWS.md) — fluxos operacionais ponta a ponta;
+5. [`docs/AI-CODEMAP.md`](./docs/AI-CODEMAP.md) — onde localizar cada domínio no código;
+6. [`docs/MIGRATION-MAP.md`](./docs/MIGRATION-MAP.md) — mapa PWA → React/Worker;
+7. [`docs/EVOLUTION-ROADMAP.md`](./docs/EVOLUTION-ROADMAP.md) — sequência de evolução até MVP;
+8. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — estado arquitetural e riscos conhecidos.
+
+## Princípio de evolução
+
+O projeto não é uma reescrita cega.
+
+```text
+PWA funcional
+    ↓
+entender comportamento e dependências
+    ↓
+reconstruir em React + Worker
+    ↓
+validar equivalência
+    ↓
+aplicar evolução aprovada
+    ↓
+validar + Preview
+    ↓
+remover legado somente quando seguro
 ```
 
-### Variáveis de ambiente
+Design, backend, fluxos e regras devem permanecer **maleáveis e fáceis de editar**. Políticas operacionais que podem mudar não devem ficar espalhadas como hardcode.
 
-O frontend usa apenas variáveis públicas com prefixo `VITE_`:
+## Regras críticas já definidas
+
+- Receita da Sra. Luck = **taxa administrativa** embutida nas parcelas.
+- Percentual operacional = **parcelas pagas ÷ total de parcelas**, não valor pago ÷ contrato.
+- O app da cliente preserva como referência as experiências **Minha Agenda** e **Meus Boletos** do PWA.
+- Light/dark mode, configurações e notificações são capacidades permanentes, não descartáveis em redesign.
+- A regra antiga de 90 dias após termos é legado quando conflitar com o fluxo novo.
+- Regra atual: após **termos assinados + quitação confirmada**, a agenda cirúrgica é liberada após **5 dias úteis**, de acordo com a política vigente/configurável.
+
+## Comandos principais atuais
+
+```bash
+npm ci
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```
+
+O projeto deve ganhar/expandir testes automatizados como parte do hardening; não assumir que um script `npm test` exista sem conferir o `package.json` atual.
+
+Use `npm run deploy` somente no fluxo de deploy explicitamente aprovado.
+
+## Variáveis de ambiente
+
+Frontend: somente variáveis públicas `VITE_*`.
+
+Exemplo:
 
 ```text
 VITE_SUPABASE_URL=
@@ -33,47 +84,48 @@ VITE_SUPABASE_ANON_KEY=
 VITE_GOOGLE_REVIEW_URL=
 ```
 
-Segredos como `SUPABASE_SERVICE_ROLE_KEY` e `CLIENTE_SESSION_SECRET` devem ficar exclusivamente no Cloudflare Worker, configurados como secrets. **Nunca coloque a service role key em uma variável `VITE_*`.**
+Segredos como `SUPABASE_SERVICE_ROLE_KEY`, `CLIENTE_SESSION_SECRET`, tokens bancários, tokens de webhook e chaves privadas ficam exclusivamente no backend/Cloudflare Worker.
 
-### Estado da migração
+## Estrutura atual
 
-A fundação do novo runtime já está criada:
+```text
+src/
+  main.tsx
+  pages/
+  features/
+  components/
+  lib/
+  types/
+  styles/
+  shims/
+  app/          # ainda contém superfície herdada/legada
 
-- `vite.config.ts` — integração Vite + Cloudflare;
-- `wrangler.jsonc` — configuração do Worker e fallback SPA;
-- `worker/index.ts` — entrada das APIs Cloudflare;
-- `src/main.tsx` — entrada React;
-- `src/lib/supabase-vite.ts` — cliente Supabase do navegador;
-- `tsconfig.worker.json` — tipos do runtime Workers.
+worker/
+  index.ts
+  *.ts          # handlers atuais em processo de modularização
 
-As páginas e APIs existentes do Next.js permanecem no repositório temporariamente para permitir uma migração gradual. Elas não devem ser consideradas a arquitetura final.
+supabase/
+  ...           # migrations/schema/RPCs
 
-## Supabase
+docs/
+  ...           # regras, arquitetura, fluxos e roadmap
+```
 
-1. Crie um projeto no Supabase.
-2. Execute `supabase/schema.sql` em um banco novo ou as migrations numeradas em um banco existente.
-3. Para bancos existentes, mantenha as migrations `016` e `017` de segurança/concorrência.
-4. Configure a URL e a chave pública no frontend e os segredos do backend no Worker.
+A reorganização é incremental. Não mover ou apagar grandes blocos de legado sem provar equivalência funcional.
 
-## Segurança
+## Definition of Done
 
-- A chave `service_role` nunca deve chegar ao navegador.
-- O frontend acessa o Supabase com a chave pública e usa o Worker para operações privilegiadas.
-- O login por CPF + nascimento e as regras de sessão serão migrados das rotas Next.js para o Worker.
-- O agendamento atômico permanece protegido pelas funções SQL já adicionadas ao Supabase.
+Uma função operacional não está pronta só porque existe na interface. Conforme aplicável, ela precisa de:
 
-## Próximas etapas da migração
+- UI real;
+- validação;
+- backend real;
+- persistência;
+- autenticação/permissão;
+- tratamento de erro;
+- auditoria/idempotência em fluxos críticos;
+- testes adequados ao risco;
+- TypeScript/lint/build verdes;
+- validação em Preview quando houver impacto visual/operacional.
 
-1. Migrar login da cliente para Worker + React.
-2. Migrar sessão/middleware para autenticação adequada ao SPA.
-3. Migrar `/api/cliente/*` para `worker/routes/*`.
-4. Migrar páginas `login`, `agenda` e área administrativa para React.
-5. Migrar uploads e boletos para Worker + Supabase Storage.
-6. Migrar Web Push para o Worker.
-7. Remover dependências e arquivos exclusivos do Next.js.
-8. Configurar deploy/preview do Cloudflare e secrets de produção.
-9. Rodar CI completo e só então remover definitivamente o runtime antigo.
-
-## UI
-
-A identidade visual existente da Sra. Luck continua sendo preservada durante a migração. Os assets de marca permanecem em `public/brand`.
+O objetivo é chegar a um **MVP publicável, funcional e profissional**, mantendo o projeto organizado para evolução contínua por IA e engenharia.
