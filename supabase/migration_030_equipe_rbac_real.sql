@@ -1,7 +1,7 @@
 -- ============================================================================
 -- migration_030_equipe_rbac_real.sql
 -- Consolida o modelo real de colaboradores/equipe sem depender de role no frontend.
--- Compatível com bases que ainda possuem a coluna histórica `perfil`.
+-- Compatível com bases que ainda possuem as colunas históricas `perfil`/`perfis`.
 -- ============================================================================
 
 DO $$
@@ -35,6 +35,7 @@ BEGIN
       END
       WHERE cargo IS NULL
     $sql$;
+    EXECUTE 'ALTER TABLE colaboradores ALTER COLUMN perfil DROP NOT NULL';
   END IF;
 END $$;
 
@@ -43,6 +44,17 @@ ALTER TABLE colaboradores
 
 CREATE UNIQUE INDEX IF NOT EXISTS colaboradores_auth_user_unique
   ON colaboradores(auth_user_id) WHERE auth_user_id IS NOT NULL;
+
+-- O schema real já usa estes campos no agendamento operacional. A inclusão é
+-- aditiva para bases que ainda não receberam a evolução de SDR/comparecimento.
+ALTER TABLE agendamentos
+  ADD COLUMN IF NOT EXISTS sdr_id uuid REFERENCES colaboradores(id) ON DELETE SET NULL;
+ALTER TABLE agendamentos
+  ADD COLUMN IF NOT EXISTS comparecimento_status text NOT NULL DEFAULT 'pendente';
+ALTER TABLE agendamentos
+  ADD COLUMN IF NOT EXISTS comparecimento_em timestamptz;
+ALTER TABLE agendamentos
+  ADD COLUMN IF NOT EXISTS comparecimento_registrado_por uuid REFERENCES colaboradores(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS comissao_regras (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -79,6 +91,7 @@ BEGIN
       END
       WHERE cargo IS NULL
     $sql$;
+    EXECUTE 'ALTER TABLE comissao_regras ALTER COLUMN perfil DROP NOT NULL';
   END IF;
 END $$;
 
