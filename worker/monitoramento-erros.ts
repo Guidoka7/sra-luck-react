@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
+import { integrationsStatusApi } from "./integrations-status";
 
 const ADMIN_COOKIE = "admin_session";
 const MAX_BODY = 12_000;
@@ -27,6 +28,9 @@ function limparTexto(value: unknown, max: number) {
 }
 
 export async function monitoramentoErros(request: Request, env: Env) {
+  const integrationsStatus = await integrationsStatusApi(request, env);
+  if (integrationsStatus) return integrationsStatus;
+
   const url = new URL(request.url);
   if (url.pathname === "/api/monitoramento/erro" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
