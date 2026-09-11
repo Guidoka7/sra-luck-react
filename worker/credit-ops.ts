@@ -35,7 +35,6 @@ async function exigirCliente(request: Request, env: Env) {
 export async function creditOpsApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   const path = url.pathname;
-  const db = createServiceSupabaseClient(env);
 
   if (path.startsWith("/api/admin/credit-ops/")) {
     const adminId = await exigirAdmin(request, env);
@@ -43,6 +42,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
       return json({ erro: "Requisição de origem não autorizada." }, 403);
     }
+    const db = createServiceSupabaseClient(env);
 
     if (path === "/api/admin/credit-ops/contracts" && request.method === "GET") {
       const { data, error } = await db
@@ -100,13 +100,16 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         db.from("boletos").select("*, clientes(id,nome_completo)").lt("data_vencimento", day).neq("status", "pago").order("data_vencimento", { ascending: true }).limit(200),
         db.from("conciliacao_financeira_eventos").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false }).limit(300),
       ]);
+      const errors = [paid.error, proofs.error, overdue.error, events.error]
+        .filter((value): value is NonNullable<typeof value> => Boolean(value))
+        .map((value) => value.message);
       return json({
         data: day,
         liquidados: paid.data ?? [],
         aguardandoValidacao: proofs.data ?? [],
         vencidos: overdue.data ?? [],
         eventos: events.data ?? [],
-        erros: [paid.error, proofs.error, overdue.error, events.error].filter(Boolean).map((x) => x?.message),
+        erros: errors,
       });
     }
 
@@ -165,6 +168,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
       return json({ erro: "Requisição de origem não autorizada." }, 403);
     }
+    const db = createServiceSupabaseClient(env);
 
     if (path === "/api/cliente/credit-ops/summary" && request.method === "GET") {
       const { data: contrato, error } = await db.from("contratos_credito").select("*").eq("cliente_id", clienteId).neq("etapa", "cancelado").order("created_at", { ascending: false }).limit(1).maybeSingle();
