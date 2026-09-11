@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, CalendarRange, CircleDollarSign, Cog, LayoutDashboard, LineChart, LogOut, Plug, UserCog, Users } from "lucide-react";
+import { Activity, Bell, CalendarRange, CircleDollarSign, Cog, LayoutDashboard, LineChart, LogOut, Plug, UserCog, Users } from "lucide-react";
 import { Wordmark } from "@/components/ui/Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -14,6 +14,7 @@ import { CalendarioTesteTempo } from "@/components/admin/CalendarioTesteTempo";
 
 const NAV = [
   { href: "/admin/visao-geral", label: "Visão Geral", icon: LayoutDashboard, group: "Operação" },
+  { href: "/admin/previsoes", label: "Previsões", icon: Activity, group: "Operação" },
   { href: "/admin/agenda", label: "Agenda", icon: CalendarRange, group: "Operação" },
   { href: "/admin/clientes", label: "Clientes", icon: Users, group: "Operação" },
   { href: "/admin/financeiro", label: "Financeiro", icon: CircleDollarSign, group: "Gestão" },
@@ -26,6 +27,7 @@ const NAV = [
 
 const API_PREFETCH: Record<string, string> = {
   "/admin/visao-geral": "/api/admin/visao-geral",
+  "/admin/previsoes": "/api/admin/previsao-liberacoes",
   "/admin/clientes": "/api/admin/clientes",
   "/admin/financeiro": "/api/admin/financeiro/resumo",
   "/admin/equipe": "/api/admin/staff",
