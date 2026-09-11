@@ -20,7 +20,33 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   if(path==="/api/admin/datas"&&request.method==="GET"){const ano=Number(url.searchParams.get("ano")),mes=Number(url.searchParams.get("mes"));let q=supabase.from("datas").select("*").order("data",{ascending:true});if(ano&&mes){const ini=`${ano}-${String(mes).padStart(2,"0")}-01`,next=mes===12?`${ano+1}-01-01`:`${ano}-${String(mes+1).padStart(2,"0")}-01`;q=q.gte("data",ini).lt("data",next);}const {data,error}=await q;if(error)return json({erro:error.message},500);const ids=(data??[]).map((x:any)=>x.id);let ag:any[]=[];if(ids.length){const r=await supabase.from("agendamentos").select("data_id,cliente_id,status").in("data_id",ids).eq("status","confirmado");ag=r.data??[];}const counts=new Map<string,number>();for(const a of ag)counts.set(a.data_id,(counts.get(a.data_id)??0)+1);return json({datas:(data??[]).map((x:any)=>({...x,vagasOcupadas:counts.get(x.id)??0}))});}
   if(path==="/api/admin/datas"&&request.method==="POST"){const b=await body(request);if(!b.data)return json({erro:"Data obrigatória."},400);const {data,error}=await supabase.from("datas").insert({data:b.data,vagas_totais:Number(b.vagasTotais??1),status:"disponivel"}).select("*").single();if(error)return json({erro:error.code==="23505"?"Esta data já está liberada.":error.message},400);return json({data});}
   const dm=path.match(/^\/api\/admin\/datas\/([^/]+)$/);if(dm&&(request.method==="PATCH"||request.method==="DELETE")){const id=decodeURIComponent(dm[1]);if(request.method==="DELETE"){const {error}=await supabase.from("datas").delete().eq("id",id);if(error)return json({erro:error.message},400);return json({ok:true});}const b=await body(request),patch:any={};if(b.status!==undefined)patch.status=b.status;if(b.vagasTotais!==undefined)patch.vagas_totais=Math.max(Number(b.vagasTotais),0);const {data,error}=await supabase.from("datas").update(patch).eq("id",id).select("*").single();if(error)return json({erro:error.message},400);return json({data});}
-  if(path==="/api/admin/configuracoes"){if(request.method==="GET"){const {data,error}=await supabase.from("configuracoes").select("*").maybeSingle();if(error)return json({erro:error.message},500);return json({configuracoes:data??{}});}if(request.method==="PATCH"){const b=await body(request),patch:any={};if(b.nomeClinica!==undefined)patch.nome_clinica=b.nomeClinica;if(b.metaOrcamentoMensal!==undefined)patch.meta_orcamento_mensal=Number(b.metaOrcamentoMensal);if(b.fraseSonho!==undefined)patch.frase_sonho=b.fraseSonho;if(b.agendaLiberacaoFinanceiraBloqueada!==undefined)patch.agenda_liberacao_financeira_bloqueada=Boolean(b.agendaLiberacaoFinanceiraBloqueada);const r=await supabase.from("configuracoes").update(patch).eq("id",1).select("*").maybeSingle();if(r.error)return json({erro:r.error.message},400);return json({configuracoes:r.data});}}
+  if(path==="/api/admin/configuracoes"){
+    if(request.method==="GET"){
+      const {data,error}=await supabase.from("configuracoes").select("*").maybeSingle();
+      if(error)return json({erro:error.message},500);
+      return json({configuracoes:data??{}});
+    }
+    if(request.method==="PATCH"){
+      const b=await body(request),patch:any={};
+      const hex=(value:unknown)=>typeof value==="string"&&/^#[0-9A-Fa-f]{6}$/.test(value.trim())?value.trim().toUpperCase():null;
+      if(b.nomeClinica!==undefined)patch.nome_clinica=String(b.nomeClinica).trim();
+      if(b.metaOrcamentoMensal!==undefined){const v=Number(b.metaOrcamentoMensal);if(!Number.isFinite(v)||v<0||v>1000000000)return json({erro:"Informe um limite orçamentário válido."},400);patch.meta_orcamento_mensal=v;}
+      if(b.fraseSonho!==undefined)patch.frase_sonho=String(b.fraseSonho).slice(0,1000);
+      if(b.agendaLiberacaoFinanceiraBloqueada!==undefined)patch.agenda_liberacao_financeira_bloqueada=Boolean(b.agendaLiberacaoFinanceiraBloqueada);
+      if(b.pixChave!==undefined)patch.pix_chave=String(b.pixChave).trim().slice(0,250);
+      if(b.pixQrCodeBase64!==undefined){const qr=String(b.pixQrCodeBase64);if(qr&&(!qr.startsWith("data:image/")||qr.length>2100000))return json({erro:"QR Code inválido ou muito grande."},400);patch.pix_qrcode_base64=qr;}
+      if(b.pixDescontoPercentual!==undefined){const v=Number(b.pixDescontoPercentual);if(!Number.isFinite(v)||v<0||v>100)return json({erro:"Informe um desconto PIX entre 0% e 100%."},400);patch.pix_desconto_percentual=v;}
+      if(b.whatsappContato!==undefined)patch.whatsapp_contato=String(b.whatsappContato).trim().slice(0,40);
+      if(b.telefoneContato!==undefined)patch.telefone_contato=String(b.telefoneContato).trim().slice(0,40);
+      if(b.temaCorPrimaria!==undefined){const v=hex(b.temaCorPrimaria);if(!v)return json({erro:"Cor principal inválida."},400);patch.tema_cor_primaria=v;}
+      if(b.temaCorSecundaria!==undefined){const v=hex(b.temaCorSecundaria);if(!v)return json({erro:"Cor secundária inválida."},400);patch.tema_cor_secundaria=v;}
+      if(b.temaCorDestaque!==undefined){const v=hex(b.temaCorDestaque);if(!v)return json({erro:"Cor de destaque inválida."},400);patch.tema_cor_destaque=v;}
+      patch.updated_at=new Date().toISOString();
+      const r=await supabase.from("configuracoes").update(patch).eq("id",1).select("*").maybeSingle();
+      if(r.error)return json({erro:r.error.message},400);
+      return json({configuracoes:r.data});
+    }
+  }
   if(path==="/api/admin/clientes-agendamentos"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,status,horario_termos,termos_assinados_em,datas(id,data,status),clientes(id,nome_completo,cpf)").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);return json({agendamentos:data??[]});}
   if(path==="/api/admin/agenda-mensal"&&request.method==="GET"){const ano=Number(url.searchParams.get("ano"))||new Date().getFullYear();const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,status,horario_termos,datas(data),clientes(nome_completo)").gte("datas.data",`${ano}-01-01`).lt("datas.data",`${ano+1}-01-01`).order("created_at",{ascending:true});if(error)return json({erro:error.message},500);return json({agendamentos:data??[]});}
   if(path==="/api/admin/remarcacoes"){if(request.method==="GET"){const {data,error}=await supabase.from("remarcacoes").select("*").order("created_at",{ascending:false}).limit(100);if(error)return json({remarcacoes:[]});return json({remarcacoes:data??[]});}if(request.method==="POST"){const b=await body(request);if(!b.id||!["aprovar","recusar"].includes(b.acao))return json({erro:"Solicitação inválida."},400);const {data,error}=await supabase.from("remarcacoes").update({status:b.acao==="aprovar"?"aprovada":"recusada"}).eq("id",b.id).select("*").single();if(error)return json({erro:error.message},400);return json({remarcacao:data});}}
