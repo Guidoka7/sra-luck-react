@@ -11,7 +11,7 @@ A Sra. Luck atua como facilitadora de crédito/intermediadora financeira para cl
 1. Venda entra pelo RD Station.
 2. Cliente/contrato fica aguardando conferência.
 3. Parcelas/boletos são gerados no banco escolhido e disponibilizados no app.
-4. O sistema acompanha o percentual efetivamente pago do contrato.
+4. O sistema acompanha o percentual de parcelas quitadas do plano: **parcelas pagas ÷ total de parcelas**. O percentual de elegibilidade não é calculado pelo valor monetário pago do contrato.
 5. Ao atingir o percentual mínimo configurado (ex.: 60%), a cliente pode solicitar o processo de termos cirúrgicos.
 6. Após a solicitação, o financeiro realiza levantamento em até 5 dias úteis.
 7. O financeiro informa o saldo restante e as formas de quitação disponíveis conforme modalidade:
@@ -22,6 +22,10 @@ A Sra. Luck atua como facilitadora de crédito/intermediadora financeira para cl
 10. No dia da assinatura, o saldo restante precisa estar quitado; se não for possível, a cliente pode reagendar.
 11. Com saldo quitado e termos assinados, após 5 dias úteis a agenda cirúrgica é liberada.
 12. A cliente escolhe data da cirurgia e acompanha o processo pelo app.
+
+### Regra do percentual
+
+O percentual mínimo é uma regra sobre **quantidade de parcelas quitadas**. Exemplo: em um contrato de 12 parcelas com meta de 60%, são necessárias `ceil(12 × 0,60) = 8` parcelas pagas. Assim, 7/12 = 58,3% e 8/12 = 66,7%. Valores diferentes entre parcelas, juros, multa, desconto ou antecipações não alteram a quantidade de parcelas necessária para atingir a elegibilidade; esses valores continuam relevantes para conciliação e para o levantamento do saldo final.
 
 ## Financeiro e conciliação
 
@@ -55,7 +59,7 @@ Toda parcela deve possuir trilha de eventos e vínculos externos suficientes par
 
 ## Planejamento
 
-O sistema deve projetar quando os contratos atingirão o percentual mínimo com base em valores e vencimentos, não apenas quantidade de parcelas.
+O sistema deve projetar quando os contratos atingirão o percentual mínimo pela sequência de vencimentos das parcelas: calcula quantas parcelas precisam estar quitadas e usa a data prevista da parcela que alcança essa quantidade. O forecast de elegibilidade não usa percentual do valor monetário do contrato.
 
 Deve permitir filtros por campanha/origem do RD Station, vendedor, modalidade, banco, mês da venda e status.
 
