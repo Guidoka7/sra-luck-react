@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
 import { AgendaPage } from "./pages/AgendaPage";
-import { AdminCreditOperations } from "./features/credit-ops/AdminCreditOperations";
 import { StaffPwa } from "./features/staff/StaffPwa";
 import { StaffLoginPage } from "./features/staff/StaffLoginPage";
 import { SessionGate } from "./features/auth/SessionGate";
@@ -11,14 +10,57 @@ import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
-import { AdminAppearanceBootstrap, AdminModuleShell, AdminThemeDock } from "./features/admin/AdminModuleShell";
+import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import { AdminSettingsPanel } from "./features/admin/AdminSettingsPanel";
+import AdminLayout from "./app/admin/(painel)/layout";
+import VisaoGeralPage from "./app/admin/(painel)/visao-geral/page";
+import AgendaAdminPage from "./app/admin/(painel)/agenda/page";
+import ClientesPage from "./app/admin/(painel)/clientes/page";
+import PagamentosPage from "./app/admin/(painel)/pagamentos/page";
+import ParcelasPage from "./app/admin/(painel)/parcelas/page";
+import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import AdminNotificationsPanel from "./app/admin/(painel)/notificacoes/page";
 import AdminMonitoringPanel from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
+
+function RedirectTo({ to }: { to: string }) {
+  useEffect(() => {
+    window.history.replaceState({}, "", to);
+    window.dispatchEvent(new Event("app:navigate"));
+  }, [to]);
+  return null;
+}
+
+function AdminUnavailableModule({ title }: { title: string }) {
+  return (
+    <div className="mx-auto max-w-2xl rounded-2xl border border-burgundy/10 bg-white/80 p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+      <h1 className="font-heading text-2xl text-burgundy dark:text-pearl">{title}</h1>
+      <p className="mt-2 text-sm leading-6 text-clay/55 dark:text-pearl/45">
+        Este módulo novo ainda está em integração com o backend. Dados simulados e botões sem ação foram retirados do runtime para não parecerem funções prontas.
+      </p>
+    </div>
+  );
+}
+
+function AdminRoute({ path }: { path: string }) {
+  if (path === "/admin" || path === "/admin/") return <RedirectTo to="/admin/visao-geral" />;
+  if (path.startsWith("/admin/visao-geral")) return <VisaoGeralPage />;
+  if (path.startsWith("/admin/liberacoes")) return <RedirectTo to="/admin/agenda?aba=liberacao" />;
+  if (path.startsWith("/admin/agenda")) return <AgendaAdminPage />;
+  if (path.startsWith("/admin/clientes")) return <ClientesPage />;
+  if (path.startsWith("/admin/financeiro") || path.startsWith("/admin/pagamentos")) return <PagamentosPage />;
+  if (path.startsWith("/admin/parcelas")) return <ParcelasPage />;
+  if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
+  if (path.startsWith("/admin/notificacoes")) return <AdminNotificationsPanel />;
+  if (path === "/admin/configuracoes/monitoramento") return <AdminMonitoringPanel />;
+  if (path.startsWith("/admin/configuracoes")) return <AdminSettingsPanel />;
+  if (path.startsWith("/admin/integracoes")) return <AdminUnavailableModule title="Integrações" />;
+  if (path.startsWith("/admin/equipe")) return <AdminUnavailableModule title="Equipe" />;
+  return <VisaoGeralPage />;
+}
 
 function App() {
   const [path, setPath] = useState(window.location.pathname);
@@ -47,17 +89,15 @@ function App() {
   if (path === "/equipe/login") return <StaffLoginPage />;
   if (path === "/equipe" || path.startsWith("/equipe/")) return <SessionGate audience="equipe"><PwaRegister /><StaffPwa /></SessionGate>;
   if (path === "/admin/login") return <AdminLoginPage />;
-  if (path === "/admin/notificacoes" || path.startsWith("/admin/notificacoes/")) {
-    return <SessionGate audience="admin"><AdminModuleShell path={path} title="Notificações"><AdminNotificationsPanel /></AdminModuleShell></SessionGate>;
-  }
-  if (path === "/admin/configuracoes/monitoramento") {
-    return <SessionGate audience="admin"><AdminModuleShell path={path} title="Monitoramento"><AdminMonitoringPanel /></AdminModuleShell></SessionGate>;
-  }
-  if (path === "/admin/configuracoes" || path === "/admin/configuracoes/") {
-    return <SessionGate audience="admin"><AdminModuleShell path={path} title="Configurações"><AdminSettingsPanel /></AdminModuleShell></SessionGate>;
-  }
   if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/")) {
-    return <SessionGate audience="admin"><AdminAppearanceBootstrap /><AdminThemeDock /><AdminCreditOperations path={path} /></SessionGate>;
+    return (
+      <SessionGate audience="admin">
+        <AdminAppearanceBootstrap />
+        <AdminLayout>
+          <AdminRoute path={path} />
+        </AdminLayout>
+      </SessionGate>
+    );
   }
 
   return (
