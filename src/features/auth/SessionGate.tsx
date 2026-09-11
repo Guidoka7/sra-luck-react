@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 interface SessionGateProps {
-  audience: "admin" | "cliente";
+  audience: "admin" | "cliente" | "equipe";
   children: ReactNode;
 }
 
@@ -14,7 +14,7 @@ export function SessionGate({ audience, children }: SessionGateProps) {
       setState("ok");
       return;
     }
-    const endpoint = audience === "admin" ? "/api/admin/session" : "/api/cliente/session";
+    const endpoint = audience === "admin" ? "/api/admin/session" : audience === "equipe" ? "/api/equipe/session" : "/api/cliente/session";
     fetch(endpoint, { cache: "no-store", credentials: "same-origin" })
       .then(async (response) => {
         if (!response.ok) return false;
@@ -27,7 +27,8 @@ export function SessionGate({ audience, children }: SessionGateProps) {
 
   useEffect(() => {
     if (state !== "denied") return;
-    window.location.replace(audience === "admin" ? "/admin/login" : "/login");
+    const login = audience === "admin" ? "/admin/login" : audience === "equipe" ? "/equipe/login" : "/login";
+    window.location.replace(login);
   }, [audience, state]);
 
   if (state === "ok") {
