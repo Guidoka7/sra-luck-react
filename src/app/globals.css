@@ -206,11 +206,19 @@ html.dark {
   }
 }
 
-/* Previsões: remove o painel lateral "Vendas do mês" e libera a largura do conteúdo principal. */
+/* Previsões: esconde somente o painel estático de "Vendas do mês". Drawers fixos permanecem visíveis. */
 [class*="xl:grid-cols-[minmax(0,1fr)_292px]"] {
   grid-template-columns: minmax(0, 1fr) !important;
 }
 
-[class*="xl:grid-cols-[minmax(0,1fr)_292px]"] > aside {
+[class*="xl:grid-cols-[minmax(0,1fr)_292px]"] > aside:not(.fixed) {
   display: none !important;
+}
+
+/* Garante que drawers laterais de carteira/cliente nunca sejam atingidos por regras de layout do dashboard. */
+aside.fixed,
+.fixed > aside {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
