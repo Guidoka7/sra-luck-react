@@ -88,13 +88,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <AdminCompactStyles />
       <AdminCompactLists />
       <CalendarioTesteTempo />
-      {previsoesAtiva ? (
-        <style>{`
-          .previsoes-hide-kpis .min-w-0.space-y-3 > .grid.gap-3.sm\\:grid-cols-2.xl\\:grid-cols-4:first-child {
-            display: none !important;
-          }
-        `}</style>
-      ) : null}
 
       <div className={cn("pointer-events-none fixed inset-0", previsoesAtiva ? "bg-[linear-gradient(180deg,#fbf9f8,#f7f3f2)]" : "bg-[radial-gradient(circle_at_top_left,rgba(173,104,107,0.12),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(122,38,50,0.08),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.55),rgba(255,255,255,0.92))] dark:bg-[radial-gradient(circle_at_top_left,rgba(157,67,84,0.10),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(117,72,45,0.06),transparent_24%)] dark:opacity-100")} />
 
@@ -182,7 +175,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </div>
             </header>
           ) : null}
-          <main className={cn("admin-main min-w-0 flex-1", previsoesAtiva && "previsoes-hide-kpis")}>{children}</main>
+          <main className="admin-main min-w-0 flex-1">{children}</main>
         </section>
       </div>
     </div>
