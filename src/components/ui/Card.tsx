@@ -48,5 +48,98 @@ export function AdminCompactStyles() {
     .admin-compact [class~="text-3xl"] { font-size: 1.5rem !important; line-height: 1.875rem !important; }
     .admin-compact [class~="text-2xl"] { font-size: 1.25rem !important; line-height: 1.625rem !important; }
     .admin-compact [class~="text-xl"] { font-size: 1.125rem !important; line-height: 1.5rem !important; }
+
+    /* Previsões: filtros como toolbar compacta, sem bloco de formulário alto. */
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) {
+      width: fit-content !important;
+      max-width: 100% !important;
+      padding: .42rem !important;
+      margin-bottom: .6rem !important;
+      border-radius: .8rem !important;
+      background: rgba(255,255,255,.76) !important;
+      box-shadow: 0 8px 24px -22px rgba(91,19,36,.38) !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div {
+      display: flex !important;
+      align-items: center !important;
+      flex-wrap: wrap !important;
+      gap: .35rem !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) label {
+      display: block !important;
+      min-width: 0 !important;
+      width: auto !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) label > span {
+      display: none !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) input[type="month"],
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select {
+      width: auto !important;
+      min-width: 0 !important;
+      height: 2rem !important;
+      padding: 0 1.8rem 0 .7rem !important;
+      border-radius: .65rem !important;
+      border: 1px solid rgba(122,38,50,.12) !important;
+      background-color: #fffdfc !important;
+      color: #632033 !important;
+      font-size: .63rem !important;
+      font-weight: 600 !important;
+      line-height: 1 !important;
+      box-shadow: 0 4px 14px -12px rgba(91,19,36,.45) !important;
+      cursor: pointer !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) input[type="month"] {
+      min-width: 9.4rem !important;
+      padding-right: .55rem !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:nth-of-type(1) { max-width: 10.5rem !important; }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:nth-of-type(2) { max-width: 10rem !important; }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:nth-of-type(3),
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:nth-of-type(4) { max-width: 7.5rem !important; }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) input[type="month"]:hover,
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:hover {
+      border-color: rgba(122,38,50,.28) !important;
+      background-color: #fff8f7 !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) input[type="month"]:focus,
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) select:focus {
+      outline: none !important;
+      border-color: rgba(122,38,50,.42) !important;
+      box-shadow: 0 0 0 3px rgba(122,38,50,.06) !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div > div:last-child {
+      display: flex !important;
+      align-items: center !important;
+      gap: .25rem !important;
+      margin-left: .1rem !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div > div:last-child button:first-child {
+      height: 2rem !important;
+      padding: 0 .72rem !important;
+      border-radius: .65rem !important;
+      font-size: .6rem !important;
+    }
+    .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div > div:last-child button:last-child {
+      height: 2rem !important;
+      padding: 0 .5rem !important;
+      font-size: .58rem !important;
+    }
+    @media (max-width: 760px) {
+      .admin-main > .pb-8 > section:has(input[type="month"]):has(select) {
+        width: 100% !important;
+      }
+      .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        padding-bottom: .1rem !important;
+        scrollbar-width: none !important;
+      }
+      .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div::-webkit-scrollbar { display: none !important; }
+      .admin-main > .pb-8 > section:has(input[type="month"]):has(select) label,
+      .admin-main > .pb-8 > section:has(input[type="month"]):has(select) > div > div:last-child {
+        flex: 0 0 auto !important;
+      }
+    }
   `}</style>;
 }
