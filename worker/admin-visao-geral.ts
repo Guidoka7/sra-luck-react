@@ -15,17 +15,21 @@ export async function adminVisaoGeral(_request: Request, env: Env): Promise<Resp
     const hoje = new Date();
     const isoHoje = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}-${String(hoje.getUTCDate()).padStart(2, "0")}`;
 
-    const [comprovantesRes, agendamentosRes, revisaoRes, liberacaoRes] = await Promise.all([
+    const [comprovantesRes, agendamentosRes, revisaoRes, liberacaoRes, carteiraRes, parcelasRes] = await Promise.all([
       supabase.from("boletos").select("id, cliente_id, numero_parcela, total_parcelas, valor, status, data_pagamento, comprovante_url, clientes ( id, nome_completo, cpf )").eq("status", "pendente_confirmacao").order("data_pagamento", { ascending: true }).limit(LIMITE_ITENS),
       supabase.from("agendamentos").select("id, cliente_id, valor_contrato, status, previsao_liberacao_financeira, clientes(id, nome_completo), datas!inner(data)").eq("status", "confirmado").gte("datas.data", isoHoje).order("data", { ascending: true, foreignTable: "datas" }).limit(LIMITE_ITENS),
       supabase.from("clientes").select("id, nome_completo, cpf, valor_contrato, quantidade_parcelas, status_revisao_financeira, data_atingiu_percentual").eq("status_revisao_financeira", "pendente").order("data_atingiu_percentual", { ascending: true }).limit(LIMITE_ITENS),
       supabase.from("agendamentos").select("id, cliente_id, valor_contrato, previsao_liberacao_financeira, clientes(id, nome_completo)").eq("status", "confirmado").not("previsao_liberacao_financeira", "is", null).gte("previsao_liberacao_financeira", isoHoje).order("previsao_liberacao_financeira", { ascending: true }).limit(LIMITE_ITENS),
+      supabase.from("clientes").select("id, valor_contrato, taxa_administrativa_percentual").eq("ativo", true),
+      supabase.from("boletos").select("status, data_vencimento"),
     ]);
 
     if (comprovantesRes.error) return json({ erro: comprovantesRes.error.message }, 500);
     if (agendamentosRes.error) return json({ erro: agendamentosRes.error.message }, 500);
     if (revisaoRes.error) return json({ erro: revisaoRes.error.message }, 500);
     if (liberacaoRes.error) return json({ erro: liberacaoRes.error.message }, 500);
+    if (carteiraRes.error) return json({ erro: carteiraRes.error.message }, 500);
+    if (parcelasRes.error) return json({ erro: parcelasRes.error.message }, 500);
 
     const idsRevisao = (revisaoRes.data ?? []).map((c) => c.id as string);
     const porcentagens = new Map<string, number>();
@@ -50,7 +54,28 @@ export async function adminVisaoGeral(_request: Request, env: Env): Promise<Resp
     const revisao = (revisaoRes.data ?? []) as any[];
     const liberacoes = (liberacaoRes.data ?? []) as any[];
 
+    const clientesAtivos = (carteiraRes.data ?? []) as any[];
+    const totalClientesAtivos = clientesAtivos.length;
+    const valorContratadoAtivo = clientesAtivos.reduce((soma, c) => soma + Number(c.valor_contrato ?? 0), 0);
+    const ticketMedio = totalClientesAtivos > 0 ? valorContratadoAtivo / totalClientesAtivos : 0;
+    const taxasValidas = clientesAtivos.map((c) => Number(c.taxa_administrativa_percentual)).filter((v) => Number.isFinite(v) && v > 0);
+    const taxaAdministrativaMedia = taxasValidas.length > 0 ? taxasValidas.reduce((soma, v) => soma + v, 0) / taxasValidas.length : 0;
+
+    const parcelas = (parcelasRes.data ?? []) as any[];
+    const totalParcelas = parcelas.length;
+    const parcelasVencidas = parcelas.filter((p) => p.status !== "pago" && p.data_vencimento && p.data_vencimento < isoHoje).length;
+    const taxaInadimplencia = totalParcelas > 0 ? (parcelasVencidas / totalParcelas) * 100 : 0;
+
     return json({
+      carteira: {
+        clientesAtivos: totalClientesAtivos,
+        valorContratadoAtivo,
+        ticketMedio,
+        taxaAdministrativaMedia,
+        taxaInadimplencia,
+        parcelasVencidas,
+        totalParcelas,
+      },
       comprovantesPendentes: comprovantes.map((b) => ({
         boletoId: b.id,
         clienteId: b.cliente_id,

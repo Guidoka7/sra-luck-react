@@ -10,9 +10,11 @@ import {
   CircleDollarSign,
   Clock3,
   FileCheck2,
+  Percent,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
+  Users,
   Wallet,
 } from "lucide-react";
 import {
@@ -61,20 +63,32 @@ interface LiberacaoFinanceira {
   dataPrevisao: string | null;
 }
 
+interface CarteiraAtiva {
+  clientesAtivos: number;
+  valorContratadoAtivo: number;
+  ticketMedio: number;
+  taxaAdministrativaMedia: number;
+  taxaInadimplencia: number;
+  parcelasVencidas: number;
+  totalParcelas: number;
+}
+
 interface VisaoGeralData {
   comprovantesPendentes: ComprovantePendente[];
   proximosAgendamentos: AgendamentoTermo[];
   clientesAguardandoLiberacao: ClienteAguardandoLiberacao[];
   proximasLiberacoesFinanceiras: LiberacaoFinanceira[];
+  carteira: CarteiraAtiva | null;
 }
 
-type RawVisao = Partial<Record<keyof VisaoGeralData, RawItem[]>>;
+type RawVisao = Partial<Record<Exclude<keyof VisaoGeralData, "carteira">, RawItem[]>> & { carteira?: RawItem };
 
 const EMPTY_VISAO: VisaoGeralData = {
   comprovantesPendentes: [],
   proximosAgendamentos: [],
   clientesAguardandoLiberacao: [],
   proximasLiberacoesFinanceiras: [],
+  carteira: null,
 };
 
 function numero(value: unknown) {
@@ -123,6 +137,17 @@ function normalizarVisao(payload: RawVisao | null | undefined): VisaoGeralData {
       valorContrato: numero(item.valorContrato ?? item.valor),
       dataPrevisao: texto(item.dataPrevisao) || null,
     })),
+    carteira: payload?.carteira
+      ? {
+          clientesAtivos: numero(payload.carteira.clientesAtivos),
+          valorContratadoAtivo: numero(payload.carteira.valorContratadoAtivo),
+          ticketMedio: numero(payload.carteira.ticketMedio),
+          taxaAdministrativaMedia: numero(payload.carteira.taxaAdministrativaMedia),
+          taxaInadimplencia: numero(payload.carteira.taxaInadimplencia),
+          parcelasVencidas: numero(payload.carteira.parcelasVencidas),
+          totalParcelas: numero(payload.carteira.totalParcelas),
+        }
+      : null,
   };
 }
 
@@ -319,6 +344,28 @@ export default function VisaoGeralPage() {
           {erroOperacao ? `Operação: ${erroOperacao}` : ""}
         </div>
       ) : null}
+
+      <Panel className="overflow-hidden p-0 dark:border-white/8 dark:bg-[#171519]/92">
+        <div className="flex flex-col gap-3 border-b border-rose/10 px-4 py-3 dark:border-white/6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-burgundy/40 dark:text-white/32">Carteira ativa</p>
+            <p className="mt-0.5 text-xs text-clay/55 dark:text-white/45">Contratos em andamento sob gestão financeira da Sra. Luck.</p>
+          </div>
+          <LinkAction href="/admin/clientes">Ver clientes</LinkAction>
+        </div>
+
+        {visao.carteira ? (
+          <div className="grid grid-cols-2 divide-x divide-y divide-rose/10 px-4 sm:grid-cols-3 xl:grid-cols-5 xl:divide-y-0 dark:divide-white/6">
+            <Metric label="Clientes ativos" value={String(visao.carteira.clientesAtivos)} helper="contratos em andamento" icon={Users} />
+            <Metric label="Valor em carteira" value={money(visao.carteira.valorContratadoAtivo)} helper="soma dos contratos ativos" icon={Wallet} />
+            <Metric label="Ticket médio" value={money(visao.carteira.ticketMedio)} helper="por contrato ativo" icon={CircleDollarSign} />
+            <Metric label="Taxa administrativa média" value={`${visao.carteira.taxaAdministrativaMedia.toFixed(1)}%`} helper="receita da Sra. Luck" icon={Percent} />
+            <Metric label="Inadimplência" value={`${visao.carteira.taxaInadimplencia.toFixed(1)}%`} helper={`${visao.carteira.parcelasVencidas} de ${visao.carteira.totalParcelas} parcelas`} icon={AlertTriangle} emphasis={visao.carteira.taxaInadimplencia > 0} />
+          </div>
+        ) : (
+          <div className="p-4"><EmptyPanel title="Carteira indisponível" description="Não foi possível carregar os indicadores de carteira agora. Tente atualizar." /></div>
+        )}
+      </Panel>
 
       <Panel className="overflow-hidden p-0 dark:border-white/8 dark:bg-[#171519]/92">
         <div className="flex flex-col gap-3 border-b border-rose/10 px-4 py-3 dark:border-white/6 sm:flex-row sm:items-center sm:justify-between">
