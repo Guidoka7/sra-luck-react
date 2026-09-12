@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, BriefcaseBusiness, CalendarDays, CheckCircle2, ExternalLink, FileUp, History, Loader2, Pencil, ReceiptText, RotateCcw, ShieldCheck, Trash2, UserRound, WalletCards, X } from "lucide-react";
+import { StatusPill } from "@/components/admin/ExecutiveUI";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Portal } from "@/components/ui/Portal";
 import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
 import { financeiroApi } from "./financeiroApi";
-import type { ClienteFinanceiro, DetalheRecebivel, Recebivel } from "./types";
+import { RECEBIVEL_STATUS_META, type ClienteFinanceiro, type DetalheRecebivel, type Recebivel } from "./types";
 
 function Dialog({ title, eyebrow, children, onClose, wide = false }: { title: string; eyebrow: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   return <div className="fixed inset-0 z-[100] isolate flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -79,15 +80,6 @@ export function GerarParcelasModal({ clientes, onClose, onSuccess }: { clientes:
   return <Dialog eyebrow="Função migrada de Parcelas" title="Adicionar parcelas ao contrato" onClose={onClose} wide><form onSubmit={salvar} className="mt-5 space-y-4"><Field label="Buscar cliente"><Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou CPF" /></Field><Field label="Cliente"><Select required value={clienteId} onChange={(e) => setClienteId(e.target.value)}><option value="">Selecione</option>{filtrados.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome_completo}{cliente.cpf ? ` · ${cliente.cpf}` : ""}</option>)}</Select></Field><div className="grid gap-3 sm:grid-cols-3"><Field label="Quantidade"><Input required min="1" max="240" type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} /></Field><Field label="Valor por parcela"><Input min="0.01" step="0.01" type="number" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Cálculo automático" /></Field><Field label="Primeiro vencimento"><Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} /></Field></div><p className="text-[10px] leading-4 text-clay/50 dark:text-white/42">As parcelas são acrescentadas pelo fluxo existente; nenhum provedor externo será acionado.</p>{erro ? <p role="alert" className="rounded-xl bg-alert/10 p-3 text-xs text-alert">{erro}</p> : null}<div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button><Button type="submit" loading={salvando}>Gerar parcelas</Button></div></form></Dialog>;
 }
 
-const STATUS_RECEBIVEL: Record<string, { label: string; classe: string }> = {
-  nao_pago: { label: "Em aberto", classe: "bg-slate-100 text-slate-600 dark:bg-white/8 dark:text-white/65" },
-  pago: { label: "Pago", classe: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300" },
-  pendente_confirmacao: { label: "Em validação", classe: "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300" },
-  rejeitado: { label: "Rejeitado", classe: "bg-rose-100 text-rose-700 dark:bg-rose-500/12 dark:text-rose-300" },
-  suspensa: { label: "Suspensa", classe: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/12 dark:text-indigo-300" },
-  vencido: { label: "Vencido", classe: "bg-red-100 text-red-700 dark:bg-red-500/12 dark:text-red-300" },
-};
-
 function dataBr(value: string | null) {
   return value ? value.split("-").reverse().join("/") : "Não informado";
 }
@@ -122,14 +114,14 @@ export function RecebivelDrawer({ id, onClose, onAction, onUpdated }: { id: stri
     setOcupado(true); setErro(""); try { await financeiroApi.alterar(id, { acao, observacao }); onUpdated(); if (acao === "excluir") onClose(); else setDetalhe(await financeiroApi.detalhe(id)); } catch (error) { setErro(error instanceof Error ? error.message : "Falha na operação."); } finally { setOcupado(false); }
   }
   const recebivel = detalhe?.recebivel;
-  const status = recebivel ? STATUS_RECEBIVEL[recebivel.status] ?? { label: textoLegivel(recebivel.status), classe: "bg-slate-100 text-slate-600 dark:bg-white/8 dark:text-white/65" } : null;
+  const status = recebivel ? RECEBIVEL_STATUS_META[recebivel.status] ?? { label: textoLegivel(recebivel.status), tone: "neutral" as const } : null;
 
   return <Portal><div className="fixed inset-0 z-[110] bg-[#241015]/55 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside role="dialog" aria-modal="true" aria-labelledby="recebivel-drawer-title" className="fixed inset-y-0 right-0 flex w-full max-w-[460px] flex-col overflow-hidden border-l border-[#ead9da] bg-[#fffaf8] text-clay shadow-[-24px_0_70px_-30px_rgba(31,12,17,.55)] dark:border-white/10 dark:bg-[#171316] dark:text-[#e7dedd]">
       <header className="shrink-0 border-b border-rose/10 bg-white px-4 py-4 dark:border-white/8 dark:bg-[#1d181c]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-[.2em] text-rose">Conta a receber</p><h2 id="recebivel-drawer-title" className="mt-1 truncate text-lg font-semibold text-burgundy dark:text-cream">{recebivel?.cliente ?? "Carregando detalhes…"}</h2>{recebivel ? <p className="mt-1 text-[10px] text-clay/48 dark:text-white/42">{recebivel.cpf ? formatarCpf(recebivel.cpf) : "CPF não informado"} · parcela {recebivel.numeroParcela}/{recebivel.totalParcelas}</p> : null}</div>
-          <div className="flex shrink-0 items-center gap-2">{status ? <span className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.1em] ${status.classe}`}>{status.label}</span> : null}<button type="button" onClick={onClose} aria-label="Fechar detalhes" className="grid h-8 w-8 place-items-center rounded-full border border-rose/10 text-clay/55 transition hover:bg-blush hover:text-burgundy dark:border-white/10 dark:text-white/55 dark:hover:bg-white/8 dark:hover:text-cream"><X className="h-4 w-4" /></button></div>
+          <div className="flex shrink-0 items-center gap-2">{status ? <StatusPill tone={status.tone}>{status.label}</StatusPill> : null}<button type="button" onClick={onClose} aria-label="Fechar detalhes" className="grid h-8 w-8 place-items-center rounded-full border border-rose/10 text-clay/55 transition hover:bg-blush hover:text-burgundy dark:border-white/10 dark:text-white/55 dark:hover:bg-white/8 dark:hover:text-cream"><X className="h-4 w-4" /></button></div>
         </div>
       </header>
 

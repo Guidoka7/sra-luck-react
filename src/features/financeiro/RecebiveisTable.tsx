@@ -2,13 +2,7 @@ import { Eye, FileCheck2 } from "lucide-react";
 import { EmptyPanel, StatusPill } from "@/components/admin/ExecutiveUI";
 import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
-import type { Recebivel } from "./types";
-
-const STATUS: Record<string, { label: string; tone: "neutral" | "success" | "alert" | "gold" | "rose" | "indigo" }> = {
-  nao_pago: { label: "Em aberto", tone: "neutral" }, pago: { label: "Pago", tone: "success" },
-  pendente_confirmacao: { label: "Em validação", tone: "gold" }, rejeitado: { label: "Rejeitado", tone: "rose" },
-  suspensa: { label: "Suspensa", tone: "indigo" }, vencido: { label: "Vencido", tone: "alert" },
-};
+import { RECEBIVEL_STATUS_META, type Recebivel } from "./types";
 
 function dataBr(value: string | null) { return value ? value.split("-").reverse().join("/") : "—"; }
 
@@ -26,7 +20,7 @@ export function RecebiveisTable({ itens, carregando, validacao = false, onAbrir 
         </tr>}
       </thead>
       <tbody className="divide-y divide-rose/8 bg-white/60 text-xs dark:divide-white/6 dark:bg-[#151317]/72">
-        {itens.map((item) => { const status = STATUS[item.status] ?? { label: item.status, tone: "neutral" as const }; return validacao ? <tr key={item.id} className="transition hover:bg-blush/30 dark:hover:bg-white/[0.025]">
+        {itens.map((item) => { const status = RECEBIVEL_STATUS_META[item.status] ?? { label: item.status, tone: "neutral" as const }; return validacao ? <tr key={item.id} className="transition hover:bg-blush/30 dark:hover:bg-white/[0.025]">
           <td className="px-3 py-2.5"><p className="max-w-[190px] truncate font-semibold text-burgundy dark:text-cream">{item.cliente}</p><p className="mt-0.5 text-[10px] text-clay/42 dark:text-white/35">{item.cpf ? formatarCpf(item.cpf) : "CPF não informado"}</p></td>
           <td className="px-3 py-2.5 font-medium text-burgundy dark:text-cream">{item.numeroParcela}/{item.totalParcelas}</td>
           <td className="px-3 py-2.5 text-clay/65 dark:text-white/58">{dataBr(item.vencimento)}</td>

@@ -1,5 +1,16 @@
 export type AbaFinanceiro = "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
 
+export type ToneRecebivel = "neutral" | "success" | "alert" | "gold" | "rose" | "indigo";
+
+export const RECEBIVEL_STATUS_META: Record<string, { label: string; tone: ToneRecebivel }> = {
+  nao_pago: { label: "Em aberto", tone: "neutral" },
+  pago: { label: "Pago", tone: "success" },
+  pendente_confirmacao: { label: "Em validação", tone: "gold" },
+  rejeitado: { label: "Rejeitado", tone: "rose" },
+  suspensa: { label: "Suspensa", tone: "indigo" },
+  vencido: { label: "Vencido", tone: "alert" },
+};
+
 export interface PeriodoFinanceiro { inicio: string; fim: string }
 
 export interface ResumoFinanceiro {
