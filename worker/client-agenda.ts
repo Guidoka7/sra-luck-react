@@ -118,6 +118,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
       formasCusteio: Array.isArray(cliente.financeiro_formas_custeio) ? cliente.financeiro_formas_custeio : [],
       custeioConfirmadoEm: cliente.custeio_confirmado_em ?? null,
       statusFinanceiro: cliente.status_financeiro ?? null,
+      statusCirurgia: cliente.status_cirurgia ?? null,
     },
     solicitacaoLiberacaoFinanceira: solicitacao ?? null,
     remarcacoes: remarcacoes ?? [],
@@ -140,8 +141,19 @@ export async function agendar(request: Request, env: Env): Promise<Response> {
   const horario = body?.horario as string | undefined;
   if (!dataId || !horario || !HORARIOS_VALIDOS.has(horario)) return json({ erro: "Escolha a data e o horário da assinatura." }, 400);
   const supabase = createServiceSupabaseClient(env);
-  const { data: cliente } = await supabase.from("clientes").select("id,valor_contrato").eq("id", s.clienteId).single();
+  const { data: cliente } = await supabase.from("clientes").select("id,valor_contrato,status_revisao_financeira,financeiro_saldo_restante").eq("id", s.clienteId).single();
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
+  if (cliente.status_revisao_financeira !== "aprovada" || cliente.financeiro_saldo_restante == null) {
+    return json({ erro: "O levantamento financeiro ainda não foi concluído." }, 409);
+  }
+  const { data: custeioAprovado } = await supabase.from("solicitacoes_liberacao_financeira")
+    .select("id")
+    .eq("cliente_id", cliente.id)
+    .eq("status", "aprovada")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!custeioAprovado) return json({ erro: "Escolha primeiro a forma de pagamento do saldo restante para liberar a escolha da data." }, 409);
   const { data: agendamentoId, error } = await supabase.rpc("agendar_data", {
     p_cliente_id: cliente.id,
     p_data_id: dataId,

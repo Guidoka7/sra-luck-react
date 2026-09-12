@@ -12,6 +12,7 @@ import { TabBoletos } from "@/components/cliente/TabBoletos";
 import { ComprovantesClienteActions } from "@/components/cliente/ComprovantesClienteActions";
 import { RegrasLiberacao } from "@/components/cliente/RegrasLiberacao";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
+import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
 import { JourneyTracker } from "@/components/cliente/JourneyTracker";
 import { FluxoCirurgicoCliente } from "@/components/cliente/FluxoCirurgicoCliente";
 
@@ -20,9 +21,13 @@ type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 
 type AgendaData = {
   cliente: { id: string; nome: string; procedimento: string | null };
+  financeiro: { statusCirurgia: string | null };
+  solicitacaoLiberacaoFinanceira: { id: string; status: "pendente" | "em_analise" | "aprovada" | "recusada" } | null;
   agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
   datasDisponiveis: { id: string; data: string; vagasRestantes: number }[];
+  agendaCirurgicaLiberada: boolean;
+  agendaCirurgicaLiberarEm: string | null;
 };
 
 type BoletosData = {
@@ -127,6 +132,10 @@ export function AgendaPage() {
   const parcelasNecessarias = boletos.quantidade_parcelas
     ? Math.ceil((boletos.quantidade_parcelas * percentualContrato) / 100)
     : null;
+  const custeioAprovado = agenda.solicitacaoLiberacaoFinanceira?.status === "aprovada";
+  const termosAssinados = Boolean(agenda.agendamentoConcluido);
+  const cirurgiaAgendada = Boolean(agendaAtual?.previsaoLiberacaoFinanceira);
+  const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   const conteudoAgendaLegado = agenda.agendamentoAtivo ? (
     <div className="flex flex-col gap-4 animate-fadeUp">
@@ -152,7 +161,18 @@ export function AgendaPage() {
   ) : (
     <div className="flex flex-col gap-4">
       <RegrasLiberacao quantidadeParcelas={boletos.quantidade_parcelas} />
-      {boletos.agenda_liberada ? (
+      {boletos.status_revisao_financeira === "recusada" ? (
+        <AvisoRevisaoFinanceira status="recusada" observacao={boletos.observacao_revisao_financeira ?? null} />
+      ) : !boletos.agenda_liberada ? (
+        <AgendaBloqueadaPercentual
+          percentual={percentualContrato}
+          parcelasNecessarias={parcelasNecessarias}
+          datas={agenda.datasDisponiveis}
+          etapa={boletos.pode_agendar ? "levantamento" : "percentual"}
+        />
+      ) : !custeioAprovado ? (
+        <EscolherFormaPagamento />
+      ) : (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -174,15 +194,6 @@ export function AgendaPage() {
             )}
           </Card>
         </motion.div>
-      ) : boletos.status_revisao_financeira === "recusada" ? (
-        <AvisoRevisaoFinanceira status="recusada" observacao={boletos.observacao_revisao_financeira ?? null} />
-      ) : (
-        <AgendaBloqueadaPercentual
-          percentual={percentualContrato}
-          parcelasNecessarias={parcelasNecessarias}
-          datas={agenda.datasDisponiveis}
-          etapa={boletos.pode_agendar ? "levantamento" : "percentual"}
-        />
       )}
     </div>
   );
@@ -221,8 +232,14 @@ export function AgendaPage() {
             percentualPagamento={boletos.porcentagem_pagamento ?? 0}
             percentualAtingido={boletos.pode_agendar}
             statusRevisao={boletos.status_revisao_financeira}
+            custeioStatus={agenda.solicitacaoLiberacaoFinanceira?.status ?? null}
             agendada={Boolean(agendaAtual)}
+            termosAssinados={termosAssinados}
+            agendaCirurgicaLiberada={agenda.agendaCirurgicaLiberada}
+            cirurgiaAgendada={cirurgiaAgendada}
+            cirurgiaRealizada={cirurgiaRealizada}
             previsaoLiberacaoFinanceira={agendaAtual?.previsaoLiberacaoFinanceira ?? null}
+            agendaCirurgicaLiberarEm={agenda.agendaCirurgicaLiberarEm}
           />
         </div>
 
