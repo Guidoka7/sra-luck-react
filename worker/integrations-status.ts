@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { obterCredencial } from "./integrations-credenciais";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -63,10 +64,29 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     contar(db, "crm_vendas_entrada"),
   ]);
 
-  const pushCredenciais = Boolean(env.WEB_PUSH_VAPID_PUBLIC_KEY && env.WEB_PUSH_VAPID_PRIVATE_KEY && env.WEB_PUSH_VAPID_SUBJECT);
-  const mpCredenciais = Boolean(env.MERCADO_PAGO_ACCESS_TOKEN && env.MERCADO_PAGO_WEBHOOK_SECRET);
-  const contaAzulCredenciais = Boolean(env.CONTA_AZUL_CLIENT_ID && env.CONTA_AZUL_CLIENT_SECRET && env.CONTA_AZUL_ACCESS_TOKEN && env.CONTA_AZUL_REFRESH_TOKEN);
-  const rdCredenciais = Boolean(env.RD_WEBHOOK_SECRET && env.RD_API_ACCESS_TOKEN);
+  const [
+    pushPublicKey, pushPrivateKey, pushSubject,
+    mpAccessToken, mpWebhookSecret,
+    caClientId, caClientSecret, caAccessToken, caRefreshToken,
+    rdWebhookSecret, rdApiToken,
+  ] = await Promise.all([
+    obterCredencial(env, "web_push", "vapid_public_key"),
+    obterCredencial(env, "web_push", "vapid_private_key"),
+    obterCredencial(env, "web_push", "vapid_subject"),
+    obterCredencial(env, "mercado_pago", "access_token"),
+    obterCredencial(env, "mercado_pago", "webhook_secret"),
+    obterCredencial(env, "conta_azul", "client_id"),
+    obterCredencial(env, "conta_azul", "client_secret"),
+    obterCredencial(env, "conta_azul", "access_token"),
+    obterCredencial(env, "conta_azul", "refresh_token"),
+    obterCredencial(env, "rd_station", "webhook_secret"),
+    obterCredencial(env, "rd_station", "api_access_token"),
+  ]);
+
+  const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
+  const mpCredenciais = Boolean(mpAccessToken && mpWebhookSecret);
+  const contaAzulCredenciais = Boolean(caClientId && caClientSecret && caAccessToken && caRefreshToken);
+  const rdCredenciais = Boolean(rdWebhookSecret && rdApiToken);
 
   const integracoes: StatusIntegracao[] = [
     {
@@ -123,12 +143,19 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
   ];
 
+  const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = await Promise.all([
+    obterCredencial(env, "brb", "webhook_secret"),
+    obterCredencial(env, "bb", "webhook_secret"),
+    obterCredencial(env, "santander", "webhook_secret"),
+    obterCredencial(env, "sicredi", "webhook_secret"),
+    obterCredencial(env, "efi", "webhook_secret"),
+  ]);
   const bancos = [
-    ["brb", "BRB", Boolean(env.BRB_WEBHOOK_SECRET)],
-    ["bb", "Banco do Brasil", Boolean(env.BB_WEBHOOK_SECRET)],
-    ["santander", "Santander", Boolean(env.SANTANDER_WEBHOOK_SECRET)],
-    ["sicredi", "Sicredi", Boolean(env.SICREDI_WEBHOOK_SECRET)],
-    ["efi", "Efí", Boolean(env.EFI_WEBHOOK_SECRET)],
+    ["brb", "BRB", Boolean(brbSecret)],
+    ["bb", "Banco do Brasil", Boolean(bbSecret)],
+    ["santander", "Santander", Boolean(santanderSecret)],
+    ["sicredi", "Sicredi", Boolean(sicrediSecret)],
+    ["efi", "Efí", Boolean(efiSecret)],
   ] as const;
 
   for (const [id, nome, credenciais] of bancos) {

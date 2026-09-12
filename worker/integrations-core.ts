@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
+import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -171,7 +172,8 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   const client = await requireClient(request, env);
   if (!client) return json({ erro: "Sessão expirada." }, 401);
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  if (!env.MERCADO_PAGO_ACCESS_TOKEN) return json({ erro: "Mercado Pago não configurado." }, 503);
+  const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
+  if (!accessToken) return json({ erro: "Mercado Pago não configurado." }, 503);
   const body = await request.json().catch(() => ({})) as { boletoId?: string };
   const boletoId = String(body.boletoId || "");
   if (!boletoId) return json({ erro: "Parcela não informada." }, 400);
@@ -209,7 +211,7 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
 
   const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
     method: "POST",
-    headers: { Authorization: `Bearer ${env.MERCADO_PAGO_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(preference),
   });
   const mp = await response.json().catch(() => ({})) as any;
@@ -220,8 +222,8 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   return json({ preferenceId: mp.id, checkoutUrl: mp.init_point });
 }
 
-async function validateMercadoPagoSignature(request: Request, env: Env) {
-  if (!env.MERCADO_PAGO_WEBHOOK_SECRET) return false;
+async function validateMercadoPagoSignature(request: Request, webhookSecret: string | null) {
+  if (!webhookSecret) return false;
   const signature = request.headers.get("x-signature") || "";
   const requestId = request.headers.get("x-request-id") || "";
   const dataId = new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "";
@@ -232,19 +234,21 @@ async function validateMercadoPagoSignature(request: Request, env: Env) {
   if (dataId) manifest += `id:${dataId};`;
   if (requestId) manifest += `request-id:${requestId};`;
   manifest += `ts:${ts};`;
-  const computed = await hmacHex(env.MERCADO_PAGO_WEBHOOK_SECRET, manifest);
+  const computed = await hmacHex(webhookSecret, manifest);
   return timingSafeEqual(computed, v1);
 }
 
 async function handleMercadoPagoWebhook(request: Request, env: Env) {
-  if (!env.MERCADO_PAGO_ACCESS_TOKEN || !env.MERCADO_PAGO_WEBHOOK_SECRET) return json({ erro: "Mercado Pago não configurado." }, 503);
-  if (!(await validateMercadoPagoSignature(request, env))) return json({ erro: "Assinatura inválida." }, 401);
+  const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
+  const webhookSecret = await obterCredencial(env, "mercado_pago", "webhook_secret");
+  if (!accessToken || !webhookSecret) return json({ erro: "Mercado Pago não configurado." }, 503);
+  if (!(await validateMercadoPagoSignature(request, webhookSecret))) return json({ erro: "Assinatura inválida." }, 401);
   const payload = await request.json().catch(() => ({})) as any;
   const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
   if (!paymentId) return json({ ok: true, ignored: true }, 200);
   const db = createServiceSupabaseClient(env);
 
-  const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, { headers: { Authorization: `Bearer ${env.MERCADO_PAGO_ACCESS_TOKEN}` } });
+  const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
   const payment = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
     console.error("Falha ao consultar pagamento Mercado Pago:", response.status, payment);
@@ -369,6 +373,7 @@ export async function integrationsApi(request: Request, env: Env): Promise<Respo
   if (path === "/api/integrations/rd-station/webhook" && request.method === "POST") return handleRdWebhook(request, env);
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
   if (path === "/api/cliente/payments/mercado-pago/preference" && request.method === "POST") return createMercadoPagoPreference(request, env);
+  if (path === "/api/admin/integrations/credenciais") return credenciaisApi(request, env);
   if (path.startsWith("/api/admin/integrations/conta-azul/")) return handleContaAzulAdmin(request, env);
   return null;
 }
