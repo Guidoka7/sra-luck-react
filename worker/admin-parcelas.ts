@@ -37,12 +37,21 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
   const db = createServiceSupabaseClient(env);
 
   if (request.method === "GET") {
-    const { data: boletos, error } = await db
-      .from("boletos")
-      .select("*")
-      .eq("cliente_id", clienteId)
-      .order("numero_parcela", { ascending: true });
+    const [{ data: boletos, error }, { data: cliente, error: clienteError }] = await Promise.all([
+      db
+        .from("boletos")
+        .select("*")
+        .eq("cliente_id", clienteId)
+        .order("numero_parcela", { ascending: true }),
+      db
+        .from("clientes")
+        .select("id,nome_completo,valor_contrato,quantidade_parcelas,ativo,status_financeiro,updated_at")
+        .eq("id", clienteId)
+        .maybeSingle(),
+    ]);
     if (error) return json({ erro: error.message }, 500);
+    if (clienteError) return json({ erro: clienteError.message }, 500);
+    if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
     const { data: historico } = await db
       .from("logs_alteracoes")
@@ -53,6 +62,10 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
       .limit(100);
 
     return json({
+      cliente: {
+        ...cliente,
+        valor_contrato: cliente.valor_contrato == null ? null : Number(cliente.valor_contrato),
+      },
       boletos: (boletos ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) })),
       parcelas: (boletos ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) })),
       historico: historico ?? [],
