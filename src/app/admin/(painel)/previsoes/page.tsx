@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { fetchInstant, refreshInstant } from "@/lib/instantCache";
 import { formatarMoeda } from "@/lib/utils";
+import { CompactClientForecastDrawer } from "@/features/previsoes/CompactClientForecastDrawer";
 
 type Situacao = "no_ritmo" | "em_risco" | "elegivel" | "sem_previsao" | "sem_regra";
 type Confianca = "alta" | "media" | "baixa";
@@ -291,20 +292,19 @@ export default function PrevisoesPage() {
   useEffect(() => { void load(); }, []);
   useEffect(() => { setSelectedDay(null); setPortfolioPage(1); setPortfolioSearch(""); }, [selectedMonth]);
   useEffect(() => {
-    if (!selectedPortfolio && !selectedClient) return;
+    if (!selectedPortfolio) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (selectedClient) setSelectedClient(null);
-      else setSelectedPortfolio(null);
+      setSelectedPortfolio(null);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [selectedPortfolio, selectedClient]);
+  }, [selectedPortfolio]);
 
   const rules = data?.regras?.length ? data.regras : DEFAULT_RULES;
   const allClients = data?.clientes ?? [];
@@ -504,29 +504,7 @@ export default function PrevisoesPage() {
         </DrawerShell>
       ) : null}
 
-      {selectedClient ? (
-        <DrawerShell onClose={() => setSelectedClient(null)} level={110} kind="profile">
-          <div className="sticky top-0 z-20 border-b border-[#eee3e3] bg-[#fffdfc]/95 px-5 py-3.5 backdrop-blur-xl sm:px-6 xl:px-7">
-            <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-2 text-[10px] text-[#657198]"><button type="button" onClick={() => setSelectedClient(null)} className="hover:text-burgundy">Previsões</button><ChevronRight className="h-3 w-3" /><span>Carteira {selectedClient.totalParcelas}x</span><ChevronRight className="h-3 w-3" /><strong className="text-[#3c4769]">{selectedClient.nome}</strong></div><button type="button" onClick={() => setSelectedClient(null)} className="rounded-lg p-2 text-burgundy/70 transition hover:bg-blush"><X className="h-5 w-5" /></button></div>
-          </div>
-          <div className="p-5 sm:p-6 xl:p-7">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><Avatar name={selectedClient.nome} size="lg" /><div><h2 className="text-[1.65rem] font-semibold tracking-[-.035em] text-burgundy">Perfil da cliente · Previsão de Liberação</h2><p className="text-[11px] text-clay/52">Detalhes da cliente e regra de previsão para liberação da carta.</p></div></div><div className="rounded-full bg-emerald-50 px-3 py-2 text-center text-[10px] font-semibold text-emerald-700"><span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />Prevista para {MONTH_NAMES[Number(clientForecastMonth.slice(5, 7)) - 1]}</span><p className="mt-0.5 text-[8px] font-normal text-emerald-800/70">Elegível no vencimento da {selectedClient.parcelasNecessarias}ª parcela</p></div></div>
-
-            <div className="mt-4 grid gap-2 rounded-xl border border-[#eadedf] bg-white px-4 py-3 sm:grid-cols-[1.7fr_1fr_1fr_1fr_.65fr]"><div><p className="text-xl font-semibold text-burgundy">{selectedClient.nome}</p></div><div><p className="text-[8px] text-clay/45">Campanha</p><p className="text-[10px] font-semibold">{selectedClient.campanha || "Sem campanha"}</p></div><div><p className="text-[8px] text-clay/45">Vendedora</p><p className="text-[10px] font-semibold">{selectedClient.responsavel || "—"}</p></div><div><p className="text-[8px] text-clay/45">Valor da carta</p><p className="text-[10px] font-semibold">{money(selectedClient.valorCarta)}</p></div><div><p className="text-[8px] text-clay/45">Plano</p><p className="text-[10px] font-semibold">{selectedClient.totalParcelas}x</p></div></div>
-
-            <div className="mt-3 rounded-xl border border-[#f0c9cd] bg-[#fff0f1] p-4"><div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-burgundy text-white"><CircleAlert className="h-4 w-4" /></span><div><p className="text-[14px] font-semibold text-burgundy">Plano {selectedClient.totalParcelas}x · {selectedClient.percentual ?? "—"}% = {selectedClient.parcelasNecessarias ?? "—"}ª parcela</p><p className="mt-1 text-[11px] text-[#614b52]">Como a cliente tem {selectedClient.parcelasPagas} parcelas pagas, a previsão de liberação é no vencimento da parcela-alvo: <strong>{dateLabel(selectedClient.previsao)}</strong>.</p></div></div></div>
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-[1.35fr_.9fr]">
-              <section className="rounded-xl border border-[#eadedf] bg-white p-3"><h3 className="flex items-center gap-2 text-[13px] font-semibold text-burgundy"><Target className="h-4 w-4" />Resumo da previsão</h3><div className="mt-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Parcela necessária</p><p className="mt-1 text-xl font-semibold text-burgundy">{selectedClient.parcelasNecessarias ?? "—"}ª</p></div><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Parcelas pagas</p><p className="mt-1 text-xl font-semibold text-burgundy">{selectedClient.parcelasPagas}/{selectedClient.totalParcelas}</p></div><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Próximo marco</p><p className="mt-1 text-[14px] font-semibold text-burgundy">{selectedClient.parcelasNecessarias ?? "—"}ª parcela</p></div><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Vencimento previsto</p><p className="mt-1 text-[14px] font-semibold text-burgundy">{dateLabel(selectedClient.previsao)}</p></div><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Valor da carta</p><p className="mt-1 text-[14px] font-semibold text-burgundy">{money(selectedClient.valorCarta)}</p></div><div className="rounded-lg border border-[#eee4e4] p-3"><p className="text-[8px] text-clay/50">Confiabilidade</p><span className="mt-1 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">{selectedClient.confianca === "alta" ? "Alta" : selectedClient.confianca === "media" ? "Média" : "Baixa"}</span></div></div></section>
-              <section className="rounded-xl border border-[#eadedf] bg-white p-3"><h3 className="flex items-center gap-2 text-[13px] font-semibold text-burgundy"><UserRound className="h-4 w-4" />Dados da venda / CRM</h3><div className="mt-3 divide-y divide-[#f0e7e6] rounded-lg border border-[#eee4e4] text-[9px]"><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Campanha</span><strong>{selectedClient.campanha || "Sem campanha"}</strong></div><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Vendedora</span><strong>{selectedClient.responsavel || "—"}</strong></div><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Data da venda</span><strong>{dateLabel(selectedClient.dataVenda || selectedClient.primeiroBoletoEm)}</strong></div><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Origem</span><strong>{selectedClient.origem || "RD Station / CRM"}</strong></div><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Contrato</span><strong>{selectedClient.codigoContrato || "Aguardando vínculo"}</strong></div><div className="grid grid-cols-2 px-3 py-2"><span className="text-clay/50">Status comercial</span><span className="w-fit rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Venda confirmada</span></div></div></section>
-            </div>
-
-            <section className="mt-3 rounded-xl border border-[#eadedf] bg-white p-3"><h3 className="flex items-center gap-2 text-[13px] font-semibold text-burgundy"><CalendarDays className="h-4 w-4" />Cronograma de parcelas</h3><div className="mt-5 overflow-x-auto pb-2"><div className="flex min-w-max items-start">{timeline.map((item, index) => { const targetPast = item.target && item.due && item.due < today && !item.paid; const circle = item.paid ? "border-emerald-500 bg-emerald-500 text-white" : item.target ? targetPast ? "border-red-500 bg-red-500 text-white" : "border-burgundy bg-burgundy text-white" : "border-[#cdd4df] bg-[#eef1f5] text-[#9aa5b5]"; return <div key={item.number} className="relative flex w-[86px] shrink-0 flex-col items-center"><div className={`absolute left-1/2 top-[31px] h-[2px] w-full ${index === timeline.length - 1 ? "hidden" : item.paid ? "bg-emerald-400" : "bg-[#d7dde5]"}`} /><span className="mb-2 text-[8px] font-semibold text-[#39445b]">{item.number}ª</span><span className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 ${circle}`}>{item.paid || item.target ? <Check className="h-4 w-4" /> : null}</span><span className="mt-2 text-[8px] font-medium text-[#526078]">{item.due ? dateLabel(item.due).slice(0, 5) : "—"}</span><span className={`mt-0.5 rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${item.paid ? "bg-emerald-100 text-emerald-700" : item.target ? "bg-[#f8d8dc] text-burgundy" : "text-[#8692a3]"}`}>{item.paid ? "Paga" : item.target ? "Prevista" : "Futura"}</span></div>; })}</div></div></section>
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-[1.15fr_1fr]"><section className="rounded-xl border border-[#f0cfd1] bg-[#fff3f3] p-3"><h3 className="flex items-center gap-2 text-[12px] font-semibold text-burgundy"><Target className="h-4 w-4" />Motivo da entrada na carteira</h3><p className="mt-2 text-[9px] leading-5 text-[#5f4b51]">Esta cliente aparece na carteira {selectedClient.totalParcelas}x de {monthLong(clientForecastMonth)} porque a <strong>{selectedClient.parcelasNecessarias}ª parcela</strong>, que atinge {selectedClient.percentual}% do plano, vence em <strong>{dateLabel(selectedClient.previsao)}</strong>.</p><p className="mt-1 text-[8px] italic text-clay/48">Ela pertence ao mês do vencimento da parcela-alvo, não ao mês da parcela anterior.</p></section><section className="rounded-xl border border-[#eadedf] bg-white p-3"><h3 className="flex items-center gap-2 text-[12px] font-semibold text-burgundy"><FileText className="h-4 w-4" />Ações e observações</h3><div className="mt-3 flex flex-wrap gap-2"><a href={`/admin/financeiro?cliente_id=${selectedClient.clienteId}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-burgundy px-3 text-[8px] font-semibold text-white"><BarChart3 className="h-3 w-3" />Ver financeiro</a><a href={`/admin/clientes?cliente_id=${selectedClient.clienteId}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-burgundy/25 px-3 text-[8px] font-semibold text-burgundy"><UserRound className="h-3 w-3" />Abrir cliente</a><button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-burgundy/25 px-3 text-[8px] font-semibold text-burgundy"><MessageSquareText className="h-3 w-3" />Registrar observação</button></div><p className="mt-3 text-[8px] leading-4 text-clay/45">O sistema inclui nesta carteira apenas clientes cuja parcela necessária possui vencimento no mês visualizado. Fonte: {forecastSource(selectedClient)}.</p></section></div>
-          </div>
-        </DrawerShell>
-      ) : null}
+      {selectedClient ? <CompactClientForecastDrawer client={selectedClient} rules={rules} onClose={() => setSelectedClient(null)} /> : null}
     </div>
   );
 }
