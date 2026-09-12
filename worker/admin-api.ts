@@ -49,7 +49,30 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   }
   if(path==="/api/admin/clientes-agendamentos"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,status,horario_termos,termos_assinados_em,datas(id,data,status),clientes(id,nome_completo,cpf)").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);return json({agendamentos:data??[]});}
   if(path==="/api/admin/agenda-mensal"&&request.method==="GET"){const ano=Number(url.searchParams.get("ano"))||new Date().getFullYear();const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,status,horario_termos,datas(data),clientes(nome_completo)").gte("datas.data",`${ano}-01-01`).lt("datas.data",`${ano+1}-01-01`).order("created_at",{ascending:true});if(error)return json({erro:error.message},500);return json({agendamentos:data??[]});}
-  if(path==="/api/admin/remarcacoes"){if(request.method==="GET"){const {data,error}=await supabase.from("remarcacoes").select("*").order("created_at",{ascending:false}).limit(100);if(error)return json({remarcacoes:[]});return json({remarcacoes:data??[]});}if(request.method==="POST"){const b=await body(request);if(!b.id||!["aprovar","recusar"].includes(b.acao))return json({erro:"Solicitação inválida."},400);const {data,error}=await supabase.from("remarcacoes").update({status:b.acao==="aprovar"?"aprovada":"recusada"}).eq("id",b.id).select("*").single();if(error)return json({erro:error.message},400);return json({remarcacao:data});}}
+  if(path==="/api/admin/remarcacoes"){
+    if(request.method==="GET"){const {data,error}=await supabase.from("solicitacoes_remarcacao_agendamento").select("id,tipo,data_solicitada,horario_termos,status,created_at,clientes(nome_completo)").eq("status","pendente").order("created_at",{ascending:true}).limit(100);if(error)return json({remarcacoes:[]});return json({remarcacoes:data??[]});}
+    if(request.method==="POST"){
+      const b=await body(request);
+      if(!b.id||!["aprovar","recusar"].includes(b.acao))return json({erro:"Solicitação inválida."},400);
+      const {data:solicitacao,error:erroSolicitacao}=await supabase.from("solicitacoes_remarcacao_agendamento").select("id,agendamento_id,tipo,data_id,data_solicitada,horario_termos,status").eq("id",b.id).maybeSingle();
+      if(erroSolicitacao)return json({erro:erroSolicitacao.message},500);
+      if(!solicitacao)return json({erro:"Solicitação não encontrada."},404);
+      if(solicitacao.status!=="pendente")return json({erro:"Esta solicitação já foi analisada."},409);
+      if(b.acao==="recusar"){const {data,error}=await supabase.from("solicitacoes_remarcacao_agendamento").update({status:"recusada",analisada_em:new Date().toISOString()}).eq("id",b.id).select("*").single();if(error)return json({erro:error.message},400);return json({remarcacao:data});}
+      if(solicitacao.tipo==="termos"){
+        if(!solicitacao.data_id||!solicitacao.horario_termos)return json({erro:"Solicitação sem data ou horário válidos."},400);
+        const {error:erroAplicar}=await supabase.rpc("remarcar_agendamento_termos",{p_agendamento_id:solicitacao.agendamento_id,p_data_id:solicitacao.data_id,p_horario_termos:solicitacao.horario_termos});
+        if(erroAplicar){const m=String(erroAplicar.message??"");if(m.includes("VAGAS_ESGOTADAS")||m.includes("DATA_INDISPONIVEL"))return json({erro:"Essa data não está mais disponível para aprovar."},409);return json({erro:"Não foi possível aplicar a nova data dos termos."},500);}
+      } else {
+        if(!solicitacao.data_solicitada)return json({erro:"Solicitação sem data válida."},400);
+        const {error:erroAplicar}=await supabase.rpc("agendar_cirurgia_data",{p_agendamento_id:solicitacao.agendamento_id,p_data:solicitacao.data_solicitada});
+        if(erroAplicar){const m=String(erroAplicar.message??"");if(m.includes("DATA_CIRURGIA_OCUPADA")||m.includes("DATA_CIRURGIA_INDISPONIVEL"))return json({erro:"Essa data não está mais disponível para aprovar."},409);return json({erro:"Não foi possível aplicar a nova data da cirurgia."},500);}
+      }
+      const {data,error}=await supabase.from("solicitacoes_remarcacao_agendamento").update({status:"aprovada",analisada_em:new Date().toISOString()}).eq("id",b.id).select("*").single();
+      if(error)return json({erro:error.message},400);
+      return json({remarcacao:data});
+    }
+  }
   if(path==="/api/admin/datas-liberacao-financeira"&&request.method==="GET"){const {data,error}=await supabase.from("datas_liberacao_financeira").select("*").order("data",{ascending:true});if(error)return json({erro:error.message},500);return json({datas:data??[]});}
   if(path==="/api/admin/previsoes-liberacao"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,previsao_liberacao_financeira,status,clientes(id,nome_completo,cpf)").not("previsao_liberacao_financeira","is",null).order("previsao_liberacao_financeira",{ascending:true});if(error)return json({previsoes:[]});return json({previsoes:data??[]});}
   if((path==="/api/admin/liberacoes-financeiras"||path==="/api/admin/solicitacoes-liberacao-financeira")&&request.method==="GET"){const table=path.includes("solicitacoes")?"solicitacoes_liberacao_financeira":"liberacoes_financeiras";const {data,error}=await supabase.from(table).select("*").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);return json({[path.includes("solicitacoes")?"solicitacoes":"liberacoes"]:data??[]});}

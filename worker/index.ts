@@ -1,7 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
-import { agenda, agendar, agendarCirurgia, json as apiJson } from "./client-agenda";
+import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
 import { clientPushApi } from "./client-push";
@@ -267,6 +267,16 @@ export default {
       const bad = bloquearCrossSite(request);
       if (bad) return bad;
       return agendarCirurgia(request, env);
+    }
+    if (url.pathname === "/api/cliente/solicitacao-liberacao-financeira" && request.method === "POST") {
+      const bad = bloquearCrossSite(request);
+      if (bad) return bad;
+      return solicitarLiberacaoFinanceira(request, env);
+    }
+    if (url.pathname === "/api/cliente/remarcar-agendamento" && request.method === "POST") {
+      const bad = bloquearCrossSite(request);
+      if (bad) return bad;
+      return remarcarAgendamento(request, env);
     }
 
     const clienteAgendamento = await clienteAgendamentoAcao(request, env);
