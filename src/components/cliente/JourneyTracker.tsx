@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useRef, useState, type ElementType } from "react";
 import { Calendar, Check, Clock3, CreditCard, FileSignature, HeartHandshake, PartyPopper, Sparkles, Star } from "lucide-react";
 import { cn, formatarDataLonga } from "@/lib/utils";
 import { FeedbackConclusao } from "@/components/cliente/FeedbackConclusao";
@@ -141,47 +141,86 @@ export function JourneyTracker({
   ], [percentualAtingido, percentualFormatado, levantamentoAprovado, levantamentoRecusado, custeioAprovado, custeioEnviado, custeioRecusado, termosAssinados, agendada, agendaCirurgicaLiberada, dataAgendaCirurgicaFormatada, cirurgiaAgendada, dataLiberacaoFormatada, cirurgiaRealizada]);
 
   const etapaAtual = steps.find((step) => step.status === "current") ?? steps[steps.length - 1];
+  const [etapaAberta, setEtapaAberta] = useState(etapaAtual.id);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stepRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const idleTimerRef = useRef<number | null>(null);
+
+  function centralizarEtapaAtual(comportamento: ScrollBehavior = "smooth") {
+    stepRefs.current[etapaAtual.id]?.scrollIntoView({ behavior: comportamento, inline: "center", block: "nearest" });
+  }
+
+  function agendarRetornoAutomatico() {
+    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      setEtapaAberta(etapaAtual.id);
+      centralizarEtapaAtual();
+    }, 10000);
+  }
+
+  useEffect(() => {
+    setEtapaAberta(etapaAtual.id);
+    centralizarEtapaAtual("auto");
+    agendarRetornoAutomatico();
+    return () => { if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapaAtual.id]);
+
+  const descricaoAberta = steps.find((step) => step.id === etapaAberta) ?? etapaAtual;
 
   return <>
     {momentoEspecial&&dataMomentoEspecial&&<CelebracaoEtapa momento={momentoEspecial} data={dataMomentoEspecial} onFechar={()=>setMomentoEspecial(null)}/>}
     <div className="relative z-30 overflow-hidden rounded-2xl border-2 border-gold/20 bg-gradient-to-br from-white via-blush/30 to-white p-3.5 shadow-card transition-all duration-300 hover:border-gold/40 sm:p-4 dark:border-gold/20 dark:bg-gradient-to-br dark:from-[#202225] dark:via-[#181a1d] dark:to-[#111315]">
       <div className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full bg-gold/10 blur-2xl"/>
-      <div className="relative mb-3.5 flex items-baseline justify-between gap-3">
+      <div className="relative mb-3 flex items-baseline justify-between gap-3">
         <h2 className="font-heading text-[.8rem] font-semibold text-burgundy sm:text-sm dark:text-[#F4D9DC]">Sua jornada até a cirurgia</h2>
         <span className="rounded-full bg-gold/10 px-2 py-1 text-[.6rem] font-semibold uppercase tracking-label text-gold">{etapaAtual.title}</span>
       </div>
 
-      <div className="relative z-10 space-y-0">
+      <div
+        ref={scrollRef}
+        onScroll={agendarRetornoAutomatico}
+        className="relative z-10 -mx-1 flex items-start gap-0 overflow-x-auto px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [mask-image:linear-gradient(to_right,transparent,black_14px,black_calc(100%-14px),transparent)] [&::-webkit-scrollbar]:hidden"
+      >
         {steps.map((step, index) => (
-          <div key={step.id} className="relative flex gap-3 pb-4 last:pb-0">
+          <div key={step.id} className="flex items-center">
+            <button
+              ref={(el) => { stepRefs.current[step.id] = el; }}
+              type="button"
+              aria-current={step.id === etapaAtual.id ? "step" : undefined}
+              onClick={() => { setEtapaAberta(step.id); agendarRetornoAutomatico(); }}
+              className="group relative z-10 flex w-[76px] shrink-0 flex-col items-center gap-1 px-1 py-1 text-center transition-transform active:scale-[0.98] focus:outline-none focus-visible:outline-none"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              <span className={cn(
+                "relative flex h-10 w-10 items-center justify-center rounded-full border-2 shadow-sm transition-all duration-200 group-focus-visible:ring-2 group-focus-visible:ring-gold/70 group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-white dark:group-focus-visible:ring-offset-[#181a1d]",
+                step.status === "done" && "border-rose bg-rose/10 text-burgundy shadow-[0_0_0_3px_rgba(211,117,143,.12)] dark:bg-rose/10 dark:text-rose",
+                step.status === "current" && "border-gold bg-gold/[0.06] text-burgundy shadow-[0_0_0_5px_rgba(201,161,90,.18),0_0_22px_rgba(201,161,90,.22)] dark:text-gold",
+                step.status === "upcoming" && "border-clay/20 bg-transparent text-clay/45 dark:border-white/15 dark:text-white/45",
+              )}>
+                <step.icon className="h-[1.05rem] w-[1.05rem] shrink-0" strokeWidth={2.25} />
+                {step.status === "done" && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-rose text-white shadow-sm dark:border-[#202225]"><Check className="h-2.5 w-2.5" strokeWidth={3}/></span>}
+              </span>
+              <span className={cn(
+                "line-clamp-2 max-w-[76px] text-[.56rem] font-semibold leading-[1.15] uppercase tracking-label",
+                step.status === "current" ? "text-burgundy dark:text-gold" : step.status === "done" ? "text-burgundy/80 dark:text-[#F4D9DC]" : "text-clay/45 dark:text-[#D9D9DE]/60",
+              )}>{step.title}</span>
+            </button>
             {index < steps.length - 1 && (
-              <span aria-hidden="true" className={cn(
-                "absolute left-[19px] top-10 bottom-0 w-px",
-                step.status === "done" ? "bg-rose/60" : "bg-clay/15 dark:bg-white/12",
+              <div aria-hidden="true" className={cn(
+                "h-px w-5 shrink-0 border-t border-dashed transition-colors duration-500",
+                step.status === "done" ? "border-rose/70" : "border-clay/25 dark:border-white/15",
               )} />
             )}
-            <span className={cn(
-              "relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 shadow-sm transition-all duration-200",
-              step.status === "done" && "border-rose bg-rose/10 text-burgundy shadow-[0_0_0_3px_rgba(211,117,143,.12)] dark:bg-rose/10 dark:text-rose",
-              step.status === "current" && "border-gold bg-gold/[0.06] text-burgundy shadow-[0_0_0_5px_rgba(201,161,90,.18),0_0_22px_rgba(201,161,90,.22)] dark:text-gold",
-              step.status === "upcoming" && "border-clay/20 bg-transparent text-clay/45 dark:border-white/15 dark:text-white/45",
-            )}>
-              <step.icon className="h-[1.05rem] w-[1.05rem] shrink-0" strokeWidth={2.25} />
-              {step.status === "done" && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-rose text-white shadow-sm dark:border-[#202225]"><Check className="h-2.5 w-2.5" strokeWidth={3}/></span>}
-            </span>
-            <div className="min-w-0 flex-1 pt-1.5">
-              <p className={cn(
-                "text-[.72rem] font-semibold",
-                step.status === "current" ? "text-burgundy dark:text-gold" : step.status === "done" ? "text-burgundy/85 dark:text-[#F4D9DC]" : "text-clay/50 dark:text-white/50",
-              )}>{step.title}</p>
-              <p className={cn(
-                "mt-0.5 leading-5",
-                step.status === "current" ? "text-[.68rem] text-clay/75 dark:text-[#E7E2E5]/80" : "text-[.62rem] text-clay/45 dark:text-white/38",
-              )}>{step.description}</p>
-            </div>
           </div>
         ))}
       </div>
+
+      <AnimatePresence mode="wait">
+        <motion.div key={descricaoAberta.id} initial={{opacity:0,y:4}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-4}} className="relative z-10 mt-3 rounded-lg border border-rose/15 bg-transparent px-3 py-2 text-center text-[.7rem] leading-5 text-clay/70 dark:border-rose/15 dark:text-[#E7E2E5]/75">
+          {descricaoAberta.description}
+        </motion.div>
+      </AnimatePresence>
     </div>
   </>;
 }
