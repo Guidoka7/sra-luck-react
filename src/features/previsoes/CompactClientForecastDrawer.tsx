@@ -115,7 +115,7 @@ function listParcelas(rows: BoletoLive[], limit = 6) {
 }
 
 function historyDate(item: HistoricoLive) {
-  return item.created_at ? dateLabel(item.created_at) : null;
+  return item.created_at ?? null;
 }
 
 function planChangeText(item: HistoricoLive) {
@@ -172,21 +172,13 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
     if (quiet) setRefreshing(true); else setLoading(true);
     setError("");
     try {
-      const [parcelasResponse, clientesResponse] = await Promise.all([
-        fetch(`/api/admin/clientes/${encodeURIComponent(client.clienteId)}/parcelas`, { cache: "no-store" }),
-        fetch("/api/admin/clientes", { cache: "no-store" }),
-      ]);
-      const parcelasJson = await parcelasResponse.json();
-      const clientesJson = await clientesResponse.json();
-      if (!parcelasResponse.ok) throw new Error(parcelasJson?.erro ?? "Não foi possível atualizar as parcelas da cliente.");
-      if (!clientesResponse.ok) throw new Error(clientesJson?.erro ?? "Não foi possível atualizar o cadastro da cliente.");
-      const cadastro = Array.isArray(clientesJson?.clientes)
-        ? clientesJson.clientes.find((item: CadastroLive) => String(item.id) === String(client.clienteId)) ?? null
-        : null;
+      const response = await fetch(`/api/admin/clientes/${encodeURIComponent(client.clienteId)}/parcelas`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.erro ?? "Não foi possível atualizar os dados financeiros da cliente.");
       setDetail({
-        boletos: Array.isArray(parcelasJson?.boletos) ? parcelasJson.boletos : Array.isArray(parcelasJson?.parcelas) ? parcelasJson.parcelas : [],
-        historico: Array.isArray(parcelasJson?.historico) ? parcelasJson.historico : [],
-        cadastro,
+        boletos: Array.isArray(result?.boletos) ? result.boletos : Array.isArray(result?.parcelas) ? result.parcelas : [],
+        historico: Array.isArray(result?.historico) ? result.historico : [],
+        cadastro: result?.cliente ?? null,
       });
       setUpdatedAt(new Date());
     } catch (err) {
@@ -225,7 +217,7 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
   const byNumber = useMemo(() => new Map(boletos.map((item) => [Number(item.numero_parcela), item])), [boletos]);
   const paid = boletos.filter((row) => row.status === "pago");
   const suspended = boletos.filter((row) => Boolean(row.suspensa) && row.status !== "pago");
-  const overdue = boletos.filter((row) => !row.suspensa && row.status !== "pago" && Boolean(row.data_vencimento && row.data_vencimento < today));
+  const overdue = boletos.filter((row) => !row.suspensa && !["pago", "pendente_confirmacao"].includes(row.status) && Boolean(row.data_vencimento && row.data_vencimento < today));
   const pendingConfirmation = boletos.filter((row) => row.status === "pendente_confirmacao");
   const openNotSuspended = boletos.filter((row) => row.status !== "pago" && !row.suspensa);
   const allOpenSuspended = openNotSuspended.length === 0 && suspended.length > 0;
@@ -241,13 +233,13 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
     const row = byNumber.get(number);
     const isPaid = row?.status === "pago";
     const isSuspended = Boolean(row?.suspensa) && !isPaid;
-    const isOverdue = Boolean(row?.data_vencimento && row.data_vencimento < today && !isPaid && !isSuspended);
     const isPending = row?.status === "pendente_confirmacao";
+    const isOverdue = Boolean(row?.data_vencimento && row.data_vencimento < today && !isPaid && !isSuspended && !isPending);
     return {
       number,
       row,
       target: number === targetNumber,
-      state: isPaid ? "paid" : isSuspended ? "suspended" : isOverdue ? "overdue" : isPending ? "pending" : "open",
+      state: isPaid ? "paid" : isSuspended ? "suspended" : isPending ? "pending" : isOverdue ? "overdue" : "open",
     } as const;
   }), [byNumber, currentPlan, targetNumber, today]);
 
@@ -264,7 +256,9 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
     if (overdue.length) {
       items.push({ key: "overdue", tone: "danger", title: `${overdue.length} parcela(s) em atraso`, detail: `Inadimplência registrada em ${listParcelas(overdue)}. A previsão deve refletir esse risco até a regularização.`, date: overdue[0]?.data_vencimento ?? null });
     }
-    if (boletos.length > 0 && paid.length === 0) {
+    if (boletos.length === 0) {
+      items.push({ key: "no-installments", tone: "warning", title: "Sem parcelas registradas", detail: "O cadastro ainda não possui parcelas financeiras para acompanhar." });
+    } else if (paid.length === 0) {
       items.push({ key: "unpaid", tone: "warning", title: "Nenhuma parcela paga", detail: "Ainda não existe parcela baixada como paga para esta cliente." });
     }
     if (pendingConfirmation.length) {
