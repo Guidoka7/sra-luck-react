@@ -65,11 +65,12 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
   if (clientesRes.error) throw new Error(clientesRes.error.message);
   if (boletosRes.error) throw new Error(boletosRes.error.message);
 
-  // Estruturas novas enriquecem o forecast, mas não são obrigatórias. Assim a
-  // previsão continua funcionando em ambientes que ainda usam apenas clientes/boletos.
+  // As estruturas novas enriquecem a previsão, mas permanecem opcionais.
+  // Se ainda não estiverem aplicadas no ambiente, clientes + boletos continuam
+  // produzindo o forecast normalmente, sem quebrar a área administrativa.
   const [contratosRes, crmRes] = await Promise.all([
     db.from("contratos_credito")
-      .select("id,cliente_id,campanha,origem,etapa,created_at")
+      .select("id,cliente_id,codigo,campanha,origem,etapa,valor_contrato,data_venda,created_at")
       .order("created_at", { ascending: false })
       .limit(5000),
     db.from("crm_vendas_entrada")
@@ -180,6 +181,17 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
       fontePrevisao,
       confianca,
       situacao,
+      valorCarta: contrato?.valor_contrato == null ? null : Number(contrato.valor_contrato),
+      dataVenda: isoDate(contrato?.data_venda) ?? isoDate(entradaCrm?.created_at),
+      codigoContrato: contrato?.codigo ?? null,
+      statusCrm: entradaCrm?.status ?? null,
+      financeiroRegistrado: parcelas.length > 0,
+      parcelas: parcelas.map((parcela) => ({
+        numero: Number(parcela.numero_parcela ?? 0),
+        status: String(parcela.status ?? ""),
+        vencimento: isoDate(parcela.data_vencimento),
+        pagamento: isoDate(parcela.data_pagamento),
+      })),
     };
   }).filter((cliente: any) => cliente.totalParcelas > 0 || cliente.parcelasPagas > 0);
 
