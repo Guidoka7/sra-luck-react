@@ -620,6 +620,11 @@ export default function PrevisoesPage() {
       {selectedPortfolio != null && selectedRule ? (
         <DrawerShell onClose={() => setSelectedPortfolio(null)}>
           <div className="sticky top-0 z-20 border-b border-[#eee3e3] bg-[#fffdfc]/95 px-5 py-4 backdrop-blur-xl sm:px-6 xl:px-7">
+            <nav className="mb-2 flex items-center gap-1.5 text-xs text-clay/45">
+              <button type="button" onClick={() => setSelectedPortfolio(null)} className="font-medium text-burgundy/70 hover:text-burgundy hover:underline">Previsões</button>
+              <span>›</span>
+              <span className="font-semibold text-clay">Carteira {selectedPortfolio}x</span>
+            </nav>
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <PieChart className="h-7 w-7 text-burgundy" />

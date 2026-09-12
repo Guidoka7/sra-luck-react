@@ -57,7 +57,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
       .from("logs_alteracoes")
       .select("*")
       .eq("entidade_id", clienteId)
-      .in("acao", ["editou_parcela", "reabriu_parcela", "excluiu_parcela", "suspendeu_parcelas", "gerou_parcelas", "alterou_quantidade_parcelas"])
+      .in("acao", ["editou_parcela", "reabriu_parcela", "excluiu_parcela", "suspendeu_parcelas", "gerou_parcelas", "alterou_quantidade_parcelas", "registrou_observacao"])
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -168,6 +168,20 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     await db.from("logs_alteracoes").insert({ usuario, acao: "editou_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, de: { valor: atual.valor, data_vencimento: atual.data_vencimento }, para: { valor: data.valor, data_vencimento: data.data_vencimento } } });
     await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: atual.numero_parcela });
     return json({ boleto: { ...data, valor: Number(data.valor) } });
+  }
+
+  if (acao === "registrar_observacao") {
+    const texto = String(body.texto ?? "").trim();
+    if (!texto) return json({ erro: "Escreva uma observação antes de salvar." }, 400);
+    if (texto.length > 2000) return json({ erro: "Observação muito longa (máximo de 2000 caracteres)." }, 400);
+
+    const { data, error } = await db
+      .from("logs_alteracoes")
+      .insert({ usuario, acao: "registrou_observacao", entidade: "clientes", entidade_id: clienteId, detalhes: { texto } })
+      .select("id,created_at")
+      .single();
+    if (error) return json({ erro: error.message }, 500);
+    return json({ sucesso: true, observacao: { id: data.id, texto, usuario, created_at: data.created_at } });
   }
 
   if (acao === "suspender") {
