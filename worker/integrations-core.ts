@@ -157,6 +157,16 @@ async function handleRdWebhook(request: Request, env: Env) {
   return json({ ok: true, recebido: true, entradaId: staged.id }, 200);
 }
 
+function encargosPorAtraso(valor: number, dataVencimento: string) {
+  const vencimento = new Date(`${dataVencimento}T00:00:00`);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const diasEmAtraso = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
+  const juros = valor * diasEmAtraso * 0.002;
+  const multa = valor * Math.ceil(diasEmAtraso / 30) * 0.02;
+  return { diasEmAtraso, encargos: diasEmAtraso > 0 ? juros + multa : 0 };
+}
+
 async function createMercadoPagoPreference(request: Request, env: Env) {
   const client = await requireClient(request, env);
   if (!client) return json({ erro: "Sessão expirada." }, 401);
@@ -166,10 +176,19 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   const boletoId = String(body.boletoId || "");
   if (!boletoId) return json({ erro: "Parcela não informada." }, 400);
   const db = createServiceSupabaseClient(env);
-  const { data: boleto, error } = await db.from("boletos").select("id,cliente_id,contrato_credito_id,numero_parcela,total_parcelas,valor,status,data_vencimento").eq("id", boletoId).eq("cliente_id", client).maybeSingle();
+  const { data: boleto, error } = await db.from("boletos")
+    .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,suspensa,clientes(financeiro_taxa_cartao)")
+    .eq("id", boletoId).eq("cliente_id", client).maybeSingle();
   if (error) return json({ erro: error.message }, 500);
   if (!boleto) return json({ erro: "Parcela não encontrada." }, 404);
   if (boleto.status === "pago") return json({ erro: "Essa parcela já está paga." }, 409);
+  if (boleto.suspensa) return json({ erro: "Essa parcela está suspensa e não pode ser paga agora." }, 409);
+
+  const valorNominal = Number(boleto.valor);
+  const { encargos } = encargosPorAtraso(valorNominal, boleto.data_vencimento);
+  const cliente = Array.isArray(boleto.clientes) ? boleto.clientes[0] : boleto.clientes;
+  const taxaCartao = Number(cliente?.financeiro_taxa_cartao ?? 5.4);
+  const valorComTaxa = Math.round((valorNominal + encargos) * (1 + taxaCartao / 100) * 100) / 100;
 
   const base = (env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "");
   const preference = {
@@ -178,14 +197,14 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
       title: `Sra. Luck — Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""}`,
       quantity: 1,
       currency_id: "BRL",
-      unit_price: Number(boleto.valor),
+      unit_price: valorComTaxa,
     }],
     external_reference: `boleto:${boleto.id}`,
     back_urls: { success: `${base}/agenda?pagamento=sucesso`, pending: `${base}/agenda?pagamento=pendente`, failure: `${base}/agenda?pagamento=falha` },
     auto_return: "approved",
     notification_url: `${base}/api/integrations/mercado-pago/webhook`,
     statement_descriptor: "SRA LUCK",
-    metadata: { boleto_id: boleto.id, cliente_id: client, contrato_id: boleto.contrato_credito_id || null },
+    metadata: { boleto_id: boleto.id, cliente_id: client },
   };
 
   const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
@@ -195,10 +214,9 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   });
   const mp = await response.json().catch(() => ({})) as any;
   if (!response.ok || !mp?.id || !mp?.init_point) {
-    await recordIntegrationEvent(db, { provedor: "mercado_pago", eventType: "preference_error", referencia: boleto.id, payload: mp, status: "erro", error: `HTTP ${response.status}` });
+    console.error("Falha ao criar preferência Mercado Pago:", response.status, mp);
     return json({ erro: "Não foi possível abrir o pagamento por cartão." }, 502);
   }
-  await recordIntegrationEvent(db, { provedor: "mercado_pago", eventId: `preference:${mp.id}`, eventType: "preference_created", referencia: boleto.id, payload: { preference_id: mp.id }, status: "processado" });
   return json({ preferenceId: mp.id, checkoutUrl: mp.init_point });
 }
 
@@ -225,40 +243,52 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
   if (!paymentId) return json({ ok: true, ignored: true }, 200);
   const db = createServiceSupabaseClient(env);
-  const eventId = String(payload?.id || `${payload?.action || "payment"}:${paymentId}`);
-  const { data: duplicate } = await db.from("integracao_eventos").select("id").eq("provedor", "mercado_pago").eq("event_id", eventId).maybeSingle();
-  if (duplicate) return json({ ok: true, duplicate: true }, 200);
 
   const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, { headers: { Authorization: `Bearer ${env.MERCADO_PAGO_ACCESS_TOKEN}` } });
   const payment = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
-    await recordIntegrationEvent(db, { provedor: "mercado_pago", eventId, eventType: payload?.action || "payment", referencia: paymentId, payload, status: "erro", error: `Consulta pagamento HTTP ${response.status}` });
+    console.error("Falha ao consultar pagamento Mercado Pago:", response.status, payment);
     return json({ erro: "Falha ao confirmar pagamento no provedor." }, 502);
   }
   const externalReference = String(payment?.external_reference || "");
   const boletoId = externalReference.startsWith("boleto:") ? externalReference.slice(7) : String(payment?.metadata?.boleto_id || "");
-  let boleto: any = null;
-  if (boletoId) {
-    const result = await db.from("boletos").select("id,cliente_id,contrato_credito_id").eq("id", boletoId).maybeSingle();
-    boleto = result.data;
+  if (!boletoId) return json({ ok: true, ignored: true }, 200);
+
+  const { data: boleto } = await db.from("boletos").select("id,cliente_id,valor,status").eq("id", boletoId).maybeSingle();
+  if (!boleto) return json({ ok: true, ignored: true }, 200);
+
+  const statusProvedor = String(payment.status || "unknown");
+  await db.from("logs_alteracoes").insert({
+    usuario: "sistema:mercado_pago",
+    acao: "recebeu_evento_mercado_pago",
+    entidade: "boletos",
+    entidade_id: boleto.id,
+    detalhes: { paymentId, statusProvedor, transactionAmount: payment.transaction_amount ?? null, cliente_id: boleto.cliente_id },
+  });
+
+  if (statusProvedor !== "approved") return json({ ok: true, statusProvedor }, 200);
+  if (boleto.status === "pago") return json({ ok: true, duplicate: true }, 200);
+
+  const valorPago = Number(payment.transaction_amount || 0);
+  const jurosEEncargos = Math.max(0, Math.round((valorPago - Number(boleto.valor)) * 100) / 100);
+  const dataPagamento = String(payment.date_approved || new Date().toISOString()).slice(0, 10);
+
+  const { error: erroBaixa } = await db.rpc("financeiro_baixar_boleto", {
+    p_boleto_id: boleto.id,
+    p_data_pagamento: dataPagamento,
+    p_juros: jurosEEncargos,
+    p_multa: 0,
+    p_desconto: 0,
+    p_forma_pagamento: "cartao",
+    p_instituicao_conta: "Mercado Pago",
+    p_observacao: "Pagamento automático via Mercado Pago (cartão de crédito). Valor inclui encargos por atraso e taxa da maquininha, quando aplicável.",
+    p_usuario: "sistema:mercado_pago",
+    p_idempotency_key: `mercado_pago:${payment.id}`,
+  });
+  if (erroBaixa) {
+    console.error("Falha ao baixar boleto via Mercado Pago:", erroBaixa.message);
+    return json({ erro: "Não foi possível registrar o pagamento confirmado." }, 500);
   }
-  await db.from("pagamentos_externos").upsert({
-    cliente_id: boleto?.cliente_id || null,
-    contrato_credito_id: boleto?.contrato_credito_id || null,
-    boleto_id: boleto?.id || null,
-    provedor: "mercado_pago",
-    external_payment_id: String(payment.id),
-    external_reference: externalReference || null,
-    valor: Number(payment.transaction_amount || 0),
-    status_provedor: String(payment.status || "unknown"),
-    status_validacao: payment.status === "approved" ? "aguardando_validacao" : "em_analise",
-    metodo: payment.payment_type_id || payment.payment_method_id || null,
-    pago_em: payment.date_approved || null,
-    payload: payment,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "provedor,external_payment_id" });
-  if (boleto?.id) await db.from("boletos").update({ mercado_pago_id: String(payment.id) }).eq("id", boleto.id);
-  await recordIntegrationEvent(db, { provedor: "mercado_pago", eventId, eventType: payload?.action || "payment_updated", referencia: boleto?.id || paymentId, payload: payment, status: "processado" });
   return json({ ok: true }, 200);
 }
 
