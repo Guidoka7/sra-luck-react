@@ -205,3 +205,12 @@ html.dark {
     background-color: rgb(var(--color-rose) / 0.10) !important;
   }
 }
+
+/* Previsões: remove o painel lateral "Vendas do mês" e libera a largura do conteúdo principal. */
+[class*="xl:grid-cols-[minmax(0,1fr)_292px]"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+[class*="xl:grid-cols-[minmax(0,1fr)_292px]"] > aside {
+  display: none !important;
+}
