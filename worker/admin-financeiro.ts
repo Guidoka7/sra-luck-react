@@ -5,7 +5,7 @@ import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPay
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
-const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,contrato_credito_id,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas),contratos_credito(id,vendedor_id,vendedora:colaboradores!contratos_credito_vendedor_id_fkey(id,nome))";
+const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas)";
 const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,origem_boleto,instituicao_financeira,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
 
 function json(data: unknown, status = 200) {
@@ -65,13 +65,11 @@ function indiceRecebimentos(recebimentos: any[]) {
 
 function apresentarRecebivel(boleto: any, recebimento?: any) {
   const cliente = clienteDo(boleto);
-  const contrato = relacao<any>(boleto.contratos_credito);
-  const vendedora = relacao<any>(contrato?.vendedora);
   return {
     id: boleto.id,
     clienteId: boleto.cliente_id,
     cliente: cliente.nome_completo ?? "Cliente",
-    vendedora: vendedora?.nome ?? null,
+    vendedora: null,
     cpf: cliente.cpf ?? null,
     numeroParcela: Number(boleto.numero_parcela),
     totalParcelas: Number(boleto.total_parcelas),
