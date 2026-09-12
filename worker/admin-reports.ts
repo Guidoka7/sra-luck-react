@@ -18,6 +18,7 @@ async function auth(request: Request, env: Env) {
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const REGRAS_ELEGIBILIDADE: Record<number, number> = { 12: 60, 18: 60, 24: 60, 36: 70, 48: 80, 60: 80, 72: 80 };
+const PAGE_SIZE = 1000;
 
 function cpfKey(value: unknown) {
   return String(value ?? "").replace(/\D/g, "");
@@ -49,61 +50,113 @@ function sortInstallments(rows: any[]) {
   });
 }
 
+async function fetchAllRows(
+  db: ReturnType<typeof createServiceSupabaseClient>,
+  table: string,
+  select: string,
+  orderColumn?: string,
+  ascending = true,
+) {
+  const rows: any[] = [];
+  let from = 0;
+
+  while (true) {
+    let query: any = db.from(table).select(select);
+    if (orderColumn) query = query.order(orderColumn, { ascending });
+    query = query.range(from, from + PAGE_SIZE - 1);
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+async function fetchOptionalRows(
+  db: ReturnType<typeof createServiceSupabaseClient>,
+  table: string,
+  select: string,
+  orderColumn?: string,
+  ascending = true,
+) {
+  try {
+    return {
+      data: await fetchAllRows(db, table, select, orderColumn, ascending),
+      disponivel: true,
+    };
+  } catch {
+    return { data: [] as any[], disponivel: false };
+  }
+}
+
 async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>) {
   const hoje = new Date().toISOString().slice(0, 10);
-  const [clientesRes, boletosRes] = await Promise.all([
-    db.from("clientes")
-      .select("id,nome_completo,cpf,quantidade_parcelas,consultora,data_atingiu_percentual,ativo")
-      .eq("ativo", true)
-      .limit(5000),
-    db.from("boletos")
-      .select("id,cliente_id,numero_parcela,total_parcelas,status,data_vencimento,data_pagamento,created_at")
-      .order("numero_parcela", { ascending: true })
-      .limit(10000),
+
+  const [clientes, boletos] = await Promise.all([
+    fetchAllRows(
+      db,
+      "clientes",
+      "id,nome_completo,cpf,quantidade_parcelas,consultora,data_atingiu_percentual,valor_contrato,ativo,created_at",
+      "created_at",
+      false,
+    ),
+    fetchAllRows(
+      db,
+      "boletos",
+      "id,cliente_id,numero_parcela,total_parcelas,status,data_vencimento,data_pagamento,created_at",
+      "created_at",
+      true,
+    ),
   ]);
 
-  if (clientesRes.error) throw new Error(clientesRes.error.message);
-  if (boletosRes.error) throw new Error(boletosRes.error.message);
-
-  // As estruturas novas enriquecem a previsão, mas permanecem opcionais.
-  // Se ainda não estiverem aplicadas no ambiente, clientes + boletos continuam
-  // produzindo o forecast normalmente, sem quebrar a área administrativa.
+  // CRM e contratos novos enriquecem os dados, mas a tabela clientes continua
+  // sendo a fonte mestre da base cadastrada e do valor da carta.
   const [contratosRes, crmRes] = await Promise.all([
-    db.from("contratos_credito")
-      .select("id,cliente_id,codigo,campanha,origem,etapa,valor_contrato,data_venda,created_at")
-      .order("created_at", { ascending: false })
-      .limit(5000),
-    db.from("crm_vendas_entrada")
-      .select("cliente_cpf,campanha,origem,vendedor,status,created_at")
-      .order("created_at", { ascending: false })
-      .limit(5000),
+    fetchOptionalRows(
+      db,
+      "contratos_credito",
+      "id,cliente_id,codigo,campanha,origem,etapa,valor_contrato,data_venda,created_at",
+      "created_at",
+      false,
+    ),
+    fetchOptionalRows(
+      db,
+      "crm_vendas_entrada",
+      "cliente_cpf,campanha,origem,vendedor,status,created_at",
+      "created_at",
+      false,
+    ),
   ]);
 
-  const contratos = contratosRes.error ? [] : (contratosRes.data ?? []);
-  const crm = crmRes.error ? [] : (crmRes.data ?? []);
-  const boletos = boletosRes.data ?? [];
+  const contratos = contratosRes.data;
+  const crm = crmRes.data;
 
   const boletosPorCliente = new Map<string, any[]>();
-  for (const boleto of boletos as any[]) {
+  for (const boleto of boletos) {
     const current = boletosPorCliente.get(boleto.cliente_id) ?? [];
     current.push(boleto);
     boletosPorCliente.set(boleto.cliente_id, current);
   }
 
   const contratoPorCliente = new Map<string, any>();
-  for (const contrato of contratos as any[]) {
+  for (const contrato of contratos) {
     if (!contratoPorCliente.has(contrato.cliente_id) && !["cancelado", "concluido"].includes(String(contrato.etapa))) {
       contratoPorCliente.set(contrato.cliente_id, contrato);
     }
   }
 
   const crmPorCpf = new Map<string, any>();
-  for (const entrada of crm as any[]) {
+  for (const entrada of crm) {
     const key = cpfKey(entrada.cliente_cpf);
     if (key && !crmPorCpf.has(key)) crmPorCpf.set(key, entrada);
   }
 
-  const clientes = (clientesRes.data ?? []).map((cliente: any) => {
+  const clientesForecast = clientes.map((cliente: any) => {
     const parcelas = sortInstallments(boletosPorCliente.get(cliente.id) ?? []);
     const totalParcelas = Math.max(Number(cliente.quantidade_parcelas ?? 0), maxInstallments(parcelas));
     const percentual = REGRAS_ELEGIBILIDADE[totalParcelas] ?? null;
@@ -127,6 +180,7 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
     if (parcelasNecessarias) {
       const parcelaAlvo = parcelas.find((parcela) => Number(parcela.numero_parcela) === parcelasNecessarias) ?? parcelas[parcelasNecessarias - 1];
       const vencimentoAlvo = isoDate(parcelaAlvo?.data_vencimento);
+
       if (vencimentoAlvo) {
         previsao = vencimentoAlvo;
         fontePrevisao = "cronograma";
@@ -181,10 +235,13 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
       fontePrevisao,
       confianca,
       situacao,
-      valorCarta: contrato?.valor_contrato == null ? null : Number(contrato.valor_contrato),
+      // Fonte oficial: valor informado no cadastro da cliente.
+      valorCarta: cliente.valor_contrato == null ? null : Number(cliente.valor_contrato),
       dataVenda: isoDate(contrato?.data_venda) ?? isoDate(entradaCrm?.created_at),
+      dataCadastro: isoDate(cliente.created_at),
       codigoContrato: contrato?.codigo ?? null,
       statusCrm: entradaCrm?.status ?? null,
+      ativo: cliente.ativo !== false,
       financeiroRegistrado: parcelas.length > 0,
       parcelas: parcelas.map((parcela) => ({
         numero: Number(parcela.numero_parcela ?? 0),
@@ -193,10 +250,10 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
         pagamento: isoDate(parcela.data_pagamento),
       })),
     };
-  }).filter((cliente: any) => cliente.totalParcelas > 0 || cliente.parcelasPagas > 0);
+  });
 
   const mesesMap = new Map<string, { total: number; noRitmo: number; emRisco: number }>();
-  for (const cliente of clientes as any[]) {
+  for (const cliente of clientesForecast as any[]) {
     if (!cliente.previsao || cliente.situacao === "elegivel") continue;
     const mes = cliente.previsao.slice(0, 7);
     const current = mesesMap.get(mes) ?? { total: 0, noRitmo: 0, emRisco: 0 };
@@ -223,19 +280,19 @@ async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseCli
       parcelasNecessarias: Math.ceil((Number(parcelas) * percentual) / 100),
     })),
     resumo: {
-      total: clientes.length,
-      emFormacao: clientes.filter((cliente: any) => ["no_ritmo", "em_risco"].includes(cliente.situacao)).length,
-      elegiveis: clientes.filter((cliente: any) => cliente.situacao === "elegivel").length,
-      emRisco: clientes.filter((cliente: any) => cliente.situacao === "em_risco").length,
-      semPrevisao: clientes.filter((cliente: any) => ["sem_previsao", "sem_regra"].includes(cliente.situacao)).length,
+      total: clientesForecast.length,
+      emFormacao: clientesForecast.filter((cliente: any) => ["no_ritmo", "em_risco"].includes(cliente.situacao)).length,
+      elegiveis: clientesForecast.filter((cliente: any) => cliente.situacao === "elegivel").length,
+      emRisco: clientesForecast.filter((cliente: any) => cliente.situacao === "em_risco").length,
+      semPrevisao: clientesForecast.filter((cliente: any) => ["sem_previsao", "sem_regra"].includes(cliente.situacao)).length,
       proximos12Meses: futuros12.reduce((total, item) => total + item.total, 0),
       mesPico,
     },
     meses,
-    clientes,
+    clientes: clientesForecast,
     enriquecimento: {
-      contratosDisponiveis: !contratosRes.error,
-      crmDisponivel: !crmRes.error,
+      contratosDisponiveis: contratosRes.disponivel,
+      crmDisponivel: crmRes.disponivel,
     },
   };
 }
