@@ -61,8 +61,13 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
       if(b.acao==="recusar"){const {data,error}=await supabase.from("solicitacoes_remarcacao_agendamento").update({status:"recusada",analisada_em:new Date().toISOString()}).eq("id",b.id).select("*").single();if(error)return json({erro:error.message},400);return json({remarcacao:data});}
       if(solicitacao.tipo==="termos"){
         if(!solicitacao.data_id||!solicitacao.horario_termos)return json({erro:"Solicitação sem data ou horário válidos."},400);
-        const {error:erroAplicar}=await supabase.rpc("remarcar_agendamento_termos",{p_agendamento_id:solicitacao.agendamento_id,p_data_id:solicitacao.data_id,p_horario_termos:solicitacao.horario_termos});
-        if(erroAplicar){const m=String(erroAplicar.message??"");if(m.includes("VAGAS_ESGOTADAS")||m.includes("DATA_INDISPONIVEL"))return json({erro:"Essa data não está mais disponível para aprovar."},409);return json({erro:"Não foi possível aplicar a nova data dos termos."},500);}
+        const {data:dataAlvo}=await supabase.from("datas").select("id,vagas_totais,status").eq("id",solicitacao.data_id).maybeSingle();
+        if(!dataAlvo||dataAlvo.status!=="disponivel")return json({erro:"Essa data não está mais disponível para aprovar."},409);
+        const {count}=await supabase.from("agendamentos").select("id",{count:"exact",head:true}).eq("data_id",solicitacao.data_id).eq("status","confirmado").neq("id",solicitacao.agendamento_id);
+        if((count??0)>=dataAlvo.vagas_totais)return json({erro:"Essa data não está mais disponível para aprovar."},409);
+        const {error:erroAplicar,count:linhasAfetadas}=await supabase.from("agendamentos").update({data_id:solicitacao.data_id,horario_termos:solicitacao.horario_termos,updated_at:new Date().toISOString()},{count:"exact"}).eq("id",solicitacao.agendamento_id).eq("status","confirmado");
+        if(erroAplicar)return json({erro:"Não foi possível aplicar a nova data dos termos."},500);
+        if(!linhasAfetadas)return json({erro:"O agendamento não está mais disponível para alteração."},409);
       } else {
         if(!solicitacao.data_solicitada)return json({erro:"Solicitação sem data válida."},400);
         const {error:erroAplicar}=await supabase.rpc("agendar_cirurgia_data",{p_agendamento_id:solicitacao.agendamento_id,p_data:solicitacao.data_solicitada});
