@@ -11,7 +11,7 @@ import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
 import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
-import { AdminSettingsPanel } from "./features/admin/AdminSettingsPanel";
+import { AdminWorkspace } from "./features/admin/AdminWorkspace";
 import AdminLayout from "./app/admin/(painel)/layout";
 import VisaoGeralPage from "./app/admin/(painel)/visao-geral/page";
 import PrevisoesPage from "./app/admin/(painel)/previsoes/page";
@@ -19,10 +19,6 @@ import AgendaAdminPage from "./app/admin/(painel)/agenda/page";
 import ClientesPage from "./app/admin/(painel)/clientes/page";
 import FinanceiroPage from "./app/admin/(painel)/financeiro/page";
 import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
-import EquipeAdminPage from "./app/admin/(painel)/equipe/page";
-import IntegracoesAdminPage from "./app/admin/(painel)/integracoes/page";
-import AdminNotificationsPanel from "./app/admin/(painel)/notificacoes/page";
-import AdminMonitoringPanel from "./app/admin/(painel)/configuracoes/monitoramento/page";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
@@ -48,11 +44,10 @@ function AdminRoute({ path }: { path: string }) {
   if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro?aba=recebiveis" />;
   if (path.startsWith("/admin/financeiro")) return <FinanceiroPage />;
   if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
-  if (path.startsWith("/admin/equipe")) return <EquipeAdminPage />;
-  if (path.startsWith("/admin/integracoes")) return <IntegracoesAdminPage />;
-  if (path.startsWith("/admin/notificacoes")) return <AdminNotificationsPanel />;
-  if (path === "/admin/configuracoes/monitoramento") return <AdminMonitoringPanel />;
-  if (path.startsWith("/admin/configuracoes")) return <AdminSettingsPanel />;
+  if (path.startsWith("/admin/equipe")) return <AdminWorkspace />;
+  if (path.startsWith("/admin/integracoes")) return <AdminWorkspace />;
+  if (path.startsWith("/admin/notificacoes")) return <AdminWorkspace />;
+  if (path.startsWith("/admin/configuracoes")) return <AdminWorkspace />;
   return <VisaoGeralPage />;
 }
 
