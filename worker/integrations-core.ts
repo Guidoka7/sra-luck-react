@@ -368,12 +368,62 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
   return null;
 }
 
+/**
+ * Teste de conexão real (Fase 9): chamada de leitura, sem efeito colateral,
+ * contra o provedor. Só retorna "conectado: true" quando o provedor
+ * realmente respondeu com sucesso — nunca inferido da simples presença da
+ * credencial. Resultado não é persistido como status permanente; é uma
+ * verificação pontual, registrada em logs_alteracoes para histórico.
+ */
+async function testarConexao(request: Request, env: Env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
+  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const body = await request.json().catch(() => ({})) as { provedor?: string };
+  const provedor = String(body.provedor || "");
+  const db = createServiceSupabaseClient(env);
+
+  let resultado: { conectado: boolean; detalhe: string };
+  if (provedor === "mercado_pago") {
+    const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
+    if (!accessToken) {
+      resultado = { conectado: false, detalhe: "Nenhum access token configurado." };
+    } else {
+      try {
+        // GET /v1/payment_methods é a checagem oficial de credencial da Mercado
+        // Pago: somente leitura, sem criar pagamento/preferência.
+        const response = await fetch("https://api.mercadopago.com/v1/payment_methods", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        resultado = response.ok
+          ? { conectado: true, detalhe: "Token válido — API respondeu com sucesso." }
+          : { conectado: false, detalhe: `Provedor rejeitou o token (HTTP ${response.status}).` };
+      } catch (error) {
+        resultado = { conectado: false, detalhe: error instanceof Error ? error.message : "Falha de rede ao contatar o provedor." };
+      }
+    }
+  } else {
+    return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
+  }
+
+  await db.from("logs_alteracoes").insert({
+    usuario: `admin:${admin}`,
+    acao: "testou_conexao_integracao",
+    entidade: "integracoes",
+    entidade_id: provedor,
+    detalhes: resultado,
+  });
+
+  return json(resultado);
+}
+
 export async function integrationsApi(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (path === "/api/integrations/rd-station/webhook" && request.method === "POST") return handleRdWebhook(request, env);
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
   if (path === "/api/cliente/payments/mercado-pago/preference" && request.method === "POST") return createMercadoPagoPreference(request, env);
   if (path === "/api/admin/integrations/credenciais") return credenciaisApi(request, env);
+  if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
   if (path.startsWith("/api/admin/integrations/conta-azul/")) return handleContaAzulAdmin(request, env);
   return null;
 }

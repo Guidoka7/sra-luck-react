@@ -38,7 +38,17 @@ function estadoBase(persistenciaPronta: boolean, credenciaisConfiguradas: boolea
 }
 
 export async function integrationsStatusApi(request: Request, env: Env): Promise<Response | null> {
-  const path = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (path === "/api/admin/integrations/historico" && request.method === "GET") {
+    const db = createServiceSupabaseClient(env);
+    const { data, error } = await db.from("logs_alteracoes").select("id,usuario,acao,entidade_id,detalhes,created_at")
+      .in("entidade", ["integracoes", "integracoes_credenciais"]).order("created_at", { ascending: false }).limit(100);
+    if (error) return json({ erro: error.message }, 500);
+    return json({ eventos: data ?? [] });
+  }
+
   if (path !== "/api/admin/integrations/status" || request.method !== "GET") return null;
 
   const db = createServiceSupabaseClient(env);

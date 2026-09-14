@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Building2, CheckCircle2, ChevronDown, Clock3, CreditCard, Database, Eye, EyeOff, KeyRound, Landmark, Network, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { Bell, Building2, CheckCircle2, ChevronDown, Clock3, CreditCard, Database, Eye, EyeOff, History, KeyRound, Landmark, Network, PlugZap, RefreshCw, Save, ShieldCheck, Trash2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -63,6 +63,13 @@ function origemMeta(origem: OrigemCampo) {
   if (origem === "variavel_de_ambiente") return { label: "Configurado por variável de ambiente", classe: "bg-amber-500/10 text-amber-700 dark:text-amber-300" };
   return { label: "Não configurado", classe: "bg-clay/8 text-clay/55 dark:text-pearl/50" };
 }
+
+const CAPACIDADES: Record<string, string[]> = {
+  web_push: ["Enviar notificação push a dispositivos inscritos", "Registrar entrega/erro por assinatura"],
+  mercado_pago: ["Criar preferência de pagamento por parcela", "Receber webhook de pagamento aprovado", "Baixar a parcela automaticamente (idempotente)"],
+  conta_azul: ["Criar recebível a partir de uma parcela", "Atualizar parcela existente no Conta Azul"],
+  rd_station: ["Receber venda via webhook e colocar em conferência (crm_vendas_entrada)"],
+};
 
 const GRUPOS: Array<{ id: GrupoIntegracao; titulo: string; descricao: string }> = [
   { id: "comunicacao", titulo: "Comunicação", descricao: "Canais de comunicação com clientes e dispositivos." },
@@ -209,12 +216,45 @@ function FormularioCredenciais({ provedor, onSalvo }: { provedor: ProvedorCreden
   );
 }
 
+type ResultadoTeste = { conectado: boolean; detalhe: string };
+type EventoHistorico = { id: string; usuario: string; acao: string; entidade_id: string | null; detalhes: Record<string, unknown> | null; created_at: string };
+
 export default function IntegracoesAdminPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [credenciais, setCredenciais] = useState<CredenciaisPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [expandido, setExpandido] = useState<Record<string, boolean>>({});
+  const [testando, setTestando] = useState<string | null>(null);
+  const [resultadoTeste, setResultadoTeste] = useState<Record<string, ResultadoTeste>>({});
+  const [historico, setHistorico] = useState<EventoHistorico[]>([]);
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+
+  async function testarConexao(provedor: string) {
+    setTestando(provedor);
+    try {
+      const response = await fetch("/api/admin/integrations/testar-conexao", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provedor }),
+      });
+      const body = await response.json().catch(() => ({})) as ResultadoTeste & { erro?: string };
+      setResultadoTeste((atual) => ({ ...atual, [provedor]: response.ok ? body : { conectado: false, detalhe: body.erro ?? "Falha ao testar." } }));
+    } catch {
+      setResultadoTeste((atual) => ({ ...atual, [provedor]: { conectado: false, detalhe: "Erro de conexão ao testar." } }));
+    } finally {
+      setTestando(null);
+    }
+  }
+
+  async function carregarHistorico() {
+    try {
+      const response = await fetch("/api/admin/integrations/historico", { cache: "no-store", credentials: "same-origin" });
+      const body = await response.json().catch(() => ({})) as { eventos?: EventoHistorico[] };
+      setHistorico(body.eventos ?? []);
+    } catch { /* histórico é complementar */ }
+  }
 
   async function atualizarCredenciais() {
     try {
@@ -237,7 +277,7 @@ export default function IntegracoesAdminPage() {
     }
   }
 
-  useEffect(() => { void atualizar(); }, []);
+  useEffect(() => { void atualizar(); void carregarHistorico(); }, []);
 
   const grupos = useMemo(() => GRUPOS.map((grupo) => ({
     ...grupo,
@@ -290,10 +330,29 @@ export default function IntegracoesAdminPage() {
             </p>
           </div>
         </div>
-        <Button size="sm" variant="secondary" onClick={() => void atualizar()} loading={loading}>
-          <RefreshCw className="h-3.5 w-3.5" /> Atualizar status
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setMostrarHistorico((v) => !v)}>
+            <History className="h-3.5 w-3.5" /> Histórico
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => void atualizar()} loading={loading}>
+            <RefreshCw className="h-3.5 w-3.5" /> Atualizar status
+          </Button>
+        </div>
       </Card>
+
+      {mostrarHistorico && (
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-rose/10 px-4 py-3"><h2 className="font-heading text-lg text-burgundy dark:text-pearl">Histórico de integrações</h2><p className="text-xs text-clay/50 dark:text-pearl/40">Credenciais salvas/removidas e testes de conexão executados.</p></div>
+          <div className="max-h-72 divide-y divide-rose/5 overflow-y-auto">
+            {historico.length === 0 ? <p className="px-4 py-6 text-center text-xs text-clay/45">Nenhum evento registrado ainda.</p> : historico.map((evento) => (
+              <div key={evento.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+                <span className="text-clay/70 dark:text-pearl/60">{evento.acao.replace(/_/g, " ")}{evento.entidade_id ? ` · ${evento.entidade_id}` : ""}</span>
+                <span className="shrink-0 text-[10px] text-clay/40">{new Date(evento.created_at).toLocaleString("pt-BR")}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {loading && !data ? (
         <Card className="p-10 text-center text-sm text-clay/45">Carregando diagnóstico das integrações...</Card>
@@ -337,6 +396,24 @@ export default function IntegracoesAdminPage() {
                         </div>
                         {typeof integracao.eventosRegistrados === "number" && (
                           <p className="mt-2 text-[10px] text-clay/40 dark:text-pearl/35">Registros internos existentes: {integracao.eventosRegistrados}</p>
+                        )}
+                        {CAPACIDADES[integracao.id] && (
+                          <ul className="mt-2 space-y-0.5 text-[10.5px] text-clay/50 dark:text-pearl/40">
+                            {CAPACIDADES[integracao.id].map((cap) => <li key={cap}>· {cap}</li>)}
+                          </ul>
+                        )}
+                        {integracao.id === "mercado_pago" && (
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => void testarConexao(integracao.id)} loading={testando === integracao.id} disabled={!integracao.credenciaisConfiguradas}>
+                              <PlugZap className="h-3.5 w-3.5" /> Testar conexão
+                            </Button>
+                            {resultadoTeste[integracao.id] && (
+                              <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold", resultadoTeste[integracao.id].conectado ? "bg-success/10 text-success" : "bg-alert/10 text-alert")}>
+                                {resultadoTeste[integracao.id].conectado ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                {resultadoTeste[integracao.id].conectado ? "Conectada" : resultadoTeste[integracao.id].detalhe}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {provedorCredenciais && (
                           <>
