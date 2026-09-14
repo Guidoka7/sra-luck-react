@@ -243,13 +243,23 @@ function erroRpc(message: string) {
   return 500;
 }
 
-type FunilCliente = "aguardando_conferencia" | "ativos" | "quitados" | "suspensos" | "negativados" | "cancelados";
+type FunilCliente = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" | "negativados" | "cancelados";
 
 /**
  * Funil por cliente (Fase 4): visão que o ZIP pede como navegação principal
  * do Financeiro, calculada por AGREGAÇÃO sobre os mesmos boletos/recebimentos
  * já usados por resumo()/listarRecebiveis() — nenhuma tabela nova, nenhum
  * dado recalculado por uma segunda regra.
+ *
+ * Correção (2026-09-14): o funil aprovado é Aguardando conferência / Ativos /
+ * Todos / Suspensos / Negativados / Cancelados. "Aguardando conferência" NÃO
+ * significa cliente sem parcelas — significa comprovante/pagamento aguardando
+ * análise do Financeiro (parcela com status pendente_confirmacao). Cliente
+ * sem financeiro nenhum simplesmente não entra neste funil (isso é assunto da
+ * tela Clientes, aba "Aguardando cadastro"). "Todos" não é um bucket
+ * excludente — é a lista completa de quem tem financeiro, sem filtro de
+ * bucket. "Ativo" exige financeiro real E nenhum estado administrativo
+ * anormal (suspenso/negativado/cancelado) — nunca é inferido do carnê.
  */
 async function clientesFunil(db: Db) {
   const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }] = await Promise.all([
@@ -271,36 +281,45 @@ async function clientesFunil(db: Db) {
     porCliente.set(boleto.cliente_id, agregado);
   }
 
-  const itens = (todosClientes ?? []).map((cliente: any) => {
-    const agregado = porCliente.get(cliente.id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0 };
-    const statusContrato = cliente.status_contrato ?? "ativo";
-    let bucket: FunilCliente;
-    if (agregado.total === 0) bucket = "aguardando_conferencia";
-    else if (statusContrato === "suspenso") bucket = "suspensos";
-    else if (statusContrato === "negativado") bucket = "negativados";
-    else if (statusContrato === "cancelado") bucket = "cancelados";
-    else if (agregado.pagas === agregado.total) bucket = "quitados";
-    else bucket = "ativos";
+  const itens = (todosClientes ?? [])
+    .filter((cliente: any) => (porCliente.get(cliente.id)?.total ?? 0) > 0)
+    .map((cliente: any) => {
+      const agregado = porCliente.get(cliente.id)!;
+      const statusContrato = cliente.status_contrato ?? "ativo";
+      let bucket: FunilCliente;
+      if (statusContrato === "cancelado") bucket = "cancelados";
+      else if (statusContrato === "negativado") bucket = "negativados";
+      else if (statusContrato === "suspenso") bucket = "suspensos";
+      else if (agregado.aguardandoValidacao > 0) bucket = "aguardando_conferencia";
+      else bucket = "ativos";
 
-    const proximaAcao = agregado.aguardandoValidacao > 0 ? "Validar comprovante" : agregado.vencidas > 0 ? "Cobrar parcela vencida" : bucket === "aguardando_conferencia" ? "Gerar parcelas" : bucket === "quitados" ? "Sem pendência" : "Acompanhar";
+      const quitado = agregado.pagas === agregado.total;
+      const proximaAcao = agregado.aguardandoValidacao > 0 ? "Validar comprovante" : agregado.vencidas > 0 ? "Cobrar parcela vencida" : quitado ? "Sem pendência" : "Acompanhar";
 
-    return {
-      clienteId: cliente.id,
-      nome: cliente.nome_completo,
-      cpf: cliente.cpf,
-      statusContrato,
-      bucket,
-      parcelasPagas: agregado.pagas,
-      parcelasTotal: agregado.total,
-      saldoAReceber: dinheiro(agregado.saldoAReceber),
-      vencidas: agregado.vencidas,
-      aguardandoValidacao: agregado.aguardandoValidacao,
-      proximaAcao,
-    };
-  });
+      return {
+        clienteId: cliente.id,
+        nome: cliente.nome_completo,
+        cpf: cliente.cpf,
+        statusContrato,
+        bucket,
+        quitado,
+        parcelasPagas: agregado.pagas,
+        parcelasTotal: agregado.total,
+        saldoAReceber: dinheiro(agregado.saldoAReceber),
+        vencidas: agregado.vencidas,
+        aguardandoValidacao: agregado.aguardandoValidacao,
+        proximaAcao,
+      };
+    });
 
-  const ordem: FunilCliente[] = ["aguardando_conferencia", "ativos", "quitados", "suspensos", "negativados", "cancelados"];
-  const funis = ordem.map((bucket) => ({ bucket, total: itens.filter((item) => item.bucket === bucket).length }));
+  const funis = [
+    { bucket: "aguardando_conferencia" as const, total: itens.filter((i) => i.bucket === "aguardando_conferencia").length },
+    { bucket: "ativos" as const, total: itens.filter((i) => i.bucket === "ativos").length },
+    { bucket: "todos" as const, total: itens.length },
+    { bucket: "suspensos" as const, total: itens.filter((i) => i.bucket === "suspensos").length },
+    { bucket: "negativados" as const, total: itens.filter((i) => i.bucket === "negativados").length },
+    { bucket: "cancelados" as const, total: itens.filter((i) => i.bucket === "cancelados").length },
+  ];
 
   return { itens, funis };
 }

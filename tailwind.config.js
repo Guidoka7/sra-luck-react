@@ -77,6 +77,10 @@ module.exports = {
           "0%, 100%": { boxShadow: "0 0 0 0 rgba(201, 161, 90, 0.45)" },
           "50%": { boxShadow: "0 0 0 5px rgba(201, 161, 90, 0)" },
         },
+        slideInRight: {
+          "0%": { opacity: "0", transform: "translateX(24px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
       },
       animation: {
         fadeIn: "fadeIn 0.5s ease-out forwards",
@@ -85,6 +89,7 @@ module.exports = {
         scaleIn: "scaleIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards",
         drift: "drift 12s ease-in-out infinite",
         "pulse-slow": "pulseSlow 2.2s ease-in-out infinite",
+        slideInRight: "slideInRight 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards",
       },
     },
   },

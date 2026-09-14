@@ -1,11 +1,11 @@
 export type AbaFinanceiro = "clientes" | "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
 
-export type FunilClienteBucket = "aguardando_conferencia" | "ativos" | "quitados" | "suspensos" | "negativados" | "cancelados";
+export type FunilClienteBucket = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" | "negativados" | "cancelados";
 
 export const FUNIL_CLIENTE_LABEL: Record<FunilClienteBucket, string> = {
   aguardando_conferencia: "Aguardando conferência",
   ativos: "Ativos",
-  quitados: "Quitados",
+  todos: "Todos",
   suspensos: "Suspensos",
   negativados: "Negativados",
   cancelados: "Cancelados",
@@ -16,7 +16,8 @@ export interface ClienteFunilItem {
   nome: string;
   cpf: string | null;
   statusContrato: string;
-  bucket: FunilClienteBucket;
+  bucket: Exclude<FunilClienteBucket, "todos">;
+  quitado: boolean;
   parcelasPagas: number;
   parcelasTotal: number;
   saldoAReceber: number;

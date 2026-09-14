@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Panel } from "@/components/admin/ExecutiveUI";
 import { cn, formatarMoeda } from "@/lib/utils";
-import { ModalClienteCompactoV3 } from "@/components/admin/ModalClienteCompactoV3";
+import { ClienteDrawer } from "@/components/admin/ClienteDrawer";
 import type { Cliente } from "@/types/database";
 import { financeiroApi } from "./financeiroApi";
 import type { ClienteFunilItem, FunilClienteBucket } from "./types";
 import { FUNIL_CLIENTE_LABEL } from "./types";
 
-const ORDEM: FunilClienteBucket[] = ["aguardando_conferencia", "ativos", "quitados", "suspensos", "negativados", "cancelados"];
+const ORDEM: FunilClienteBucket[] = ["aguardando_conferencia", "ativos", "todos", "suspensos", "negativados", "cancelados"];
 
 export function FinanceiroClientesFunil() {
   const [itens, setItens] = useState<ClienteFunilItem[]>([]);
@@ -34,7 +34,7 @@ export function FinanceiroClientesFunil() {
   }
   useEffect(() => { void carregar(); }, []);
 
-  const visiveis = useMemo(() => itens.filter((item) => item.bucket === bucket), [itens, bucket]);
+  const visiveis = useMemo(() => bucket === "todos" ? itens : itens.filter((item) => item.bucket === bucket), [itens, bucket]);
 
   function abrir(item: ClienteFunilItem) {
     const cliente = clientesCompletos.find((c) => c.id === item.clienteId);
@@ -58,9 +58,10 @@ export function FinanceiroClientesFunil() {
         : <div className="divide-y divide-rose/8 dark:divide-white/6">{visiveis.map((item) => <button key={item.clienteId} type="button" onClick={() => abrir(item)} className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition hover:bg-blush/25 dark:hover:bg-white/[0.03]">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blush text-burgundy dark:bg-white/8 dark:text-rose"><UserRound className="h-3.5 w-3.5" /></span>
-              <span className="min-w-0"><span className="block truncate text-sm font-semibold text-burgundy dark:text-cream">{item.nome}</span><span className="block text-[11px] text-clay/50 dark:text-white/42">{item.parcelasTotal > 0 ? `${item.parcelasPagas}/${item.parcelasTotal} parcelas pagas` : "Sem parcelas geradas"}</span></span>
+              <span className="min-w-0"><span className="block truncate text-sm font-semibold text-burgundy dark:text-cream">{item.nome}</span><span className="block text-[11px] text-clay/50 dark:text-white/42">{item.parcelasPagas}/{item.parcelasTotal} parcelas pagas</span></span>
             </div>
             <div className="flex items-center gap-3 text-right">
+              {item.quitado && <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3" />Quitado</span>}
               {item.vencidas > 0 && <span className="flex items-center gap-1 rounded-full bg-alert/10 px-2 py-0.5 text-[10px] font-semibold text-alert"><AlertTriangle className="h-3 w-3" />{item.vencidas} vencida(s)</span>}
               <span className="text-xs font-semibold text-burgundy dark:text-cream">{formatarMoeda(item.saldoAReceber)}</span>
               <span className="hidden text-[10px] text-clay/45 dark:text-white/40 sm:block">{item.proximaAcao}</span>
@@ -68,6 +69,6 @@ export function FinanceiroClientesFunil() {
             </div>
           </button>)}</div>}
     </Panel>
-    {modal ? <ModalClienteCompactoV3 cliente={modal} abaInicial="boletos" onClose={() => setModal(null)} onSalvo={() => { setModal(null); void carregar(); }} /> : null}
+    {modal ? <ClienteDrawer cliente={modal} abaInicial="financeiro" onClose={() => setModal(null)} onSalvo={() => { setModal(null); void carregar(); }} /> : null}
   </>;
 }

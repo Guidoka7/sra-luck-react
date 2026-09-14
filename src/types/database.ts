@@ -33,5 +33,5 @@ export type StatusCarne = "ativo" | "concluido";
 export interface Carne { id: string; cliente_id: string; instituicao_financeira: string; identificador_externo: string; data_geracao: string; quantidade_parcelas: number; valor_parcela: number; valor_total: number; status: StatusCarne; created_at: string; updated_at: string; }
 export type StatusImportacaoBoleto = "processando" | "aguardando_vinculacao" | "aguardando_confirmacao" | "vinculado" | "erro";
 export type NivelConfianca = "alta" | "media" | "baixa";
-export type StatusVinculacaoImportacao = "pendente" | "analisado" | "aguardando_confirmacao" | "vinculado" | "ignorado";
+export type StatusVinculacaoImportacao = "pendente" | "analisado" | "aguardando_confirmacao" | "vinculado" | "ignorado" | "revisar";
 export interface ImportacaoBoleto { id: string; cliente_id: string | null; carne_id: string | null; boleto_id: string | null; instituicao_financeira: string | null; numero_parcela: number | null; arquivo_nome: string | null; status: StatusImportacaoBoleto; cliente_sugerido_id: string | null; boleto_sugerido_id: string | null; cliente_vinculado_id: string | null; boleto_vinculado_id: string | null; pontuacao_confianca: number | null; nivel_confianca: NivelConfianca | null; status_vinculacao: StatusVinculacaoImportacao; erro_detalhes: string | null; created_at: string; updated_at: string; }
