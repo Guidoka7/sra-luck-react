@@ -1,3 +1,4 @@
+import { obterCredencial } from "./integrations-credenciais";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 
@@ -44,15 +45,17 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
   if (!client) return json({ erro: "Sessão expirada." }, 401);
 
   if (path === "/api/cliente/push/vapid" && request.method === "GET") {
-    if (!env.WEB_PUSH_VAPID_PUBLIC_KEY) {
+    const publicKey = await obterCredencial(env, "web_push", "vapid_public_key");
+    if (!publicKey) {
       return json({ erro: "Notificações push ainda não estão configuradas." }, 503);
     }
-    return json({ publicKey: env.WEB_PUSH_VAPID_PUBLIC_KEY });
+    return json({ publicKey });
   }
 
   if (path === "/api/cliente/push/subscribe" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-    if (!env.WEB_PUSH_VAPID_PUBLIC_KEY) {
+    const publicKey = await obterCredencial(env, "web_push", "vapid_public_key");
+    if (!publicKey) {
       return json({ erro: "Notificações push ainda não estão configuradas." }, 503);
     }
 
