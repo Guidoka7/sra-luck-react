@@ -20,7 +20,7 @@ type ColaboradorAtivo = {
   permissoes: string[];
 };
 
-const CARGOS = new Set<Cargo>(["vendedora", "sdr", "financeiro", "administrativo"]);
+const CARGOS = new Set<Cargo>(["vendedora", "sdr", "financeiro", "gestao", "administrativo"]);
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), {

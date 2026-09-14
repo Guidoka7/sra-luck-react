@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
+import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 
 type Json = Record<string, any>;
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
@@ -71,6 +72,22 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,taxa_administrativa_percentual,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null};})});}
   if(path==="/api/admin/clientes"&&request.method==="POST"){const b=await body(request),cpf=String(b.cpf??"").replace(/\D/g,"");if(!b.nomeCompleto||cpf.length!==11||!b.dataNascimento)return json({erro:"Nome, CPF e data de nascimento são obrigatórios."},400);const {data,error}=await supabase.from("clientes").insert({nome_completo:b.nomeCompleto,cpf,data_nascimento:b.dataNascimento,telefone:b.telefone||null,email:b.email||null,procedimento:b.procedimento||null,medico:b.medico||null,hospital:b.hospital||null,consultora:b.consultora||null,valor_contrato:Number(b.valorContrato)||0,taxa_administrativa_percentual:Number(b.taxaAdministrativaPercentual)||0,observacoes_internas:b.observacoes||null,ativo:b.ativo!==false,status_cirurgia:"nao_agendada",status_financeiro:"a_pagar"}).select("*").single();if(error)return json({erro:error.code==="23505"?"Já existe uma cliente cadastrada com esse CPF.":error.message},400);return json({cliente:data});}
   const cliente=path.match(/^\/api\/admin\/clientes\/([^/]+)$/);if(cliente&&request.method==="PATCH"){const b=await body(request),id=decodeURIComponent(cliente[1]),patch:any={};const map:any={nomeCompleto:"nome_completo",cpf:"cpf",dataNascimento:"data_nascimento",telefone:"telefone",email:"email",procedimento:"procedimento",medico:"medico",hospital:"hospital",consultora:"consultora",valorContrato:"valor_contrato",taxaAdministrativaPercentual:"taxa_administrativa_percentual",observacoes:"observacoes_internas",ativo:"ativo"};for(const [a,k]of Object.entries(map))if(b[a]!==undefined)patch[k]=a==="cpf"?String(b[a]).replace(/\D/g,""):b[a];const {data,error}=await supabase.from("clientes").update(patch).eq("id",id).select("*").single();if(error)return json({erro:error.message},400);return json({cliente:data});}
+  if(cliente&&request.method==="DELETE"){
+    const id=decodeURIComponent(cliente[1]);
+    const token1=getCookie(request,"admin_session");
+    const session1=await verificarTokenAdmin(token1,env.CLIENTE_SESSION_SECRET!);
+    const colaborador1=session1?await buscarColaboradorAdminAtivo(session1.adminId,env):null;
+    if(!colaborador1||!temPermissaoAdmin(colaborador1,PERMISSOES_ADMIN.CLIENTES_EXCLUIR)){
+      return json({erro:"Seu papel não tem permissão para excluir o perfil de uma cliente."},403);
+    }
+    const {data:existente,error:erroExistente}=await supabase.from("clientes").select("id,nome_completo,cpf").eq("id",id).maybeSingle();
+    if(erroExistente)return json({erro:erroExistente.message},500);
+    if(!existente)return json({erro:"Cliente não encontrada."},404);
+    const {error}=await supabase.from("clientes").delete().eq("id",id);
+    if(error)return json({erro:error.message},400);
+    await supabase.from("logs_alteracoes").insert({usuario:colaborador1.id,acao:"excluiu_cliente",entidade:"clientes",entidade_id:id,detalhes:{nomeCliente:existente.nome_completo,cpf:existente.cpf}});
+    return json({ok:true});
+  }
   const cb=path.match(/^\/api\/admin\/clientes\/([^/]+)\/(boletos|parcelas)$/);if(cb){const id=decodeURIComponent(cb[1]);if(request.method==="GET"){const {data,error}=await supabase.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,boleto_url,data_pagamento,observacoes,suspensa,suspensa_em,suspensa_por,created_at,updated_at").eq("cliente_id",id).order("numero_parcela",{ascending:true});if(error)return json({erro:error.message},500);return json({boletos:data??[],parcelas:data??[]});}const b=await body(request);if(request.method==="POST"&&cb[2]==="boletos"){const {data:c}=await supabase.from("clientes").select("valor_contrato,quantidade_parcelas,taxa_administrativa_percentual").eq("id",id).maybeSingle();const total=Math.max(Number(b.totalParcelas??c?.quantidade_parcelas??1),1);const valor=Number(b.valor??((Number(c?.valor_contrato??0)*(1+Number(c?.taxa_administrativa_percentual??0)/100))/total));const rows=Array.from({length:total},(_,i)=>({cliente_id:id,numero_parcela:i+1,total_parcelas:total,valor,data_vencimento:b.dataVencimento??null,status:"pendente"}));const {data,error}=await supabase.from("boletos").insert(rows).select("*");if(error)return json({erro:error.message},400);return json({boletos:data});}if(request.method==="POST"&&cb[2]==="parcelas"){if(b.acao==="excluir"&&b.boletoId){const {error}=await supabase.from("boletos").delete().eq("id",b.boletoId).eq("cliente_id",id);if(error)return json({erro:error.message},400);return json({ok:true});}if(b.acao==="editar"&&b.boletoId){const patch:any={};if(b.valor!==undefined)patch.valor=Number(b.valor);if(b.dataVencimento!==undefined)patch.data_vencimento=b.dataVencimento||null;const {data,error}=await supabase.from("boletos").update(patch).eq("id",b.boletoId).eq("cliente_id",id).select("*").single();if(error)return json({erro:error.message},400);return json({boleto:data});}}if(request.method==="PATCH"){const idB=b.boletoId;if(!idB)return json({erro:"Boleto não informado."},400);const patch:any={};if(b.valor!==undefined)patch.valor=Number(b.valor);if(b.dataVencimento!==undefined)patch.data_vencimento=b.dataVencimento||null;if(b.status!==undefined)patch.status=b.status;const {data,error}=await supabase.from("boletos").update(patch).eq("id",idB).eq("cliente_id",id).select("*").single();if(error)return json({erro:error.message},400);return json({boleto:data});}}
   if(path==="/api/admin/boletos"&&request.method==="GET"){let q=supabase.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,boleto_url,data_pagamento,observacoes,suspensa,suspensa_em,suspensa_por,created_at,updated_at,clientes(id,nome_completo,cpf)").order("created_at",{ascending:false});const status=url.searchParams.get("status"),cid=url.searchParams.get("cliente_id");if(status&&status!=="todos")q=q.eq("status",status);if(cid)q=q.eq("cliente_id",cid);const {data,error}=await q;if(error)return json({erro:error.message},500);return json({boletos:(data??[]).map((x:any)=>({...x,valor:Number(x.valor)}))});}
   const boleto=path.match(/^\/api\/admin\/boletos\/([^/]+)$/);if(boleto&&request.method==="PATCH"){const id=decodeURIComponent(boleto[1]),b=await body(request),acao=b.acao;const status=acao==="confirmar"?"pago":acao==="rejeitar"?"rejeitado":b.status;if(!status)return json({erro:"Ação de pagamento inválida."},400);const {data,error}=await supabase.from("boletos").update({status,observacoes:b.observacoes??undefined,data_pagamento:acao==="confirmar"?new Date().toISOString().slice(0,10):undefined}).eq("id",id).select("*").single();if(error)return json({erro:error.message},400);return json({boleto:data});}
@@ -146,6 +163,13 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     const id=decodeURIComponent(statusContrato[1]);
     const b=await body(request);
 
+    const token0=getCookie(request,"admin_session");
+    const session0=await verificarTokenAdmin(token0,env.CLIENTE_SESSION_SECRET!);
+    const colaborador=session0?await buscarColaboradorAdminAtivo(session0.adminId,env):null;
+    if(!colaborador||!temPermissaoAdmin(colaborador,PERMISSOES_ADMIN.CLIENTES_ALTERAR_STATUS_CONTRATO)){
+      return json({erro:"Seu papel não tem permissão para alterar o status do contrato."},403);
+    }
+
     const {data:atual,error:erroAtual}=await supabase.from("clientes").select("id,nome_completo,status_contrato").eq("id",id).maybeSingle();
     if(erroAtual)return json({erro:erroAtual.message},500);
     if(!atual)return json({erro:"Cliente não encontrada."},404);
@@ -156,10 +180,8 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     const {data,error}=await supabase.from("clientes").update(resultado.patch).eq("id",id).select("*").single();
     if(error)return json({erro:error.message},400);
 
-    const token=getCookie(request,"admin_session");
-    const session=await verificarTokenAdmin(token,env.CLIENTE_SESSION_SECRET!);
     await supabase.from("logs_alteracoes").insert({
-      usuario:session?.adminId??"desconhecido",
+      usuario:colaborador.id,
       acao:"alterou_status_contrato",
       entidade:"clientes",
       entidade_id:id,

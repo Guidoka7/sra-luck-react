@@ -8,7 +8,7 @@ import { Input, Label } from "@/components/ui/Input";
 import { PageHeader } from "@/components/admin/ExecutiveUI";
 import { cn } from "@/lib/utils";
 
-type Cargo = "vendedora" | "sdr" | "financeiro" | "administrativo";
+type Cargo = "vendedora" | "sdr" | "financeiro" | "gestao" | "administrativo";
 type Colaborador = {
   id: string;
   nome: string;
@@ -23,8 +23,18 @@ type Colaborador = {
 const CARGOS: Array<{ value: Cargo; label: string; descricao: string }> = [
   { value: "vendedora", label: "Vendedora", descricao: "Portal comercial e comissão da primeira parcela." },
   { value: "sdr", label: "SDR", descricao: "Agenda, comparecimentos e comissão por presença." },
-  { value: "financeiro", label: "Financeiro", descricao: "Operação financeira e comissão de recuperação." },
-  { value: "administrativo", label: "Administrativo", descricao: "Acesso administrativo autorizado no servidor." },
+  { value: "financeiro", label: "Financeiro", descricao: "Acesso ao painel administrativo, com permissões granulares abaixo." },
+  { value: "gestao", label: "Gestão", descricao: "Acesso ao painel administrativo, com permissões granulares abaixo." },
+  { value: "administrativo", label: "Administrativo", descricao: "Acesso administrativo completo, sem necessidade de permissões individuais." },
+];
+
+const PERMISSOES_DISPONIVEIS: Array<{ chave: string; label: string }> = [
+  { chave: "clientes.alterar_status_contrato", label: "Alterar status de contrato (suspender/negativar/cancelar)" },
+  { chave: "clientes.excluir", label: "Excluir perfil de cliente" },
+  { chave: "financeiro.baixa_manual", label: "Registrar baixa manual" },
+  { chave: "financeiro.validar_comprovante", label: "Validar/rejeitar comprovante" },
+  { chave: "integracoes.gerenciar_credenciais", label: "Gerenciar credenciais de integrações" },
+  { chave: "equipe.gerenciar", label: "Gerenciar equipe (cargos e acessos)" },
 ];
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -91,7 +101,13 @@ export default function EquipeAdminPage() {
     }
   }
 
-  async function atualizar(id: string, patch: Partial<Pick<Colaborador, "cargo" | "ativo">>) {
+  async function alternarPermissao(colaborador: Colaborador, chave: string) {
+    const atual = colaborador.permissoes ?? [];
+    const novo = atual.includes(chave) ? atual.filter((item) => item !== chave) : [...atual, chave];
+    await atualizar(colaborador.id, { permissoes: novo });
+  }
+
+  async function atualizar(id: string, patch: Partial<Pick<Colaborador, "cargo" | "ativo" | "permissoes">>) {
     setSalvando(id);
     setErro(null);
     try {
@@ -139,6 +155,11 @@ export default function EquipeAdminPage() {
               <div><Label htmlFor={`cargo-${item.id}`}>Cargo</Label><select id={`cargo-${item.id}`} value={item.cargo} disabled={salvando === item.id} onChange={(event) => void atualizar(item.id, { cargo: event.target.value as Cargo })} className="mt-1 h-10 w-full rounded-xl border border-rose/12 bg-white px-3 text-sm text-burgundy outline-none focus:border-burgundy/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-pearl">{CARGOS.map((opcao) => <option key={opcao.value} value={opcao.value}>{opcao.label}</option>)}</select></div>
 
               <div className="flex lg:justify-end"><Button size="sm" variant={item.ativo ? "secondary" : "primary"} loading={salvando === item.id} onClick={() => { const acao = item.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${item.nome}?`)) void atualizar(item.id, { ativo: !item.ativo }); }}>{item.ativo ? "Desativar" : "Ativar"}</Button></div>
+
+              {(item.cargo === "financeiro" || item.cargo === "gestao") && <div className="lg:col-span-3">
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-label text-clay/45">Permissões granulares (RBAC)</p>
+                <div className="flex flex-wrap gap-1.5">{PERMISSOES_DISPONIVEIS.map((permissao) => { const ativa = item.permissoes?.includes(permissao.chave); return <button key={permissao.chave} type="button" disabled={salvando === item.id} onClick={() => void alternarPermissao(item, permissao.chave)} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-semibold transition", ativa ? "border-success/30 bg-success/10 text-success" : "border-rose/10 bg-white text-clay/50 hover:border-rose/25 dark:border-white/10 dark:bg-white/[0.03] dark:text-pearl/45")}>{permissao.label}</button>; })}</div>
+              </div>}
             </div>
           ))}
         </div>

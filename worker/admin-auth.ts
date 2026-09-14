@@ -13,12 +13,36 @@ function jsonErro(erro: string, status: number) {
   });
 }
 
+/** Papéis que podem autenticar no painel administrativo (fora do app de colaboradores). */
+export type CargoAdmin = "administrativo" | "gestao" | "financeiro";
+const CARGOS_COM_ACESSO_ADMIN = new Set<string>(["administrativo", "gestao", "financeiro"]);
+
 export interface ColaboradorAdmin {
   id: string;
   auth_user_id: string;
-  cargo: "administrativo";
+  cargo: CargoAdmin;
   ativo: true;
   permissoes: string[];
+}
+
+/**
+ * Chaves de permissão granular (Fase 8 — RBAC). `administrativo` sempre tem
+ * acesso total (é o papel de diretoria/backoffice completo, conforme
+ * BUSINESS-RULES.md §16); Gestão e Financeiro precisam da permissão
+ * explícita listada em `colaboradores.permissoes` para ações sensíveis.
+ * Esconder um botão no frontend nunca substitui esta checagem no Worker.
+ */
+export const PERMISSOES_ADMIN = {
+  CLIENTES_ALTERAR_STATUS_CONTRATO: "clientes.alterar_status_contrato",
+  CLIENTES_EXCLUIR: "clientes.excluir",
+  FINANCEIRO_BAIXA_MANUAL: "financeiro.baixa_manual",
+  FINANCEIRO_VALIDAR_COMPROVANTE: "financeiro.validar_comprovante",
+  INTEGRACOES_GERENCIAR_CREDENCIAIS: "integracoes.gerenciar_credenciais",
+  EQUIPE_GERENCIAR: "equipe.gerenciar",
+} as const;
+
+export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string): boolean {
+  return colaborador.cargo === "administrativo" || colaborador.permissoes.includes(chave);
 }
 
 /**
@@ -36,12 +60,12 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
     .maybeSingle();
 
   if (error) throw error;
-  if (!data || data.ativo !== true || data.cargo !== "administrativo") return null;
+  if (!data || data.ativo !== true || !CARGOS_COM_ACESSO_ADMIN.has(String(data.cargo))) return null;
 
   return {
     id: String(data.id),
     auth_user_id: String(data.auth_user_id),
-    cargo: "administrativo",
+    cargo: data.cargo as CargoAdmin,
     ativo: true,
     permissoes: Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string") : [],
   };

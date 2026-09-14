@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
+import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -361,6 +362,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
     const baixaMatch = path.match(/^\/api\/admin\/financeiro\/recebiveis\/([^/]+)\/baixa$/);
     if (baixaMatch && request.method === "POST") {
+      const colaboradorBaixa = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaboradorBaixa || !temPermissaoAdmin(colaboradorBaixa, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+        return json({ erro: "Seu papel não tem permissão para registrar baixa manual." }, 403);
+      }
       const b = await lerBody(request);
       const dataPagamento = b.dataPagamento;
       const forma = texto(b.formaPagamento);
@@ -408,6 +413,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
     const validacaoMatch = path.match(/^\/api\/admin\/financeiro\/validacoes\/([^/]+)\/(confirmar|rejeitar)$/);
     if (validacaoMatch && request.method === "POST") {
+      const colaboradorValidacao = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaboradorValidacao || !temPermissaoAdmin(colaboradorValidacao, PERMISSOES_ADMIN.FINANCEIRO_VALIDAR_COMPROVANTE)) {
+        return json({ erro: "Seu papel não tem permissão para validar comprovantes." }, 403);
+      }
       const b = await lerBody(request);
       const acao = validacaoMatch[2]; const observacao = texto(b.observacao); const idempotencyKey = texto(b.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
