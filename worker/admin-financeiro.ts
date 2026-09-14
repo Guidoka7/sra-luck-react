@@ -5,7 +5,7 @@ import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPay
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
-const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas)";
+const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,status_contrato)";
 const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,origem_boleto,instituicao_financeira,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
 
 function json(data: unknown, status = 200) {
@@ -243,6 +243,68 @@ function erroRpc(message: string) {
   return 500;
 }
 
+type FunilCliente = "aguardando_conferencia" | "ativos" | "quitados" | "suspensos" | "negativados" | "cancelados";
+
+/**
+ * Funil por cliente (Fase 4): visão que o ZIP pede como navegação principal
+ * do Financeiro, calculada por AGREGAÇÃO sobre os mesmos boletos/recebimentos
+ * já usados por resumo()/listarRecebiveis() — nenhuma tabela nova, nenhum
+ * dado recalculado por uma segunda regra.
+ */
+async function clientesFunil(db: Db) {
+  const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }] = await Promise.all([
+    db.from("clientes").select("id,nome_completo,cpf,status_contrato,valor_contrato,custo_total").order("nome_completo", { ascending: true }),
+    carregarBase(db),
+  ]);
+  if (erroClientes) throw new Error(erroClientes.message);
+
+  const porBoleto = indiceRecebimentos(recebimentos);
+  const porCliente = new Map<string, { pagas: number; total: number; saldoAReceber: number; vencidas: number; aguardandoValidacao: number }>();
+  for (const boleto of boletos) {
+    const agregado = porCliente.get(boleto.cliente_id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0 };
+    const apresentado = apresentarRecebivel(boleto, porBoleto.get(boleto.id));
+    agregado.total += 1;
+    if (apresentado.status === "pago") agregado.pagas += 1;
+    else agregado.saldoAReceber += apresentado.valorEsperado;
+    if (apresentado.status === "vencido") agregado.vencidas += 1;
+    if (apresentado.status === "pendente_confirmacao") agregado.aguardandoValidacao += 1;
+    porCliente.set(boleto.cliente_id, agregado);
+  }
+
+  const itens = (todosClientes ?? []).map((cliente: any) => {
+    const agregado = porCliente.get(cliente.id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0 };
+    const statusContrato = cliente.status_contrato ?? "ativo";
+    let bucket: FunilCliente;
+    if (agregado.total === 0) bucket = "aguardando_conferencia";
+    else if (statusContrato === "suspenso") bucket = "suspensos";
+    else if (statusContrato === "negativado") bucket = "negativados";
+    else if (statusContrato === "cancelado") bucket = "cancelados";
+    else if (agregado.pagas === agregado.total) bucket = "quitados";
+    else bucket = "ativos";
+
+    const proximaAcao = agregado.aguardandoValidacao > 0 ? "Validar comprovante" : agregado.vencidas > 0 ? "Cobrar parcela vencida" : bucket === "aguardando_conferencia" ? "Gerar parcelas" : bucket === "quitados" ? "Sem pendência" : "Acompanhar";
+
+    return {
+      clienteId: cliente.id,
+      nome: cliente.nome_completo,
+      cpf: cliente.cpf,
+      statusContrato,
+      bucket,
+      parcelasPagas: agregado.pagas,
+      parcelasTotal: agregado.total,
+      saldoAReceber: dinheiro(agregado.saldoAReceber),
+      vencidas: agregado.vencidas,
+      aguardandoValidacao: agregado.aguardandoValidacao,
+      proximaAcao,
+    };
+  });
+
+  const ordem: FunilCliente[] = ["aguardando_conferencia", "ativos", "quitados", "suspensos", "negativados", "cancelados"];
+  const funis = ordem.map((bucket) => ({ bucket, total: itens.filter((item) => item.bucket === bucket).length }));
+
+  return { itens, funis };
+}
+
 async function encaminharParcelas(request: Request, env: Env, clienteId: string, payload: Json) {
   const url = new URL(request.url);
   url.pathname = `/api/admin/clientes/${encodeURIComponent(clienteId)}/parcelas`;
@@ -263,6 +325,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
   try {
     if (path === "/api/admin/financeiro/resumo" && request.method === "GET") return json(await resumo(db, url));
+    if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db));
     if (path === "/api/admin/financeiro/recebiveis" && request.method === "GET") return json(await listarRecebiveis(db, url));
 
     if (path === "/api/admin/financeiro/validacoes" && request.method === "GET") {

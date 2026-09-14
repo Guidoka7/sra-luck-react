@@ -30,9 +30,9 @@ function ValueBadge({ label, value, prefix = "R$", suffix, tone = "neutral", onC
   </div></div>;
 }
 
-export function ModalClienteCompactoV3({ cliente, onClose, onSalvo }: { cliente: Cliente | null; onClose: () => void; onSalvo: () => void }) {
+export function ModalClienteCompactoV3({ cliente, onClose, onSalvo, abaInicial = "dados" }: { cliente: Cliente | null; onClose: () => void; onSalvo: () => void; abaInicial?: "dados" | "boletos" | "contrato" }) {
   const editando = Boolean(cliente);
-  const [aba, setAba] = useState<"dados" | "boletos" | "contrato">("dados");
+  const [aba, setAba] = useState<"dados" | "boletos" | "contrato">(editando ? abaInicial : "dados");
   const [nome, setNome] = useState(cliente?.nome_completo ?? "");
   const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : "");
   const [nascimento, setNascimento] = useState(cliente?.data_nascimento ?? "");

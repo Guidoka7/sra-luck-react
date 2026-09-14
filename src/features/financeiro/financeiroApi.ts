@@ -1,4 +1,4 @@
-import type { ClienteFinanceiro, DetalheRecebivel, ListaRecebiveis, PeriodoFinanceiro, ResumoFinanceiro } from "./types";
+import type { ClienteFinanceiro, DetalheRecebivel, FunilFinanceiro, ListaRecebiveis, PeriodoFinanceiro, ResumoFinanceiro } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -40,6 +40,7 @@ export const financeiroApi = {
   alterar: (id: string, payload: Record<string, unknown>) => request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}`, {
     method: "PATCH", body: JSON.stringify(payload),
   }),
+  funilClientes: () => request<FunilFinanceiro>("/api/admin/financeiro/clientes"),
   clientes: async () => {
     const data = await request<{ clientes?: ClienteFinanceiro[] } | ClienteFinanceiro[]>("/api/admin/clientes");
     return Array.isArray(data) ? data : data.clientes ?? [];

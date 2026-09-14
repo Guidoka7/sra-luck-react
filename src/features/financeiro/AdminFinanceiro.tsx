@@ -1,11 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useState } from "react";
-import { CalendarDays, FileInput, Landmark, Plus, RefreshCw, Search, TableProperties } from "lucide-react";
+import { CalendarDays, FileInput, Landmark, Plus, RefreshCw, Search, TableProperties, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, Panel } from "@/components/admin/ExecutiveUI";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { financeiroApi } from "./financeiroApi";
+import { FinanceiroClientesFunil } from "./FinanceiroClientesFunil";
 import { FinanceiroOverview } from "./FinanceiroOverview";
 import { BaixaManualModal, EditarRecebivelModal, GerarParcelasModal, RecebivelDrawer, ValidacaoModal } from "./FinanceiroOperacoes";
 import { RecebiveisTable } from "./RecebiveisTable";
@@ -29,6 +30,7 @@ const STATUS_FILTROS = [
 ] as const;
 
 const ABAS: Array<{ id: AbaFinanceiro; label: string; icon: typeof TableProperties }> = [
+  { id: "clientes", label: "Clientes", icon: Users },
   { id: "visao-geral", label: "Visão geral", icon: CalendarDays },
   { id: "recebiveis", label: "Contas a receber", icon: TableProperties },
   { id: "validacao", label: "Validação", icon: FileInput },
@@ -41,7 +43,7 @@ function inicioMes() { const now = new Date(); return iso(new Date(Date.UTC(now.
 function fimMes() { const now = new Date(); return iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))); }
 function abaInicial(): AbaFinanceiro {
   const value = new URLSearchParams(window.location.search).get("aba");
-  return ABAS.some((item) => item.id === value) ? value as AbaFinanceiro : "visao-geral";
+  return ABAS.some((item) => item.id === value) ? value as AbaFinanceiro : "clientes";
 }
 
 function periodoPreset(value: string): PeriodoFinanceiro {
@@ -117,6 +119,7 @@ export default function AdminFinanceiro() {
     {erro ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-alert/20 bg-alert/[0.06] p-3 text-xs text-alert"><span>{erro}</span><button type="button" onClick={atualizar} className="font-bold uppercase tracking-[.1em]">Tentar novamente</button></div> : null}
     {resumo?.truncado || lista?.truncado ? <p className="rounded-xl border border-gold/25 bg-gold/[0.06] p-3 text-xs text-clay/60 dark:text-white/50">A consulta atingiu o limite operacional de 5.000 parcelas. Refine o período antes de tomar uma decisão financeira.</p> : null}
 
+    {aba === "clientes" ? <FinanceiroClientesFunil /> : null}
     {aba === "visao-geral" ? <FinanceiroOverview resumo={resumo} carregando={carregando} onNavegar={navegar} /> : null}
     {aba === "recebiveis" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#171519]/92">
       <div className="mb-3 flex flex-col gap-2 border-b border-rose/10 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/8">

@@ -1,4 +1,34 @@
-export type AbaFinanceiro = "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
+export type AbaFinanceiro = "clientes" | "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
+
+export type FunilClienteBucket = "aguardando_conferencia" | "ativos" | "quitados" | "suspensos" | "negativados" | "cancelados";
+
+export const FUNIL_CLIENTE_LABEL: Record<FunilClienteBucket, string> = {
+  aguardando_conferencia: "Aguardando conferência",
+  ativos: "Ativos",
+  quitados: "Quitados",
+  suspensos: "Suspensos",
+  negativados: "Negativados",
+  cancelados: "Cancelados",
+};
+
+export interface ClienteFunilItem {
+  clienteId: string;
+  nome: string;
+  cpf: string | null;
+  statusContrato: string;
+  bucket: FunilClienteBucket;
+  parcelasPagas: number;
+  parcelasTotal: number;
+  saldoAReceber: number;
+  vencidas: number;
+  aguardandoValidacao: number;
+  proximaAcao: string;
+}
+
+export interface FunilFinanceiro {
+  itens: ClienteFunilItem[];
+  funis: Array<{ bucket: FunilClienteBucket; total: number }>;
+}
 
 export type ToneRecebivel = "neutral" | "success" | "alert" | "gold" | "rose" | "indigo";
 
