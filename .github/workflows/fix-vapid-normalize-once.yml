@@ -1,0 +1,62 @@
+name: Fix VAPID normalize once
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Fix mailto normalization order
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('worker/web-push-config.ts')
+          s = p.read_text()
+          old = '''  const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+          if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;
+          if (raw.toLowerCase().startsWith("mailto:")) {
+            const email = raw.slice(7).trim();
+            return emailPattern.test(email) ? `mailto:${email.toLowerCase()}` : null;
+          }'''
+          new = '''  const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+          if (raw.toLowerCase().startsWith("mailto:")) {
+            const email = raw.slice(7).trim();
+            return emailPattern.test(email) ? `mailto:${email.toLowerCase()}` : null;
+          }
+          if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;'''
+          if old not in s:
+              raise SystemExit('trecho de normalização não encontrado')
+          p.write_text(s.replace(old, new))
+      - run: npm ci
+      - run: npm run test
+      - run: npm run lint
+      - run: npm run build
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/web-push-config.ts
+          git commit -m "fix(push): normaliza subject VAPID sem duplicar mailto"
+          git push origin HEAD:develop
+      - name: Remove one-shot workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/fix-vapid-normalize-once.yml
+          git commit -m "chore(push): remove workflow temporário da VAPID"
+          git push origin HEAD:develop
