@@ -24,6 +24,9 @@ export interface ClienteFunilItem {
   vencidas: number;
   aguardandoValidacao: number;
   proximaAcao: string;
+  vendedora: string | null;
+  campanha: string | null;
+  proximoVencimento: string | null;
 }
 
 export interface FunilFinanceiro {

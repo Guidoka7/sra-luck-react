@@ -263,20 +263,24 @@ type FunilCliente = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" 
  * anormal (suspenso/negativado/cancelado) — nunca é inferido do carnê.
  */
 async function clientesFunil(db: Db) {
-  const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }] = await Promise.all([
-    db.from("clientes").select("id,nome_completo,cpf,status_contrato,valor_contrato,custo_total").order("nome_completo", { ascending: true }),
+  const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }, { data: vendasRows }] = await Promise.all([
+    db.from("clientes").select("id,nome_completo,cpf,status_contrato,valor_contrato,custo_total,consultora").order("nome_completo", { ascending: true }),
     carregarBase(db),
+    db.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id", "is", null),
   ]);
   if (erroClientes) throw new Error(erroClientes.message);
 
+  const origemPorCliente = new Map<string, string>();
+  for (const v of (vendasRows ?? []) as any[]) if (v.cliente_id && !origemPorCliente.has(v.cliente_id) && v.origem_venda) origemPorCliente.set(v.cliente_id, v.origem_venda);
+
   const porBoleto = indiceRecebimentos(recebimentos);
-  const porCliente = new Map<string, { pagas: number; total: number; saldoAReceber: number; vencidas: number; aguardandoValidacao: number }>();
+  const porCliente = new Map<string, { pagas: number; total: number; saldoAReceber: number; vencidas: number; aguardandoValidacao: number; proximoVencimento: string | null }>();
   for (const boleto of boletos) {
-    const agregado = porCliente.get(boleto.cliente_id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0 };
+    const agregado = porCliente.get(boleto.cliente_id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0, proximoVencimento: null };
     const apresentado = apresentarRecebivel(boleto, porBoleto.get(boleto.id));
     agregado.total += 1;
     if (apresentado.status === "pago") agregado.pagas += 1;
-    else agregado.saldoAReceber += apresentado.valorEsperado;
+    else { agregado.saldoAReceber += apresentado.valorEsperado; if (!agregado.proximoVencimento && boleto.data_vencimento) agregado.proximoVencimento = boleto.data_vencimento; }
     if (apresentado.status === "vencido") agregado.vencidas += 1;
     if (apresentado.status === "pendente_confirmacao") agregado.aguardandoValidacao += 1;
     porCliente.set(boleto.cliente_id, agregado);
@@ -310,6 +314,9 @@ async function clientesFunil(db: Db) {
         vencidas: agregado.vencidas,
         aguardandoValidacao: agregado.aguardandoValidacao,
         proximaAcao,
+        vendedora: cliente.consultora ?? null,
+        campanha: origemPorCliente.get(cliente.id) ?? null,
+        proximoVencimento: agregado.proximoVencimento,
       };
     });
 

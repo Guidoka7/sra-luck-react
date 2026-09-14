@@ -1,5 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenSessao } from "./session";
+import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
 import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
@@ -228,7 +228,13 @@ export default {
     }
 
     if (url.pathname === "/api/admin/session" && request.method === "GET") {
-      return json({ autenticado: true }, 200, { "Cache-Control": "no-store" });
+      const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET!);
+      const colaborador = sessao ? await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null) : null;
+      const db = createServiceSupabaseClient(env);
+      const { data: perfil } = colaborador
+        ? await db.from("colaboradores").select("nome,cargo").eq("id", colaborador.id).maybeSingle()
+        : { data: null };
+      return json({ autenticado: true, nome: perfil?.nome ?? null, cargo: perfil?.cargo ?? colaborador?.cargo ?? null }, 200, { "Cache-Control": "no-store" });
     }
 
     const monitor = await monitoramentoErros(request, env);
