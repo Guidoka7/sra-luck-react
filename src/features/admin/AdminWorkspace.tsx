@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Bell, Cable, Gauge, Settings2, Users } from "lucide-react";
-import { cn } from "@/lib/utils";
+import "@/styles/admin-zip.css";
 import { AdminSettingsPanel } from "./AdminSettingsPanel";
 import AdminNotificacoes from "@/app/admin/(painel)/notificacoes/page";
 import MonitoramentoPage from "@/app/admin/(painel)/configuracoes/monitoramento/page";
@@ -46,9 +46,13 @@ export function AdminWorkspace() {
     window.history.replaceState({}, "", `/admin/configuracoes?aba=${novaAba}`);
   }
 
-  return <div className="space-y-4 pb-8">
-    <nav aria-label="Seções de Configurações" className="flex gap-1 overflow-x-auto rounded-2xl border border-white/70 bg-white/70 p-1.5 shadow-sm dark:border-white/8 dark:bg-[#171519]/80">
-      {ABAS.map((item) => <button key={item.id} type="button" onClick={() => navegar(item.id)} className={cn("inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[.11em] transition", aba === item.id ? "bg-burgundy text-cream shadow-sm dark:bg-[#7f3546]" : "text-clay/52 hover:bg-blush/60 hover:text-burgundy dark:text-white/45 dark:hover:bg-white/6 dark:hover:text-cream")}><item.icon className="h-3.5 w-3.5" />{item.label}</button>)}
+  return <div className="zip-admin">
+    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
+      <div><h1 style={{ fontSize: 27 }}>Configurações</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "68ch" }}>Centralize preferências da operação, Web Push, monitoramento, equipe e conexões do sistema.</p></div>
+    </div>
+
+    <nav aria-label="Seções de Configurações" style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14, boxShadow: "0 12px 28px -25px rgba(122,38,50,.3)" }}>
+      {ABAS.map((item) => { const on = aba === item.id; return <button key={item.id} type="button" onClick={() => navegar(item.id)} style={{ display: "flex", alignItems: "center", gap: 7, height: 31, padding: "0 13px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}><item.icon className="h-3.5 w-3.5" />{item.label}</button>; })}
     </nav>
 
     <div hidden={aba !== "geral"}><AdminSettingsPanel /></div>

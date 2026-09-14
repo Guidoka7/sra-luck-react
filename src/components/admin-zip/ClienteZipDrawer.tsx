@@ -3,9 +3,10 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
 import { formatarCpf } from "@/lib/cpf";
-import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/lib/utils";
+import { desmascararMoeda, mascararMoedaInput, formatarMoeda, percentualNecessario } from "@/lib/utils";
 import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { QUANTIDADE_PARCELAS_OPCOES, STATUS_BOLETO_LABEL, STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
+import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { zipChip } from "./zipUi";
 
 /**
@@ -72,7 +73,6 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const [boletos, setBoletos] = useState<Boleto[]>([]);
   const [carregandoFin, setCarregandoFin] = useState(Boolean(cliente));
   const [salvandoFin, setSalvandoFin] = useState(false);
-  const [rejeitando, setRejeitando] = useState<string | null>(null);
   const [mostrarTodas, setMostrarTodas] = useState(false);
   const [carnes, setCarnes] = useState<Carne[]>([]);
   const [importacoes, setImportacoes] = useState<ImportacaoBoleto[]>([]);
@@ -184,7 +184,6 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
     }
   }
 
-  async function rejeitar(b: Boleto) { if (!b.comprovante_url) return; if (!window.confirm(`Rejeitar o comprovante da parcela ${b.numero_parcela}/${b.total_parcelas}? A parcela voltará para Em aberto.`)) return; setRejeitando(b.id); try { const r = await fetch(`/api/admin/boletos/${b.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "rejeitar", observacoes: "Comprovante rejeitado pelo administrador." }) }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível rejeitar."); setBoletos((v) => v.map((x) => (x.id === b.id ? { ...x, status: "nao_pago", data_pagamento: null } : x))); toast.success("Comprovante rejeitado. Parcela em aberto."); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao rejeitar."); } finally { setRejeitando(null); } }
   async function excluirCliente() { if (!cliente?.id) return; setExcluindo(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}`, { method: "DELETE" }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erro ?? "Não foi possível excluir o perfil da cliente."); toast.success("Perfil da cliente excluído com sucesso."); setConfirmarExclusao(false); onSalvo(); onClose(); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao excluir o perfil."); } finally { setExcluindo(false); } }
 
   async function criarCarne(e: React.FormEvent) {
@@ -254,6 +253,33 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const pagas = boletos.filter((b) => b.status === "pago").length;
   const pendentesRevisao = importacoes.filter((i) => i.status_vinculacao !== "vinculado" && i.status_vinculacao !== "ignorado");
   const proximaLiberacao = boletos.find((b) => b.status !== "pago");
+  const aguardandoConferencia = boletos.find((b) => b.status === "pendente_confirmacao");
+  const [validando, setValidando] = useState(false);
+
+  async function confirmarPagamento() {
+    if (!aguardandoConferencia) return;
+    setValidando(true);
+    try {
+      await financeiroApi.validar(aguardandoConferencia.id, "confirmar", "");
+      toast.success("Pagamento confirmado.");
+      void carregarBoletos();
+      onSalvo();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível confirmar o pagamento."); }
+    finally { setValidando(false); }
+  }
+  async function rejeitarComprovante() {
+    if (!aguardandoConferencia) return;
+    const motivo = window.prompt("Motivo da rejeição ou divergência (obrigatório):");
+    if (!motivo || !motivo.trim()) return;
+    setValidando(true);
+    try {
+      await financeiroApi.validar(aguardandoConferencia.id, "rejeitar", motivo);
+      toast.success("Comprovante rejeitado. Parcela voltou para aberto.");
+      void carregarBoletos();
+      onSalvo();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível rejeitar o comprovante."); }
+    finally { setValidando(false); }
+  }
 
   const hojeIso = new Date().toISOString().slice(0, 10);
   const vencidas = boletos.filter((b) => b.status !== "pago" && b.data_vencimento && b.data_vencimento < hojeIso).length;
@@ -338,6 +364,19 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
           </Section>}
         </form> : <div style={{ padding: "14px 0", display: "flex", flexDirection: "column", gap: 0 }}>
           {carregandoFin ? <p style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando financeiro…</p> : <>
+            {aguardandoConferencia && <div style={{ border: "1px solid var(--gobg)", background: "var(--gobg)", borderRadius: 12, padding: "12px 13px", marginBottom: 12 }}>
+              <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--gold)" }}>Comprovante aguardando análise</div>
+              <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 7 }}>
+                <Row label="Parcela" value={`${aguardandoConferencia.numero_parcela} de ${aguardandoConferencia.total_parcelas}`} />
+                <Row label="Enviado em" value={dataBr(aguardandoConferencia.data_pagamento)} />
+                <Row label="Valor informado" value={formatarMoeda(Number(aguardandoConferencia.valor ?? 0))} />
+              </div>
+              <div style={{ marginTop: 10, display: "flex", gap: 7 }}>
+                {aguardandoConferencia.comprovante_url && <a href={aguardandoConferencia.comprovante_url} target="_blank" rel="noreferrer" style={{ flex: 1, height: 33, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--ink)", fontSize: 11.5, fontWeight: 600 }}>Ver comprovante</a>}
+                <button type="button" disabled={validando} onClick={rejeitarComprovante} style={{ flex: 1, height: 33, borderRadius: 9, border: "1px solid var(--bad)", background: "var(--s0)", color: "var(--bad)", fontSize: 11.5, fontWeight: 600 }}>Rejeitar</button>
+                <button type="button" disabled={validando} onClick={confirmarPagamento} style={{ flex: 1, height: 33, borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11.5, fontWeight: 600 }}>Confirmar pagamento</button>
+              </div>
+            </div>}
             <div style={{ borderRadius: 11, border: "1px solid var(--line)", background: "var(--s1)", padding: 12 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Row label="Carta de crédito" value={<input style={{ ...fieldInput, height: 26, textAlign: "right", width: 110 }} value={carta} onChange={(e) => atualizarCarta(e.target.value)} />} />
@@ -378,7 +417,6 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
                 <span style={zipChip(b.status === "pago" ? "ok" : b.status === "pendente_confirmacao" ? "warn" : "neutral")}>{STATUS_BOLETO_LABEL[b.status] ?? b.status}</span>
                 <span style={{ display: "flex", gap: 5 }}>
                   {b.comprovante_url && <a href={b.comprovante_url} target="_blank" rel="noreferrer" style={{ ...secondaryBtn, height: 24, padding: "0 8px" }}>Ver</a>}
-                  {b.comprovante_url && <button type="button" onClick={() => rejeitar(b)} disabled={rejeitando === b.id} style={{ height: 24, width: 24, borderRadius: 7, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--bad)" }}>✕</button>}
                 </span>
               </div>)}
               {boletos.length > 8 && <button type="button" onClick={() => setMostrarTodas((v) => !v)} style={{ ...secondaryBtn, width: "100%", marginTop: 8 }}>{mostrarTodas ? "Mostrar menos" : `Mostrar todas as ${boletos.length} parcelas`}</button>}

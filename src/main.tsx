@@ -24,6 +24,7 @@ const PrevisoesPage = lazy(() => import("./app/admin/(painel)/previsoes/page"));
 const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
 const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));
 const FinanceiroPage = lazy(() => import("./app/admin/(painel)/financeiro/page"));
+const FinanceiroAvancado = lazy(() => import("./features/financeiro/AdminFinanceiro"));
 const RelatoriosPage = lazy(() => import("./app/admin/(painel)/relatorios/page"));
 
 function CarregandoRota() {
@@ -41,14 +42,15 @@ function RedirectTo({ to }: { to: string }) {
 function AdminRoute({ path }: { path: string }) {
   if (path === "/admin" || path === "/admin/") return <RedirectTo to="/admin/visao-geral" />;
   if (path.startsWith("/admin/liberacoes")) return <RedirectTo to="/admin/agenda?aba=liberacao" />;
-  if (path.startsWith("/admin/pagamentos")) return <RedirectTo to="/admin/financeiro?aba=validacao" />;
-  if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro?aba=recebiveis" />;
+  if (path.startsWith("/admin/pagamentos")) return <RedirectTo to="/admin/financeiro/avancado?aba=validacao" />;
+  if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro/avancado?aba=recebiveis" />;
 
   let conteudo: ReactNode;
   if (path.startsWith("/admin/visao-geral")) conteudo = <VisaoGeralPage />;
   else if (path.startsWith("/admin/previsoes")) conteudo = <PrevisoesPage />;
   else if (path.startsWith("/admin/agenda")) conteudo = <AgendaAdminPage />;
   else if (path.startsWith("/admin/clientes")) conteudo = <ClientesPage />;
+  else if (path.startsWith("/admin/financeiro/avancado")) conteudo = <FinanceiroAvancado />;
   else if (path.startsWith("/admin/financeiro")) conteudo = <FinanceiroPage />;
   else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
   else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;
