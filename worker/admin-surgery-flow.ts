@@ -83,6 +83,32 @@ async function listarAgendamentosTermos(env: Env) {
   return json({ agendamentos, hoje });
 }
 
+async function listarCirurgiasConfirmadas(env: Env) {
+  const db = createServiceSupabaseClient(env);
+  const { data, error } = await db.from("agendamentos")
+    .select("id,cliente_id,previsao_liberacao_financeira,valor_contrato,clientes(id,nome_completo,cpf,status_cirurgia)")
+    .not("previsao_liberacao_financeira", "is", null)
+    .order("previsao_liberacao_financeira", { ascending: true });
+  if (error) return json({ erro: error.message }, 500);
+
+  const hoje = agoraSaoPaulo().data;
+  const cirurgias = (data ?? []).map((a: any) => {
+    const cliente = one(a.clientes);
+    return {
+      id: a.id,
+      clienteId: a.cliente_id,
+      nome: cliente?.nome_completo ?? "Cliente sem nome",
+      cpf: cliente?.cpf ?? null,
+      data: a.previsao_liberacao_financeira,
+      valorContrato: Number(a.valor_contrato ?? 0),
+      statusCirurgia: cliente?.status_cirurgia ?? "nao_agendada",
+      realizada: cliente?.status_cirurgia === "realizada",
+      podeConfirmarRealizacao: cliente?.status_cirurgia === "agendada" && a.previsao_liberacao_financeira <= hoje,
+    };
+  });
+  return json({ cirurgias, hoje });
+}
+
 async function confirmarAssinaturaTermos(request: Request, env: Env) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await parseBody(request);
@@ -372,6 +398,7 @@ export async function adminSurgeryFlow(request: Request, env: Env): Promise<Resp
   const managed = path === "/api/admin/agendamentos-termos"
     || path === "/api/admin/solicitacoes-liberacao-financeira"
     || path === "/api/admin/liberacao-inteligente"
+    || path === "/api/admin/cirurgias-confirmadas"
     || Boolean(ciclo)
     || Boolean(previsao);
   if (!managed) return null;
@@ -392,6 +419,7 @@ export async function adminSurgeryFlow(request: Request, env: Env): Promise<Resp
     if (request.method !== "PATCH") return null;
     return salvarDataCirurgia(request, env, decodeURIComponent(previsao[1]));
   }
+  if (path === "/api/admin/cirurgias-confirmadas" && request.method === "GET") return listarCirurgiasConfirmadas(env);
   if (path === "/api/admin/solicitacoes-liberacao-financeira" && request.method === "GET") return listarSolicitacoes(env);
   if (path === "/api/admin/liberacao-inteligente" && request.method === "GET") return liberacaoInteligente(url, env);
   return null;
