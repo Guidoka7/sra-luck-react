@@ -43,7 +43,7 @@ function RemarcacoesZip({ tipo }: { tipo: "termos" | "cirurgia" }) {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.clientes?.nome_completo ?? "Cliente"}</div>
           <div style={{ marginTop: 2, fontSize: 10.5, color: "var(--soft)" }}>Atual → {curta(item.data_solicitada)}{item.horario_termos ? ` às ${String(item.horario_termos).slice(0, 5)}` : ""}</div>
-          <div style={{ fontSize: 9.5, color: "var(--soft)" }}>Prazo de análise: até 5 dias úteis</div>
+          <div style={{ fontSize: 9.5, color: "var(--soft)" }}>Aguardando análise administrativa</div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button disabled={processando === item.id} onClick={() => void analisar(item.id, "recusar")} style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid var(--badbg)", background: "var(--s0)", color: "var(--bad)", fontSize: 10.5, fontWeight: 700 }}>Recusar</button>

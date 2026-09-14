@@ -1,5 +1,5 @@
-import { createServiceSupabaseClient, type Env } from "./supabase";
 import { obterCredencial } from "./integrations-credenciais";
+import { createServiceSupabaseClient, type Env } from "./supabase";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -17,9 +17,16 @@ type StatusIntegracao = {
   estado: EstadoIntegracao;
   credenciaisConfiguradas: boolean;
   persistenciaPronta: boolean;
-  conexaoLiveVerificada: false;
+  conexaoLiveVerificada: boolean;
   detalhes: string;
   eventosRegistrados?: number;
+  ultimaVerificacao?: string | null;
+  ultimaSincronizacao?: string | null;
+  ultimoWebhook?: string | null;
+  errosRecentes?: number;
+  oauthConfigurado?: boolean;
+  oauthAutorizado?: boolean;
+  modoLeitura?: boolean;
 };
 
 async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string) {
@@ -52,33 +59,24 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   if (path !== "/api/admin/integrations/status" || request.method !== "GET") return null;
 
   const db = createServiceSupabaseClient(env);
-  const [
-    pushTable,
-    eventTable,
-    paymentTable,
-    contaAzulTable,
-    rdTable,
-    pushCount,
-    paymentCount,
-    contaAzulCount,
-    rdCount,
-  ] = await Promise.all([
+  const [pushTable, eventTable, paymentTable, contaAzulTable, rdRawTable, novasVendasTable] = await Promise.all([
     tabelaDisponivel(db, "web_push_subscriptions"),
     tabelaDisponivel(db, "integracao_eventos"),
     tabelaDisponivel(db, "pagamentos_externos"),
     tabelaDisponivel(db, "conta_azul_operacoes"),
     tabelaDisponivel(db, "crm_vendas_entrada"),
-    contar(db, "web_push_subscriptions"),
-    contar(db, "pagamentos_externos"),
-    contar(db, "conta_azul_operacoes"),
-    contar(db, "crm_vendas_entrada"),
+    tabelaDisponivel(db, "novas_vendas"),
+  ]);
+
+  const [pushCount, paymentCount, contaAzulCount, rdCount] = await Promise.all([
+    contar(db, "web_push_subscriptions"), contar(db, "pagamentos_externos"), contar(db, "conta_azul_operacoes"), contar(db, "novas_vendas"),
   ]);
 
   const [
     pushPublicKey, pushPrivateKey, pushSubject,
     mpAccessToken, mpWebhookSecret,
     caClientId, caClientSecret, caAccessToken, caRefreshToken,
-    rdWebhookSecret, rdApiToken,
+    rdWebhookSecret, rdClientId, rdClientSecret, rdAccessToken, rdLegacyToken, rdRefreshToken,
   ] = await Promise.all([
     obterCredencial(env, "web_push", "vapid_public_key"),
     obterCredencial(env, "web_push", "vapid_private_key"),
@@ -90,97 +88,89 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     obterCredencial(env, "conta_azul", "access_token"),
     obterCredencial(env, "conta_azul", "refresh_token"),
     obterCredencial(env, "rd_station", "webhook_secret"),
+    obterCredencial(env, "rd_station", "client_id"),
+    obterCredencial(env, "rd_station", "client_secret"),
+    obterCredencial(env, "rd_station", "access_token"),
     obterCredencial(env, "rd_station", "api_access_token"),
+    obterCredencial(env, "rd_station", "refresh_token"),
   ]);
 
   const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
   const mpCredenciais = Boolean(mpAccessToken && mpWebhookSecret);
   const contaAzulCredenciais = Boolean(caClientId && caClientSecret && caAccessToken && caRefreshToken);
-  const rdCredenciais = Boolean(rdWebhookSecret && rdApiToken);
+  const rdOauthConfigurado = Boolean(rdClientId && rdClientSecret);
+  const rdOauthAutorizado = Boolean(rdAccessToken || rdLegacyToken);
+  const rdCredenciais = Boolean(rdWebhookSecret && rdOauthConfigurado);
+  const rdPersistencia = rdRawTable && eventTable && novasVendasTable;
+
+  let rdUltimaSincronizacao: string | null = null;
+  let rdUltimoWebhook: string | null = null;
+  let rdErros = 0;
+  let rdUltimaVerificacao: string | null = null;
+  let rdConectado = false;
+  if (eventTable) {
+    const [{ data: sync }, { count: erros }] = await Promise.all([
+      db.from("integracao_eventos").select("created_at").eq("provedor", "rd_station").eq("event_type", "sync_manual").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      db.from("integracao_eventos").select("id", { count: "exact", head: true }).eq("provedor", "rd_station").eq("status", "erro"),
+    ]);
+    rdUltimaSincronizacao = sync?.created_at ?? null;
+    rdErros = erros ?? 0;
+  }
+  if (rdRawTable) {
+    const { data: webhook } = await db.from("crm_vendas_entrada").select("created_at").eq("provedor", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    rdUltimoWebhook = webhook?.created_at ?? null;
+  }
+  const { data: testeRd } = await db.from("logs_alteracoes").select("detalhes,created_at")
+    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (testeRd) {
+    rdUltimaVerificacao = testeRd.created_at;
+    rdConectado = Boolean((testeRd.detalhes as any)?.conectado);
+  }
 
   const integracoes: StatusIntegracao[] = [
     {
-      id: "web_push",
-      nome: "Web Push",
-      grupo: "comunicacao",
-      estado: estadoBase(pushTable, pushCredenciais),
-      credenciaisConfiguradas: pushCredenciais,
-      persistenciaPronta: pushTable,
-      conexaoLiveVerificada: false,
-      detalhes: pushCredenciais
-        ? "Credenciais VAPID presentes. O envio live continuará desativado até homologação específica."
-        : "Assinaturas e rotas estão prontas; faltam as chaves VAPID para ativação futura.",
+      id: "web_push", nome: "Web Push", grupo: "comunicacao", estado: estadoBase(pushTable, pushCredenciais),
+      credenciaisConfiguradas: pushCredenciais, persistenciaPronta: pushTable, conexaoLiveVerificada: false,
+      detalhes: pushCredenciais ? "Credenciais VAPID presentes. Envio depende de assinatura ativa do dispositivo." : "Assinaturas e rotas estão prontas; faltam as chaves VAPID.",
       eventosRegistrados: pushCount,
     },
     {
-      id: "mercado_pago",
-      nome: "Mercado Pago",
-      grupo: "pagamentos",
-      estado: estadoBase(paymentTable && eventTable, mpCredenciais),
-      credenciaisConfiguradas: mpCredenciais,
-      persistenciaPronta: paymentTable && eventTable,
-      conexaoLiveVerificada: false,
-      detalhes: mpCredenciais
-        ? "Credenciais presentes no backend; conexão live não foi homologada."
-        : "Checkout, webhook e persistência estão modelados para conexão futura.",
+      id: "mercado_pago", nome: "Mercado Pago", grupo: "pagamentos", estado: estadoBase(paymentTable && eventTable, mpCredenciais),
+      credenciaisConfiguradas: mpCredenciais, persistenciaPronta: paymentTable && eventTable, conexaoLiveVerificada: false,
+      detalhes: mpCredenciais ? "Credenciais presentes. Pagamentos aprovados entram para conferência humana; nunca baixam parcela automaticamente." : "Checkout e webhook estão preparados para conferência financeira manual.",
       eventosRegistrados: paymentCount,
     },
     {
-      id: "conta_azul",
-      nome: "Conta Azul",
-      grupo: "pagamentos",
-      estado: estadoBase(contaAzulTable, contaAzulCredenciais),
-      credenciaisConfiguradas: contaAzulCredenciais,
-      persistenciaPronta: contaAzulTable,
-      conexaoLiveVerificada: false,
-      detalhes: contaAzulCredenciais
-        ? "Credenciais presentes no backend; sincronização live permanece sem homologação."
-        : "Estrutura de contas a receber está preparada para conexão futura.",
+      id: "conta_azul", nome: "Conta Azul", grupo: "pagamentos", estado: estadoBase(contaAzulTable, contaAzulCredenciais),
+      credenciaisConfiguradas: contaAzulCredenciais, persistenciaPronta: contaAzulTable, conexaoLiveVerificada: false,
+      detalhes: contaAzulCredenciais ? "Credenciais presentes no backend; sincronização live depende de homologação." : "Estrutura de contas a receber depende da base/homologação do provedor.",
       eventosRegistrados: contaAzulCount,
     },
     {
-      id: "rd_station",
-      nome: "RD Station CRM",
-      grupo: "crm",
-      estado: estadoBase(rdTable && eventTable, rdCredenciais),
-      credenciaisConfiguradas: rdCredenciais,
-      persistenciaPronta: rdTable && eventTable,
-      conexaoLiveVerificada: false,
-      detalhes: rdCredenciais
-        ? "Credenciais presentes no backend; webhook live não foi homologado."
-        : "Entrada de vendas e auditoria estão preparadas para conexão futura.",
+      id: "rd_station", nome: "RD Station CRM", grupo: "crm", estado: estadoBase(rdPersistencia, rdCredenciais),
+      credenciaisConfiguradas: rdCredenciais, persistenciaPronta: rdPersistencia, conexaoLiveVerificada: rdConectado,
+      detalhes: rdOauthAutorizado
+        ? "Integração somente leitura autorizada: o Sra. Luck consulta/recebe dados do RD e nunca escreve dados comerciais de volta."
+        : rdOauthConfigurado
+          ? "OAuth configurado, aguardando autorização da conta RD Station. Integração comercial é estritamente somente leitura."
+          : "Configure OAuth e o segredo do webhook. Alterações locais nunca são enviadas ao RD Station.",
       eventosRegistrados: rdCount,
+      ultimaVerificacao: rdUltimaVerificacao,
+      ultimaSincronizacao: rdUltimaSincronizacao,
+      ultimoWebhook: rdUltimoWebhook,
+      errosRecentes: rdErros,
+      oauthConfigurado: rdOauthConfigurado,
+      oauthAutorizado: rdOauthAutorizado && Boolean(rdRefreshToken || rdLegacyToken),
+      modoLeitura: true,
     },
   ];
 
   const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = await Promise.all([
-    obterCredencial(env, "brb", "webhook_secret"),
-    obterCredencial(env, "bb", "webhook_secret"),
-    obterCredencial(env, "santander", "webhook_secret"),
-    obterCredencial(env, "sicredi", "webhook_secret"),
-    obterCredencial(env, "efi", "webhook_secret"),
+    obterCredencial(env, "brb", "webhook_secret"), obterCredencial(env, "bb", "webhook_secret"), obterCredencial(env, "santander", "webhook_secret"), obterCredencial(env, "sicredi", "webhook_secret"), obterCredencial(env, "efi", "webhook_secret"),
   ]);
-  const bancos = [
-    ["brb", "BRB", Boolean(brbSecret)],
-    ["bb", "Banco do Brasil", Boolean(bbSecret)],
-    ["santander", "Santander", Boolean(santanderSecret)],
-    ["sicredi", "Sicredi", Boolean(sicrediSecret)],
-    ["efi", "Efí", Boolean(efiSecret)],
-  ] as const;
-
+  const bancos = [["brb", "BRB", Boolean(brbSecret)], ["bb", "Banco do Brasil", Boolean(bbSecret)], ["santander", "Santander", Boolean(santanderSecret)], ["sicredi", "Sicredi", Boolean(sicrediSecret)], ["efi", "Efí", Boolean(efiSecret)]] as const;
   for (const [id, nome, credenciais] of bancos) {
-    integracoes.push({
-      id,
-      nome,
-      grupo: "bancos",
-      estado: "planejado",
-      credenciaisConfiguradas: credenciais,
-      persistenciaPronta: eventTable,
-      conexaoLiveVerificada: false,
-      detalhes: credenciais
-        ? "Segredo reservado no backend. Adapter bancário ainda depende da homologação do provedor."
-        : "Provider reservado na arquitetura; credenciais e homologação serão configuradas futuramente.",
-    });
+    integracoes.push({ id, nome, grupo: "bancos", estado: "planejado", credenciaisConfiguradas: credenciais, persistenciaPronta: eventTable, conexaoLiveVerificada: false, detalhes: credenciais ? "Segredo reservado no backend. Adapter bancário ainda depende da homologação do provedor." : "Provider reservado na arquitetura; credenciais e homologação serão configuradas futuramente." });
   }
 
   return json({
@@ -191,8 +181,8 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
       credenciaisPresentes: integracoes.filter((item) => item.estado === "credenciais_presentes").length,
       planejados: integracoes.filter((item) => item.estado === "planejado").length,
       baseIncompleta: integracoes.filter((item) => item.estado === "base_incompleta").length,
-      conexoesLiveVerificadas: 0,
+      conexoesLiveVerificadas: integracoes.filter((item) => item.conexaoLiveVerificada).length,
     },
-    observacao: "Este painel não executa testes contra provedores externos. Conexões live serão homologadas futuramente.",
+    observacao: "Status baseado em persistência real, credenciais e testes registrados. RD Station opera em modo somente leitura.",
   });
 }

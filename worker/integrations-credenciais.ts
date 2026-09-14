@@ -1,6 +1,6 @@
-import { createServiceSupabaseClient, type Env } from "./supabase";
-import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
+import { getCookie, verificarTokenAdmin } from "./session";
+import { createServiceSupabaseClient, type Env } from "./supabase";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -21,11 +21,6 @@ function sameOrigin(request: Request) {
   try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
-// ----------------------------------------------------------------------------
-// Catálogo de provedores configuráveis pelo painel. Cada campo mapeia para a
-// mesma variável de ambiente que o Worker já sabe ler — assim, um valor salvo
-// aqui substitui a variável de ambiente sem exigir nenhuma mudança de código.
-// ----------------------------------------------------------------------------
 export type CampoCredencial = { chave: string; label: string; obrigatorio: boolean; envVar: keyof Env };
 
 export const CATALOGO_PROVEDORES: Record<string, { nome: string; grupo: string; campos: CampoCredencial[] }> = {
@@ -51,8 +46,14 @@ export const CATALOGO_PROVEDORES: Record<string, { nome: string; grupo: string; 
     nome: "RD Station CRM",
     grupo: "crm",
     campos: [
+      { chave: "client_id", label: "OAuth Client ID", obrigatorio: true, envVar: "RD_CLIENT_ID" },
+      { chave: "client_secret", label: "OAuth Client Secret", obrigatorio: true, envVar: "RD_CLIENT_SECRET" },
+      { chave: "redirect_uri", label: "OAuth Redirect URI", obrigatorio: true, envVar: "RD_REDIRECT_URI" },
       { chave: "webhook_secret", label: "Webhook Secret", obrigatorio: true, envVar: "RD_WEBHOOK_SECRET" },
-      { chave: "api_access_token", label: "API Access Token", obrigatorio: true, envVar: "RD_API_ACCESS_TOKEN" },
+      { chave: "access_token", label: "OAuth Access Token", obrigatorio: false, envVar: "RD_ACCESS_TOKEN" },
+      { chave: "refresh_token", label: "OAuth Refresh Token", obrigatorio: false, envVar: "RD_REFRESH_TOKEN" },
+      { chave: "token_expires_at", label: "Token expira em", obrigatorio: false, envVar: "RD_TOKEN_EXPIRES_AT" },
+      { chave: "api_access_token", label: "Access Token legado", obrigatorio: false, envVar: "RD_API_ACCESS_TOKEN" },
     ],
   },
   web_push: {
@@ -75,11 +76,6 @@ function campoDoProvedor(provedor: string, chave: string) {
   return CATALOGO_PROVEDORES[provedor]?.campos.find((campo) => campo.chave === chave) ?? null;
 }
 
-// ----------------------------------------------------------------------------
-// Criptografia simétrica (AES-GCM) com chave derivada de CLIENTE_SESSION_SECRET,
-// que já é exigido para o funcionamento do login admin. Nenhum segredo novo
-// precisa ser configurado no Worker para que esta camada funcione.
-// ----------------------------------------------------------------------------
 async function derivarChave(segredo: string): Promise<CryptoKey> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(segredo));
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
@@ -119,12 +115,6 @@ async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClien
   return !error;
 }
 
-// ----------------------------------------------------------------------------
-// Leitura de credencial: usada pelos handlers de integração (Mercado Pago,
-// Conta Azul, RD Station...) no lugar de `env.X` direto. Prioriza o valor
-// configurado pelo painel; cai para a variável de ambiente do Worker quando
-// nada foi salvo ainda, e nunca lança erro se a tabela ainda não existir.
-// ----------------------------------------------------------------------------
 export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
   const campo = campoDoProvedor(provedor, chave);
   const doAmbiente = campo ? (env[campo.envVar] as string | undefined) || null : null;
@@ -145,6 +135,30 @@ export async function obterCredencial(env: Env, provedor: string, chave: string)
   } catch {
     return doAmbiente;
   }
+}
+
+/**
+ * Escrita server-side para tokens rotativos (OAuth). Mantém exatamente o
+ * mesmo formato AES-GCM usado pelo painel e nunca devolve o valor em texto
+ * puro. Não serve para dados de negócio dos provedores.
+ */
+export async function salvarCredencialInterna(env: Env, provedor: string, chave: string, valor: string, actor: string) {
+  if (!env.CLIENTE_SESSION_SECRET) throw new Error("SEGREDO_SESSAO_AUSENTE");
+  if (!campoDoProvedor(provedor, chave)) throw new Error("CREDENCIAL_DESCONHECIDA");
+  const db = createServiceSupabaseClient(env);
+  if (!(await tabelaDisponivel(db))) throw new Error("TABELA_CREDENCIAIS_INDISPONIVEL");
+  const { valorCifrado, iv } = await cifrarValor(env.CLIENTE_SESSION_SECRET, valor);
+  const { error } = await db.from("integracoes_credenciais").upsert({
+    provedor,
+    chave,
+    valor_cifrado: valorCifrado,
+    valor_iv: iv,
+    valor_mascarado: mascarar(valor),
+    ativo: true,
+    atualizado_por: actor,
+    atualizado_em: new Date().toISOString(),
+  }, { onConflict: "provedor,chave" });
+  if (error) throw new Error("FALHA_SALVAR_CREDENCIAL_INTERNA");
 }
 
 export async function credenciaisApi(request: Request, env: Env): Promise<Response | null> {
@@ -194,9 +208,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
   if (request.method === "POST") {
     if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Segredo de sessão do Worker não configurado." }, 500);
     const disponivel = await tabelaDisponivel(db);
-    if (!disponivel) {
-      return json({ erro: "A estrutura para armazenar credenciais ainda não foi aplicada neste ambiente (migration_035). Peça para aplicá-la antes de configurar por aqui." }, 409);
-    }
+    if (!disponivel) return json({ erro: "A estrutura para armazenar credenciais ainda não foi aplicada neste ambiente (migration_035)." }, 409);
 
     const body = await request.json().catch(() => ({})) as { provedor?: string; chave?: string; valor?: string; remover?: boolean };
     const provedor = String(body.provedor || "");
@@ -206,12 +218,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
 
     if (body.remover) {
       await db.from("integracoes_credenciais").delete().eq("provedor", provedor).eq("chave", chave);
-      await db.from("logs_alteracoes").insert({
-        usuario: String(admin),
-        acao: "removeu_credencial_integracao",
-        entidade: "integracoes_credenciais",
-        detalhes: { provedor, chave },
-      });
+      await db.from("logs_alteracoes").insert({ usuario: String(admin), acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
       return json({ ok: true });
     }
 
@@ -219,25 +226,12 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     if (!valor) return json({ erro: "Informe um valor para a credencial." }, 400);
     if (valor.length > 4000) return json({ erro: "Valor de credencial excede o tamanho permitido." }, 400);
 
-    const { valorCifrado, iv } = await cifrarValor(env.CLIENTE_SESSION_SECRET, valor);
-    const { error } = await db.from("integracoes_credenciais").upsert({
-      provedor,
-      chave,
-      valor_cifrado: valorCifrado,
-      valor_iv: iv,
-      valor_mascarado: mascarar(valor),
-      ativo: true,
-      atualizado_por: String(admin),
-      atualizado_em: new Date().toISOString(),
-    }, { onConflict: "provedor,chave" });
-    if (error) return json({ erro: "Não foi possível salvar a credencial." }, 500);
-
-    await db.from("logs_alteracoes").insert({
-      usuario: String(admin),
-      acao: "atualizou_credencial_integracao",
-      entidade: "integracoes_credenciais",
-      detalhes: { provedor, chave },
-    });
+    try {
+      await salvarCredencialInterna(env, provedor, chave, valor, String(admin));
+    } catch {
+      return json({ erro: "Não foi possível salvar a credencial." }, 500);
+    }
+    await db.from("logs_alteracoes").insert({ usuario: String(admin), acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
     return json({ ok: true });
   }
 

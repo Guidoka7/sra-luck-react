@@ -13,7 +13,13 @@ export interface Env {
 
   // Integrações — manter exclusivamente como secrets/vars do Worker.
   RD_WEBHOOK_SECRET?: string;
-  RD_API_ACCESS_TOKEN?: string;
+  RD_API_ACCESS_TOKEN?: string; // legado: mantido apenas como fallback de leitura
+  RD_CLIENT_ID?: string;
+  RD_CLIENT_SECRET?: string;
+  RD_REDIRECT_URI?: string;
+  RD_ACCESS_TOKEN?: string;
+  RD_REFRESH_TOKEN?: string;
+  RD_TOKEN_EXPIRES_AT?: string;
   CONTA_AZUL_CLIENT_ID?: string;
   CONTA_AZUL_CLIENT_SECRET?: string;
   CONTA_AZUL_ACCESS_TOKEN?: string;
