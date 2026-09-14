@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
+import { WebPushSettings } from "@/features/admin/WebPushSettings";
 
 type EstadoIntegracao = "pronto_para_configurar" | "credenciais_presentes" | "planejado" | "base_incompleta";
 type GrupoIntegracao = "comunicacao" | "pagamentos" | "crm" | "bancos";
@@ -165,7 +166,7 @@ export default function IntegracoesAdminPage() {
         {loading && !data ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Carregando…</div> : (data?.integracoes ?? []).map((i) => <div key={i.id} onClick={() => setDrawer(i)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(200px,1.3fr) 130px 150px 170px", gap: 10, minWidth: 700, alignItems: "center", padding: "12px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}><div style={{ width: 31, height: 31, borderRadius: 9, background: "var(--robg)", display: "grid", placeItems: "center", color: "var(--bg)", fontSize: 9, fontWeight: 800 }}>{iconFor(i.id)}</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{i.nome}</div><div style={{ fontSize: 9.5, color: "var(--soft)" }}>{i.detalhes}</div></div></div>
           <div style={{ fontSize: 10.5, color: "var(--soft)" }}>{i.grupo}</div>
-          <span style={zipChip(i.conexaoLiveVerificada ? "ok" : estadoKind(i.estado))}>{i.conexaoLiveVerificada ? "Conectada" : estadoLabel(i.estado)}</span>
+          <span style={zipChip(i.conexaoLiveVerificada ? "ok" : estadoKind(i.estado))}>{i.conexaoLiveVerificada ? (i.id === "web_push" ? "Validada" : "Conectada") : estadoLabel(i.estado)}</span>
           <div className="zip-mono" style={{ fontSize: 10.5, color: "var(--soft)" }}>{resultadoTeste[i.id] ? (resultadoTeste[i.id].conectado ? "Conectada agora" : resultadoTeste[i.id].detalhe) : dataHora(i.ultimaVerificacao)}</div>
         </div>)}
       </div>
@@ -184,7 +185,7 @@ export default function IntegracoesAdminPage() {
         {drawerAtual.id === "rd_station" && <div style={{ margin: "12px 15px 0", border: "1px solid var(--okbg)", background: "var(--okbg)", borderRadius: 10, padding: "9px 10px", fontSize: 10.5, lineHeight: 1.5, color: "var(--ok)" }}><strong>Somente leitura.</strong> O Sra. Luck recebe e consulta dados do RD Station. Alterações de nome, campanha, origem, vendedora ou qualquer outro campo feitas aqui ficam somente no Sra. Luck e nunca são enviadas ao CRM.</div>}
 
         <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 9 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>Status</span><span style={zipChip(drawerAtual.conexaoLiveVerificada ? "ok" : estadoKind(drawerAtual.estado))}>{drawerAtual.conexaoLiveVerificada ? "Conectada" : estadoLabel(drawerAtual.estado)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>Status</span><span style={zipChip(drawerAtual.conexaoLiveVerificada ? "ok" : estadoKind(drawerAtual.estado))}>{drawerAtual.conexaoLiveVerificada ? (drawerAtual.id === "web_push" ? "Validada" : "Conectada") : estadoLabel(drawerAtual.estado)}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>Persistência</span><strong style={{ color: drawerAtual.persistenciaPronta ? "var(--ok)" : "var(--bad)" }}>{drawerAtual.persistenciaPronta ? "Pronta" : "Incompleta"}</strong></div>
           {typeof drawerAtual.eventosRegistrados === "number" && <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>Registros internos</span><strong>{drawerAtual.eventosRegistrados}</strong></div>}
           {drawerAtual.id === "rd_station" && <>
@@ -202,7 +203,7 @@ export default function IntegracoesAdminPage() {
         <div style={{ margin: "0 15px", borderTop: "1px solid var(--line)" }} />
         <div style={{ padding: "13px 15px" }}>
           <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 8 }}>Credenciais</div>
-          {provedorDrawer ? (credenciais?.persistenciaPronta ? <FormularioCredenciaisZip provedor={provedorDrawer} onSalvo={() => void atualizar()} /> : <p style={{ fontSize: 10.5, color: "var(--gold)" }}>Estrutura de persistência ainda não aplicada neste ambiente.</p>) : <p style={{ fontSize: 10.5, color: "var(--soft)" }}>Este provedor não tem campos de credencial cadastrados.</p>}
+          {provedorDrawer ? (credenciais?.persistenciaPronta ? (drawerAtual.id === "web_push" ? <WebPushSettings onChanged={() => void atualizar()} /> : <FormularioCredenciaisZip provedor={provedorDrawer} onSalvo={() => void atualizar()} />) : <p style={{ fontSize: 10.5, color: "var(--gold)" }}>Estrutura de persistência ainda não aplicada neste ambiente.</p>) : <p style={{ fontSize: 10.5, color: "var(--soft)" }}>Este provedor não tem campos de credencial cadastrados.</p>}
         </div>
         <div style={{ padding: "0 15px 15px", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 7 }}>
           {drawerAtual.id === "mercado_pago" && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}

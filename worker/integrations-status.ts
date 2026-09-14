@@ -2,6 +2,7 @@ import { buscarColaboradorAdminAtivo } from "./admin-auth";
 import { obterCredencial } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { validarConfiguracaoVapid } from "./web-push-config";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -113,6 +114,11 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   ]);
 
   const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
+  const pushValidacao = pushCredenciais
+    ? await validarConfiguracaoVapid({ subject: pushSubject!, publicKey: pushPublicKey!, privateKey: pushPrivateKey! })
+    : { valido: false, detalhe: "As três credenciais VAPID ainda não estão configuradas." };
+  const { data: testePush } = await db.from("logs_alteracoes").select("created_at,detalhes")
+    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "web_push").order("created_at", { ascending: false }).limit(1).maybeSingle();
   const mpCredenciais = Boolean(mpAccessToken && mpWebhookSecret);
   const contaAzulCredenciais = Boolean(caClientId && caClientSecret && caAccessToken && caRefreshToken);
   const rdOauthConfigurado = Boolean(rdClientId && rdClientSecret);
@@ -147,9 +153,14 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   const integracoes: StatusIntegracao[] = [
     {
       id: "web_push", nome: "Web Push", grupo: "comunicacao", estado: estadoBase(pushTable, pushCredenciais),
-      credenciaisConfiguradas: pushCredenciais, persistenciaPronta: pushTable, conexaoLiveVerificada: false,
-      detalhes: pushCredenciais ? "Credenciais VAPID presentes. Envio depende de assinatura ativa do dispositivo." : "Assinaturas e rotas estão prontas; faltam as chaves VAPID.",
+      credenciaisConfiguradas: pushCredenciais, persistenciaPronta: pushTable, conexaoLiveVerificada: pushValidacao.valido,
+      detalhes: pushValidacao.valido
+        ? "Configuração VAPID validada criptograficamente pelo sistema. O envio usa as chaves salvas no painel."
+        : pushCredenciais
+          ? `Credenciais VAPID presentes, mas inválidas: ${pushValidacao.detalhe}`
+          : "Assinaturas e rotas estão prontas; configure ou gere as chaves VAPID pelo painel.",
       eventosRegistrados: pushCount,
+      ultimaVerificacao: testePush?.created_at ?? null,
     },
     {
       id: "mercado_pago", nome: "Mercado Pago", grupo: "pagamentos", estado: estadoBase(paymentTable && eventTable, mpCredenciais),

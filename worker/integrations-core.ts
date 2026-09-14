@@ -2,6 +2,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
+import { webPushConfigApi } from "./web-push-config";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -327,6 +328,9 @@ async function testarConexao(request: Request, env: Env) {
 }
 
 export async function integrationsApi(request: Request, env: Env): Promise<Response | null> {
+  const webPush = await webPushConfigApi(request, env);
+  if (webPush) return webPush;
+
   const rd = await rdStationReadonlyApi(request, env);
   if (rd) return rd;
 
