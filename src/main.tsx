@@ -1,29 +1,34 @@
-import { StrictMode, useEffect, useState } from "react";
+import { lazy, StrictMode, Suspense, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
-import { AgendaPage } from "./pages/AgendaPage";
-import { StaffPwa } from "./features/staff/StaffPwa";
-import { StaffLoginPage } from "./features/staff/StaffLoginPage";
 import { SessionGate } from "./features/auth/SessionGate";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
 import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
-import { AdminWorkspace } from "./features/admin/AdminWorkspace";
 import AdminLayout from "./app/admin/(painel)/layout";
-import VisaoGeralPage from "./app/admin/(painel)/visao-geral/page";
-import PrevisoesPage from "./app/admin/(painel)/previsoes/page";
-import AgendaAdminPage from "./app/admin/(painel)/agenda/page";
-import ClientesPage from "./app/admin/(painel)/clientes/page";
-import FinanceiroPage from "./app/admin/(painel)/financeiro/page";
-import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
 import "./styles/staff-real.css";
+
+const AgendaPage = lazy(() => import("./pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
+const StaffPwa = lazy(() => import("./features/staff/StaffPwa").then((m) => ({ default: m.StaffPwa })));
+const StaffLoginPage = lazy(() => import("./features/staff/StaffLoginPage").then((m) => ({ default: m.StaffLoginPage })));
+const AdminWorkspace = lazy(() => import("./features/admin/AdminWorkspace").then((m) => ({ default: m.AdminWorkspace })));
+const VisaoGeralPage = lazy(() => import("./app/admin/(painel)/visao-geral/page"));
+const PrevisoesPage = lazy(() => import("./app/admin/(painel)/previsoes/page"));
+const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
+const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));
+const FinanceiroPage = lazy(() => import("./app/admin/(painel)/financeiro/page"));
+const RelatoriosPage = lazy(() => import("./app/admin/(painel)/relatorios/page"));
+
+function CarregandoRota() {
+  return <div className="flex min-h-[50vh] items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-burgundy/20 border-t-burgundy" /></div>;
+}
 
 function RedirectTo({ to }: { to: string }) {
   useEffect(() => {
@@ -35,20 +40,24 @@ function RedirectTo({ to }: { to: string }) {
 
 function AdminRoute({ path }: { path: string }) {
   if (path === "/admin" || path === "/admin/") return <RedirectTo to="/admin/visao-geral" />;
-  if (path.startsWith("/admin/visao-geral")) return <VisaoGeralPage />;
-  if (path.startsWith("/admin/previsoes")) return <PrevisoesPage />;
   if (path.startsWith("/admin/liberacoes")) return <RedirectTo to="/admin/agenda?aba=liberacao" />;
-  if (path.startsWith("/admin/agenda")) return <AgendaAdminPage />;
-  if (path.startsWith("/admin/clientes")) return <ClientesPage />;
   if (path.startsWith("/admin/pagamentos")) return <RedirectTo to="/admin/financeiro?aba=validacao" />;
   if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro?aba=recebiveis" />;
-  if (path.startsWith("/admin/financeiro")) return <FinanceiroPage />;
-  if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
-  if (path.startsWith("/admin/equipe")) return <AdminWorkspace />;
-  if (path.startsWith("/admin/integracoes")) return <AdminWorkspace />;
-  if (path.startsWith("/admin/notificacoes")) return <AdminWorkspace />;
-  if (path.startsWith("/admin/configuracoes")) return <AdminWorkspace />;
-  return <VisaoGeralPage />;
+
+  let conteudo: ReactNode;
+  if (path.startsWith("/admin/visao-geral")) conteudo = <VisaoGeralPage />;
+  else if (path.startsWith("/admin/previsoes")) conteudo = <PrevisoesPage />;
+  else if (path.startsWith("/admin/agenda")) conteudo = <AgendaAdminPage />;
+  else if (path.startsWith("/admin/clientes")) conteudo = <ClientesPage />;
+  else if (path.startsWith("/admin/financeiro")) conteudo = <FinanceiroPage />;
+  else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
+  else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;
+  else if (path.startsWith("/admin/integracoes")) conteudo = <AdminWorkspace />;
+  else if (path.startsWith("/admin/notificacoes")) conteudo = <AdminWorkspace />;
+  else if (path.startsWith("/admin/configuracoes")) conteudo = <AdminWorkspace />;
+  else conteudo = <VisaoGeralPage />;
+
+  return <Suspense fallback={<CarregandoRota />}>{conteudo}</Suspense>;
 }
 
 function App() {
@@ -73,10 +82,10 @@ function App() {
 
   if (path === "/login") return <LoginPage />;
   if (path === "/agenda" || path === "/app" || path === "/cliente" || path === "/agenda-legado") {
-    return <SessionGate audience="cliente"><PwaRegister /><AgendaPage /></SessionGate>;
+    return <SessionGate audience="cliente"><PwaRegister /><Suspense fallback={<CarregandoRota />}><AgendaPage /></Suspense></SessionGate>;
   }
-  if (path === "/equipe/login") return <StaffLoginPage />;
-  if (path === "/equipe" || path.startsWith("/equipe/")) return <SessionGate audience="equipe"><PwaRegister /><StaffPwa /></SessionGate>;
+  if (path === "/equipe/login") return <Suspense fallback={<CarregandoRota />}><StaffLoginPage /></Suspense>;
+  if (path === "/equipe" || path.startsWith("/equipe/")) return <SessionGate audience="equipe"><PwaRegister /><Suspense fallback={<CarregandoRota />}><StaffPwa /></Suspense></SessionGate>;
   if (path === "/admin/login") return <AdminLoginPage />;
   if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/")) {
     return (
