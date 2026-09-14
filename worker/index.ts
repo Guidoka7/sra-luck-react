@@ -17,6 +17,8 @@ import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
 import { staffApi } from "./staff-api";
 import { integrationsApi } from "./integrations-core";
+import { adminNovasVendas } from "./admin-novas-vendas";
+import { adminCarnes } from "./admin-carnes";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -298,6 +300,10 @@ export default {
 
     if (url.pathname === "/api/admin/visao-geral" && request.method === "GET") return adminVisaoGeral(request, env);
 
+    const novasVendas = await adminNovasVendas(request, env);
+    if (novasVendas) return novasVendas;
+    const carnes = await adminCarnes(request, env);
+    if (carnes) return carnes;
     const notif = await adminNotificacoes(request, env);
     if (notif) return notif;
     const finance = await adminFinance(request, env);
