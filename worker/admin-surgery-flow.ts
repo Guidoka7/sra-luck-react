@@ -85,10 +85,12 @@ async function listarAgendamentosTermos(env: Env) {
 
 async function listarCirurgiasConfirmadas(env: Env) {
   const db = createServiceSupabaseClient(env);
+  // data_cirurgia (migration_041) é a data real da cirurgia — não confundir com
+  // previsao_liberacao_financeira, que é o prazo de liberação da agenda.
   const { data, error } = await db.from("agendamentos")
-    .select("id,cliente_id,previsao_liberacao_financeira,valor_contrato,clientes(id,nome_completo,cpf,status_cirurgia)")
-    .not("previsao_liberacao_financeira", "is", null)
-    .order("previsao_liberacao_financeira", { ascending: true });
+    .select("id,cliente_id,data_cirurgia,valor_contrato,clientes(id,nome_completo,cpf,status_cirurgia)")
+    .not("data_cirurgia", "is", null)
+    .order("data_cirurgia", { ascending: true });
   if (error) return json({ erro: error.message }, 500);
 
   const hoje = agoraSaoPaulo().data;
@@ -99,11 +101,11 @@ async function listarCirurgiasConfirmadas(env: Env) {
       clienteId: a.cliente_id,
       nome: cliente?.nome_completo ?? "Cliente sem nome",
       cpf: cliente?.cpf ?? null,
-      data: a.previsao_liberacao_financeira,
+      data: a.data_cirurgia,
       valorContrato: Number(a.valor_contrato ?? 0),
       statusCirurgia: cliente?.status_cirurgia ?? "nao_agendada",
       realizada: cliente?.status_cirurgia === "realizada",
-      podeConfirmarRealizacao: cliente?.status_cirurgia === "agendada" && a.previsao_liberacao_financeira <= hoje,
+      podeConfirmarRealizacao: cliente?.status_cirurgia === "agendada" && a.data_cirurgia <= hoje,
     };
   });
   return json({ cirurgias, hoje });
