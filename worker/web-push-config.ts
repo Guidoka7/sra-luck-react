@@ -48,11 +48,11 @@ function decodeBase64(value: string) {
 export function normalizarSubjectVapid(value: string): string | null {
   const raw = value.trim();
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;
   if (raw.toLowerCase().startsWith("mailto:")) {
     const email = raw.slice(7).trim();
     return emailPattern.test(email) ? `mailto:${email.toLowerCase()}` : null;
   }
+  if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;
   try {
     const url = new URL(raw);
     return url.protocol === "https:" ? url.toString() : null;
