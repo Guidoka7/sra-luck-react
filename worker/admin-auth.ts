@@ -39,6 +39,7 @@ export const PERMISSOES_ADMIN = {
   FINANCEIRO_VALIDAR_COMPROVANTE: "financeiro.validar_comprovante",
   INTEGRACOES_GERENCIAR_CREDENCIAIS: "integracoes.gerenciar_credenciais",
   EQUIPE_GERENCIAR: "equipe.gerenciar",
+  RELATORIOS_EXPORTAR: "relatorios.exportar",
 } as const;
 
 export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string): boolean {

@@ -94,7 +94,7 @@ async function fetchOptionalRows(
   }
 }
 
-async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>) {
+export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>) {
   const hoje = new Date().toISOString().slice(0, 10);
 
   const [clientes, boletos] = await Promise.all([

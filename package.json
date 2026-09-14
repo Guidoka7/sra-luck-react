@@ -24,7 +24,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sonner": "^1.5.0",
-    "unpdf": "^1.8.1"
+    "unpdf": "^1.8.1",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.16.0",

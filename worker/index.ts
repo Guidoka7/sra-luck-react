@@ -11,6 +11,7 @@ import { adminParcelas } from "./admin-parcelas";
 import { adminNotificacoes } from "./admin-notificacoes";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
+import { adminRelatorios } from "./admin-relatorios";
 import { adminSurgeryFlow } from "./admin-surgery-flow";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
@@ -310,6 +311,8 @@ export default {
     if (finance) return finance;
     const reports = await adminReports(request, env);
     if (reports) return reports;
+    const relatorios = await adminRelatorios(request, env);
+    if (relatorios) return relatorios;
     const parcelas = await adminParcelas(request, env);
     if (parcelas) return parcelas;
     const adminResponse = await adminApi(request, env);
