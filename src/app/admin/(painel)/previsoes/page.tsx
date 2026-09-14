@@ -218,6 +218,13 @@ export default function PrevisoesPage() {
   const [portfolioPage, setPortfolioPage] = useState(1);
   const [portfolioSearch, setPortfolioSearch] = useState("");
   const [hoveredChart, setHoveredChart] = useState<number | null>(null);
+  const [metaOrcamentoMensal, setMetaOrcamentoMensal] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    fetch("/api/admin/configuracoes", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (ativo) setMetaOrcamentoMensal(Number(d.configuracoes?.meta_orcamento_mensal ?? 100000)); }).catch(() => {});
+    return () => { ativo = false; };
+  }, []);
 
   async function load(force = false) {
     if (force) setRefreshing(true);
@@ -462,6 +469,19 @@ export default function PrevisoesPage() {
             </div>
           ) : null}
         </section>
+
+        {metaOrcamentoMensal != null && chartData[0] ? (() => {
+          const valorMesSelecionado = chartData[0].value;
+          const ultrapassa = valorMesSelecionado > metaOrcamentoMensal;
+          const proporcao = metaOrcamentoMensal > 0 ? Math.min(999, Math.round((valorMesSelecionado / metaOrcamentoMensal) * 100)) : 0;
+          return <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs ${ultrapassa ? "border-gold/30 bg-gold/[0.06] text-burgundy" : "border-[#eadedf] bg-white text-clay/60"}`}>
+            <CircleAlert className={`h-4 w-4 shrink-0 ${ultrapassa ? "text-gold" : "text-clay/35"}`} />
+            <span>
+              {monthLong(chartData[0].month)}: <strong className="text-burgundy">{formatarMoeda(valorMesSelecionado)}</strong> previsto em cartas/créditos ({proporcao}% da referência mensal de {formatarMoeda(metaOrcamentoMensal)}).
+              {ultrapassa ? " Isso é um alerta de planejamento — não bloqueia a liberação de nenhuma cliente." : ""}
+            </span>
+          </div>;
+        })() : null}
 
         <section className="rounded-2xl border border-[#eadedf] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
