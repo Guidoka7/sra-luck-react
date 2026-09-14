@@ -19,7 +19,7 @@ const AgendaPage = lazy(() => import("./pages/AgendaPage").then((m) => ({ defaul
 const StaffPwa = lazy(() => import("./features/staff/StaffPwa").then((m) => ({ default: m.StaffPwa })));
 const StaffLoginPage = lazy(() => import("./features/staff/StaffLoginPage").then((m) => ({ default: m.StaffLoginPage })));
 const AdminWorkspace = lazy(() => import("./features/admin/AdminWorkspace").then((m) => ({ default: m.AdminWorkspace })));
-const VisaoGeralPage = lazy(() => import("./app/admin/(painel)/visao-geral/page"));
+const VisaoGeralPage = lazy(() => import("./pages/AdminDashboardPage"));
 const PrevisoesPage = lazy(() => import("./app/admin/(painel)/previsoes/page"));
 const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
 const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));

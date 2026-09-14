@@ -78,6 +78,7 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const [taxa, setTaxa] = useState(cliente?.taxa_administrativa_percentual != null ? String(cliente.taxa_administrativa_percentual).replace(".", ",") : String(TAXA_ADMINISTRATIVA_PADRAO[(cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas]).replace(".", ","));
   const [total, setTotal] = useState(() => (cliente ? moeda(cliente.valor_contrato * (1 + Number(cliente.taxa_administrativa_percentual ?? 0) / 100)) : ""));
   const [parcela, setParcela] = useState("");
+  const [parcelaManual, setParcelaManual] = useState(false);
   const [vencimento, setVencimento] = useState("");
   const [boletos, setBoletos] = useState<Boleto[]>([]);
   const [carregandoFin, setCarregandoFin] = useState(Boolean(cliente));
@@ -98,13 +99,13 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const totalAutomatico = cartaNumero * (1 + taxaNumero / 100);
   const parcelaAutomatica = quantidade ? totalAutomatico / quantidade : 0;
 
-  useEffect(() => { if (!parcela && parcelaAutomatica > 0) setParcela(moeda(parcelaAutomatica)); }, [parcela, parcelaAutomatica]);
-  function atualizarCarta(valor: string) { const novo = mascararMoedaInput(valor); setCarta(novo); const n = Number(desmascararMoeda(novo)) || 0; const t = n * (1 + taxaNumero / 100); setTotal(moeda(t)); setParcela(moeda(quantidade ? t / quantidade : 0)); }
-  function atualizarTaxa(valor: string) { setTaxa(valor); const n = Number(valor.replace(",", ".")) || 0; const t = cartaNumero * (1 + n / 100); setTotal(moeda(t)); setParcela(moeda(quantidade ? t / quantidade : 0)); }
-  function atualizarQuantidade(valor: string) { const q = Number(valor) as QuantidadeParcelas; setQuantidade(q); setParcela(moeda(q ? totalNumero / q : 0)); }
-  function atualizarParcela(valor: string) { const novo = mascararMoedaInput(valor); setParcela(novo); const n = Number(desmascararMoeda(novo)) || 0; const t = n * quantidade; setTotal(moeda(t)); setCarta(mascararMoedaInput(String((t / (1 + taxaNumero / 100)).toFixed(2)))); }
+  useEffect(() => { if (!parcela && !parcelaManual && parcelaAutomatica > 0) setParcela(moeda(parcelaAutomatica)); }, [parcela, parcelaManual, parcelaAutomatica]);
+  function atualizarCarta(valor: string) { const novo = mascararMoedaInput(valor); setCarta(novo); const n = Number(desmascararMoeda(novo)) || 0; const t = n * (1 + taxaNumero / 100); setTotal(moeda(t)); if (!parcelaManual) setParcela(moeda(quantidade ? t / quantidade : 0)); }
+  function atualizarTaxa(valor: string) { setTaxa(valor); const n = Number(valor.replace(",", ".")) || 0; const t = cartaNumero * (1 + n / 100); setTotal(moeda(t)); if (!parcelaManual) setParcela(moeda(quantidade ? t / quantidade : 0)); }
+  function atualizarQuantidade(valor: string) { const q = Number(valor) as QuantidadeParcelas; setQuantidade(q); if (!parcelaManual) setParcela(moeda(q ? totalNumero / q : 0)); }
+  function atualizarParcela(valor: string) { setParcelaManual(true); setParcela(mascararMoedaInput(valor)); }
 
-  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); if (lista[0]?.total_parcelas) setQuantidade(Number(lista[0].total_parcelas) as QuantidadeParcelas); if (lista[0]?.valor) setParcela(moeda(Number(lista[0].valor))); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
+  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setParcelaManual(false); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); if (d.cliente?.valor_contrato != null) setCarta(moeda(Number(d.cliente.valor_contrato))); if (d.cliente?.taxa_administrativa_percentual != null) setTaxa(String(d.cliente.taxa_administrativa_percentual).replace(".", ",")); if (d.cliente?.custo_total != null) setTotal(moeda(Number(d.cliente.custo_total))); if (lista[0]?.total_parcelas) setQuantidade(Number(lista[0].total_parcelas) as QuantidadeParcelas); if (lista[0]?.valor) { setParcela(moeda(Number(lista[0].valor))); setParcelaManual(true); } else setParcelaManual(false); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
   useEffect(() => { void carregarBoletos(); }, [cliente?.id]);
 
   async function carregarPerfilExtra() {
@@ -172,19 +173,24 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
 
   async function gerarOuAjustarParcelas() {
     if (!cliente?.id) return;
+    if (cartaNumero <= 0) return toast.error("Informe a carta de crédito.");
+    if (parcelaNumero <= 0) return toast.error("Informe o valor da parcela.");
     setSalvandoFin(true);
     try {
       const jaTemFinanceiro = boletos.length > 0;
       const url = `/api/admin/clientes/${cliente.id}/boletos`;
+      const base = { valorContrato: cartaNumero, quantidadeParcelas: quantidade, taxaPercentual: taxaNumero, valorParcela: parcelaNumero };
       const body = jaTemFinanceiro
-        ? { quantidadeParcelas: quantidade, taxaPercentual: taxaNumero, recalcularAbertas: true, primeiroVencimento: vencimento || undefined, valorParcela: parcelaNumero > 0 ? parcelaNumero : undefined }
-        : { quantidadeParcelas: quantidade, taxaPercentual: taxaNumero, primeiroVencimento: vencimento, valorParcela: parcelaNumero > 0 ? parcelaNumero : undefined };
+        ? { ...base, recalcularAbertas: true, primeiroVencimento: vencimento || undefined }
+        : { ...base, primeiroVencimento: vencimento };
       if (!jaTemFinanceiro && !vencimento) return toast.error("Informe o 1º vencimento para gerar as parcelas.");
       const r = await fetch(url, { method: jaTemFinanceiro ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar o plano financeiro.");
       setBoletos(d.boletos ?? []);
+      setParcelaManual(true);
       toast.success(jaTemFinanceiro ? "Parcelamento atualizado." : "Financeiro criado.");
+      void carregarBoletos();
       onSalvo();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar plano financeiro.");
@@ -414,6 +420,7 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
                 <Row label="Pagas" value={`${pagas} / ${boletos.length || 0}`} />
                 {boletos.length === 0 && <Field label="1º vencimento"><input type="date" style={fieldInput} value={vencimento} onChange={(e) => setVencimento(e.target.value)} /></Field>}
               </div>
+              <div style={{ marginTop: 8, fontSize: 10, color: "var(--soft)", lineHeight: 1.45 }}>A carta de crédito e o valor da parcela são independentes. Ao editar manualmente a parcela, o valor da carta não é alterado.</div>
               {proximaLiberacao && <div style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", alignItems: "flex-start", gap: 8 }}>
                 <span style={{ color: "var(--gold)", fontSize: 12 }}>★</span>
                 <div><div style={{ fontSize: 11.5, fontWeight: 600 }}>Próxima parcela em aberto: {proximaLiberacao.numero_parcela}/{proximaLiberacao.total_parcelas}</div><div style={{ fontSize: 11, color: "var(--soft)" }}>Vencimento {dataBr(proximaLiberacao.data_vencimento)}</div></div>
