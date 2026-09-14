@@ -13,6 +13,12 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function sameOrigin(request: Request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return origin === new URL(request.url).origin; } catch { return false; }
+}
+
 async function exigirAdmin(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   const token = getCookie(request, "admin_session");
@@ -28,15 +34,15 @@ async function sha256(bytes: Uint8Array) {
 /**
  * Carnês (por instituição financeira) e importação de carnê em PDF.
  *
- * A importação extrai texto NATIVO de cada página (vencimento, valor,
- * número da parcela, linha digitável — ver worker/pdf-boleto-parser.ts) e
- * usa esses dados, não a ordem da página, como evidência principal para
- * sugerir a qual parcela cada página corresponde. Ordem de página é só um
- * sinal auxiliar de baixo peso. Quando a extração não é suficiente (PDF
- * escaneado como imagem, campos ilegíveis, CPF divergente), a página fica
- * com status_vinculacao="revisar" e NENHUMA sugestão de vínculo é feita —
- * a confirmação humana decide manualmente. Nenhum vínculo é aplicado aqui;
- * isso só acontece em POST .../vincular, sempre por ação explícita.
+ * A importação extrai texto NATIVO de cada página: vencimento, valor, número
+ * da parcela, linha digitável/código de barras, nosso número, documento,
+ * pagador e CPF. Esses sinais são comparados aos dados persistidos da parcela.
+ * Ordem de página é apenas evidência auxiliar de peso mínimo e NUNCA desempata
+ * um caso ambíguo. PDF escaneado/ilegível, CPF divergente ou mais de um
+ * candidato plausível => status_vinculacao="revisar" e boleto_sugerido_id=null.
+ *
+ * Nenhum vínculo é aplicado durante a importação. O vínculo real só ocorre em
+ * POST .../vincular, sempre por ação humana explícita.
  */
 export async function adminCarnes(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
@@ -45,6 +51,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
 
   const session = await exigirAdmin(request, env);
   if (!session) return json({ erro: "Sessão administrativa expirada." }, 401);
+  if (request.method !== "GET" && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const db = createServiceSupabaseClient(env);
 
   const carnesCliente = path.match(/^\/api\/admin\/clientes\/([^/]+)\/carnes$/);
@@ -126,10 +133,8 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       const totalPaginas = documento.getPageCount();
       if (totalPaginas === 0) return json({ erro: "O PDF enviado não tem páginas." }, 400);
 
-      // Cada página vira um arquivo próprio (mesma técnica do protótipo legado que
-      // dividia o carnê com pdf-lib); o hash é calculado por página, não do arquivo
-      // combinado, para que a constraint de unicidade detecte reimportação de uma
-      // página específica já processada antes.
+      // Cada página vira um arquivo próprio e recebe hash individual para que a
+      // reimportação de uma página já processada seja detectada com segurança.
       const paginas: { bytes: Uint8Array; sha256: string }[] = [];
       for (let indice = 0; indice < totalPaginas; indice += 1) {
         const paginaDoc = await PDFDocument.create();
@@ -145,10 +150,20 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       }
 
       const [{ data: boletosCliente }, { data: clienteRow }] = await Promise.all([
-        db.from("boletos").select("id,numero_parcela,total_parcelas,valor,data_vencimento,boleto_url").eq("cliente_id", clienteId).order("numero_parcela", { ascending: true }),
+        db.from("boletos")
+          .select("id,numero_parcela,total_parcelas,valor,data_vencimento,boleto_url,identificador_externo,instituicao_financeira")
+          .eq("cliente_id", clienteId)
+          .order("numero_parcela", { ascending: true }),
         db.from("clientes").select("cpf").eq("id", clienteId).maybeSingle(),
       ]);
-      const candidatos: BoletoCandidato[] = (boletosCliente ?? []).map((b: any) => ({ id: b.id, numero_parcela: Number(b.numero_parcela), valor: Number(b.valor), data_vencimento: b.data_vencimento }));
+      const candidatos: BoletoCandidato[] = (boletosCliente ?? []).map((b: any) => ({
+        id: b.id,
+        numero_parcela: Number(b.numero_parcela),
+        valor: Number(b.valor),
+        data_vencimento: b.data_vencimento,
+        identificador_externo: b.identificador_externo ?? null,
+        instituicao_financeira: b.instituicao_financeira ?? null,
+      }));
 
       const importacoes: any[] = [];
       for (let indice = 0; indice < totalPaginas; indice += 1) {
@@ -160,26 +175,49 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
         if (erroUpload) return json({ erro: `Falha ao salvar a página ${numeroPagina}: ${erroUpload.message}` }, 500);
 
         const dadosExtraidos = await extrairDadosBoleto(paginaBytes);
-        const sugestao = pontuarCandidatos(dadosExtraidos, candidatos, numeroPagina, clienteRow?.cpf ?? null);
+        const sugestao = pontuarCandidatos(dadosExtraidos, candidatos, numeroPagina, clienteRow?.cpf ?? null, instituicao || null);
+        const identificadorExtraido = dadosExtraidos.linhaDigitavel
+          ?? dadosExtraidos.codigoBarras
+          ?? dadosExtraidos.nossoNumero
+          ?? dadosExtraidos.numeroDocumento
+          ?? null;
 
         importacoes.push({
           cliente_id: clienteId,
           carne_id: carneId,
           instituicao_financeira: instituicao || null,
           numero_parcela: dadosExtraidos.numeroParcela ?? null,
-          identificador_externo: dadosExtraidos.linhaDigitavel,
+          nosso_numero: dadosExtraidos.nossoNumero,
+          numero_documento: dadosExtraidos.numeroDocumento,
+          identificador_externo: identificadorExtraido,
           linha_digitavel: dadosExtraidos.linhaDigitavel,
+          codigo_barras: dadosExtraidos.codigoBarras,
+          nome_pagador_extraido: dadosExtraidos.nomePagador,
           valor_extraido: dadosExtraidos.valor,
           vencimento_extraido: dadosExtraidos.vencimento,
           cpf_pagador_extraido: dadosExtraidos.cpf,
-          dados_extraidos: { valor: dadosExtraidos.valor, vencimento: dadosExtraidos.vencimento, numeroParcela: dadosExtraidos.numeroParcela, linhaDigitavel: dadosExtraidos.linhaDigitavel, cpf: dadosExtraidos.cpf },
+          dados_extraidos: {
+            valor: dadosExtraidos.valor,
+            vencimento: dadosExtraidos.vencimento,
+            numeroParcela: dadosExtraidos.numeroParcela,
+            linhaDigitavel: dadosExtraidos.linhaDigitavel,
+            codigoBarras: dadosExtraidos.codigoBarras,
+            nossoNumero: dadosExtraidos.nossoNumero,
+            numeroDocumento: dadosExtraidos.numeroDocumento,
+            nomePagador: dadosExtraidos.nomePagador,
+            cpf: dadosExtraidos.cpf,
+          },
           arquivo_nome: `${arquivo.name} (página ${numeroPagina}/${totalPaginas})`,
           arquivo_mime: "application/pdf",
           arquivo_tamanho: paginaBytes.byteLength,
           arquivo_sha256: paginaSha256,
           arquivo_storage_path: caminho,
           status: sugestao.statusVinculacao === "revisar" ? "erro" : "aguardando_confirmacao",
-          erro_detalhes: sugestao.statusVinculacao === "revisar" ? "Não foi possível extrair dados suficientes do PDF para sugerir a parcela com segurança." : null,
+          erro_detalhes: sugestao.statusVinculacao === "revisar"
+            ? (sugestao.motivos.includes("mais_de_um_candidato_plausivel")
+              ? "Mais de uma parcela é plausível; revise e escolha manualmente."
+              : "Não foi possível extrair dados suficientes do PDF para sugerir a parcela com segurança.")
+            : null,
           cliente_sugerido_id: sugestao.boletoId ? clienteId : null,
           boleto_sugerido_id: sugestao.boletoId,
           pontuacao_confianca: sugestao.pontuacaoConfianca,
@@ -217,11 +255,27 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
     const boletoId = String(body.boletoId ?? importacao.boleto_sugerido_id ?? "");
     if (!boletoId) return json({ erro: "Selecione a parcela correspondente para vincular." }, 400);
 
-    const { data: boleto, error: erroBoleto } = await db.from("boletos").select("id,cliente_id,numero_parcela").eq("id", boletoId).maybeSingle();
+    const { data: boleto, error: erroBoleto } = await db.from("boletos")
+      .select("id,cliente_id,numero_parcela,carne_id,instituicao_financeira,identificador_externo")
+      .eq("id", boletoId)
+      .maybeSingle();
     if (erroBoleto) return json({ erro: erroBoleto.message }, 500);
     if (!boleto || boleto.cliente_id !== importacao.cliente_id) return json({ erro: "Parcela inválida para esta cliente." }, 400);
 
-    const { error: erroUpdateBoleto } = await db.from("boletos").update({ boleto_url: importacao.arquivo_storage_path }).eq("id", boletoId);
+    const identificador = importacao.linha_digitavel
+      ?? importacao.codigo_barras
+      ?? importacao.nosso_numero
+      ?? importacao.numero_documento
+      ?? importacao.identificador_externo
+      ?? boleto.identificador_externo
+      ?? null;
+    const { error: erroUpdateBoleto } = await db.from("boletos").update({
+      boleto_url: importacao.arquivo_storage_path,
+      carne_id: importacao.carne_id ?? boleto.carne_id ?? null,
+      instituicao_financeira: importacao.instituicao_financeira ?? boleto.instituicao_financeira ?? null,
+      identificador_externo: identificador,
+      origem_boleto: "carne_pdf",
+    }).eq("id", boletoId);
     if (erroUpdateBoleto) return json({ erro: erroUpdateBoleto.message }, 500);
 
     const { data: atualizada, error: erroUpdate } = await db.from("importacoes_boletos").update({
@@ -238,7 +292,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       acao: "vinculou_boleto_importado",
       entidade: "clientes",
       entidade_id: importacao.cliente_id,
-      detalhes: { importacaoId: id, boletoId, numeroParcela: boleto.numero_parcela },
+      detalhes: { importacaoId: id, boletoId, numeroParcela: boleto.numero_parcela, identificadorPersistido: Boolean(identificador) },
     });
 
     return json({ importacao: atualizada });
