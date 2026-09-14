@@ -19,13 +19,19 @@ function dinheiro(value: unknown) {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 
-function hojeBrasil() {
+function dataBrasil(value: string | Date = new Date()) {
+  const data = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(data.getTime())) return "";
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(data);
+}
+
+function hojeBrasil() {
+  return dataBrasil(new Date());
 }
 
 function addDias(iso: string, dias: number) {
@@ -72,7 +78,8 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const ano = Math.min(2200, Math.max(2000, Number(url.searchParams.get("ano")) || anoPadrao));
     const mes = Math.min(12, Math.max(1, Number(url.searchParams.get("mes")) || mesPadrao));
     const { inicio, fimExclusivo } = periodoMes(ano, mes);
-    const daquiOitoDias = addDias(agoraBrasil, 8);
+    // Intervalo [hoje, hoje + 7): exatamente sete datas corridas, incluindo hoje.
+    const fimProximos7 = addDias(agoraBrasil, 7);
     const inicioPushUtc = `${agoraBrasil}T03:00:00.000Z`;
     const fimPushUtc = `${addDias(agoraBrasil, 1)}T03:00:00.000Z`;
 
@@ -113,13 +120,13 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
         .select("id,cliente_id,status,horario_termos,termos_assinados_em,clientes(id,nome_completo,status_financeiro,status_cirurgia),datas!inner(data)")
         .in("status", ["confirmado", "realizado"])
         .gte("datas.data", agoraBrasil)
-        .lt("datas.data", daquiOitoDias)
+        .lt("datas.data", fimProximos7)
         .order("created_at", { ascending: true }),
       supabase.from("agendamentos")
         .select("id,cliente_id,status,data_cirurgia,clientes(id,nome_completo,status_financeiro,status_cirurgia)")
         .in("status", ["confirmado", "realizado"])
         .gte("data_cirurgia", agoraBrasil)
-        .lt("data_cirurgia", daquiOitoDias)
+        .lt("data_cirurgia", fimProximos7)
         .order("data_cirurgia", { ascending: true }),
       supabase.from("cliente_app_devices").select("id,is_pwa_installed,last_access_at"),
       supabase.from("notificacao_logs").select("id,push_enviadas", { count: "exact", head: true }).gte("created_at", inicioPushUtc).lt("created_at", fimPushUtc).gt("push_enviadas", 0),
@@ -145,12 +152,12 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       canceladas: clientes.filter((c) => statusContrato(c.status_contrato) === "cancelado").length,
     };
     const totalClientes = clientStats.ativas + clientStats.suspensas + clientStats.negativadas + clientStats.canceladas;
-    const novasClientesHoje = clientes.filter((c) => String(c.created_at ?? "").slice(0, 10) === agoraBrasil).length;
+    const novasClientesHoje = clientes.filter((c) => dataBrasil(String(c.created_at ?? "")) === agoraBrasil).length;
     const novasClientesRecentes = clientes.slice(0, 6).map((c) => ({
       clienteId: c.id,
       nome: c.nome_completo ?? "Cliente",
       cpf: c.cpf ?? "—",
-      quando: String(c.created_at ?? "").slice(0, 10),
+      quando: dataBrasil(String(c.created_at ?? "")) || String(c.created_at ?? "").slice(0, 10),
       status: statusContrato(c.status_contrato),
     }));
 
@@ -330,8 +337,6 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       cirurgiasHojeLista,
       comprovantesPendentes,
       clientesAguardandoLiberacao,
-      proximosAgendamentos: eventosProximos.filter((e) => e.tipo === "termos").slice(0, LIMITE_ITENS).map((e) => ({ agendamentoId: e.agendamentoId, clienteId: e.clienteId, nome: e.nome, data: e.data, valorContrato: 0 })),
-      proximasLiberacoesFinanceiras: [],
       monitoramento: {
         webPushConfigurado,
         notificacoesHoje: notifHojeRes.count ?? 0,
