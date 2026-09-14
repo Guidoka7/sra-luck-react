@@ -204,13 +204,17 @@ No dia da assinatura, a cliente precisa cumprir a condição financeira definida
 
 ## 12. Liberação da agenda cirúrgica
 
-A regra nova substitui a lógica histórica de 90 dias.
+A regra vigente (2026-09-14) substitui a lógica anterior de 5 dias úteis.
 
-Após **termos assinados + quitação confirmada**, inicia-se o prazo operacional atual de **5 dias úteis**.
+A janela só começa quando **termos assinados E quitação confirmada** existem — nenhum dos dois
+isoladamente inicia a contagem. A data-base é a mais recente entre os dois eventos.
 
-Após esse prazo, a agenda cirúrgica é liberada para a cliente selecionar uma data publicada pelo admin.
+A partir da data-base, o prazo **máximo** é de **90 dias corridos**. Isso é um teto, não uma data
+automática: a liberação real pode ocorrer antes, conforme agenda disponível, planejamento
+financeiro e decisão operacional. A referência mensal (`configuracoes.meta_orcamento_mensal`,
+atualmente R$ 100.000) é só um alerta de capacidade para o planejamento, nunca uma trava.
 
-O prazo deve ser configurável/politicamente versionável; o valor atual é 5 dias úteis.
+O prazo deve ser configurável/politicamente versionável; o valor atual é 90 dias corridos.
 
 ## 13. Cirurgia
 

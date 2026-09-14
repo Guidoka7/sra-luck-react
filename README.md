@@ -55,8 +55,8 @@ Design, backend, fluxos e regras devem permanecer **maleáveis e fáceis de edit
 - Percentual operacional = **parcelas pagas ÷ total de parcelas**, não valor pago ÷ contrato.
 - O app da cliente preserva como referência as experiências **Minha Agenda** e **Meus Boletos** do PWA.
 - Light/dark mode, configurações e notificações são capacidades permanentes, não descartáveis em redesign.
-- A regra antiga de 90 dias após termos é legado quando conflitar com o fluxo novo.
-- Regra atual: após **termos assinados + quitação confirmada**, a agenda cirúrgica é liberada após **5 dias úteis**, de acordo com a política vigente/configurável.
+- A regra antiga de 5 dias úteis para a liberação cirúrgica é legado quando conflitar com o fluxo novo.
+- Regra atual: após **termos assinados + quitação confirmada** (nenhum isoladamente inicia a janela), a agenda cirúrgica é liberada em até **90 dias corridos** (prazo máximo, não data automática — pode ocorrer antes), de acordo com a política vigente/configurável.
 
 ## Comandos principais atuais
 

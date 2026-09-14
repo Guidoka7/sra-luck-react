@@ -113,12 +113,12 @@ export function JourneyTracker({
       id: "liberacao-cirurgica", title: "Liberação da agenda da cirurgia", icon: Clock3,
       status: agendaCirurgicaLiberada ? "done" : termosAssinados ? "current" : "upcoming",
       description: !termosAssinados
-        ? "Depois da assinatura e da quitação do saldo, sua agenda da cirurgia é liberada em até 5 dias úteis."
+        ? "Depois da assinatura e da quitação do saldo, sua agenda da cirurgia é liberada (prazo máximo de até 90 dias, podendo ocorrer antes)."
         : agendaCirurgicaLiberada
           ? "Agenda da cirurgia liberada para você escolher a data."
           : dataAgendaCirurgicaFormatada
-            ? `Estamos preparando a liberação da sua agenda. Previsão: ${dataAgendaCirurgicaFormatada}.`
-            : "Estamos preparando a liberação da sua agenda no prazo de até 5 dias úteis.",
+            ? `Estamos preparando a liberação da sua agenda. Prazo máximo: ${dataAgendaCirurgicaFormatada}.`
+            : "Estamos preparando a liberação da sua agenda.",
     },
     {
       id: "data-cirurgia", title: "Escolha da data da cirurgia", icon: Calendar,

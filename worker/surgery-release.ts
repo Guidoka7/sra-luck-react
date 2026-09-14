@@ -1,6 +1,14 @@
 const TIME_ZONE = "America/Sao_Paulo";
 
-export const PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS = 5;
+/**
+ * Fase 2 (2026-09-14): a janela de liberação da agenda cirúrgica deixou de
+ * ser "5 dias úteis" e passou a ser um PRAZO MÁXIMO de 90 dias corridos.
+ * A liberação real pode ocorrer antes, conforme capacidade do mês
+ * (configuracoes.meta_orcamento_mensal é só referência de planejamento,
+ * nunca trava) — este valor é apenas o teto que os endpoints/telas usam
+ * para não deixar a cliente aguardar indefinidamente.
+ */
+export const PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS_CORRIDOS = 90;
 
 export function dataSaoPaulo(valor: string | Date | null | undefined): string | null {
   if (!valor) return null;
@@ -38,20 +46,25 @@ export function agoraSaoPaulo() {
   };
 }
 
-export function adicionarDiasUteis(dataIso: string, dias: number): string {
+export function adicionarDiasCorridos(dataIso: string, dias: number): string {
   const match = dataIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) throw new Error("DATA_INVALIDA");
   const data = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   if (Number.isNaN(data.getTime())) throw new Error("DATA_INVALIDA");
-  let adicionados = 0;
-  while (adicionados < Math.max(0, dias)) {
-    data.setUTCDate(data.getUTCDate() + 1);
-    const diaSemana = data.getUTCDay();
-    if (diaSemana !== 0 && diaSemana !== 6) adicionados += 1;
-  }
+  data.setUTCDate(data.getUTCDate() + Math.max(0, dias));
   return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Calcula o PRAZO MÁXIMO (teto) da liberação da agenda cirúrgica.
+ *
+ * Regra vigente (Fase 2): só existe janela quando termos assinados E
+ * quitação confirmada já existem — nenhum dos dois isoladamente inicia a
+ * contagem. A data-base é a mais recente entre os dois eventos, e o teto é
+ * essa data + 90 dias corridos. A liberação real (escolhida pelo admin
+ * dentro da capacidade do mês) pode acontecer em qualquer data até esse
+ * teto — este valor não é a data automática da cirurgia.
+ */
 export function calcularLiberacaoCirurgica(
   termosAssinadosEm: string | null | undefined,
   custeioConfirmadoEm: string | null | undefined,
@@ -60,5 +73,5 @@ export function calcularLiberacaoCirurgica(
   const quitacao = dataSaoPaulo(custeioConfirmadoEm);
   if (!termos || !quitacao) return null;
   const base = termos >= quitacao ? termos : quitacao;
-  return adicionarDiasUteis(base, PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS);
+  return adicionarDiasCorridos(base, PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS_CORRIDOS);
 }

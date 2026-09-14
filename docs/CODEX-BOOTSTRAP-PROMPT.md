@@ -144,17 +144,18 @@ PARCELAS PAGAS / TOTAL DE PARCELAS
 
 NÃO usar valor financeiro pago / valor do contrato para elegibilidade.
 
-A regra histórica de 90 dias após assinatura dos termos é legado quando conflitante.
+A regra histórica de 5 dias úteis para a liberação cirúrgica é legado quando conflitante.
 
 Regra atual documentada:
 
 termos assinados
 +
 quitação confirmada
+(nenhum isoladamente inicia a janela)
 →
-prazo operacional vigente, atualmente 5 dias úteis
+prazo MÁXIMO vigente: até 90 dias corridos (teto, não data automática)
 →
-liberação da agenda cirúrgica.
+liberação da agenda cirúrgica (pode ocorrer antes do prazo máximo).
 
 Sempre consultar `docs/BUSINESS-RULES.md` antes de alterar essa jornada.
 

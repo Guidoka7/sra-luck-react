@@ -127,15 +127,15 @@ Preservar a experiência de calendário e administração de vagas.
 
 Substituir regra antiga incompatível:
 
-- remover dependência funcional dos 90 dias;
+- remover dependência funcional dos 5 dias úteis para a liberação cirúrgica;
 - usar percentual por parcelas;
 - solicitação de levantamento;
-- prazo de até 5 dias úteis;
+- prazo de até 5 dias úteis (SLA de revisão financeira, Etapa C — regra separada, mantida);
 - saldo e formas liberadas;
 - pagar agora/no dia;
 - termos;
 - quitação;
-- 5 dias úteis após termos + quitação;
+- até 90 dias corridos após termos + quitação, como teto de liberação cirúrgica (sem piso mínimo);
 - agenda cirúrgica;
 - cirurgia realizada.
 

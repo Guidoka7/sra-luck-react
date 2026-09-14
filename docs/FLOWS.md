@@ -137,21 +137,22 @@ Dia dos termos
 Termos assinados
    +
 Quitação/saldo final confirmado
+   (nenhum dos dois isoladamente inicia a janela)
    ↓
-Início do prazo operacional
+Data-base = a mais recente entre os dois eventos
    ↓
-5 dias úteis (regra atual)
+Prazo MÁXIMO: até 90 dias corridos (regra atual)
    ↓
-Agenda cirúrgica liberada
+Agenda cirúrgica liberada (pode ocorrer antes do prazo máximo)
    ↓
-Cliente escolhe data publicada
+Cliente escolhe data publicada, dentro do prazo máximo
    ↓
 Cirurgia agendada
    ↓
 Admin registra realização/conclusão
 ```
 
-A regra antiga de 90 dias não deve governar o novo fluxo.
+A regra antiga de 5 dias úteis não deve governar o novo fluxo.
 
 ## 8. Financeiro diário
 

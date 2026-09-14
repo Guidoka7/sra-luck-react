@@ -205,9 +205,7 @@ export async function agendarCirurgia(request: Request, env: Env): Promise<Respo
 
   const liberacao = calcularLiberacaoCirurgica(agendamento.termos_assinados_em, cliente.custeio_confirmado_em);
   if (!liberacao) return json({ erro: "Não foi possível calcular a liberação da agenda cirúrgica." }, 409);
-  const hoje = agoraSaoPaulo().data;
-  if (hoje < liberacao) return json({ erro: `A agenda cirúrgica será liberada a partir de ${liberacao.split("-").reverse().join("/")}.`, agendaCirurgicaLiberarEm: liberacao }, 409);
-  if (data < liberacao) return json({ erro: `Escolha uma data a partir de ${liberacao.split("-").reverse().join("/")}.`, agendaCirurgicaLiberarEm: liberacao }, 409);
+  if (data > liberacao) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${liberacao.split("-").reverse().join("/")}).`, agendaCirurgicaLiberarEm: liberacao }, 409);
 
   const { data: solicitacao } = await supabase.from("solicitacoes_liberacao_financeira")
     .select("id")
@@ -222,7 +220,7 @@ export async function agendarCirurgia(request: Request, env: Env): Promise<Respo
     const m = error.message ?? "";
     if (m.includes("TERMOS_NAO_ASSINADOS")) return json({ erro: "Os termos ainda não foram assinados." }, 409);
     if (m.includes("SALDO_NAO_QUITADO")) return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
-    if (m.includes("PRAZO_CIRURGICO_NAO_CONCLUIDO")) return json({ erro: `A agenda cirúrgica será liberada a partir de ${liberacao.split("-").reverse().join("/")}.` }, 409);
+    if (m.includes("PRAZO_CIRURGICO_EXCEDIDO")) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${liberacao.split("-").reverse().join("/")}).` }, 409);
     if (m.includes("DATA_CIRURGIA_INDISPONIVEL")) return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
     if (m.includes("DATA_CIRURGIA_OCUPADA")) return json({ erro: "Essa data acabou de ser ocupada. Escolha outra data disponível." }, 409);
     if (m.includes("AGENDAMENTO_NAO_ENCONTRADO")) return json({ erro: "O agendamento não está mais disponível para alteração." }, 409);
