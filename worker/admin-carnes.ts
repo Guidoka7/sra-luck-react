@@ -1,6 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
+import { extrairDadosBoleto, pontuarCandidatos, type BoletoCandidato } from "./pdf-boleto-parser";
 
 const BUCKET = "boletos-clientes";
 const TAMANHO_MAXIMO = 20 * 1024 * 1024;
@@ -24,53 +25,18 @@ async function sha256(bytes: Uint8Array) {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export interface SugestaoVinculo {
-  boletoId: string | null;
-  pontuacaoConfianca: number | null;
-  nivelConfianca: "alta" | "media" | "baixa" | null;
-  criterio: "ordem_da_pagina_igual_ao_numero_da_parcela" | "sem_parcela_correspondente";
-}
-
-/**
- * Regra pura de sugestão de vínculo por página importada: cada página do PDF
- * corresponde, por ORDEM, ao número da parcela do carnê bancário. Se a
- * quantidade de páginas bater exatamente com a quantidade de parcelas já
- * geradas para a cliente, a confiança é alta; se houver parcela na mesma
- * posição mas a contagem total não bate (parcelas suspensas/excluídas no
- * meio, por exemplo), a confiança cai para média. Sem parcela na posição,
- * não há sugestão — a confirmação humana decide manualmente.
- */
-export function sugerirVinculo(
-  numeroParcela: number,
-  boletosPorParcela: Map<number, { id: string }>,
-  contagemPaginasIgualContagemParcelas: boolean,
-): SugestaoVinculo {
-  const boleto = boletosPorParcela.get(numeroParcela) ?? null;
-  if (!boleto) {
-    return { boletoId: null, pontuacaoConfianca: null, nivelConfianca: null, criterio: "sem_parcela_correspondente" };
-  }
-  const pontuacaoConfianca = contagemPaginasIgualContagemParcelas ? 90 : 60;
-  return {
-    boletoId: boleto.id,
-    pontuacaoConfianca,
-    nivelConfianca: pontuacaoConfianca >= 80 ? "alta" : pontuacaoConfianca >= 50 ? "media" : "baixa",
-    criterio: "ordem_da_pagina_igual_ao_numero_da_parcela",
-  };
-}
-
 /**
  * Carnês (por instituição financeira) e importação de carnê em PDF.
  *
- * A importação NÃO faz OCR/extração de texto do boleto — o parser real de
- * dados bancários (linha digitável, valor, vencimento) é um domínio próprio
- * que ainda não existe no Worker. O que já é real e determinístico: o
- * carnê bancário chega como um único PDF com uma página por parcela, na
- * ordem das parcelas (mesma técnica já usada no protótipo legado de
- * `src/app/api/admin/clientes/[id]/boletos/carne/route.ts`, agora reescrita
- * sobre a tabela real `importacoes_boletos`). Cada página é separada,
- * armazenada e recebe uma sugestão de vínculo por ordem/quantidade de
- * parcela, sempre sujeita à confirmação humana antes de qualquer boleto
- * ser considerado vinculado — nenhuma vinculação é aplicada automaticamente.
+ * A importação extrai texto NATIVO de cada página (vencimento, valor,
+ * número da parcela, linha digitável — ver worker/pdf-boleto-parser.ts) e
+ * usa esses dados, não a ordem da página, como evidência principal para
+ * sugerir a qual parcela cada página corresponde. Ordem de página é só um
+ * sinal auxiliar de baixo peso. Quando a extração não é suficiente (PDF
+ * escaneado como imagem, campos ilegíveis, CPF divergente), a página fica
+ * com status_vinculacao="revisar" e NENHUMA sugestão de vínculo é feita —
+ * a confirmação humana decide manualmente. Nenhum vínculo é aplicado aqui;
+ * isso só acontece em POST .../vincular, sempre por ação explícita.
  */
 export async function adminCarnes(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
@@ -178,43 +144,48 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
         return json({ erro: `${duplicadas.length} página(s) deste PDF já foram importadas anteriormente.` }, 409);
       }
 
-      const { data: boletosCliente } = await db.from("boletos").select("id,numero_parcela,total_parcelas,boleto_url").eq("cliente_id", clienteId).order("numero_parcela", { ascending: true });
-      const boletosPorParcela = new Map((boletosCliente ?? []).map((b: any) => [Number(b.numero_parcela), b]));
-      const contagemCoincide = (boletosCliente ?? []).length === totalPaginas;
+      const [{ data: boletosCliente }, { data: clienteRow }] = await Promise.all([
+        db.from("boletos").select("id,numero_parcela,total_parcelas,valor,data_vencimento,boleto_url").eq("cliente_id", clienteId).order("numero_parcela", { ascending: true }),
+        db.from("clientes").select("cpf").eq("id", clienteId).maybeSingle(),
+      ]);
+      const candidatos: BoletoCandidato[] = (boletosCliente ?? []).map((b: any) => ({ id: b.id, numero_parcela: Number(b.numero_parcela), valor: Number(b.valor), data_vencimento: b.data_vencimento }));
 
       const importacoes: any[] = [];
       for (let indice = 0; indice < totalPaginas; indice += 1) {
-        const numeroParcela = indice + 1;
+        const numeroPagina = indice + 1;
         const { bytes: paginaBytes, sha256: paginaSha256 } = paginas[indice];
         const caminho = `importacoes/${clienteId}/${paginaSha256}.pdf`;
 
         const { error: erroUpload } = await db.storage.from(BUCKET).upload(caminho, paginaBytes, { contentType: "application/pdf", upsert: false });
-        if (erroUpload) return json({ erro: `Falha ao salvar a página ${numeroParcela}: ${erroUpload.message}` }, 500);
+        if (erroUpload) return json({ erro: `Falha ao salvar a página ${numeroPagina}: ${erroUpload.message}` }, 500);
 
-        const sugestao = sugerirVinculo(numeroParcela, boletosPorParcela, contagemCoincide);
+        const dadosExtraidos = await extrairDadosBoleto(paginaBytes);
+        const sugestao = pontuarCandidatos(dadosExtraidos, candidatos, numeroPagina, clienteRow?.cpf ?? null);
 
         importacoes.push({
           cliente_id: clienteId,
           carne_id: carneId,
           instituicao_financeira: instituicao || null,
-          numero_parcela: numeroParcela,
-          arquivo_nome: `${arquivo.name} (página ${numeroParcela}/${totalPaginas})`,
+          numero_parcela: dadosExtraidos.numeroParcela ?? null,
+          identificador_externo: dadosExtraidos.linhaDigitavel,
+          linha_digitavel: dadosExtraidos.linhaDigitavel,
+          valor_extraido: dadosExtraidos.valor,
+          vencimento_extraido: dadosExtraidos.vencimento,
+          cpf_pagador_extraido: dadosExtraidos.cpf,
+          dados_extraidos: { valor: dadosExtraidos.valor, vencimento: dadosExtraidos.vencimento, numeroParcela: dadosExtraidos.numeroParcela, linhaDigitavel: dadosExtraidos.linhaDigitavel, cpf: dadosExtraidos.cpf },
+          arquivo_nome: `${arquivo.name} (página ${numeroPagina}/${totalPaginas})`,
           arquivo_mime: "application/pdf",
           arquivo_tamanho: paginaBytes.byteLength,
           arquivo_sha256: paginaSha256,
           arquivo_storage_path: caminho,
-          status: "aguardando_confirmacao",
+          status: sugestao.statusVinculacao === "revisar" ? "erro" : "aguardando_confirmacao",
+          erro_detalhes: sugestao.statusVinculacao === "revisar" ? "Não foi possível extrair dados suficientes do PDF para sugerir a parcela com segurança." : null,
           cliente_sugerido_id: sugestao.boletoId ? clienteId : null,
           boleto_sugerido_id: sugestao.boletoId,
           pontuacao_confianca: sugestao.pontuacaoConfianca,
           nivel_confianca: sugestao.nivelConfianca,
-          status_vinculacao: "pendente",
-          analise_detalhada: {
-            totalPaginasArquivo: totalPaginas,
-            totalParcelasCliente: (boletosCliente ?? []).length,
-            contagemCoincide,
-            criterioSugestao: sugestao.criterio,
-          },
+          status_vinculacao: sugestao.statusVinculacao,
+          analise_detalhada: { totalPaginasArquivo: totalPaginas, totalParcelasCliente: candidatos.length, numeroPagina, motivos: sugestao.motivos },
         });
       }
 
@@ -226,7 +197,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
         acao: "importou_carne_pdf",
         entidade: "clientes",
         entidade_id: clienteId,
-        detalhes: { arquivo: arquivo.name, totalPaginas, contagemCoincide, importacaoIds: (inseridas ?? []).map((i: any) => i.id) },
+        detalhes: { arquivo: arquivo.name, totalPaginas, totalParcelasCliente: candidatos.length, importacaoIds: (inseridas ?? []).map((i: any) => i.id) },
       });
 
       return json({ importacoes: inseridas ?? [] }, 201);
