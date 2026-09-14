@@ -9,6 +9,14 @@ function patch(path, operations) {
   fs.writeFileSync(path, source);
 }
 
+patch("worker/web-push-config.ts", [
+  [
+    '  const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;\n  if (raw.toLowerCase().startsWith("mailto:")) {\n    const email = raw.slice(7).trim();\n    return emailPattern.test(email) ? `mailto:${email.toLowerCase()}` : null;\n  }',
+    '  const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  if (raw.toLowerCase().startsWith("mailto:")) {\n    const email = raw.slice(7).trim();\n    return emailPattern.test(email) ? `mailto:${email.toLowerCase()}` : null;\n  }\n  if (emailPattern.test(raw)) return `mailto:${raw.toLowerCase()}`;',
+    "normalize mailto before plain email",
+  ],
+]);
+
 patch("worker/integrations-core.ts", [
   [
     'import { rdStationReadonlyApi } from "./rd-station-readonly";',
