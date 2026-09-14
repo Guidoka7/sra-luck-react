@@ -181,15 +181,34 @@ export function pontuarCandidatos(
   }).sort((a, b) => b.pontuacao - a.pontuacao || b.pontuacaoForte - a.pontuacaoForte || a.boleto.numero_parcela - b.boleto.numero_parcela);
 
   const melhor = pontuados[0];
-  if (!melhor || melhor.pontuacaoForte < 55) {
-    return { boletoId: null, pontuacaoConfianca: melhor?.pontuacao ?? 0, nivelConfianca: "baixa", statusVinculacao: "revisar", motivos: melhor?.motivos ?? ["dados_insuficientes_para_sugestao"] };
+  if (!melhor) {
+    return { boletoId: null, pontuacaoConfianca: 0, nivelConfianca: "baixa", statusVinculacao: "revisar", motivos: ["dados_insuficientes_para_sugestao"] };
   }
 
   const segundo = pontuados[1];
   if (segundo) {
+    // A ambiguidade é avaliada ANTES do piso mínimo. Assim, valor/banco/CPF
+    // compartilhados por várias parcelas nunca são tratados apenas como
+    // "dados insuficientes" e, sobretudo, a posição da página não os desempata.
     const empateForte = segundo.pontuacaoForte === melhor.pontuacaoForte && segundo.pontuacaoForte > 0;
+    if (empateForte) {
+      return {
+        boletoId: null,
+        pontuacaoConfianca: melhor.pontuacao,
+        nivelConfianca: "baixa",
+        statusVinculacao: "revisar",
+        motivos: [...melhor.motivos, "mais_de_um_candidato_plausivel"],
+      };
+    }
+  }
+
+  if (melhor.pontuacaoForte < 55) {
+    return { boletoId: null, pontuacaoConfianca: melhor.pontuacao, nivelConfianca: "baixa", statusVinculacao: "revisar", motivos: melhor.motivos.length ? melhor.motivos : ["dados_insuficientes_para_sugestao"] };
+  }
+
+  if (segundo) {
     const muitoProximo = !melhor.identificadorExato && segundo.pontuacaoForte > 0 && (melhor.pontuacaoForte - segundo.pontuacaoForte) < 15;
-    if (empateForte || muitoProximo) {
+    if (muitoProximo) {
       return {
         boletoId: null,
         pontuacaoConfianca: melhor.pontuacao,
