@@ -167,12 +167,14 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
 
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
-  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  if (request.method === "POST") {
-    const colaborador = await buscarColaboradorAdminAtivo(admin, env);
-    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
-      return json({ erro: "Seu papel não tem permissão para gerenciar credenciais de integrações." }, 403);
-    }
+  if (request.method !== "GET" && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+
+  // A presença/máscara das credenciais também é informação restrita: sessão
+  // válida, colaborador ativo e permissão explícita são exigidos para leitura
+  // e escrita. O valor em texto puro nunca sai do Worker.
+  const colaborador = await buscarColaboradorAdminAtivo(admin, env).catch(() => null);
+  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
+    return json({ erro: "Seu papel não tem permissão para acessar credenciais de integrações." }, 403);
   }
 
   const db = createServiceSupabaseClient(env);

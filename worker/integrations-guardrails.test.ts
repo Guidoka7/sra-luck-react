@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const integrationsCore = readFileSync(new URL("./integrations-core.ts", import.meta.url), "utf8");
+const integrationsStatus = readFileSync(new URL("./integrations-status.ts", import.meta.url), "utf8");
+const credenciais = readFileSync(new URL("./integrations-credenciais.ts", import.meta.url), "utf8");
 const rdReadonly = readFileSync(new URL("./rd-station-readonly.ts", import.meta.url), "utf8");
 const novasVendas = readFileSync(new URL("./admin-novas-vendas.ts", import.meta.url), "utf8");
 const cirurgia = readFileSync(new URL("./admin-surgery-flow.ts", import.meta.url), "utf8");
@@ -32,6 +34,18 @@ describe("guardrails de integrações e regras críticas", () => {
     expect(novasVendas).not.toContain("api.rd.services");
     expect(novasVendas).toContain("editou_venda_local_sem_sync_rd");
     expect(novasVendas).toContain("escritaNoRd: false");
+  });
+
+  it("status e histórico de integrações exigem admin ativo no próprio handler", () => {
+    expect(integrationsStatus).toContain("exigirAdminAtivo");
+    expect(integrationsStatus).toContain("verificarTokenAdmin");
+    expect(integrationsStatus).toContain("buscarColaboradorAdminAtivo");
+    expect(integrationsStatus).toContain("Acesso administrativo inativo ou não autorizado");
+  });
+
+  it("leitura e escrita de credenciais exigem permissão RBAC explícita", () => {
+    expect(credenciais).toContain("INTEGRACOES_GERENCIAR_CREDENCIAIS");
+    expect(credenciais).toContain("Seu papel não tem permissão para acessar credenciais de integrações");
   });
 
   it("referência mensal de orçamento apenas classifica a capacidade, sem bloquear", () => {

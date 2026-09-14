@@ -1,4 +1,6 @@
+import { buscarColaboradorAdminAtivo } from "./admin-auth";
 import { obterCredencial } from "./integrations-credenciais";
+import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
 function json(data: unknown, status = 200) {
@@ -29,6 +31,15 @@ type StatusIntegracao = {
   modoLeitura?: boolean;
 };
 
+async function exigirAdminAtivo(request: Request, env: Env) {
+  if (!env.CLIENTE_SESSION_SECRET) return { resposta: json({ erro: "Serviço temporariamente indisponível." }, 503), adminId: null };
+  const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
+  if (!sessao) return { resposta: json({ erro: "Sessão administrativa expirada." }, 401), adminId: null };
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  if (!colaborador) return { resposta: json({ erro: "Acesso administrativo inativo ou não autorizado." }, 403), adminId: null };
+  return { resposta: null, adminId: sessao.adminId };
+}
+
 async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string) {
   const { error } = await db.from(tabela).select("id", { count: "exact", head: true });
   return !error;
@@ -47,18 +58,24 @@ function estadoBase(persistenciaPronta: boolean, credenciaisConfiguradas: boolea
 export async function integrationsStatusApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   const path = url.pathname;
+  const historico = path === "/api/admin/integrations/historico" && request.method === "GET";
+  const status = path === "/api/admin/integrations/status" && request.method === "GET";
+  if (!historico && !status) return null;
 
-  if (path === "/api/admin/integrations/historico" && request.method === "GET") {
-    const db = createServiceSupabaseClient(env);
+  // Este handler é chamado pelo monitoramento antes do roteador administrativo
+  // genérico. Por isso a autenticação precisa acontecer aqui, e não pode ser
+  // presumida pelo prefixo /api/admin/*.
+  const auth = await exigirAdminAtivo(request, env);
+  if (auth.resposta) return auth.resposta;
+
+  const db = createServiceSupabaseClient(env);
+  if (historico) {
     const { data, error } = await db.from("logs_alteracoes").select("id,usuario,acao,entidade_id,detalhes,created_at")
       .in("entidade", ["integracoes", "integracoes_credenciais"]).order("created_at", { ascending: false }).limit(100);
     if (error) return json({ erro: error.message }, 500);
     return json({ eventos: data ?? [] });
   }
 
-  if (path !== "/api/admin/integrations/status" || request.method !== "GET") return null;
-
-  const db = createServiceSupabaseClient(env);
   const [pushTable, eventTable, paymentTable, contaAzulTable, rdRawTable, novasVendasTable] = await Promise.all([
     tabelaDisponivel(db, "web_push_subscriptions"),
     tabelaDisponivel(db, "integracao_eventos"),
