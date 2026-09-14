@@ -15,13 +15,36 @@ export async function adminVisaoGeral(_request: Request, env: Env): Promise<Resp
     const hoje = new Date();
     const isoHoje = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}-${String(hoje.getUTCDate()).padStart(2, "0")}`;
 
-    const [comprovantesRes, agendamentosRes, revisaoRes, liberacaoRes, carteiraRes, parcelasRes] = await Promise.all([
+    const [
+      comprovantesRes,
+      agendamentosRes,
+      revisaoRes,
+      liberacaoRes,
+      carteiraRes,
+      parcelasRes,
+      clientesRes,
+      novasVendasRes,
+      termosHojeRes,
+      cirurgiasHojeRes,
+      devicesRes,
+      notifHojeRes,
+      credenciaisRes,
+      atividadeRes,
+    ] = await Promise.all([
       supabase.from("boletos").select("id, cliente_id, numero_parcela, total_parcelas, valor, status, data_pagamento, comprovante_url, clientes ( id, nome_completo, cpf )").eq("status", "pendente_confirmacao").order("data_pagamento", { ascending: true }).limit(LIMITE_ITENS),
       supabase.from("agendamentos").select("id, cliente_id, valor_contrato, status, previsao_liberacao_financeira, clientes(id, nome_completo), datas!inner(data)").eq("status", "confirmado").gte("datas.data", isoHoje).order("data", { ascending: true, foreignTable: "datas" }).limit(LIMITE_ITENS),
       supabase.from("clientes").select("id, nome_completo, cpf, valor_contrato, quantidade_parcelas, status_revisao_financeira, data_atingiu_percentual").eq("status_revisao_financeira", "pendente").order("data_atingiu_percentual", { ascending: true }).limit(LIMITE_ITENS),
       supabase.from("agendamentos").select("id, cliente_id, valor_contrato, previsao_liberacao_financeira, clientes(id, nome_completo)").eq("status", "confirmado").not("previsao_liberacao_financeira", "is", null).gte("previsao_liberacao_financeira", isoHoje).order("previsao_liberacao_financeira", { ascending: true }).limit(LIMITE_ITENS),
       supabase.from("clientes").select("id, valor_contrato, taxa_administrativa_percentual").eq("ativo", true),
       supabase.from("boletos").select("status, data_vencimento"),
+      supabase.from("clientes").select("id,nome_completo,cpf,status_contrato,status_revisao_financeira,created_at").order("created_at", { ascending: false }),
+      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro"),
+      supabase.from("agendamentos").select("id,horario_termos,clientes(nome_completo),datas!inner(data)").eq("status", "confirmado").eq("datas.data", isoHoje),
+      supabase.from("agendamentos").select("id", { count: "exact", head: true }).eq("data_cirurgia", isoHoje),
+      supabase.from("cliente_app_devices").select("id,is_pwa_installed,last_access_at"),
+      supabase.from("notificacao_logs").select("id,push_enviadas", { count: "exact" }).gte("created_at", `${isoHoje}T00:00:00`).gt("push_enviadas", 0),
+      supabase.from("integracoes_credenciais").select("provedor,ativo").eq("provedor", "web_push"),
+      supabase.from("logs_alteracoes").select("usuario,acao,entidade,created_at").order("created_at", { ascending: false }).limit(5),
     ]);
 
     if (comprovantesRes.error) return json({ erro: comprovantesRes.error.message }, 500);
@@ -30,6 +53,7 @@ export async function adminVisaoGeral(_request: Request, env: Env): Promise<Resp
     if (liberacaoRes.error) return json({ erro: liberacaoRes.error.message }, 500);
     if (carteiraRes.error) return json({ erro: carteiraRes.error.message }, 500);
     if (parcelasRes.error) return json({ erro: parcelasRes.error.message }, 500);
+    if (clientesRes.error) return json({ erro: clientesRes.error.message }, 500);
 
     const idsRevisao = (revisaoRes.data ?? []).map((c) => c.id as string);
     const porcentagens = new Map<string, number>();
@@ -66,7 +90,57 @@ export async function adminVisaoGeral(_request: Request, env: Env): Promise<Resp
     const parcelasVencidas = parcelas.filter((p) => p.status !== "pago" && p.data_vencimento && p.data_vencimento < isoHoje).length;
     const taxaInadimplencia = totalParcelas > 0 ? (parcelasVencidas / totalParcelas) * 100 : 0;
 
+    const todosClientes = (clientesRes.data ?? []) as any[];
+    const clientStats = {
+      ativas: todosClientes.filter((c) => c.status_contrato === "ativo").length,
+      suspensas: todosClientes.filter((c) => c.status_contrato === "suspenso").length,
+      negativadas: todosClientes.filter((c) => c.status_contrato === "negativado").length,
+      canceladas: todosClientes.filter((c) => c.status_contrato === "cancelado").length,
+    };
+    const novasClientesHoje = todosClientes.filter((c) => String(c.created_at ?? "").slice(0, 10) === isoHoje).length;
+    const novasClientesRecentes = todosClientes.slice(0, 5).map((c) => {
+      const horas = (Date.now() - new Date(c.created_at).getTime()) / (1000 * 60 * 60);
+      const status = horas <= 24 ? "Nova" : c.status_revisao_financeira === "pendente" ? "Aguardando revisão" : "Cadastrada";
+      return { clienteId: c.id, nome: c.nome_completo ?? "Cliente", cpf: c.cpf ?? "—", quando: String(c.created_at ?? "").slice(0, 10), status };
+    });
+
+    const dispositivos = (devicesRes.data ?? []) as any[];
+    const totalDispositivos = dispositivos.length;
+    const pwaInstalados = dispositivos.filter((d) => d.is_pwa_installed === true).length;
+    const limiteSemAcesso = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const semAcessoRecente = dispositivos.filter((d) => !d.last_access_at || new Date(d.last_access_at).getTime() < limiteSemAcesso).length;
+
+    const webPushConfigurado = ((credenciaisRes.data ?? []) as any[]).some((c) => c.ativo === true);
+
     return json({
+      kpis: {
+        novasClientesHoje,
+        aguardandoCadastro: novasVendasRes.count ?? 0,
+        aguardandoConferencia: comprovantes.length,
+        clientesAtivas: clientStats.ativas,
+        termosHoje: (termosHojeRes.data ?? []).length,
+        cirurgiasHoje: cirurgiasHojeRes.count ?? 0,
+      },
+      termosHojeLista: ((termosHojeRes.data ?? []) as any[]).map((a) => ({
+        agendamentoId: a.id,
+        nome: (Array.isArray(a.clientes) ? a.clientes[0] : a.clientes)?.nome_completo ?? "Cliente",
+        horario: a.horario_termos ?? null,
+      })),
+      clientStats,
+      novasClientesRecentes,
+      monitoramento: {
+        webPushConfigurado,
+        notificacoesHoje: notifHojeRes.count ?? 0,
+        totalDispositivos,
+        pwaInstalados,
+        pwaInstaladoPercentual: totalDispositivos > 0 ? Math.round((pwaInstalados / totalDispositivos) * 100) : 0,
+        semAcessoRecente,
+      },
+      atividadeRecente: ((atividadeRes.data ?? []) as any[]).map((a) => ({
+        texto: `${a.acao ?? "Ação"} · ${a.entidade ?? "sistema"}`,
+        usuario: a.usuario ?? null,
+        quando: a.created_at,
+      })),
       carteira: {
         clientesAtivos: totalClientesAtivos,
         valorContratadoAtivo,
