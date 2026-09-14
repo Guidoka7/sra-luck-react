@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, Check, FileText, IdCard, Paperclip, Receipt, Trash2, UserRound, WalletCards, X } from "lucide-react";
+import { CalendarDays, Check, Clock, FileText, FileUp, History, IdCard, Landmark, Paperclip, Receipt, ShieldAlert, Trash2, UserRound, WalletCards, X } from "lucide-react";
 import { toast } from "sonner";
 import { Portal } from "@/components/ui/Portal";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { formatarCpf } from "@/lib/cpf";
 import { desmascararMoeda, mascararMoedaInput } from "@/lib/utils";
-import type { Boleto, Cliente, QuantidadeParcelas } from "@/types/database";
-import { QUANTIDADE_PARCELAS_OPCOES, STATUS_BOLETO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
+import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
+import { QUANTIDADE_PARCELAS_OPCOES, STATUS_BOLETO_LABEL, STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
+
+const STATUS_CONTRATO_OPCOES: StatusContratoCliente[] = ["ativo", "suspenso", "negativado", "cancelado"];
 
 const moeda = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -30,7 +32,7 @@ function ValueBadge({ label, value, prefix = "R$", suffix, tone = "neutral", onC
 
 export function ModalClienteCompactoV3({ cliente, onClose, onSalvo }: { cliente: Cliente | null; onClose: () => void; onSalvo: () => void }) {
   const editando = Boolean(cliente);
-  const [aba, setAba] = useState<"dados" | "boletos">("dados");
+  const [aba, setAba] = useState<"dados" | "boletos" | "contrato">("dados");
   const [nome, setNome] = useState(cliente?.nome_completo ?? "");
   const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : "");
   const [nascimento, setNascimento] = useState(cliente?.data_nascimento ?? "");
@@ -54,6 +56,21 @@ export function ModalClienteCompactoV3({ cliente, onClose, onSalvo }: { cliente:
   const [excluindo, setExcluindo] = useState(false);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
 
+  const [statusContrato, setStatusContrato] = useState<StatusContratoCliente>(cliente?.status_contrato ?? "ativo");
+  const [suspensoDesde, setSuspensoDesde] = useState(cliente?.suspenso_desde ?? "");
+  const [suspensoAte, setSuspensoAte] = useState(cliente?.suspenso_ate ?? "");
+  const [suspensaoMotivo, setSuspensaoMotivo] = useState(cliente?.suspensao_motivo ?? "");
+  const [salvandoStatus, setSalvandoStatus] = useState(false);
+  const [carregandoContrato, setCarregandoContrato] = useState(false);
+  const [carnes, setCarnes] = useState<Carne[]>([]);
+  const [importacoes, setImportacoes] = useState<ImportacaoBoleto[]>([]);
+  const [historico, setHistorico] = useState<LogAlteracao[]>([]);
+  const [novoCarneBanco, setNovoCarneBanco] = useState("");
+  const [novoCarneIdentificador, setNovoCarneIdentificador] = useState("");
+  const [novoCarneData, setNovoCarneData] = useState("");
+  const [criandoCarne, setCriandoCarne] = useState(false);
+  const [importando, setImportando] = useState(false);
+
   const cartaNumero = Number(desmascararMoeda(carta)) || 0;
   const taxaNumero = Number(taxa.replace(",", ".")) || 0;
   const totalNumero = Number(desmascararMoeda(total)) || 0;
@@ -71,6 +88,117 @@ export function ModalClienteCompactoV3({ cliente, onClose, onSalvo }: { cliente:
   async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setCarregando(false); return; } setCarregando(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); if (lista[0]?.total_parcelas) setQuantidade(Number(lista[0].total_parcelas) as QuantidadeParcelas); if (lista[0]?.valor) setParcela(moeda(Number(lista[0].valor))); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregando(false); } }
   useEffect(() => { void carregarBoletos(); }, [cliente?.id]);
 
+  async function carregarContrato() {
+    if (!cliente?.id) return;
+    setCarregandoContrato(true);
+    try {
+      const [rCarnes, rImportacoes, rHistorico] = await Promise.all([
+        fetch(`/api/admin/clientes/${cliente.id}/carnes`, { cache: "no-store" }),
+        fetch(`/api/admin/clientes/${cliente.id}/importacoes-boletos`, { cache: "no-store" }),
+        fetch(`/api/admin/clientes/${cliente.id}/historico`, { cache: "no-store" }),
+      ]);
+      const [dCarnes, dImportacoes, dHistorico] = await Promise.all([rCarnes.json(), rImportacoes.json(), rHistorico.json()]);
+      setCarnes(dCarnes.carnes ?? []);
+      setImportacoes(dImportacoes.importacoes ?? []);
+      setHistorico(dHistorico.historico ?? []);
+    } catch {
+      toast.error("Erro ao carregar dados do contrato.");
+    } finally {
+      setCarregandoContrato(false);
+    }
+  }
+  useEffect(() => { if (aba === "contrato") void carregarContrato(); }, [aba, cliente?.id]);
+
+  async function salvarStatusContrato() {
+    if (!cliente?.id || statusContrato === cliente.status_contrato) return;
+    setSalvandoStatus(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/status-contrato`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: statusContrato, suspensoDesde: suspensoDesde || undefined, suspensoAte: suspensoAte || undefined, motivo: suspensaoMotivo || undefined }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível alterar o status do contrato.");
+      toast.success(`Status do contrato alterado para ${STATUS_CONTRATO_LABEL[statusContrato]}.`);
+      void carregarContrato();
+      onSalvo();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao alterar status.");
+    } finally {
+      setSalvandoStatus(false);
+    }
+  }
+
+  async function criarCarne(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cliente?.id) return;
+    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) return toast.error("Preencha instituição, identificador e data do carnê.");
+    setCriandoCarne(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instituicaoFinanceira: novoCarneBanco, identificadorExterno: novoCarneIdentificador, dataGeracao: novoCarneData, quantidadeParcelas: quantidade, valorParcela: parcelaNumero, valorTotal: totalNumero }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível registrar o carnê.");
+      toast.success("Carnê registrado.");
+      setNovoCarneBanco(""); setNovoCarneIdentificador(""); setNovoCarneData("");
+      void carregarContrato();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao registrar carnê.");
+    } finally {
+      setCriandoCarne(false);
+    }
+  }
+
+  async function importarCarne(arquivo: File, instituicaoFinanceira: string, carneId?: string) {
+    if (!cliente?.id) return;
+    setImportando(true);
+    try {
+      const form = new FormData();
+      form.set("arquivo", arquivo);
+      form.set("instituicaoFinanceira", instituicaoFinanceira);
+      if (carneId) form.set("carneId", carneId);
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/importacoes-boletos`, { method: "POST", body: form });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível importar o carnê.");
+      toast.success(`${(d.importacoes ?? []).length} página(s) importada(s) para revisão.`);
+      void carregarContrato();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao importar carnê.");
+    } finally {
+      setImportando(false);
+    }
+  }
+
+  async function vincularImportacao(importacao: ImportacaoBoleto) {
+    if (!importacao.boleto_sugerido_id) return toast.error("Não há parcela sugerida para esta página.");
+    try {
+      const r = await fetch(`/api/admin/importacoes-boletos/${importacao.id}/vincular`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boletoId: importacao.boleto_sugerido_id }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível vincular.");
+      toast.success(`Parcela ${importacao.numero_parcela} vinculada.`);
+      void carregarContrato();
+      void carregarBoletos();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao vincular.");
+    }
+  }
+
+  async function ignorarImportacao(importacaoId: string) {
+    try {
+      const r = await fetch(`/api/admin/importacoes-boletos/${importacaoId}/ignorar`, { method: "POST" });
+      if (!r.ok) throw new Error("Não foi possível ignorar esta página.");
+      void carregarContrato();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao ignorar.");
+    }
+  }
+
   async function salvar(e: React.FormEvent) { e.preventDefault(); if (!nome || !nascimento || totalNumero <= 0) return toast.error("Preencha nome, nascimento e valor total."); if (!editando && !vencimento) return toast.error("Informe o 1º vencimento para gerar as parcelas."); setSalvando(true); try { const cartaEfetiva = totalNumero / (1 + taxaNumero / 100); const r = await fetch(editando ? `/api/admin/clientes/${cliente!.id}` : "/api/admin/clientes", { method: editando ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nomeCompleto: nome, cpf, dataNascimento: nascimento, telefone, email, procedimento, valorContrato: cartaEfetiva, taxaAdministrativaPercentual: taxaNumero, ativo, observacoes, recalcularBoletosAbertos: true, valorParcela: parcelaNumero > 0 ? parcelaNumero : undefined }) }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar."); if (!editando && d.cliente?.id) { const g = await fetch(`/api/admin/clientes/${d.cliente.id}/boletos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quantidadeParcelas: quantidade, taxaPercentual: taxaNumero, primeiroVencimento: vencimento, valorParcela: parcelaNumero > 0 ? parcelaNumero : undefined }) }); if (!g.ok) { const gd = await g.json(); throw new Error(gd.erro ?? "Não foi possível gerar as parcelas."); } } toast.success(editando ? "Dados da cliente atualizados." : "Cliente cadastrada."); onSalvo(); onClose(); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao salvar."); } finally { setSalvando(false); } }
   async function ajustar() { if (!cliente) return; setAjustando(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quantidadeParcelas: quantidade, taxaPercentual: taxaNumero, recalcularAbertas: true, primeiroVencimento: vencimento || undefined, valorParcela: parcelaNumero > 0 ? parcelaNumero : undefined }) }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível ajustar."); setBoletos(d.boletos ?? []); toast.success("Parcelamento atualizado."); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao ajustar parcelas."); } finally { setAjustando(false); } }
   async function rejeitar(b: Boleto) { if (!b.comprovante_url) return; if (!window.confirm(`Rejeitar o comprovante da parcela ${b.numero_parcela}/${b.total_parcelas}? A parcela voltará para Em aberto.`)) return; setRejeitando(b.id); try { const r = await fetch(`/api/admin/boletos/${b.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "rejeitar", observacoes: "Comprovante rejeitado pelo administrador." }) }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível rejeitar."); setBoletos(v => v.map(x => x.id === b.id ? { ...x, status: "nao_pago", data_pagamento: null } : x)); toast.success("Comprovante rejeitado. Parcela em aberto."); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao rejeitar."); } finally { setRejeitando(null); } }
@@ -79,14 +207,50 @@ export function ModalClienteCompactoV3({ cliente, onClose, onSalvo }: { cliente:
   const visiveis = mostrarTodas ? boletos : boletos.slice(0, 8); const pagas = boletos.filter(b => b.status === "pago").length;
   return <Portal><div className="fixed inset-0 z-40 flex items-center justify-center bg-transparent px-2 py-2.5 sm:px-4 sm:py-4"><div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white text-slate-900 shadow-[0_24px_80px_-30px_rgba(0,0,0,.35)] dark:border-white/10 dark:bg-[#18161a] dark:text-slate-100">
     <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3.5 py-3 dark:border-white/10"><div className="flex min-w-0 items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose/15 text-rose"><UserRound className="h-4 w-4" /></span><div className="min-w-0"><p className="truncate font-heading text-base font-semibold text-rose">{nome || "Nova cliente"}</p><p className="text-[0.58rem] uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">{editando ? "Perfil compacto" : "Cadastro rápido"}</p></div></div><div className="flex items-center gap-1.5">{editando && <button type="button" onClick={() => setConfirmarExclusao(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-alert/30 bg-alert/10 px-2.5 py-2 text-[0.58rem] font-bold text-alert hover:bg-alert/20"><Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Excluir cliente</span></button>}<button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5"><X className="h-4 w-4" /></button></div></header>
-    <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/8 dark:bg-[#141216]"><div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/[0.045]"><button type="button" onClick={() => setAba("dados")} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[0.68rem] font-semibold ${aba === "dados" ? "bg-rose text-white" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-white/5"}`}><IdCard className="h-3.5 w-3.5" /> Dados pessoais</button><button type="button" disabled={!editando} onClick={() => setAba("boletos")} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[0.68rem] font-semibold disabled:opacity-30 ${aba === "boletos" ? "bg-rose text-white" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-white/5"}`}><Receipt className="h-3.5 w-3.5" /> Boletos {boletos.length > 0 && <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[0.5rem] dark:bg-white/15">{boletos.length}</span>}</button></div></div>
+    <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/8 dark:bg-[#141216]"><div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/[0.045]"><button type="button" onClick={() => setAba("dados")} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[0.68rem] font-semibold ${aba === "dados" ? "bg-rose text-white" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-white/5"}`}><IdCard className="h-3.5 w-3.5" /> Dados</button><button type="button" disabled={!editando} onClick={() => setAba("boletos")} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[0.68rem] font-semibold disabled:opacity-30 ${aba === "boletos" ? "bg-rose text-white" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-white/5"}`}><Receipt className="h-3.5 w-3.5" /> Boletos {boletos.length > 0 && <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[0.5rem] dark:bg-white/15">{boletos.length}</span>}</button><button type="button" disabled={!editando} onClick={() => setAba("contrato")} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[0.68rem] font-semibold disabled:opacity-30 ${aba === "contrato" ? "bg-rose text-white" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-white/5"}`}><ShieldAlert className="h-3.5 w-3.5" /> Contrato</button></div></div>
     <form id="cliente-v3-form" onSubmit={salvar} className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
       {aba === "dados" ? <div className="space-y-2.5">
         <section className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.025]"><div className="mb-2.5 flex items-center gap-2"><IdCard className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Dados pessoais</h3></div><div className="grid grid-cols-2 gap-2"><div className="col-span-2"><Label htmlFor="mc3-nome">Nome completo</Label><Input id="mc3-nome" value={nome} onChange={e => setNome(e.target.value)} required /></div><div><Label htmlFor="mc3-cpf">CPF</Label><Input id="mc3-cpf" value={cpf} maxLength={14} disabled={editando} onChange={e => setCpf(formatarCpf(e.target.value))} /></div><div><Label htmlFor="mc3-nascimento">Nascimento</Label><Input id="mc3-nascimento" type="date" value={nascimento} onChange={e => setNascimento(e.target.value)} required /></div><div><Label htmlFor="mc3-telefone">Telefone</Label><Input id="mc3-telefone" value={telefone} onChange={e => setTelefone(e.target.value)} /></div><div><Label htmlFor="mc3-email">E-mail</Label><Input id="mc3-email" type="email" value={email} onChange={e => setEmail(e.target.value)} /></div><div className="col-span-2"><Label htmlFor="mc3-procedimento">Procedimento</Label><Input id="mc3-procedimento" value={procedimento} onChange={e => setProcedimento(e.target.value)} /></div></div></section>
         <section className="rounded-xl border border-rose/20 bg-gradient-to-b from-rose/[0.07] to-white/[0.02] p-3 dark:border-rose/20 dark:from-rose/[0.08] dark:to-white/[0.015]"><div className="mb-2.5 flex items-center justify-between gap-2"><div className="flex items-center gap-2"><WalletCards className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Configuração financeira</h3></div><span className="rounded-full border border-rose/15 bg-rose/10 px-2 py-0.5 text-[0.5rem] font-semibold text-rose/70">Cálculo sincronizado</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-5"><div><Label htmlFor="mc3-quantidade">Plano</Label><Select id="mc3-quantidade" value={String(quantidade)} onChange={e => atualizarQuantidade(e.target.value)}><option value="">Selecione</option>{QUANTIDADE_PARCELAS_OPCOES.map(q => <option key={q} value={q}>{q}x</option>)}</Select></div><ValueBadge label="Taxa adm." value={taxa} suffix="%" onChange={atualizarTaxa} /><ValueBadge label="Carta de crédito" value={carta} onChange={atualizarCarta} tone="green" /><ValueBadge label="Valor da parcela" value={parcela} onChange={atualizarParcela} tone="gold" /><ValueBadge label="Valor total" value={total} onChange={atualizarTotal} tone="rose" /></div>
           <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)]"><div className="rounded-xl border border-amber-300/20 bg-amber-50 px-3 py-2 dark:bg-amber-300/[0.07]"><div className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-200" /><span className="text-[0.55rem] font-bold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-100/80">1º vencimento</span></div><Input id="mc3-vencimento" type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} className="mt-1.5 !h-8 !border-amber-200/10 !bg-black/5 dark:!bg-black/10 !px-2.5" /></div><div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[0.58rem] leading-relaxed text-slate-600 dark:border-white/10 dark:bg-black/10 dark:text-slate-400"><span>Valores sincronizados automaticamente. Ajustes manuais permanecem vinculados entre carta, parcela e total.</span></div></div></section>
         <section className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.025]"><div className="mb-2 flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Observações internas</h3></div><Textarea value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Observações internas..." rows={3} /><label className="mt-2.5 flex cursor-pointer items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><input type="checkbox" checked={ativo} onChange={e => setAtivo(e.target.checked)} className="accent-rose" /> Cliente ativa</label></section>
-      </div> : <div className="space-y-2.5">{carregando ? <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Carregando boletos...</div> : <><section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]"><div className="mb-2.5 flex items-center justify-between"><div><p className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Resumo financeiro</p><p className="mt-0.5 text-[0.58rem] text-slate-600 dark:text-slate-400">Pagamentos e comprovantes da cliente.</p></div><span className="rounded-full bg-emerald-50 px-2 py-1 text-[0.52rem] font-semibold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300">{pagas}/{boletos.length} pagas</span></div><div className="grid grid-cols-3 gap-2"><div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-white/8 dark:bg-white/[0.02]"><p className="text-[0.52rem] uppercase text-slate-500 dark:text-slate-400">Total</p><p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{boletos.length}</p></div><div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-300/10 dark:bg-emerald-400/[0.04]"><p className="text-[0.52rem] uppercase text-emerald-700/80 dark:text-emerald-300/80">Pagas</p><p className="mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">{pagas}</p></div><div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 dark:border-rose/10 dark:bg-rose/[0.04]"><p className="text-[0.52rem] uppercase text-rose-700/80 dark:text-rose-200/80">Em aberto</p><p className="mt-1 text-sm font-semibold text-rose-700 dark:text-rose-200">{boletos.length - pagas}</p></div></div></section><section className="space-y-1.5">{visiveis.map(b => <div key={b.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-white/8 dark:bg-white/[0.02]"><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-slate-900 dark:text-slate-100">Parcela {b.numero_parcela}/{b.total_parcelas}</p><p className="text-[0.58rem] text-slate-600 dark:text-slate-400">{b.data_vencimento ? new Date(`${b.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR") : "—"} · R$ {moeda(Number(b.valor || 0))}</p><p className="text-[0.55rem] text-slate-500 dark:text-slate-400">{STATUS_BOLETO_LABEL[b.status] ?? b.status}{b.comprovante_url ? " · comprovante anexado" : ""}</p></div>{b.comprovante_url && <a href={b.comprovante_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-slate-900 dark:border-white/10 dark:text-slate-400 dark:hover:text-slate-100" aria-label="Abrir comprovante"><Paperclip className="h-3.5 w-3.5" /></a>}{b.comprovante_url && <button type="button" onClick={() => rejeitar(b)} disabled={rejeitando === b.id} className="rounded-lg border border-alert/20 bg-alert/5 p-2 text-alert disabled:opacity-50" aria-label="Rejeitar comprovante"><X className="h-3.5 w-3.5" /></button>}</div>)}{boletos.length > 8 && <button type="button" onClick={() => setMostrarTodas(v => !v)} className="w-full rounded-lg border border-slate-200 py-2 text-[0.6rem] font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/8 dark:text-slate-400 dark:hover:bg-white/5">{mostrarTodas ? "Mostrar menos" : `Mostrar todas as ${boletos.length} parcelas`}</button>}</section></>}</div>}
+      </div> : aba === "boletos" ? <div className="space-y-2.5">{carregando ? <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Carregando boletos...</div> : <><section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]"><div className="mb-2.5 flex items-center justify-between"><div><p className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Resumo financeiro</p><p className="mt-0.5 text-[0.58rem] text-slate-600 dark:text-slate-400">Pagamentos e comprovantes da cliente.</p></div><span className="rounded-full bg-emerald-50 px-2 py-1 text-[0.52rem] font-semibold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300">{pagas}/{boletos.length} pagas</span></div><div className="grid grid-cols-3 gap-2"><div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-white/8 dark:bg-white/[0.02]"><p className="text-[0.52rem] uppercase text-slate-500 dark:text-slate-400">Total</p><p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{boletos.length}</p></div><div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-300/10 dark:bg-emerald-400/[0.04]"><p className="text-[0.52rem] uppercase text-emerald-700/80 dark:text-emerald-300/80">Pagas</p><p className="mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">{pagas}</p></div><div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 dark:border-rose/10 dark:bg-rose/[0.04]"><p className="text-[0.52rem] uppercase text-rose-700/80 dark:text-rose-200/80">Em aberto</p><p className="mt-1 text-sm font-semibold text-rose-700 dark:text-rose-200">{boletos.length - pagas}</p></div></div></section><section className="space-y-1.5">{visiveis.map(b => <div key={b.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-white/8 dark:bg-white/[0.02]"><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-slate-900 dark:text-slate-100">Parcela {b.numero_parcela}/{b.total_parcelas}</p><p className="text-[0.58rem] text-slate-600 dark:text-slate-400">{b.data_vencimento ? new Date(`${b.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR") : "—"} · R$ {moeda(Number(b.valor || 0))}</p><p className="text-[0.55rem] text-slate-500 dark:text-slate-400">{STATUS_BOLETO_LABEL[b.status] ?? b.status}{b.comprovante_url ? " · comprovante anexado" : ""}</p></div>{b.comprovante_url && <a href={b.comprovante_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-slate-900 dark:border-white/10 dark:text-slate-400 dark:hover:text-slate-100" aria-label="Abrir comprovante"><Paperclip className="h-3.5 w-3.5" /></a>}{b.comprovante_url && <button type="button" onClick={() => rejeitar(b)} disabled={rejeitando === b.id} className="rounded-lg border border-alert/20 bg-alert/5 p-2 text-alert disabled:opacity-50" aria-label="Rejeitar comprovante"><X className="h-3.5 w-3.5" /></button>}</div>)}{boletos.length > 8 && <button type="button" onClick={() => setMostrarTodas(v => !v)} className="w-full rounded-lg border border-slate-200 py-2 text-[0.6rem] font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/8 dark:text-slate-400 dark:hover:bg-white/5">{mostrarTodas ? "Mostrar menos" : `Mostrar todas as ${boletos.length} parcelas`}</button>}</section></>}</div> : <div className="space-y-2.5">{carregandoContrato ? <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Carregando contrato...</div> : <>
+        <section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]">
+          <div className="mb-2.5 flex items-center gap-2"><ShieldAlert className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Status do contrato</h3></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{STATUS_CONTRATO_OPCOES.map(opcao => <button key={opcao} type="button" onClick={() => setStatusContrato(opcao)} className={`rounded-lg border px-2 py-2 text-[0.62rem] font-semibold transition ${statusContrato === opcao ? "border-rose bg-rose text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"}`}>{STATUS_CONTRATO_LABEL[opcao]}</button>)}</div>
+          {statusContrato === "suspenso" && <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-lg border border-amber-300/20 bg-amber-50 p-2.5 dark:bg-amber-300/[0.06]"><div><Label htmlFor="mc3-susp-desde">Suspenso desde</Label><Input id="mc3-susp-desde" type="date" value={suspensoDesde} onChange={e => setSuspensoDesde(e.target.value)} /></div><div><Label htmlFor="mc3-susp-ate">Até (opcional)</Label><Input id="mc3-susp-ate" type="date" value={suspensoAte} onChange={e => setSuspensoAte(e.target.value)} placeholder="Indeterminada" /></div><div className="col-span-2"><Label htmlFor="mc3-susp-motivo">Motivo</Label><Input id="mc3-susp-motivo" value={suspensaoMotivo} onChange={e => setSuspensaoMotivo(e.target.value)} placeholder="Ex.: inadimplência, revisão de contrato…" /></div></div>}
+          {(statusContrato === "negativado" || statusContrato === "cancelado") && <div className="mt-2.5"><Label htmlFor="mc3-status-motivo">Motivo (opcional)</Label><Input id="mc3-status-motivo" value={suspensaoMotivo} onChange={e => setSuspensaoMotivo(e.target.value)} /></div>}
+          <div className="mt-2.5 flex items-center justify-between gap-2"><p className="text-[0.58rem] text-slate-500 dark:text-slate-400">Suspender bloqueia o app da cliente (pagamento e jornada); o Financeiro continua podendo administrar o contrato normalmente.</p><Button type="button" size="sm" loading={salvandoStatus} disabled={!cliente || statusContrato === cliente.status_contrato} onClick={salvarStatusContrato}>Aplicar</Button></div>
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]">
+          <div className="mb-2.5 flex items-center gap-2"><Landmark className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Carnês</h3></div>
+          {carnes.length === 0 ? <p className="text-[0.62rem] text-slate-500 dark:text-slate-400">Nenhum carnê registrado ainda.</p> : <div className="space-y-1.5">{carnes.map(c => <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[0.62rem] dark:border-white/8 dark:bg-white/[0.02]"><span className="font-semibold text-slate-800 dark:text-slate-200">{c.instituicao_financeira} · {c.identificador_externo}</span><span className="text-slate-500 dark:text-slate-400">{c.quantidade_parcelas}x · {moeda(c.valor_total)}</span></div>)}</div>}
+          <form onSubmit={criarCarne} className="mt-2.5 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-white/8 dark:bg-white/[0.02] sm:grid-cols-4">
+            <Input placeholder="Instituição (ex.: BRB)" value={novoCarneBanco} onChange={e => setNovoCarneBanco(e.target.value)} />
+            <Input placeholder="Identificador do carnê" value={novoCarneIdentificador} onChange={e => setNovoCarneIdentificador(e.target.value)} />
+            <Input type="date" value={novoCarneData} onChange={e => setNovoCarneData(e.target.value)} />
+            <Button type="submit" size="sm" variant="secondary" loading={criandoCarne}>Registrar carnê</Button>
+          </form>
+          <label className="mt-2.5 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-rose/30 bg-rose/5 px-3 py-2.5 text-[0.62rem] font-semibold text-rose hover:bg-rose/10">
+            <FileUp className="h-3.5 w-3.5" /> {importando ? "Importando…" : "Importar carnê em PDF (uma página por parcela)"}
+            <input type="file" accept="application/pdf" className="hidden" disabled={importando || !novoCarneBanco} onChange={e => { const arquivo = e.target.files?.[0]; if (arquivo) void importarCarne(arquivo, novoCarneBanco || carnes[0]?.instituicao_financeira || "Não informado"); e.target.value = ""; }} />
+          </label>
+          {importacoes.filter(i => i.status_vinculacao !== "vinculado" && i.status_vinculacao !== "ignorado").length > 0 && <div className="mt-2.5 space-y-1.5">
+            <p className="text-[0.58rem] font-semibold uppercase tracking-label text-amber-700 dark:text-amber-200">Páginas aguardando confirmação</p>
+            {importacoes.filter(i => i.status_vinculacao !== "vinculado" && i.status_vinculacao !== "ignorado").map(i => <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-300/25 bg-amber-50 px-2.5 py-2 text-[0.62rem] dark:bg-amber-300/[0.06]">
+              <span>Parcela {i.numero_parcela} · confiança {i.nivel_confianca ?? "sem sugestão"}</span>
+              <span className="flex gap-1.5">
+                {i.boleto_sugerido_id && <button type="button" onClick={() => vincularImportacao(i)} className="rounded-md bg-success/15 px-2 py-1 font-semibold text-success">Vincular</button>}
+                <button type="button" onClick={() => ignorarImportacao(i.id)} className="rounded-md bg-slate-200 px-2 py-1 font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">Ignorar</button>
+              </span>
+            </div>)}
+          </div>}
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.025]">
+          <div className="mb-2.5 flex items-center gap-2"><History className="h-3.5 w-3.5 text-rose" /><h3 className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-rose">Histórico operacional</h3></div>
+          {historico.length === 0 ? <p className="text-[0.62rem] text-slate-500 dark:text-slate-400">Nenhum evento registrado ainda.</p> : <div className="max-h-52 space-y-1.5 overflow-y-auto">{historico.slice(0, 30).map(h => <div key={h.id} className="flex items-start gap-2 text-[0.6rem] text-slate-600 dark:text-slate-400"><Clock className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" /><span><span className="font-semibold text-slate-800 dark:text-slate-200">{h.acao.replace(/_/g, " ")}</span> · {new Date(h.created_at).toLocaleString("pt-BR")}</span></div>)}</div>}
+        </section>
+      </>}</div>}
     </form>
     <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 px-3.5 py-3 dark:border-white/10"><div className="hidden text-[0.55rem] uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500 sm:block">Financeiro e comprovantes</div><div className="ml-auto flex gap-1.5"><Button type="button" variant="secondary" onClick={onClose}>Fechar</Button>{aba === "boletos" && editando && <Button type="button" variant="secondary" loading={ajustando} onClick={ajustar}>Ajustar parcelas</Button>}<Button type="submit" form="cliente-v3-form" loading={salvando}><Check className="h-3.5 w-3.5" /> Salvar</Button></div></footer>
     {confirmarExclusao && <div className="absolute inset-0 z-10 flex items-center justify-center bg-transparent p-4"><div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-[0_24px_70px_-24px_rgba(0,0,0,.35)] dark:border-white/10 dark:bg-[#211c20] dark:text-slate-100"><div className="flex items-center gap-2 text-alert"><Trash2 className="h-4 w-4" /><p className="text-sm font-semibold">Excluir cliente?</p></div><p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">Esta ação remove o perfil da cliente e os dados associados. Deseja continuar?</p><div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button type="button" loading={excluindo} onClick={excluirCliente} className="!bg-alert">Excluir</Button></div></div></div>}
