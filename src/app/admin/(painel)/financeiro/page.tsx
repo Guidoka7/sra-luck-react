@@ -151,7 +151,7 @@ export default function FinanceiroPage() {
       </div>
 
       <div style={{ marginTop: 10, textAlign: "right" }}>
-        <a href="/admin/financeiro/avancado" style={{ fontSize: 10.5, color: "var(--soft)", textDecoration: "underline" }}>Operações avançadas do Financeiro Unificado (baixa manual, conciliação, recebíveis em lote) →</a>
+        <a href="/admin/financeiro/avancado" style={{ fontSize: 10.5, color: "var(--soft)", textDecoration: "underline" }}>Ferramenta interna transitória — recebíveis em lote e conciliação bancária →</a>
       </div>
     </div>
 

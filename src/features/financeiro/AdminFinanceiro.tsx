@@ -89,6 +89,10 @@ export default function AdminFinanceiro() {
   function pesquisar(value: string) { setBusca(value); if (value && aba !== "recebiveis") navegar("recebiveis"); }
 
   return <div className="space-y-4 pb-8 text-clay dark:text-[#e7dedd]">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-2 border-dashed border-amber-500/50 bg-amber-500/10 px-4 py-3 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200">
+      <p className="text-xs font-bold uppercase tracking-wider">⚠ Ferramenta interna transitória — não é uma tela final do produto</p>
+      <p className="text-xs">Recebíveis em lote e conciliação bancária que ainda não têm equivalente no novo Financeiro. <a href="/admin/financeiro" className="font-semibold underline">Voltar ao Financeiro →</a></p>
+    </div>
     <PageHeader eyebrow="Operação financeira" title="Financeiro Unificado" description="Recebimentos, comprovantes, parcelas e auditoria em uma única superfície operacional." actions={<><Button size="sm" variant="secondary" onClick={() => void abrirGeracao()}><Plus className="h-4 w-4" />Adicionar parcelas</Button><Button size="sm" onClick={atualizar}><RefreshCw className={cn("h-4 w-4", carregando && "animate-spin")} />Atualizar</Button></>} />
 
     <Panel className="p-2.5 dark:border-white/8 dark:bg-[#171519]/92">

@@ -54,6 +54,15 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const [baixaAlvo, setBaixaAlvo] = useState<Boleto | null>(null);
+  const [baixaData, setBaixaData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [baixaJuros, setBaixaJuros] = useState("0");
+  const [baixaMulta, setBaixaMulta] = useState("0");
+  const [baixaForma, setBaixaForma] = useState("pix");
+  const [baixaBanco, setBaixaBanco] = useState("");
+  const [baixaObs, setBaixaObs] = useState("");
+  const [baixaArquivo, setBaixaArquivo] = useState<File | null>(null);
+  const [salvandoBaixa, setSalvandoBaixa] = useState(false);
 
   const [statusContrato, setStatusContrato] = useState<StatusContratoCliente>(cliente?.status_contrato ?? "ativo");
   const [statusMenuAberto, setStatusMenuAberto] = useState(false);
@@ -281,6 +290,25 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
     finally { setValidando(false); }
   }
 
+  function abrirBaixaManual(b: Boleto) {
+    setBaixaAlvo(b);
+    setBaixaData(new Date().toISOString().slice(0, 10));
+    setBaixaJuros("0"); setBaixaMulta("0"); setBaixaForma("pix"); setBaixaBanco(""); setBaixaObs(""); setBaixaArquivo(null);
+  }
+  async function confirmarBaixaManual() {
+    if (!baixaAlvo) return;
+    setSalvandoBaixa(true);
+    try {
+      if (baixaArquivo) await financeiroApi.anexarComprovante(baixaAlvo.id, baixaArquivo);
+      await financeiroApi.baixa(baixaAlvo.id, { dataPagamento: baixaData, juros: Number(baixaJuros) || 0, multa: Number(baixaMulta) || 0, formaPagamento: baixaForma, instituicaoConta: baixaBanco, observacao: baixaObs });
+      toast.success("Baixa manual registrada.");
+      setBaixaAlvo(null);
+      void carregarBoletos();
+      onSalvo();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível registrar a baixa."); }
+    finally { setSalvandoBaixa(false); }
+  }
+
   const hojeIso = new Date().toISOString().slice(0, 10);
   const vencidas = boletos.filter((b) => b.status !== "pago" && b.data_vencimento && b.data_vencimento < hojeIso).length;
   const situacao = statusContrato === "cancelado" ? "Contrato cancelado" : vencidas > 0 ? "Em atraso" : "Em dia";
@@ -417,6 +445,7 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
                 <span style={zipChip(b.status === "pago" ? "ok" : b.status === "pendente_confirmacao" ? "warn" : "neutral")}>{STATUS_BOLETO_LABEL[b.status] ?? b.status}</span>
                 <span style={{ display: "flex", gap: 5 }}>
                   {b.comprovante_url && <a href={b.comprovante_url} target="_blank" rel="noreferrer" style={{ ...secondaryBtn, height: 24, padding: "0 8px" }}>Ver</a>}
+                  {b.status === "nao_pago" && <button type="button" onClick={() => abrirBaixaManual(b)} style={{ ...secondaryBtn, height: 24, padding: "0 8px" }}>Baixa manual</button>}
                 </span>
               </div>)}
               {boletos.length > 8 && <button type="button" onClick={() => setMostrarTodas((v) => !v)} style={{ ...secondaryBtn, width: "100%", marginTop: 8 }}>{mostrarTodas ? "Mostrar menos" : `Mostrar todas as ${boletos.length} parcelas`}</button>}
@@ -464,6 +493,26 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
           <div style={{ marginTop: 16, display: "flex", gap: 9, justifyContent: "flex-end" }}>
             <button onClick={() => setConfirmarExclusao(false)} style={secondaryBtn}>Cancelar</button>
             <button onClick={excluirCliente} disabled={excluindo} style={{ ...primaryBtn, width: "auto", border: "1px solid var(--bad)", background: "var(--bad)" }}>Excluir perfil</button>
+          </div>
+        </div>
+      </div>}
+
+      {baixaAlvo && <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(30,12,16,.5)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+        <div className="zip-animate-pop-in" style={{ width: 440, maxWidth: "100%", background: "var(--s0)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--sh)", padding: 20, maxHeight: "90vh", overflowY: "auto" }}>
+          <h2 style={{ fontSize: 16 }}>Baixa manual · parcela {baixaAlvo.numero_parcela}/{baixaAlvo.total_parcelas}</h2>
+          <p style={{ margin: "6px 0 12px", fontSize: 11.5, color: "var(--soft)", lineHeight: 1.5 }}>Valor original R$ {moeda(Number(baixaAlvo.valor || 0))}. O total é validado e recalculado no servidor.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <Field label="Data do pagamento"><input type="date" style={fieldInput} value={baixaData} onChange={(e) => setBaixaData(e.target.value)} /></Field>
+            <Field label="Forma de pagamento"><select style={fieldInput} value={baixaForma} onChange={(e) => setBaixaForma(e.target.value)}><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option><option value="boleto">Boleto</option><option value="cartao">Cartão</option><option value="cheque">Cheque</option><option value="outro">Outro</option></select></Field>
+            <Field label="Juros"><input inputMode="decimal" style={fieldInput} value={baixaJuros} onChange={(e) => setBaixaJuros(e.target.value)} /></Field>
+            <Field label="Multa"><input inputMode="decimal" style={fieldInput} value={baixaMulta} onChange={(e) => setBaixaMulta(e.target.value)} /></Field>
+            <div style={{ gridColumn: "1 / -1" }}><Field label="Banco"><input style={fieldInput} value={baixaBanco} onChange={(e) => setBaixaBanco(e.target.value)} placeholder="Ex.: Itaú, Nubank, Caixa" /></Field></div>
+            <div style={{ gridColumn: "1 / -1" }}><Field label="Observações"><textarea style={{ ...fieldInput, height: "auto", padding: 9 }} rows={2} value={baixaObs} onChange={(e) => setBaixaObs(e.target.value)} /></Field></div>
+            <div style={{ gridColumn: "1 / -1" }}><label style={{ display: "flex", cursor: "pointer", alignItems: "center", gap: 8, borderRadius: 9, border: "1px dashed var(--rose)", background: "var(--robg)", padding: "9px 10px", fontSize: 11, fontWeight: 600, color: "var(--bg)" }}>{baixaArquivo ? baixaArquivo.name : "Comprovante opcional (PDF, JPG, PNG)"}<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => setBaixaArquivo(e.target.files?.[0] ?? null)} /></label></div>
+          </div>
+          <div style={{ marginTop: 16, display: "flex", gap: 9, justifyContent: "flex-end" }}>
+            <button onClick={() => setBaixaAlvo(null)} style={secondaryBtn}>Cancelar</button>
+            <button onClick={confirmarBaixaManual} disabled={salvandoBaixa} style={{ ...primaryBtn, width: "auto" }}>{salvandoBaixa ? "Salvando…" : "Confirmar baixa"}</button>
           </div>
         </div>
       </div>}
