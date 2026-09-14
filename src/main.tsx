@@ -17,6 +17,7 @@ import VisaoGeralPage from "./app/admin/(painel)/visao-geral/page";
 import AgendaAdminPage from "./app/admin/(painel)/agenda/page";
 import ClientesPage from "./app/admin/(painel)/clientes/page";
 import FinanceiroPage from "./app/admin/(painel)/financeiro/page";
+import ClubePage from "./app/admin/(painel)/clube/page";
 import RelatoriosPage from "./app/admin/(painel)/relatorios/page";
 import EquipeAdminPage from "./app/admin/(painel)/equipe/page";
 import IntegracoesAdminPage from "./app/admin/(painel)/integracoes/page";
@@ -45,6 +46,7 @@ function AdminRoute({ path }: { path: string }) {
   if (path.startsWith("/admin/pagamentos")) return <RedirectTo to="/admin/financeiro?aba=validacao" />;
   if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro?aba=recebiveis" />;
   if (path.startsWith("/admin/financeiro")) return <FinanceiroPage />;
+  if (path.startsWith("/admin/clube")) return <ClubePage />;
   if (path.startsWith("/admin/relatorios")) return <RelatoriosPage />;
   if (path.startsWith("/admin/equipe")) return <EquipeAdminPage />;
   if (path.startsWith("/admin/integracoes")) return <IntegracoesAdminPage />;

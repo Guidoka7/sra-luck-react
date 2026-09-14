@@ -38,6 +38,9 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
       if(b.pixDescontoPercentual!==undefined){const v=Number(b.pixDescontoPercentual);if(!Number.isFinite(v)||v<0||v>100)return json({erro:"Informe um desconto PIX entre 0% e 100%."},400);patch.pix_desconto_percentual=v;}
       if(b.whatsappContato!==undefined)patch.whatsapp_contato=String(b.whatsappContato).trim().slice(0,40);
       if(b.telefoneContato!==undefined)patch.telefone_contato=String(b.telefoneContato).trim().slice(0,40);
+      if(b.cartaoHabilitado!==undefined)patch.cartao_habilitado=Boolean(b.cartaoHabilitado);
+      if(b.cartaoTaxaPercentual!==undefined){const v=Number(b.cartaoTaxaPercentual);if(!Number.isFinite(v)||v<0||v>100)return json({erro:"Informe uma taxa de cartão entre 0% e 100%."},400);patch.cartao_taxa_percentual=v;}
+      if(b.cartaoMaxParcelas!==undefined){const v=b.cartaoMaxParcelas===null?null:Number(b.cartaoMaxParcelas);if(v!==null&&(!Number.isFinite(v)||v<1||v>60))return json({erro:"Informe um número de parcelas do cartão válido."},400);patch.cartao_max_parcelas=v;}
       if(b.temaCorPrimaria!==undefined){const v=hex(b.temaCorPrimaria);if(!v)return json({erro:"Cor principal inválida."},400);patch.tema_cor_primaria=v;}
       if(b.temaCorSecundaria!==undefined){const v=hex(b.temaCorSecundaria);if(!v)return json({erro:"Cor secundária inválida."},400);patch.tema_cor_secundaria=v;}
       if(b.temaCorDestaque!==undefined){const v=hex(b.temaCorDestaque);if(!v)return json({erro:"Cor de destaque inválida."},400);patch.tema_cor_destaque=v;}

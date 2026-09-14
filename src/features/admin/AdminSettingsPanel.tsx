@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Bell, Building2, CalendarClock, CheckCircle2, ImagePlus, Lock, MessageCircle, MonitorCog, Moon,
+  Bell, Building2, CalendarClock, CheckCircle2, CreditCard, ImagePlus, Lock, MessageCircle, MonitorCog, Moon,
   Palette, Phone, QrCode, Save, ShieldCheck, Sun, Trash2, Unlock, UploadCloud, WalletCards,
 } from "lucide-react";
 import { useTheme } from "../../components/ui/ThemeProvider";
@@ -16,6 +16,9 @@ interface ConfiguracoesData extends Record<string, unknown> {
   pix_desconto_percentual?: number;
   whatsapp_contato?: string;
   telefone_contato?: string;
+  cartao_habilitado?: boolean;
+  cartao_taxa_percentual?: number;
+  cartao_max_parcelas?: number | null;
   agenda_liberacao_financeira_bloqueada?: boolean;
   tema_cor_primaria?: string;
   tema_cor_secundaria?: string;
@@ -175,6 +178,18 @@ export function AdminSettingsPanel() {
             <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => selectQr(e.target.files?.[0] ?? null)} />
           </div>
           <div className="sl-settings-actions"><button type="button" className="primary" disabled={saving === "payments"} onClick={() => void patchConfig("payments", { pixChave: c.pix_chave ?? "", pixQrCodeBase64: c.pix_qrcode_base64 ?? "", pixDescontoPercentual: c.pix_desconto_percentual ?? 0, whatsappContato: c.whatsapp_contato ?? "", telefoneContato: c.telefone_contato ?? "" })}><Save size={15} /> {saving === "payments" ? "Salvando…" : "Salvar pagamento e contato"}</button></div>
+        </section>
+
+        <section className="sl-card sl-settings-card">
+          <div className="sl-settings-title"><div className="sl-settings-icon"><CreditCard size={18} /></div><div><h2>Cartão de crédito</h2><p>Controla se a cliente vê a opção de cartão ao pagar uma parcela.</p></div></div>
+          <label className="sl-field sl-field-toggle">
+            <span>Aceitar cartão nas parcelas</span>
+            <input type="checkbox" checked={Boolean(c.cartao_habilitado)} onChange={(e) => update("cartao_habilitado", e.target.checked)} />
+          </label>
+          <label className="sl-field"><span>Taxa do cartão (%)</span><input type="number" min="0" max="100" step="0.1" value={Number(c.cartao_taxa_percentual ?? 5.4)} onChange={(e) => update("cartao_taxa_percentual", Number(e.target.value))} /></label>
+          <label className="sl-field"><span>Máximo de parcelas no cartão</span><input type="number" min="1" max="60" value={c.cartao_max_parcelas ?? ""} placeholder="Sem limite adicional" onChange={(e) => update("cartao_max_parcelas", e.target.value === "" ? null : Number(e.target.value))} /></label>
+          <p className="sl-settings-link-copy">Nenhum gateway de pagamento está integrado ainda — habilitar aqui libera o botão para a cliente, mas a cobrança real depende da contratação de um provedor.</p>
+          <button type="button" className="sl-save-button" disabled={saving === "cartao"} onClick={() => void patchConfig("cartao", { cartaoHabilitado: Boolean(c.cartao_habilitado), cartaoTaxaPercentual: c.cartao_taxa_percentual ?? 5.4, cartaoMaxParcelas: c.cartao_max_parcelas ?? null })}><Save size={15} /> {saving === "cartao" ? "Salvando…" : "Salvar cartão de crédito"}</button>
         </section>
 
         <section className="sl-card sl-settings-card">
