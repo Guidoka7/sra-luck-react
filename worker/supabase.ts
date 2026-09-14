@@ -4,16 +4,17 @@ export interface Env {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   CLIENTE_SESSION_SECRET?: string;
+  NOTIFICACOES_CRON_SECRET?: string;
 
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
-  // permanecem exclusivamente no backend quando o envio for ativado futuramente.
+  // permanecem exclusivamente no backend/cofre de integrações.
   WEB_PUSH_VAPID_PUBLIC_KEY?: string;
   WEB_PUSH_VAPID_PRIVATE_KEY?: string;
   WEB_PUSH_VAPID_SUBJECT?: string;
 
   // Integrações — manter exclusivamente como secrets/vars do Worker.
   RD_WEBHOOK_SECRET?: string;
-  RD_API_ACCESS_TOKEN?: string; // legado: mantido apenas como fallback de leitura
+  RD_API_ACCESS_TOKEN?: string;
   RD_CLIENT_ID?: string;
   RD_CLIENT_SECRET?: string;
   RD_REDIRECT_URI?: string;
@@ -28,7 +29,6 @@ export interface Env {
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
   PUBLIC_APP_URL?: string;
 
-  // Bancos. Cada provedor pode exigir credenciais/certificados próprios em homologação.
   BRB_WEBHOOK_SECRET?: string;
   BB_WEBHOOK_SECRET?: string;
   SANTANDER_WEBHOOK_SECRET?: string;

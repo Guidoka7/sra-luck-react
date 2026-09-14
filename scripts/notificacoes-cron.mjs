@@ -8,7 +8,7 @@ if (!secret) {
 }
 
 async function executarAcao(acao) {
-  const response = await fetch(`${baseUrl}/api/admin/notificacoes/automacao`, {
+  const response = await fetch(`${baseUrl}/api/internal/notificacoes/automacao`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-notificacoes-cron-secret': secret },
     body: JSON.stringify({ acao }),
@@ -20,11 +20,11 @@ async function executarAcao(acao) {
 
 async function executar() {
   try {
-    const [atrasos, momentos] = await Promise.all([
+    const [atrasos, vencimentos] = await Promise.all([
       executarAcao('verificar_atrasos'),
       executarAcao('verificar_momentos_especiais'),
     ]);
-    console.log(`[notificacoes] ${new Date().toISOString()}`, { atrasos, momentos });
+    console.log(`[notificacoes] ${new Date().toISOString()}`, { atrasos, vencimentos });
   } catch (error) {
     console.error('[notificacoes] falha:', error.message);
   }
