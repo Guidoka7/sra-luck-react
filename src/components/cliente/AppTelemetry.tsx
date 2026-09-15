@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { registrarErro } from "@/lib/monitoramento";
 
 function deviceType() {
   const width = window.innerWidth;
@@ -29,7 +30,8 @@ async function getPushActive() {
     if (Notification.permission !== "granted") return false;
     const registration = await navigator.serviceWorker.ready;
     return Boolean(await registration.pushManager.getSubscription());
-  } catch {
+  } catch (error) {
+    registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao consultar assinatura push", nivel: "warn", codigo: "APP_TELEMETRY_PUSH_STATE_FAILED", action: "telemetry.push_state.read" });
     return false;
   }
 }
@@ -47,7 +49,7 @@ export function AppTelemetry() {
         const pushActive = await getPushActive();
         if (cancelado) return;
 
-        await fetch(`/api/cliente/app-telemetry?t=${Date.now()}`, {
+        const response = await fetch(`/api/cliente/app-telemetry?t=${Date.now()}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
           cache: "no-store",
@@ -61,8 +63,11 @@ export function AppTelemetry() {
           }),
           keepalive: true,
         });
-      } catch {
-        // Telemetria nunca deve impedir o uso do aplicativo.
+        if (!response.ok) {
+          registrarErro({ mensagem: `Telemetria respondeu HTTP ${response.status}`, nivel: "warn", codigo: "APP_TELEMETRY_HTTP_FAILED", action: "telemetry.app.send", status_http: response.status, request_id: response.headers.get("x-request-id") || undefined });
+        }
+      } catch (error) {
+        registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao enviar telemetria", nivel: "warn", codigo: "APP_TELEMETRY_SEND_FAILED", action: "telemetry.app.send" });
       } finally {
         enviando = false;
       }
