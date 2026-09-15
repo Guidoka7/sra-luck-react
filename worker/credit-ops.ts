@@ -254,12 +254,25 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-      const [{ data: saldo }, { data: rewards }, { data: history }] = await Promise.all([
+      const [{ data: saldo }, { data: rewards }, { data: history }, { data: beneficios }, { data: indicacoes }] = await Promise.all([
         db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-        db.from("clube_recompensas").select("*").eq("ativo", true).order("pontos"),
+        db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
         db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
+        db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
+        db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
       ]);
-      return json({ saldo: Number(saldo?.saldo ?? 0), recompensas: rewards ?? [], historico: history ?? [] });
+      const listaIndicacoes = indicacoes ?? [];
+      return json({
+        saldo: Number(saldo?.saldo ?? 0),
+        recompensas: rewards ?? [],
+        historico: history ?? [],
+        beneficios: beneficios ?? [],
+        indicacoes: {
+          confirmadas: listaIndicacoes.filter((item) => item.status === "venda").length,
+          emAnalise: listaIndicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
+          itens: listaIndicacoes,
+        },
+      });
     }
 
     if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
@@ -275,26 +288,36 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       return json({ indicacao: data }, 201);
     }
 
+    const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
+    if (usarBeneficio && request.method === "POST") {
+      const beneficioId = decodeURIComponent(usarBeneficio[1]);
+      const { data, error } = await db
+        .from("clube_beneficios_cliente")
+        .update({ status: "utilizado", updated_at: new Date().toISOString() })
+        .eq("id", beneficioId)
+        .eq("cliente_id", clienteId)
+        .eq("status", "disponivel")
+        .select("*")
+        .maybeSingle();
+      if (error) return json({ erro: error.message }, 400);
+      if (!data) return json({ erro: "Benefício não encontrado ou já utilizado." }, 404);
+      return json({ beneficio: data });
+    }
+
     if (path === "/api/cliente/credit-ops/redeem" && request.method === "POST") {
       const b = await body(request);
       const rewardId = String(b.recompensaId ?? "");
+      const idempotencyKey = String(b.idempotencyKey ?? "");
       if (!rewardId) return json({ erro: "Recompensa não informada." }, 400);
-      const [{ data: reward, error: rewardError }, { data: points, error: pointsError }] = await Promise.all([
-        db.from("clube_recompensas").select("*").eq("id", rewardId).eq("ativo", true).maybeSingle(),
-        db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-      ]);
-      if (rewardError || pointsError) return json({ erro: (rewardError ?? pointsError)?.message }, 500);
-      if (!reward) return json({ erro: "Recompensa indisponível." }, 404);
-      const current = Number(points?.saldo ?? 0);
-      const cost = Number(reward.pontos);
-      if (current < cost) return json({ erro: "Saldo de pontos insuficiente." }, 400);
-      const next = current - cost;
-      const { error: upsertError } = await db.from("cliente_pontos").upsert({ cliente_id: clienteId, saldo: next, updated_at: new Date().toISOString() });
-      if (upsertError) return json({ erro: upsertError.message }, 400);
-      const { data: redeem, error: redeemError } = await db.from("clube_resgates").insert({ cliente_id: clienteId, recompensa_id: rewardId, pontos: cost }).select("*").single();
-      if (redeemError) return json({ erro: redeemError.message }, 400);
-      await db.from("cliente_pontos_eventos").insert({ cliente_id: clienteId, tipo: "resgate", pontos: -cost, referencia: redeem.id });
-      return json({ resgate: redeem, saldo: next }, 201);
+      if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
+      const { data: resgate, error } = await db.rpc("clube_resgatar", {
+        p_cliente_id: clienteId,
+        p_recompensa_id: rewardId,
+        p_idempotency_key: idempotencyKey,
+      });
+      if (error) return json({ erro: error.message }, 400);
+      const { data: pontos } = await db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle();
+      return json({ resgate, saldo: Number(pontos?.saldo ?? 0) }, 201);
     }
 
     return null;

@@ -1,44 +1,49 @@
-import { Heart, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 interface CardMotivacionalProps {
-  procedimento?: string | null;
+  procedimento: string | null;
+  quantidadeParcelas: number | null;
+  percentualPago: number;
 }
 
-export function CardMotivacional({ procedimento }: CardMotivacionalProps) {
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-br from-white via-blush/40 to-white p-6 shadow-card sm:p-8">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gold/10 blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-12 -left-8 h-32 w-32 rounded-full bg-rose/10 blur-2xl" />
+export function CardMotivacional({ procedimento, quantidadeParcelas, percentualPago }: CardMotivacionalProps) {
+  const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : null;
+  const percentual = Math.max(0, Math.min(100, Math.round(percentualPago)));
 
-      <div className="relative flex items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gold/15">
-          <Sparkles className="h-4 w-4 text-gold" />
-        </span>
-        <div>
-          <p className="text-sm leading-relaxed text-clay/80 sm:text-[0.95rem]">
-            Você está cada vez mais perto de realizar o seu sonho. Sua próxima
-            etapa é a{" "}
-            <span className="font-heading font-semibold text-burgundy">
-              Assinatura dos Termos Cirúrgicos
-            </span>
-            , um dos momentos mais importantes do seu processo.
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-clay/80 sm:text-[0.95rem]">
-            Escolha abaixo a melhor data para esse encontro. É nele que sua{" "}
-            <span className="font-heading font-semibold text-burgundy">
-              data de cirurgia
-            </span>{" "}
-            será definida e informada a você.
-          </p>
-          {procedimento && (
-            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-rose/10 bg-white/65 px-3 py-2.5 text-sm text-clay/70">
-              <Heart className="h-4 w-4 flex-none text-rose" />
-              <p>
-                Cada parcela aproxima você do seu procedimento: {" "}
-                <span className="font-semibold text-burgundy">{procedimento}</span>.
-              </p>
-            </div>
-          )}
+  return (
+    <div className="relative overflow-hidden rounded-[22px] border border-gold/20 bg-gradient-to-br from-white via-blush/35 to-white p-4 shadow-card sm:p-5">
+      <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gold/10 blur-2xl" />
+
+      <p className="relative flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-label text-gold">
+        <Sparkles className="h-3 w-3" /> Seu sonho está em movimento
+      </p>
+
+      <div className="relative mt-1.5 flex flex-wrap items-center gap-2">
+        <h2 className="font-heading text-lg font-semibold leading-tight text-burgundy">
+          {procedimento ?? "Seu procedimento"}
+        </h2>
+        {planoLabel && (
+          <span className="rounded-full bg-burgundy/8 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-label text-burgundy">
+            {planoLabel}
+          </span>
+        )}
+      </div>
+
+      <p className="relative mt-2 text-[0.78rem] leading-relaxed text-clay/70">
+        Cada parcela confirmada aproxima você da sua conquista. Continue firme — sua jornada já começou e estamos com
+        você em cada etapa.
+      </p>
+
+      <div className="relative mt-3.5">
+        <div className="flex items-center justify-between text-[0.6rem] font-semibold uppercase tracking-label text-clay/45">
+          <span>Seu plano continua ativo</span>
+          <span className="text-burgundy">{percentual}%</span>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-clay/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-burgundy to-rose transition-[width] duration-700"
+            style={{ width: `${percentual}%` }}
+          />
         </div>
       </div>
     </div>
