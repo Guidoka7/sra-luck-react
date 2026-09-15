@@ -1,1 +1,1 @@
-// SAFETY: restore original immediately
+// awaiting original restore
