@@ -4,20 +4,16 @@ import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { safePublicAppUrl } from "./security";
 
 function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 function timingSafeEqual(a: string, b: string) {
-  const aa = new TextEncoder().encode(a);
-  const bb = new TextEncoder().encode(b);
+  const aa = new TextEncoder().encode(a); const bb = new TextEncoder().encode(b);
   if (aa.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i];
+  let diff = 0; for (let i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i];
   return diff === 0;
 }
 
@@ -32,43 +28,56 @@ async function requireAdmin(request: Request, env: Env) {
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
   return session?.adminId ?? null;
 }
-
 async function requireClient(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   const session = await verificarTokenSessao(getCookie(request, "cliente_session"), env.CLIENTE_SESSION_SECRET);
   return session?.clienteId ?? null;
 }
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (!origin) return true;
-  try { return origin === new URL(request.url).origin; } catch { return false; }
+function encargosPorAtraso(valor: number, dataVencimento: string) {
+  const vencimento = new Date(`${dataVencimento}T00:00:00`); const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const diasEmAtraso = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
+  const juros = valor * diasEmAtraso * 0.002; const multa = valor * Math.ceil(diasEmAtraso / 30) * 0.02;
+  return { diasEmAtraso, encargos: diasEmAtraso > 0 ? juros + multa : 0 };
 }
 
-function encargosPorAtraso(valor: number, dataVencimento: string) {
-  const vencimento = new Date(`${dataVencimento}T00:00:00`);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const diasEmAtraso = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
-  const juros = valor * diasEmAtraso * 0.002;
-  const multa = valor * Math.ceil(diasEmAtraso / 30) * 0.02;
-  return { diasEmAtraso, encargos: diasEmAtraso > 0 ? juros + multa : 0 };
+/** Snapshot estritamente allowlisted para persistência. Nunca grava payer, cartão, e-mail, telefone, documento ou payload bruto. */
+export function safeMercadoPagoSnapshot(payment: any) {
+  const metadata = payment?.metadata && typeof payment.metadata === "object" ? payment.metadata : {};
+  return {
+    id: payment?.id == null ? null : String(payment.id),
+    status: payment?.status == null ? null : String(payment.status),
+    status_detail: payment?.status_detail == null ? null : String(payment.status_detail),
+    transaction_amount: Number.isFinite(Number(payment?.transaction_amount)) ? Number(payment.transaction_amount) : null,
+    currency_id: payment?.currency_id == null ? null : String(payment.currency_id),
+    date_created: payment?.date_created == null ? null : String(payment.date_created),
+    date_approved: payment?.date_approved == null ? null : String(payment.date_approved),
+    payment_method_id: payment?.payment_method_id == null ? null : String(payment.payment_method_id),
+    payment_type_id: payment?.payment_type_id == null ? null : String(payment.payment_type_id),
+    external_reference: payment?.external_reference == null ? null : String(payment.external_reference),
+    metadata: { boleto_id: metadata.boleto_id == null ? null : String(metadata.boleto_id) },
+  };
 }
 
 async function createMercadoPagoPreference(request: Request, env: Env) {
   const client = await requireClient(request, env);
   if (!client) return json({ erro: "Sessão expirada." }, 401);
-  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(client, env), action: "payment.mercado_pago.preference.create", provider: "mercado_pago" });
   const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
-  if (!accessToken) {
-    log.warn("Mercado Pago não configurado", { eventCode: "MP_NOT_CONFIGURED", statusCode: 503 });
-    return json({ erro: "Mercado Pago não configurado." }, 503);
-  }
+  if (!accessToken) return json({ erro: "Pagamento por cartão temporariamente indisponível." }, 503);
+
   const body = await request.json().catch(() => ({})) as { boletoId?: string };
   const boletoId = String(body.boletoId || "");
-  if (!boletoId) return json({ erro: "Parcela não informada." }, 400);
+  if (!/^[0-9a-f-]{36}$/i.test(boletoId)) return json({ erro: "Parcela inválida." }, 400);
+
   const db = createServiceSupabaseClient(env);
+  // Rate limit simples por cliente para impedir criação abusiva de preferências.
+  if (env.CLIENTE_SESSION_SECRET) {
+    const chave = `mp-pref:${await pseudonymizeActorId(client, env)}`;
+    const { data: permitido } = await db.rpc("login_pode_tentar", { p_chave: chave, p_max_falhas: 12, p_janela_segundos: 600 });
+    if (!Boolean(permitido)) return json({ erro: "Muitas tentativas de pagamento. Aguarde alguns minutos." }, 429);
+  }
+
   const { data: boleto, error } = await db.from("boletos")
     .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,suspensa,clientes(financeiro_taxa_cartao)")
     .eq("id", boletoId).eq("cliente_id", client).maybeSingle();
@@ -85,8 +94,9 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   const cliente = Array.isArray(boleto.clientes) ? boleto.clientes[0] : boleto.clientes;
   const taxaCartao = Number(cliente?.financeiro_taxa_cartao ?? 5.4);
   const valorComTaxa = Math.round((valorNominal + encargos) * (1 + taxaCartao / 100) * 100) / 100;
+  if (!Number.isFinite(valorComTaxa) || valorComTaxa <= 0 || valorComTaxa > 1_000_000) return json({ erro: "Valor de pagamento inválido." }, 409);
 
-  const base = (env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "");
+  const base = safePublicAppUrl(request, env).replace(/\/$/, "");
   const preference = {
     items: [{ id: boleto.id, title: `Sra. Luck — Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""}`, quantity: 1, currency_id: "BRL", unit_price: valorComTaxa }],
     external_reference: `boleto:${boleto.id}`,
@@ -94,51 +104,52 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
     auto_return: "approved",
     notification_url: `${base}/api/integrations/mercado-pago/webhook`,
     statement_descriptor: "SRA LUCK",
-    metadata: { boleto_id: boleto.id, cliente_id: client },
+    metadata: { boleto_id: boleto.id },
   };
 
-  const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(preference),
-  });
+  const response = await fetch("https://api.mercadopago.com/checkout/preferences", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(preference) });
   const mp = await response.json().catch(() => ({})) as any;
   if (!response.ok || !mp?.id || !mp?.init_point) {
+    if (env.CLIENTE_SESSION_SECRET) await db.rpc("login_registrar_falha", { p_chave: `mp-pref:${await pseudonymizeActorId(client, env)}`, p_max_falhas: 12, p_janela_segundos: 600 });
     log.error("Falha ao criar preferência Mercado Pago", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PREFERENCE_FAILED", statusCode: 502, providerStatus: response.status });
     return json({ erro: "Não foi possível abrir o pagamento por cartão." }, 502);
   }
   log.info("Preferência Mercado Pago criada", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PREFERENCE_CREATED" });
-  return json({ preferenceId: mp.id, checkoutUrl: mp.init_point });
+  return json({ preferenceId: String(mp.id), checkoutUrl: String(mp.init_point) });
 }
 
-async function validateMercadoPagoSignature(request: Request, webhookSecret: string | null) {
+export async function validateMercadoPagoSignature(request: Request, webhookSecret: string | null, nowMs = Date.now()) {
   if (!webhookSecret) return false;
   const signature = request.headers.get("x-signature") || "";
   const requestId = request.headers.get("x-request-id") || "";
-  const dataId = new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "";
+  const url = new URL(request.url);
+  const dataId = url.searchParams.get("data.id") || url.searchParams.get("data_id") || "";
   const parts = Object.fromEntries(signature.split(",").map((item) => item.trim().split("=")).filter(([k, v]) => k && v));
   const ts = parts.ts || "", v1 = parts.v1 || "";
-  if (!ts || !v1) return false;
+  if (!/^\d{10,13}$/.test(ts) || !/^[0-9a-f]{64}$/i.test(v1)) return false;
+  const numericTs = Number(ts);
+  const eventMs = ts.length === 10 ? numericTs * 1000 : numericTs;
+  if (!Number.isFinite(eventMs) || Math.abs(nowMs - eventMs) > 10 * 60 * 1000) return false;
   let manifest = "";
   if (dataId) manifest += `id:${dataId};`;
   if (requestId) manifest += `request-id:${requestId};`;
   manifest += `ts:${ts};`;
-  const computed = await hmacHex(webhookSecret, manifest);
-  return timingSafeEqual(computed, v1);
+  return timingSafeEqual(await hmacHex(webhookSecret, manifest), v1);
 }
 
 async function handleMercadoPagoWebhook(request: Request, env: Env) {
   const log = requestLogger(request).child({ actorType: "system", action: "payment.mercado_pago.webhook", provider: "mercado_pago" });
   const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
   const webhookSecret = await obterCredencial(env, "mercado_pago", "webhook_secret");
-  if (!accessToken || !webhookSecret) return json({ erro: "Mercado Pago não configurado." }, 503);
+  if (!accessToken || !webhookSecret) return json({ erro: "Integração indisponível." }, 503);
   if (!(await validateMercadoPagoSignature(request, webhookSecret))) {
-    log.warn("Webhook Mercado Pago com assinatura inválida", { eventCode: "MP_WEBHOOK_INVALID_SIGNATURE", statusCode: 401 });
+    log.warn("Webhook Mercado Pago com assinatura inválida ou expirada", { eventCode: "MP_WEBHOOK_INVALID_SIGNATURE", statusCode: 401 });
     return json({ erro: "Assinatura inválida." }, 401);
   }
+
   const payload = await request.json().catch(() => ({})) as any;
   const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
-  if (!paymentId) return json({ ok: true, ignored: true }, 200);
+  if (!/^\d{1,30}$/.test(paymentId)) return json({ ok: true, ignored: true }, 200);
   const db = createServiceSupabaseClient(env);
 
   const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -147,31 +158,34 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     log.error("Falha ao consultar pagamento Mercado Pago", { eventCode: "MP_PAYMENT_LOOKUP_FAILED", statusCode: 502, providerStatus: response.status, externalPaymentId: paymentId });
     return json({ erro: "Falha ao confirmar pagamento no provedor." }, 502);
   }
-  const externalReference = String(payment?.external_reference || "");
-  const boletoId = externalReference.startsWith("boleto:") ? externalReference.slice(7) : String(payment?.metadata?.boleto_id || "");
-  if (!boletoId) return json({ ok: true, ignored: true }, 200);
 
+  const snapshot = safeMercadoPagoSnapshot(payment);
+  const externalReference = String(snapshot.external_reference || "");
+  const boletoId = externalReference.startsWith("boleto:") ? externalReference.slice(7) : String(snapshot.metadata.boleto_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(boletoId)) return json({ ok: true, ignored: true }, 200);
   const { data: boleto } = await db.from("boletos").select("id,cliente_id,valor,status,observacoes").eq("id", boletoId).maybeSingle();
   if (!boleto) return json({ ok: true, ignored: true }, 200);
 
-  const statusProvedor = String(payment.status || "unknown");
-  const valorPago = Number(payment.transaction_amount || 0);
-  const pagoEm = payment.date_approved ? String(payment.date_approved) : null;
+  const statusProvedor = String(snapshot.status || "unknown");
+  const valorPago = Number(snapshot.transaction_amount || 0);
+  const pagoEm = snapshot.date_approved;
   const { data: existente } = await db.from("pagamentos_externos").select("id,status_validacao").eq("provedor", "mercado_pago").eq("external_payment_id", paymentId).maybeSingle();
-
-  const dadosProvedor = { boleto_id: boleto.id, cliente_id: boleto.cliente_id, external_reference: externalReference || null, valor: Number.isFinite(valorPago) ? valorPago : null, status_provedor: statusProvedor, metodo: String(payment.payment_method_id || payment.payment_type_id || "cartao"), pago_em: pagoEm, payload: payment };
+  const dadosProvedor = {
+    boleto_id: boleto.id,
+    cliente_id: boleto.cliente_id,
+    external_reference: externalReference || null,
+    valor: Number.isFinite(valorPago) ? valorPago : null,
+    status_provedor: statusProvedor,
+    metodo: String(snapshot.payment_method_id || snapshot.payment_type_id || "cartao"),
+    pago_em: pagoEm,
+    payload: snapshot,
+  };
   if (existente) {
     const { error } = await db.from("pagamentos_externos").update(dadosProvedor).eq("id", existente.id);
-    if (error) {
-      log.error("Falha ao atualizar evento externo de pagamento", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_EXTERNAL_EVENT_UPDATE_FAILED", statusCode: 500, error });
-      return json({ erro: "Não foi possível atualizar o evento externo." }, 500);
-    }
+    if (error) return json({ erro: "Não foi possível atualizar o evento externo." }, 500);
   } else {
     const { error } = await db.from("pagamentos_externos").insert({ provedor: "mercado_pago", external_payment_id: paymentId, status_validacao: "aguardando_validacao", ...dadosProvedor });
-    if (error) {
-      log.error("Falha ao registrar evento externo de pagamento", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_EXTERNAL_EVENT_INSERT_FAILED", statusCode: 500, error });
-      return json({ erro: "Não foi possível registrar o evento externo." }, 500);
-    }
+    if (error) return json({ erro: "Não foi possível registrar o evento externo." }, 500);
   }
 
   if (statusProvedor === "approved" && boleto.status !== "pago") {
@@ -182,90 +196,21 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     if (error) log.error("Pagamento aprovado, mas parcela não entrou na fila humana", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PENDING_CONFIRMATION_FAILED", error });
   }
 
-  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({ provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id, payload: payment, status: "processado", processado_em: new Date().toISOString() }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
+  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({ provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id, payload: snapshot, status: "processado", processado_em: new Date().toISOString() }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
   if (integrationEventError) log.warn("Webhook processado, mas evento de integração não foi persistido", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_INTEGRATION_EVENT_FAILED", error: integrationEventError });
 
-  const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: "sistema:mercado_pago", acao: "recebeu_evento_mercado_pago", entidade: "boletos", entidade_id: boleto.id, detalhes: { paymentId, statusProvedor, transactionAmount: payment.transaction_amount ?? null, cliente_id: boleto.cliente_id, baixaAutomatica: false, aguardandoConferenciaHumana: statusProvedor === "approved" } });
-  if (auditError) log.warn("Webhook processado, mas auditoria de negócio não foi persistida", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_AUDIT_LOG_FAILED", error: auditError });
-
+  await db.from("logs_alteracoes").insert({ usuario: "sistema:mercado_pago", acao: "recebeu_evento_mercado_pago", entidade: "boletos", entidade_id: boleto.id, detalhes: { paymentId, statusProvedor, transactionAmount: snapshot.transaction_amount, cliente_id: boleto.cliente_id, baixaAutomatica: false, aguardandoConferenciaHumana: statusProvedor === "approved" } });
   log.info("Webhook Mercado Pago processado", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_WEBHOOK_PROCESSED", providerPaymentStatus: statusProvedor, awaitingHumanReview: statusProvedor === "approved" });
   return json({ ok: true, statusProvedor, aguardandoConferencia: statusProvedor === "approved", baixaAutomatica: false }, 200);
-}
-
-async function contaAzulRequest(env: Env, path: string, init: RequestInit = {}) {
-  if (!env.CONTA_AZUL_ACCESS_TOKEN) throw new Error("Conta Azul não configurado.");
-  const response = await fetch(`https://api-v2.contaazul.com${path}`, { ...init, headers: { Authorization: `Bearer ${env.CONTA_AZUL_ACCESS_TOKEN}`, "Content-Type": "application/json", ...(init.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Conta Azul HTTP ${response.status}`);
-  return data;
-}
-
-async function handleContaAzulAdmin(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
-  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "conta_azul.admin", provider: "conta_azul" });
-  const url = new URL(request.url);
-  const path = url.pathname;
-  const db = createServiceSupabaseClient(env);
-  const body = await request.json().catch(() => ({})) as any;
-
-  if (path === "/api/admin/integrations/conta-azul/create-receivable" && request.method === "POST") {
-    const boletoId = String(body.boletoId || "");
-    const contaFinanceira = String(body.contaFinanceiraId || "");
-    const contato = String(body.contatoId || "");
-    if (!boletoId || !contaFinanceira || !contato) return json({ erro: "Parcela, contato e conta financeira são obrigatórios." }, 400);
-    const { data: boleto, error } = await db.from("boletos").select("*, clientes(nome_completo), contratos_credito(codigo)").eq("id", boletoId).maybeSingle();
-    if (error || !boleto) return json({ erro: "Parcela não encontrada." }, 404);
-    const payload = {
-      data_competencia: boleto.data_vencimento,
-      valor: Number(boleto.valor),
-      observacao: `Sra. Luck · ${boleto.contratos_credito?.codigo || boleto.id}`,
-      descricao: `Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""} · ${boleto.clientes?.nome_completo || "Cliente"}`,
-      contato,
-      conta_financeira: contaFinanceira,
-      rateio: Array.isArray(body.rateio) ? body.rateio : [],
-      condicao_pagamento: { parcelas: [{ descricao: `Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""}`, data_vencimento: boleto.data_vencimento, nota: "Gerada pelo Sra. Luck", conta_financeira: contaFinanceira, detalhe_valor: { multa: 0, juros: 0, valor_bruto: Number(boleto.valor), valor_liquido: Number(boleto.valor), desconto: 0, taxa: 0 }, metodo_pagamento: "BOLETO_BANCARIO" }] },
-    };
-    const { data: op } = await db.from("conta_azul_operacoes").insert({ boleto_id: boletoId, contrato_credito_id: boleto.contrato_credito_id, tipo: "criar_receber", status: "enviado", request_payload: payload }).select("id").single();
-    try {
-      const result: any = await contaAzulRequest(env, "/v1/financeiro/eventos-financeiros/contas-a-receber", { method: "POST", body: JSON.stringify(payload) });
-      await db.from("conta_azul_operacoes").update({ protocolo: result?.protocolo || null, status: result?.status === "ERROR" ? "erro" : "sucesso", response_payload: result, updated_at: new Date().toISOString() }).eq("id", op?.id);
-      return json({ ok: true, resultado: result });
-    } catch (error) {
-      await db.from("conta_azul_operacoes").update({ status: "erro", erro: error instanceof Error ? error.message : "Erro Conta Azul", updated_at: new Date().toISOString() }).eq("id", op?.id);
-      log.error("Falha ao sincronizar conta a receber com Conta Azul", { entityType: "boleto", entityId: boletoId, eventCode: "CONTA_AZUL_RECEIVABLE_FAILED", statusCode: 502, error });
-      return json({ erro: "Falha ao sincronizar com Conta Azul." }, 502);
-    }
-  }
-
-  if (path === "/api/admin/integrations/conta-azul/update-installment" && request.method === "POST") {
-    const externalId = String(body.contaAzulParcelaId || "");
-    const version = Number(body.versao);
-    if (!externalId || !Number.isFinite(version)) return json({ erro: "ID e versão da parcela no Conta Azul são obrigatórios." }, 400);
-    const patch = { nota: body.nota, descricao: body.descricao, vencimento: body.vencimento, composicao_valor: body.composicaoValor, versao: version, data_pagamento_esperado: body.dataPagamentoEsperado, metodo_pagamento: body.metodoPagamento, id_conta_financeira: body.contaFinanceiraId };
-    Object.keys(patch).forEach((key) => (patch as any)[key] === undefined && delete (patch as any)[key]);
-    try {
-      const result = await contaAzulRequest(env, `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(externalId)}`, { method: "PATCH", body: JSON.stringify(patch) });
-      return json({ ok: true, resultado: result });
-    } catch (error) {
-      log.error("Falha ao atualizar parcela no Conta Azul", { eventCode: "CONTA_AZUL_INSTALLMENT_UPDATE_FAILED", statusCode: 502, error });
-      return json({ erro: "Falha ao atualizar a parcela no Conta Azul." }, 502);
-    }
-  }
-
-  return null;
 }
 
 async function testarConexao(request: Request, env: Env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
-  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await request.json().catch(() => ({})) as { provedor?: string };
   const provedor = String(body.provedor || "");
   const db = createServiceSupabaseClient(env);
   const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "integration.connection.test", provider: provedor });
-
   let resultado: { conectado: boolean; detalhe: string };
   if (provedor === "mercado_pago") {
     const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
@@ -274,28 +219,22 @@ async function testarConexao(request: Request, env: Env) {
       try {
         const response = await fetch("https://api.mercadopago.com/v1/payment_methods", { headers: { Authorization: `Bearer ${accessToken}` } });
         resultado = response.ok ? { conectado: true, detalhe: "Token válido — API respondeu com sucesso." } : { conectado: false, detalhe: `Provedor rejeitou o token (HTTP ${response.status}).` };
-      } catch {
-        resultado = { conectado: false, detalhe: "Falha de rede ao contatar o provedor." };
-      }
+      } catch { resultado = { conectado: false, detalhe: "Falha de rede ao contatar o provedor." }; }
     }
   } else return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
-
-  const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: `admin:${admin}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
-  if (auditError) log.warn("Teste de integração concluído, mas auditoria não foi persistida", { eventCode: "INTEGRATION_TEST_AUDIT_FAILED", error: auditError });
+  await db.from("logs_alteracoes").insert({ usuario: `admin:${admin}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
   log.info("Teste de integração concluído", { eventCode: "INTEGRATION_TEST_COMPLETED", connected: resultado.conectado });
   return json(resultado);
 }
 
 export async function integrationsApi(request: Request, env: Env): Promise<Response | null> {
-  const webPush = await webPushConfigApi(request, env);
-  if (webPush) return webPush;
-  const rd = await rdStationReadonlyApi(request, env);
-  if (rd) return rd;
+  const webPush = await webPushConfigApi(request, env); if (webPush) return webPush;
+  const rd = await rdStationReadonlyApi(request, env); if (rd) return rd;
   const path = new URL(request.url).pathname;
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
   if (path === "/api/cliente/payments/mercado-pago/preference" && request.method === "POST") return createMercadoPagoPreference(request, env);
   if (path === "/api/admin/integrations/credenciais") return credenciaisApi(request, env);
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
-  if (path.startsWith("/api/admin/integrations/conta-azul/")) return handleContaAzulAdmin(request, env);
+  if (path.startsWith("/api/admin/integrations/conta-azul/")) return json({ erro: "Integração Conta Azul ainda não homologada neste ambiente." }, 501);
   return null;
 }
