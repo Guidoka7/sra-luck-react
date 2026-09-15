@@ -1,0 +1,94 @@
+/*
+ * Design tokens copiados 1:1 do ZIP aprovado
+ * (_design_reference/Sra_Luck_Admin_atualizado_dashboard.zip, todos os .dc.html).
+ * Escopados em .zip-admin para nunca afetar o app da cliente/equipe (PWA).
+ * Ver docs do ZIP: mesmas variáveis --s0/--s1/--s2/--bg/--rose/--line/--panel/--sh
+ * usadas em Visão Geral, Clientes, Financeiro, Agenda, Previsões, Relatórios e Configurações.
+ */
+.zip-admin {
+  --s0: #FFFDFC;
+  --s1: #FAF7F7;
+  --s2: #F6E4E6;
+  --bg: #7A2632;
+  --bgl: #96313F;
+  --rose: #AD686B;
+  --ink: #3D2A2C;
+  --soft: #7A5052;
+  --gold: #C9A15A;
+  --ok: #16A34A;
+  --bad: #DC2626;
+  --blue: #2563EB;
+  --line: rgba(122, 38, 50, .13);
+  --line2: rgba(122, 38, 50, .07);
+  --hov: rgba(246, 228, 230, .5);
+  --panel: rgba(255, 255, 255, .86);
+  --sh: 0 18px 50px -28px rgba(122, 38, 50, .22);
+  --okbg: rgba(22, 163, 74, .1);
+  --badbg: rgba(220, 38, 38, .1);
+  --gobg: rgba(201, 161, 90, .16);
+  --robg: rgba(173, 104, 107, .13);
+  --bluebg: rgba(37, 99, 235, .1);
+  --shell: radial-gradient(900px 520px at 8% -8%, rgba(173, 104, 107, .13), transparent 62%), linear-gradient(180deg, #FFFDFC 0%, #FAF7F7 100%);
+
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--ink);
+}
+
+.dark .zip-admin {
+  --s0: #0E1012;
+  --s1: #141619;
+  --s2: #1D1F23;
+  --bg: #BE6F85;
+  --bgl: #DD91A3;
+  --rose: #BE6F85;
+  --ink: #EBE8E9;
+  --soft: #A4A0A2;
+  --gold: #D6AE5B;
+  --ok: #4ADE80;
+  --bad: #F87171;
+  --blue: #60A5FA;
+  --line: rgba(255, 255, 255, .1);
+  --line2: rgba(255, 255, 255, .06);
+  --hov: rgba(255, 255, 255, .04);
+  --panel: rgba(25, 27, 30, .88);
+  --sh: 0 22px 60px -34px rgba(0, 0, 0, .75);
+  --okbg: rgba(74, 222, 128, .12);
+  --badbg: rgba(248, 113, 113, .12);
+  --gobg: rgba(214, 174, 91, .16);
+  --robg: rgba(190, 111, 133, .16);
+  --bluebg: rgba(96, 165, 250, .12);
+  --shell: radial-gradient(900px 520px at 8% -8%, rgba(190, 111, 133, .12), transparent 62%), linear-gradient(180deg, #0c0e10 0%, #111417 48%, #0d0f11 100%);
+}
+
+.zip-admin h1, .zip-admin h2, .zip-admin h3 {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 500;
+  margin: 0;
+  letter-spacing: -.01em;
+}
+
+.zip-admin button, .zip-admin input, .zip-admin select, .zip-admin textarea {
+  font-family: inherit;
+}
+.zip-admin button { cursor: pointer; }
+
+.zip-admin ::-webkit-scrollbar { width: 9px; height: 9px; }
+.zip-admin ::-webkit-scrollbar-track { background: transparent; }
+.zip-admin ::-webkit-scrollbar-thumb {
+  background: rgba(173, 104, 107, .32);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+@keyframes zipSlideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+@keyframes zipPopIn { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes zipFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.zip-animate-slide-in { animation: zipSlideIn .22s ease; }
+.zip-animate-pop-in { animation: zipPopIn .16s ease; }
+.zip-animate-fade-in { animation: zipFadeIn .16s ease; }
+
+.zip-mono { font-variant-numeric: tabular-nums; }
+
+.zip-row-hover:hover { background: var(--hov); }

@@ -4,25 +4,25 @@
 
 :root {
   color-scheme: light;
-  --color-cream: 255 253 252;
-  --color-pearl: 255 253 252;
-  --color-blush: 246 228 230;
-  --color-rose: 173 104 107;
-  --color-burgundy: 122 38 50;
-  --color-burgundy-light: 150 49 63;
-  --color-burgundy-dark: 72 18 26;
-  --color-clay: 61 42 44;
-  --color-gold: 201 161 90;
-  --color-alert: 220 38 38;
-  --color-success: 22 163 74;
-  --surface-0: 255 253 252;
-  --surface-1: 250 247 247;
-  --surface-2: 246 228 230;
+  --color-cream: 251 247 245;
+  --color-pearl: 251 247 245;
+  --color-blush: 247 239 237;
+  --color-rose: 184 101 117;
+  --color-burgundy: 107 31 46;
+  --color-burgundy-light: 142 50 67;
+  --color-burgundy-dark: 87 24 37;
+  --color-clay: 46 36 34;
+  --color-gold: 167 122 36;
+  --color-alert: 179 52 46;
+  --color-success: 63 125 91;
+  --surface-0: 251 247 245;
+  --surface-1: 249 241 239;
+  --surface-2: 247 239 237;
   --surface-glass: 255 255 255;
-  --text-main: 61 42 44;
-  --text-soft: 122 80 82;
-  --border-soft: 122 38 50;
-  --shadow-rgb: 30 12 16;
+  --text-main: 46 36 34;
+  --text-soft: 138 123 119;
+  --border-soft: 107 31 46;
+  --shadow-rgb: 46 36 34;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -204,4 +204,12 @@ html.dark {
   html:not(.dark) body:has([class~="bg-[#1b181b]"]) [class~="bg-white/5"]:hover {
     background-color: rgb(var(--color-rose) / 0.10) !important;
   }
+}
+
+/* Garante que drawers laterais de carteira/cliente nunca sejam atingidos por regras de layout do dashboard. */
+aside.fixed,
+.fixed > aside {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }

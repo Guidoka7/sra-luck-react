@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   validate:
-    name: TypeScript + Vite Build
+    name: Tests + TypeScript + Vite Build
     runs-on: ubuntu-latest
 
     steps:
@@ -33,6 +33,12 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Unit tests
+        run: npm run test
 
       - name: TypeScript check
         run: npm run lint

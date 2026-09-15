@@ -31,11 +31,11 @@ function erroAgendaCirurgica(error: any, liberacaoMinima?: string | null) {
   const mensagem = String(error?.message ?? "");
   if (mensagem.includes("TERMOS_NAO_ASSINADOS")) return json({ erro: "Os termos ainda não foram assinados." }, 409);
   if (mensagem.includes("SALDO_NAO_QUITADO")) return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
-  if (mensagem.includes("PRAZO_CIRURGICO_NAO_CONCLUIDO")) {
+  if (mensagem.includes("PRAZO_CIRURGICO_EXCEDIDO")) {
     return json({
       erro: liberacaoMinima
-        ? `A agenda cirúrgica será liberada a partir de ${formatarData(liberacaoMinima)}.`
-        : "O prazo de 5 dias úteis após assinatura e quitação ainda não terminou.",
+        ? `Essa data excede o prazo máximo de liberação (até ${formatarData(liberacaoMinima)}).`
+        : "Essa data excede o prazo máximo de liberação da agenda cirúrgica.",
       agendaCirurgicaLiberarEm: liberacaoMinima ?? null,
     }, 409);
   }
@@ -83,6 +83,34 @@ async function listarAgendamentosTermos(env: Env) {
   return json({ agendamentos, hoje });
 }
 
+async function listarCirurgiasConfirmadas(env: Env) {
+  const db = createServiceSupabaseClient(env);
+  // data_cirurgia (migration_041) é a data real da cirurgia — não confundir com
+  // previsao_liberacao_financeira, que é o prazo de liberação da agenda.
+  const { data, error } = await db.from("agendamentos")
+    .select("id,cliente_id,data_cirurgia,valor_contrato,clientes(id,nome_completo,cpf,status_cirurgia)")
+    .not("data_cirurgia", "is", null)
+    .order("data_cirurgia", { ascending: true });
+  if (error) return json({ erro: error.message }, 500);
+
+  const hoje = agoraSaoPaulo().data;
+  const cirurgias = (data ?? []).map((a: any) => {
+    const cliente = one(a.clientes);
+    return {
+      id: a.id,
+      clienteId: a.cliente_id,
+      nome: cliente?.nome_completo ?? "Cliente sem nome",
+      cpf: cliente?.cpf ?? null,
+      data: a.data_cirurgia,
+      valorContrato: Number(a.valor_contrato ?? 0),
+      statusCirurgia: cliente?.status_cirurgia ?? "nao_agendada",
+      realizada: cliente?.status_cirurgia === "realizada",
+      podeConfirmarRealizacao: cliente?.status_cirurgia === "agendada" && a.data_cirurgia <= hoje,
+    };
+  });
+  return json({ cirurgias, hoje });
+}
+
 async function confirmarAssinaturaTermos(request: Request, env: Env) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await parseBody(request);
@@ -124,7 +152,7 @@ async function confirmarAssinaturaTermos(request: Request, env: Env) {
       termos_assinados_em: assinatura,
       custeio_confirmado_em: cliente?.custeio_confirmado_em ?? null,
       agenda_cirurgica_liberar_em: liberacao,
-      regra: "termos_assinados + quitacao_confirmada + 5_dias_uteis",
+      regra: "termos_assinados + quitacao_confirmada + prazo_maximo_90_dias_corridos",
     },
   });
 
@@ -195,7 +223,7 @@ async function atualizarCiclo(request: Request, env: Env, agendamentoId: string)
   return json({
     cliente: atualizado,
     agendaCirurgicaLiberarEm: liberacao,
-    agendaCirurgicaLiberada: Boolean(liberacao && liberacao <= agoraSaoPaulo().data),
+    agendaCirurgicaLiberada: Boolean(liberacao),
     concluido: atualizado.status_cirurgia === "realizada",
   });
 }
@@ -218,7 +246,7 @@ async function salvarDataCirurgia(request: Request, env: Env, agendamentoId: str
     if (!agendamento.termos_assinados_em) return json({ erro: "Os termos ainda não foram assinados." }, 409);
     return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
   }
-  if (data < liberacao) return json({ erro: `Escolha uma data a partir de ${formatarData(liberacao)}.`, agendaCirurgicaLiberarEm: liberacao }, 409);
+  if (data > liberacao) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${formatarData(liberacao)}).`, agendaCirurgicaLiberarEm: liberacao }, 409);
 
   const { error } = await db.rpc("agendar_cirurgia_data", { p_agendamento_id: agendamentoId, p_data: data });
   if (error) return erroAgendaCirurgica(error, liberacao);
@@ -313,16 +341,18 @@ async function liberacaoInteligente(url: URL, env: Env) {
       const data = `${anoM}-${mesStr}-${String(dia).padStart(2, "0")}`;
       const ocupante = ocupadas.get(data);
       const passado = data < hoje;
-      const antesDaLiberacao = Boolean(cliente?.agendaCirurgicaLiberarEm && data < cliente.agendaCirurgicaLiberarEm);
+      // Fase 2: não há mais piso mínimo (a liberação pode ocorrer a partir de hoje).
+      // O que existe agora é um teto — dias depois do prazo máximo ficam fora da janela.
+      const foraDoPrazoMaximo = Boolean(cliente?.agendaCirurgicaLiberarEm && data > cliente.agendaCirurgicaLiberarEm);
       const disponibilizada = disponibilizadas.has(data);
       const depois = comprometido + (cliente?.valor ?? 0);
       const ultrapassagem = Math.max(0, depois - orcamentoMensal);
-      const estado = passado || antesDaLiberacao ? "passado" : ocupante ? "vermelho" : !disponibilizada ? "cinza" : !cliente ? "verde" : depois <= orcamentoMensal ? "verde" : "amarelo";
+      const estado = passado || foraDoPrazoMaximo ? "passado" : ocupante ? "vermelho" : !disponibilizada ? "cinza" : !cliente ? "verde" : depois <= orcamentoMensal ? "verde" : "amarelo";
       return {
         data,
         dia,
         estado,
-        vagasDisponiveis: !passado && !antesDaLiberacao && !ocupante && disponibilizada,
+        vagasDisponiveis: !passado && !foraDoPrazoMaximo && !ocupante && disponibilizada,
         oracamentoAntes: comprometido,
         oracamentoDepois: cliente ? depois : comprometido,
         ultrapassagem,
@@ -335,25 +365,26 @@ async function liberacaoInteligente(url: URL, env: Env) {
 
   const dias = analisar(ano, mes);
   let melhorData: any = null;
-  const sugerida = cliente?.agendaCirurgicaLiberarEm as string | null | undefined;
-  if (sugerida) {
-    const [a, m, d] = sugerida.split("-").map(Number);
-    const analiseMes = a === ano && m === mes ? dias : analisar(a, m);
-    const dia = analiseMes.find((item: any) => item.data === sugerida);
-    const antes = dia?.oracamentoAntes ?? (porMes.get(sugerida.slice(0, 7)) ?? 0);
-    const depois = antes + cliente.valor;
-    melhorData = {
-      data: sugerida,
-      dia: d,
-      mes: m,
-      ano: a,
-      oracamentoMes: orcamentoMensal,
-      comprometidoAntes: antes,
-      valorCliente: cliente.valor,
-      totalDepois: depois,
-      dentroOrcamento: depois <= orcamentoMensal,
-      motivo: "Primeiro dia elegível: 5 dias úteis após a conclusão de termos assinados e quitação confirmada.",
-    };
+  const prazoMaximo = cliente?.agendaCirurgicaLiberarEm as string | null | undefined;
+  if (prazoMaximo) {
+    // Fase 2: não existe mais "primeiro dia elegível" fixo — buscamos, dentro da
+    // janela [hoje, prazoMaximo], o primeiro dia realmente disponível e, entre
+    // esses, preferimos um que já caiba no orçamento mensal.
+    const candidato = dias.find((item: any) => item.vagasDisponiveis && item.dentroOrcamento) ?? dias.find((item: any) => item.vagasDisponiveis);
+    if (candidato) {
+      melhorData = {
+        data: candidato.data,
+        dia: candidato.dia,
+        mes,
+        ano,
+        oracamentoMes: orcamentoMensal,
+        comprometidoAntes: candidato.oracamentoAntes,
+        valorCliente: cliente.valor,
+        totalDepois: candidato.oracamentoDepois,
+        dentroOrcamento: candidato.dentroOrcamento,
+        motivo: `Primeiro dia disponível dentro do prazo máximo (até ${prazoMaximo.split("-").reverse().join("/")}).`,
+      };
+    }
   }
   const verdes = dias.filter((item: any) => item.estado === "verde").slice(0, 5).map((item: any) => ({ data: item.data, dia: item.dia, estado: "verde", oracamentoDepois: item.oracamentoDepois, ultrapassagem: 0, motivo: "Data disponível dentro do orçamento mensal" }));
   const amarelas = dias.filter((item: any) => item.estado === "amarelo").slice(0, 5).map((item: any) => ({ data: item.data, dia: item.dia, estado: "amarelo", oracamentoDepois: item.oracamentoDepois, ultrapassagem: item.ultrapassagem, motivo: `Ultrapassa o orçamento em ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.ultrapassagem)}.` }));
@@ -369,6 +400,7 @@ export async function adminSurgeryFlow(request: Request, env: Env): Promise<Resp
   const managed = path === "/api/admin/agendamentos-termos"
     || path === "/api/admin/solicitacoes-liberacao-financeira"
     || path === "/api/admin/liberacao-inteligente"
+    || path === "/api/admin/cirurgias-confirmadas"
     || Boolean(ciclo)
     || Boolean(previsao);
   if (!managed) return null;
@@ -389,6 +421,7 @@ export async function adminSurgeryFlow(request: Request, env: Env): Promise<Resp
     if (request.method !== "PATCH") return null;
     return salvarDataCirurgia(request, env, decodeURIComponent(previsao[1]));
   }
+  if (path === "/api/admin/cirurgias-confirmadas" && request.method === "GET") return listarCirurgiasConfirmadas(env);
   if (path === "/api/admin/solicitacoes-liberacao-financeira" && request.method === "GET") return listarSolicitacoes(env);
   if (path === "/api/admin/liberacao-inteligente" && request.method === "GET") return liberacaoInteligente(url, env);
   return null;

@@ -1,8 +1,10 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { getCookie, verificarTokenAdmin } from "./session";
+import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { integrationsStatusApi } from "./integrations-status";
+import { pseudonymizeActorId, requestLogger, sanitizeLogValue } from "./logger";
 
 const ADMIN_COOKIE = "admin_session";
+const CLIENT_COOKIE = "cliente_session";
 const MAX_BODY = 12_000;
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
@@ -23,8 +25,24 @@ async function admin(request: Request, env: Env) {
   return Boolean(await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET));
 }
 
+async function actorContext(request: Request, env: Env): Promise<{ actor_type: "admin" | "cliente" | "anonymous"; actor_id: string | null }> {
+  if (!env.CLIENTE_SESSION_SECRET) return { actor_type: "anonymous", actor_id: null };
+  const adminSession = await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (adminSession?.adminId) return { actor_type: "admin", actor_id: await pseudonymizeActorId(adminSession.adminId, env) };
+  const clientSession = await verificarTokenSessao(getCookie(request, CLIENT_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (clientSession?.clienteId) return { actor_type: "cliente", actor_id: await pseudonymizeActorId(clientSession.clienteId, env) };
+  return { actor_type: "anonymous", actor_id: null };
+}
+
 function limparTexto(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : null;
+}
+
+function nivelRecebido(value: unknown): "info" | "warn" | "error" | "fatal" {
+  if (value === "info" || value === "warn" || value === "error" || value === "fatal") return value;
+  if (value === "warning") return "warn";
+  if (value === "critical") return "fatal";
+  return "error";
 }
 
 export async function monitoramentoErros(request: Request, env: Env) {
@@ -32,31 +50,46 @@ export async function monitoramentoErros(request: Request, env: Env) {
   if (integrationsStatus) return integrationsStatus;
 
   const url = new URL(request.url);
+  const log = requestLogger(request);
   if (url.pathname === "/api/monitoramento/erro" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
     const length = Number(request.headers.get("content-length") || 0);
     if (length > MAX_BODY) return json({ erro: "Evento muito grande." }, 413);
     let body: any;
     try { body = await request.json(); } catch { return json({ erro: "Evento inválido." }, 400); }
-    const mensagem = limparTexto(body?.mensagem, 1200);
+    const mensagem = limparTexto(sanitizeLogValue(body?.mensagem), 1200);
     if (!mensagem) return json({ erro: "Mensagem ausente." }, 400);
-    const origem = body?.origem === "api" ? "api" : "frontend";
-    const nivel = body?.nivel === "critical" ? "critical" : body?.nivel === "warning" ? "warning" : "error";
+    const origem = body?.origem === "api" ? "api" : body?.origem === "diagnostico" ? "diagnostico" : "frontend";
+    const nivel = nivelRecebido(body?.nivel);
+    const requestId = limparTexto(body?.request_id || request.headers.get("x-request-id"), 120);
+    const detalhes = sanitizeLogValue(body?.detalhes && typeof body.detalhes === "object" ? body.detalhes : {});
+    const actor = await actorContext(request, env);
+    const durationMsRaw = Number(body?.duration_ms ?? body?.detalhes?.duracao_ms);
+    const durationMs = Number.isFinite(durationMsRaw) && durationMsRaw >= 0 ? Math.round(durationMsRaw) : null;
     const db = createServiceSupabaseClient(env);
     const { error } = await db.from("monitoramento_erros").insert({
-      origem, nivel, mensagem,
-      rota: limparTexto(body?.rota, 500),
+      origem,
+      nivel,
+      mensagem,
+      action: limparTexto(sanitizeLogValue(body?.action), 200),
+      actor_type: actor.actor_type,
+      actor_id: actor.actor_id,
+      duration_ms: durationMs,
+      rota: limparTexto(sanitizeLogValue(body?.rota), 500),
       metodo: limparTexto(body?.metodo, 12),
       status_http: Number.isInteger(body?.status_http) ? body.status_http : null,
       codigo: limparTexto(body?.codigo, 120),
-      stack: limparTexto(body?.stack, 5000),
-      componente: limparTexto(body?.componente, 200),
-      request_id: limparTexto(body?.request_id, 120),
-      user_agent: limparTexto(request.headers.get("User-Agent"), 500),
+      stack: limparTexto(sanitizeLogValue(body?.stack), 5000),
+      componente: limparTexto(sanitizeLogValue(body?.componente), 200),
+      request_id: requestId,
+      user_agent: limparTexto(sanitizeLogValue(request.headers.get("User-Agent")), 500),
       ambiente: limparTexto(body?.ambiente, 40) || "production",
-      detalhes: body?.detalhes && typeof body.detalhes === "object" ? body.detalhes : {},
+      detalhes,
     });
-    if (error) return json({ erro: "Não foi possível registrar o evento." }, 503);
+    if (error) {
+      log.error("Falha ao persistir evento de monitoramento", { action: "observability.event.persist", eventCode: "OBSERVABILITY_PERSIST_FAILED", statusCode: 503, error });
+      return json({ erro: "Não foi possível registrar o evento." }, 503);
+    }
     return json({ ok: true }, 201);
   }
 
@@ -65,20 +98,23 @@ export async function monitoramentoErros(request: Request, env: Env) {
     const db = createServiceSupabaseClient(env);
     const limite = Math.min(Math.max(Number(url.searchParams.get("limite") || 100), 1), 300);
     const { data: recentes, error } = await db.from("monitoramento_erros")
-      .select("id,criado_em,origem,nivel,rota,metodo,status_http,codigo,mensagem,stack,componente,request_id,ambiente,detalhes")
+      .select("id,criado_em,origem,nivel,action,actor_type,actor_id,duration_ms,rota,metodo,status_http,codigo,mensagem,stack,componente,request_id,ambiente,detalhes")
       .order("criado_em", { ascending: false }).limit(limite);
-    if (error) return json({ erro: "Não foi possível carregar o monitoramento." }, 503);
+    if (error) {
+      log.error("Falha ao carregar eventos de monitoramento", { action: "observability.events.read", eventCode: "OBSERVABILITY_READ_FAILED", statusCode: 503, error });
+      return json({ erro: "Não foi possível carregar o monitoramento." }, 503);
+    }
     const agora = Date.now();
     const eventos = recentes ?? [];
     const dentro = (ms: number) => eventos.filter((e: any) => agora - new Date(e.criado_em).getTime() <= ms);
     const ult24 = dentro(24 * 60 * 60 * 1000);
     const ult1h = dentro(60 * 60 * 1000);
-    const criticos = ult24.filter((e: any) => e.nivel === "critical").length;
+    const fatais = ult24.filter((e: any) => e.nivel === "fatal").length;
     const porRota = ult24.reduce((acc: Record<string, number>, e: any) => { const k = e.rota || "sem rota"; acc[k] = (acc[k] || 0) + 1; return acc; }, {});
     const topRotas = Object.entries(porRota).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([rota, total]) => ({ rota, total }));
     return json({
       geradoEm: new Date().toISOString(),
-      resumo: { ultimaHora: ult1h.length, ultimas24h: ult24.length, criticos24h: criticos, totalCarregado: eventos.length },
+      resumo: { ultimaHora: ult1h.length, ultimas24h: ult24.length, fatais24h: fatais, criticos24h: fatais, totalCarregado: eventos.length },
       topRotas,
       eventos,
     });
@@ -92,9 +128,9 @@ export async function monitoramentoErros(request: Request, env: Env) {
       const inicio = Date.now();
       try {
         const result = await fn();
-        checks.push({ nome, ok: !result.error, detalhe: result.error?.message || "OK", ms: Date.now() - inicio });
-      } catch (e) {
-        checks.push({ nome, ok: false, detalhe: e instanceof Error ? e.message : "Falha desconhecida", ms: Date.now() - inicio });
+        checks.push({ nome, ok: !result.error, detalhe: result.error ? "Falha no serviço" : "OK", ms: Date.now() - inicio });
+      } catch {
+        checks.push({ nome, ok: false, detalhe: "Falha no serviço", ms: Date.now() - inicio });
       }
     };
     await probe("Supabase · clientes", async () => db.from("clientes").select("id", { count: "exact", head: true }));

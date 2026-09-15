@@ -16,8 +16,9 @@ export class AppErrorBoundary extends Component<Props, State> {
       mensagem: erro.message || "Falha de renderização",
       stack: erro.stack,
       codigo: "REACT_RENDER_ERROR",
+      action: "frontend.react.render",
       componente: info.componentStack?.slice(0, 3000),
-      nivel: "critical" as const,
+      nivel: "fatal" as const,
       detalhes: { pathname: window.location.pathname, horario: new Date().toISOString() },
     };
 

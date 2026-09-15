@@ -161,9 +161,9 @@ Destino:
 
 - manter UX operacional;
 - separar agenda de termos e agenda cirúrgica;
-- aplicar regra nova de 5 dias úteis após termos + quitação.
+- aplicar regra vigente (2026-09-14): até 90 dias corridos após termos + quitação, como teto — sem piso mínimo de espera.
 
-Estado: **PORTADO PARCIALMENTE / REGRA NOVA PENDENTE DE CONSOLIDAÇÃO**.
+Estado: **PORTADO / REGRA DE 90 DIAS CORRIDOS CONSOLIDADA EM `worker/surgery-release.ts`**.
 
 ### Configurações
 

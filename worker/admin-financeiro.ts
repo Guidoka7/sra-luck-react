@@ -1,11 +1,12 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
+import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
-const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas)";
+const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,status_contrato)";
 const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,origem_boleto,instituicao_financeira,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
 
 function json(data: unknown, status = 200) {
@@ -69,6 +70,7 @@ function apresentarRecebivel(boleto: any, recebimento?: any) {
     id: boleto.id,
     clienteId: boleto.cliente_id,
     cliente: cliente.nome_completo ?? "Cliente",
+    vendedora: null,
     cpf: cliente.cpf ?? null,
     numeroParcela: Number(boleto.numero_parcela),
     totalParcelas: Number(boleto.total_parcelas),
@@ -242,6 +244,94 @@ function erroRpc(message: string) {
   return 500;
 }
 
+type FunilCliente = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" | "negativados" | "cancelados";
+
+/**
+ * Funil por cliente (Fase 4): visão que o ZIP pede como navegação principal
+ * do Financeiro, calculada por AGREGAÇÃO sobre os mesmos boletos/recebimentos
+ * já usados por resumo()/listarRecebiveis() — nenhuma tabela nova, nenhum
+ * dado recalculado por uma segunda regra.
+ *
+ * Correção (2026-09-14): o funil aprovado é Aguardando conferência / Ativos /
+ * Todos / Suspensos / Negativados / Cancelados. "Aguardando conferência" NÃO
+ * significa cliente sem parcelas — significa comprovante/pagamento aguardando
+ * análise do Financeiro (parcela com status pendente_confirmacao). Cliente
+ * sem financeiro nenhum simplesmente não entra neste funil (isso é assunto da
+ * tela Clientes, aba "Aguardando cadastro"). "Todos" não é um bucket
+ * excludente — é a lista completa de quem tem financeiro, sem filtro de
+ * bucket. "Ativo" exige financeiro real E nenhum estado administrativo
+ * anormal (suspenso/negativado/cancelado) — nunca é inferido do carnê.
+ */
+async function clientesFunil(db: Db) {
+  const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }, { data: vendasRows }] = await Promise.all([
+    db.from("clientes").select("id,nome_completo,cpf,status_contrato,valor_contrato,custo_total,consultora").order("nome_completo", { ascending: true }),
+    carregarBase(db),
+    db.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id", "is", null),
+  ]);
+  if (erroClientes) throw new Error(erroClientes.message);
+
+  const origemPorCliente = new Map<string, string>();
+  for (const v of (vendasRows ?? []) as any[]) if (v.cliente_id && !origemPorCliente.has(v.cliente_id) && v.origem_venda) origemPorCliente.set(v.cliente_id, v.origem_venda);
+
+  const porBoleto = indiceRecebimentos(recebimentos);
+  const porCliente = new Map<string, { pagas: number; total: number; saldoAReceber: number; vencidas: number; aguardandoValidacao: number; proximoVencimento: string | null }>();
+  for (const boleto of boletos) {
+    const agregado = porCliente.get(boleto.cliente_id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0, proximoVencimento: null };
+    const apresentado = apresentarRecebivel(boleto, porBoleto.get(boleto.id));
+    agregado.total += 1;
+    if (apresentado.status === "pago") agregado.pagas += 1;
+    else { agregado.saldoAReceber += apresentado.valorEsperado; if (!agregado.proximoVencimento && boleto.data_vencimento) agregado.proximoVencimento = boleto.data_vencimento; }
+    if (apresentado.status === "vencido") agregado.vencidas += 1;
+    if (apresentado.status === "pendente_confirmacao") agregado.aguardandoValidacao += 1;
+    porCliente.set(boleto.cliente_id, agregado);
+  }
+
+  const itens = (todosClientes ?? [])
+    .filter((cliente: any) => (porCliente.get(cliente.id)?.total ?? 0) > 0)
+    .map((cliente: any) => {
+      const agregado = porCliente.get(cliente.id)!;
+      const statusContrato = cliente.status_contrato ?? "ativo";
+      let bucket: FunilCliente;
+      if (statusContrato === "cancelado") bucket = "cancelados";
+      else if (statusContrato === "negativado") bucket = "negativados";
+      else if (statusContrato === "suspenso") bucket = "suspensos";
+      else if (agregado.aguardandoValidacao > 0) bucket = "aguardando_conferencia";
+      else bucket = "ativos";
+
+      const quitado = agregado.pagas === agregado.total;
+      const proximaAcao = agregado.aguardandoValidacao > 0 ? "Validar comprovante" : agregado.vencidas > 0 ? "Cobrar parcela vencida" : quitado ? "Sem pendência" : "Acompanhar";
+
+      return {
+        clienteId: cliente.id,
+        nome: cliente.nome_completo,
+        cpf: cliente.cpf,
+        statusContrato,
+        bucket,
+        quitado,
+        parcelasPagas: agregado.pagas,
+        parcelasTotal: agregado.total,
+        saldoAReceber: dinheiro(agregado.saldoAReceber),
+        vencidas: agregado.vencidas,
+        aguardandoValidacao: agregado.aguardandoValidacao,
+        proximaAcao,
+        vendedora: cliente.consultora ?? null,
+        campanha: origemPorCliente.get(cliente.id) ?? null,
+        proximoVencimento: agregado.proximoVencimento,
+      };
+    });
+
+  const funis = [
+    { bucket: "aguardando_conferencia" as const, total: itens.filter((i) => i.bucket === "aguardando_conferencia").length },
+    { bucket: "ativos" as const, total: itens.filter((i) => i.bucket === "ativos").length },
+    { bucket: "todos" as const, total: itens.length },
+    { bucket: "suspensos" as const, total: itens.filter((i) => i.bucket === "suspensos").length },
+    { bucket: "negativados" as const, total: itens.filter((i) => i.bucket === "negativados").length },
+    { bucket: "cancelados" as const, total: itens.filter((i) => i.bucket === "cancelados").length },
+  ];
+
+  return { itens, funis };
+}
+
 async function encaminharParcelas(request: Request, env: Env, clienteId: string, payload: Json) {
   const url = new URL(request.url);
   url.pathname = `/api/admin/clientes/${encodeURIComponent(clienteId)}/parcelas`;
@@ -262,6 +352,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
   try {
     if (path === "/api/admin/financeiro/resumo" && request.method === "GET") return json(await resumo(db, url));
+    if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db));
     if (path === "/api/admin/financeiro/recebiveis" && request.method === "GET") return json(await listarRecebiveis(db, url));
 
     if (path === "/api/admin/financeiro/validacoes" && request.method === "GET") {
@@ -278,6 +369,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
     const baixaMatch = path.match(/^\/api\/admin\/financeiro\/recebiveis\/([^/]+)\/baixa$/);
     if (baixaMatch && request.method === "POST") {
+      const colaboradorBaixa = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaboradorBaixa || !temPermissaoAdmin(colaboradorBaixa, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+        return json({ erro: "Seu papel não tem permissão para registrar baixa manual." }, 403);
+      }
       const b = await lerBody(request);
       const dataPagamento = b.dataPagamento;
       const forma = texto(b.formaPagamento);
@@ -325,6 +420,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
     const validacaoMatch = path.match(/^\/api\/admin\/financeiro\/validacoes\/([^/]+)\/(confirmar|rejeitar)$/);
     if (validacaoMatch && request.method === "POST") {
+      const colaboradorValidacao = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaboradorValidacao || !temPermissaoAdmin(colaboradorValidacao, PERMISSOES_ADMIN.FINANCEIRO_VALIDAR_COMPROVANTE)) {
+        return json({ erro: "Seu papel não tem permissão para validar comprovantes." }, 403);
+      }
       const b = await lerBody(request);
       const acao = validacaoMatch[2]; const observacao = texto(b.observacao); const idempotencyKey = texto(b.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);

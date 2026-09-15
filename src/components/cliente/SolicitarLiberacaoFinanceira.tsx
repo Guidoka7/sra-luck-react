@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarDays, CheckCircle2, CreditCard, LockKeyhole, Pencil, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { CalendarioAgendamento, DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
+import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 import { CalendarioCirurgia } from "@/components/cliente/CalendarioCirurgia";
 import { toast } from "sonner";
 
@@ -16,101 +14,172 @@ interface Solicitacao { id: string; forma_custeio: FormaCusteio; saldo_restante:
 interface ConfirmacaoAlteracao { tipo: "termos" | "cirurgia"; dataId?: string; data: string; horario?: string; }
 
 function formatarMoeda(valor: number) { return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
-function partesData(iso: string) { const [ano, mes, dia] = iso.split("-"); const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]; return { dia, mes: meses[Math.max(0, Number(mes) - 1)] ?? mes, ano }; }
+function partesData(iso: string) {
+  const [ano, mes, dia] = iso.split("-");
+  const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  return { dia, mes: meses[Math.max(0, Number(mes) - 1)] ?? mes, ano };
+}
+function labelForma(forma: FormaCusteio) {
+  if (forma === "cartao") return "Cartão de crédito";
+  if (forma === "pix") return "PIX";
+  if (forma === "cheques") return "Cheques";
+  return "100% boleto";
+}
 
 export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
   const [financeiro, setFinanceiro] = useState<Financeiro>({ saldoRestante: null, taxaCartao: 5.4, totalComTaxa: null, formasCusteio: [] });
   const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
   const [dataAssinaturaTermos, setDataAssinaturaTermos] = useState<string | null>(null);
+  const [horarioTermos, setHorarioTermos] = useState<string | null>(null);
   const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);
   const [datasTermos, setDatasTermos] = useState<DataDisponivel[]>([]);
-  const [parcelasPagas, setParcelasPagas] = useState(0);
-  const [quantidadeParcelas, setQuantidadeParcelas] = useState(0);
-  const [valorPago, setValorPago] = useState(0);
   const [alteracao, setAlteracao] = useState<TipoAlteracao>(null);
   const [confirmacaoAlteracao, setConfirmacaoAlteracao] = useState<ConfirmacaoAlteracao | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [formaCusteio, setFormaCusteio] = useState<FormaCusteio | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [remarcacaoPendente, setRemarcacaoPendente] = useState(false);
 
   async function carregar() {
     try {
-      const [resAgenda, resBoletos] = await Promise.all([fetch("/api/cliente/agenda", { cache: "no-store" }), fetch("/api/cliente/boletos", { cache: "no-store" })]);
+      const resAgenda = await fetch("/api/cliente/agenda", { cache: "no-store" });
       if (!resAgenda.ok) return;
       const data = await resAgenda.json();
       setFinanceiro(data.financeiro ?? { saldoRestante: null, taxaCartao: 5.4, totalComTaxa: null, formasCusteio: [] });
       setSolicitacao(data.solicitacaoLiberacaoFinanceira ?? null);
       const agenda = data.agendamentoAtivo ?? data.agendamentoConcluido ?? null;
       setDataAssinaturaTermos(agenda?.data ?? null);
+      setHorarioTermos(agenda?.horario ?? null);
       setDataCirurgia(agenda?.previsaoLiberacaoFinanceira ?? null);
       setDatasTermos(data.datasDisponiveis ?? []);
-      if (resBoletos.ok) {
-        const boletosData = await resBoletos.json();
-        const boletos = Array.isArray(boletosData.boletos) ? boletosData.boletos : [];
-        setQuantidadeParcelas(Number(boletosData.quantidade_parcelas ?? boletos.length ?? 0));
-        setParcelasPagas(Number(boletosData.parcelas_pagas ?? boletos.filter((b: { status: string }) => b.status === "pago").length ?? 0));
-        setValorPago(boletos.filter((b: { status: string; valor: number }) => b.status === "pago").reduce((total: number, b: { status: string; valor: number }) => total + Number(b.valor ?? 0), 0));
-      }
     } catch {}
   }
 
-  useEffect(() => { if (!ativo) return; void carregar(); const intervalo = setInterval(() => void carregar(), 5000); return () => clearInterval(intervalo); }, [ativo]);
+  useEffect(() => {
+    if (!ativo) return;
+    void carregar();
+    const intervalo = setInterval(() => void carregar(), 5000);
+    return () => clearInterval(intervalo);
+  }, [ativo]);
 
   const saldoRestante = Number(financeiro.saldoRestante ?? 0);
   const taxaCartao = saldoRestante * (Number(financeiro.taxaCartao ?? 5.4) / 100);
   const totalCartao = financeiro.totalComTaxa ?? saldoRestante + taxaCartao;
-  const parcelasRestantes = Math.max(0, quantidadeParcelas - parcelasPagas);
-  const formasDisponiveis = useMemo(() => ["cartao", "pix", "cheques", "boleto_100"].filter(f => financeiro.formasCusteio.includes(f)) as FormaCusteio[], [financeiro.formasCusteio]);
+  const formasDisponiveis = useMemo(() => (["cartao", "pix", "cheques", "boleto_100"] as FormaCusteio[]).filter((forma) => financeiro.formasCusteio.includes(forma)), [financeiro.formasCusteio]);
   const status = String(solicitacao?.status ?? "").toLowerCase();
   const recusada = status.includes("recus");
   const aprovada = status.includes("aprov");
 
-  function abrirModal() { setErro(null); setFormaCusteio(solicitacao?.forma_custeio ?? null); setModalAberto(true); }
+  function abrirModal() {
+    setErro(null);
+    setFormaCusteio(solicitacao?.forma_custeio ?? null);
+    setModalAberto(true);
+  }
 
   async function enviarCusteio() {
     if (!formaCusteio) return;
-    setEnviando(true); setErro(null);
+    setEnviando(true);
+    setErro(null);
     try {
       const res = await fetch("/api/cliente/solicitacao-liberacao-financeira", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ formaCusteio }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.erro ?? "Não foi possível enviar sua solicitação.");
-      setSolicitacao(data.solicitacao ?? null); setModalAberto(false);
-    } catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível enviar sua solicitação."); }
-    finally { setEnviando(false); }
+      setSolicitacao(data.solicitacao ?? null);
+      setModalAberto(false);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não foi possível enviar sua solicitação.");
+    } finally {
+      setEnviando(false);
+    }
   }
 
-  function prepararAlteracaoTermos(dataId: string, horario: string) { const data = datasTermos.find(d => d.id === dataId)?.data; if (!data) { setErro("Não foi possível identificar a data escolhida."); return; } setErro(null); setConfirmacaoAlteracao({ tipo: "termos", dataId, data, horario }); }
-  function prepararAlteracaoCirurgia(data: string) { setErro(null); setConfirmacaoAlteracao({ tipo: "cirurgia", data }); }
+  function prepararAlteracaoTermos(dataId: string, horario: string) {
+    const data = datasTermos.find((item) => item.id === dataId)?.data;
+    if (!data) { setErro("Não foi possível identificar a data escolhida."); return; }
+    setErro(null);
+    setConfirmacaoAlteracao({ tipo: "termos", dataId, data, horario });
+  }
+
+  function prepararAlteracaoCirurgia(data: string) {
+    setErro(null);
+    setConfirmacaoAlteracao({ tipo: "cirurgia", data });
+  }
 
   async function enviarAlteracao() {
     if (!confirmacaoAlteracao) return;
-    setEnviando(true); setErro(null);
+    setEnviando(true);
+    setErro(null);
     try {
-      const body = confirmacaoAlteracao.tipo === "termos" ? { tipo: "termos", dataId: confirmacaoAlteracao.dataId, horario: confirmacaoAlteracao.horario } : { tipo: "cirurgia", data: confirmacaoAlteracao.data };
+      const body = confirmacaoAlteracao.tipo === "termos"
+        ? { tipo: "termos", dataId: confirmacaoAlteracao.dataId, horario: confirmacaoAlteracao.horario }
+        : { tipo: "cirurgia", data: confirmacaoAlteracao.data };
       const res = await fetch("/api/cliente/remarcar-agendamento", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.erro ?? "Não foi possível enviar a alteração para análise.");
-      setConfirmacaoAlteracao(null); setAlteracao(null);
-      toast.success("Solicitação enviada para análise. Prazo de até 5 dias úteis. Sua agenda atual permanece inalterada até a autorização.");
-    } catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível enviar a solicitação."); }
-    finally { setEnviando(false); }
+      setConfirmacaoAlteracao(null);
+      setAlteracao(null);
+      setRemarcacaoPendente(true);
+      toast.success("Solicitação enviada para análise. Sua agenda atual permanece inalterada até a autorização.");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não foi possível enviar a solicitação.");
+    } finally {
+      setEnviando(false);
+    }
   }
 
-  function abrirAlteracao(tipo: Exclude<TipoAlteracao, null>) { setErro(null); setConfirmacaoAlteracao(null); setAlteracao(tipo); }
+  if (!ativo || !dataAssinaturaTermos) return null;
 
-  const renderDataCard = (titulo: string, iso: string, tipo: Exclude<TipoAlteracao, null>) => { const data = partesData(iso); return <div className="group relative flex min-h-[150px] flex-col justify-between rounded-2xl border border-rose/12 bg-white px-5 py-5 shadow-[0_12px_35px_-28px_rgba(82,28,42,.38)] dark:border-white/8 dark:bg-white/[0.025]"><div className="flex items-start justify-between gap-3"><div><p className="text-[0.54rem] font-semibold uppercase tracking-[0.2em] text-clay/65 dark:text-pearl/75">{titulo}</p><div className="mt-2 flex items-end gap-2"><span className="font-heading text-[2.55rem] font-semibold leading-none text-burgundy dark:text-cream">{data.dia}</span><span className="pb-0.5 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-rose">{data.mes}</span></div><p className="mt-1 text-[0.62rem] font-medium tracking-[0.12em] text-clay/65 dark:text-pearl/75">{data.ano}</p></div><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose/[0.06] text-rose"><CalendarDays className="h-[17px] w-[17px]" /></span></div><button type="button" onClick={() => abrirAlteracao(tipo)} className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-lg border border-rose/15 bg-rose/[0.035] px-2.5 py-1.5 text-[0.54rem] font-bold uppercase tracking-[0.12em] text-burgundy dark:text-cream"><Pencil className="h-3 w-3" /> Alterar data</button></div>; };
+  const termos = partesData(dataAssinaturaTermos);
 
-  if (!ativo) return null;
+  if (alteracao === "termos") {
+    return <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+      <div className="border-b border-[#F0DDDD] bg-[#FFF7F7] px-[13px] py-3"><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#B65B67]">Alterar assinatura dos termos</div><div className="pt-[2px] font-heading text-[15px] font-semibold text-[#7D2434]">Escolha uma nova data para a assinatura dos termos</div><div className="pt-[2px] text-[9.5px] font-light text-[#7A6B67]">A nova data será enviada para análise administrativa. Prazo de até 5 dias úteis.</div></div>
+      <div className="p-[13px]"><CalendarioAgendamento datas={datasTermos} onConfirmar={prepararAlteracaoTermos} confirmando={enviando} /><button type="button" onClick={() => { setAlteracao(null); setConfirmacaoAlteracao(null); }} className="mt-[10px] w-full text-center text-[9px] font-medium text-[#8A7B77] underline">Cancelar alteração</button></div>
+      {confirmacaoAlteracao?.tipo === "termos" && <ConfirmarAlteracao confirmacao={confirmacaoAlteracao} enviando={enviando} onCancelar={() => setConfirmacaoAlteracao(null)} onConfirmar={() => void enviarAlteracao()} />}
+    </section>;
+  }
 
-  return <div className="flex flex-col gap-4">
-    {dataAssinaturaTermos && dataCirurgia && <section className="overflow-hidden rounded-2xl border border-rose/15 bg-white/75 shadow-[0_14px_40px_-28px_rgba(0,0,0,.3)] dark:border-white/10 dark:bg-white/[0.035]"><div className="flex items-center justify-between gap-3 border-b border-rose/10 px-4 py-3.5"><div><p className="text-[0.55rem] font-semibold uppercase tracking-[0.18em] text-rose">Minha agenda</p><p className="mt-0.5 text-xs text-clay/70 dark:text-pearl/75">Datas registradas para o seu atendimento.</p></div><span className="rounded-full border border-success/15 bg-success/[0.06] px-2.5 py-1 text-[0.5rem] font-bold uppercase tracking-[0.12em] text-success">Confirmada</span></div><div className="grid gap-3 p-3 sm:grid-cols-2 sm:p-4">{renderDataCard("Assinatura dos termos", dataAssinaturaTermos, "termos")}{renderDataCard("Data da sua cirurgia", dataCirurgia, "cirurgia")}</div></section>}
-    {alteracao === "termos" && <section className="overflow-hidden rounded-2xl border border-rose/15 bg-white/75 p-3 shadow-card dark:border-white/10 dark:bg-white/[0.035]"><div className="mb-3 flex items-center justify-between"><div><p className="text-[0.58rem] font-bold uppercase tracking-label text-rose">Alterar assinatura dos termos</p><h3 className="text-sm font-semibold text-burgundy dark:text-cream">Escolha uma nova data para a assinatura dos termos</h3><p className="mt-1 text-[0.62rem] text-clay/70 dark:text-pearl/75">A nova data será enviada para análise administrativa. Prazo de até 5 dias úteis.</p></div><button type="button" onClick={() => !enviando && setAlteracao(null)} className="rounded-full p-1 text-clay/70 dark:text-pearl/75"><X className="h-4 w-4" /></button></div><CalendarioAgendamento datas={datasTermos} onConfirmar={prepararAlteracaoTermos} confirmando={enviando} /></section>}
-    {alteracao === "cirurgia" && dataAssinaturaTermos && <section className="overflow-hidden rounded-2xl border border-rose/15 bg-white/75 p-3 shadow-card dark:border-white/10 dark:bg-white/[0.035]"><div className="mb-3 flex items-center justify-between"><div><p className="text-[0.58rem] font-bold uppercase tracking-label text-rose">Alterar data da cirurgia</p><h3 className="text-sm font-semibold text-burgundy dark:text-cream">Escolha uma nova data para sua cirurgia</h3><p className="mt-1 text-[0.62rem] text-clay/70 dark:text-pearl/75">A nova data será enviada para análise administrativa. Prazo de até 5 dias úteis.</p></div><button type="button" onClick={() => !enviando && setAlteracao(null)} className="rounded-full p-1 text-clay/70 dark:text-pearl/75"><X className="h-4 w-4" /></button></div><CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} dataCirurgiaAtual={dataCirurgia} modoAlteracao onSolicitarAlteracao={prepararAlteracaoCirurgia} /></section>}
-    {dataAssinaturaTermos && !dataCirurgia && !alteracao && <section className={cn("rounded-2xl border px-4 py-3", recusada ? "border-alert/20 bg-alert/[0.05]" : "border-success/20 bg-success/[0.05]")}><div className="flex items-center gap-3"><CheckCircle2 className={cn("h-5 w-5", recusada ? "text-alert" : "text-success")} /><div className="flex-1"><p className={cn("text-[0.58rem] font-semibold uppercase tracking-label", recusada ? "text-alert" : "text-success")}>{recusada ? "Custeio precisa de revisão" : aprovada ? "Custeio confirmado" : "Próxima etapa"}</p><p className="text-sm text-burgundy dark:text-cream">Informe como será realizado o pagamento do saldo restante.</p></div>{(!solicitacao || recusada) && <button onClick={abrirModal} className="rounded-lg bg-rose px-3 py-2 text-[0.58rem] font-bold uppercase text-white"><CreditCard className="mr-1 inline h-3 w-3" /> Informar</button>}</div></section>}
-    {dataAssinaturaTermos && !dataCirurgia && solicitacao && !alteracao && <CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} onConfirmada={setDataCirurgia} />}
-    {dataAssinaturaTermos && !dataCirurgia && !solicitacao && !alteracao && <section className="relative overflow-hidden rounded-2xl border border-rose/15 bg-white/70 p-3 dark:border-white/10 dark:bg-white/[0.035]"><div className="pointer-events-none select-none blur-[4px] opacity-45"><CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} onConfirmada={() => {}} /></div><div className="absolute inset-0 flex items-center justify-center p-4"><div className="max-w-md rounded-2xl border border-gold/30 bg-white/95 p-5 text-center dark:border-white/10 dark:bg-[#25161b]/95"><LockKeyhole className="mx-auto h-5 w-5 text-gold" /><h3 className="mt-3 font-heading text-lg font-semibold text-burgundy dark:text-cream">Agenda da cirurgia indisponível no momento</h3><p className="mt-2 text-sm text-clay/70 dark:text-pearl/70">Escolha primeiro a forma de custeio do valor restante.</p></div></div></section>}
-    <AnimatePresence>{confirmacaoAlteracao && <motion.div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.div className="w-full max-w-sm rounded-2xl border border-rose/15 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#171618]" initial={{ scale: .98, y: 6 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .98, y: 6 }}><div className="flex items-start justify-between gap-3"><div><p className="text-[0.6rem] font-semibold uppercase tracking-label text-rose">Confirmação da solicitação</p><h2 className="mt-1 text-base font-semibold text-burgundy dark:text-cream">Enviar alteração para análise?</h2></div><button type="button" onClick={() => !enviando && setConfirmacaoAlteracao(null)} className="text-clay/70 dark:text-pearl/75"><X /></button></div><div className="mt-4 rounded-xl border border-rose/10 bg-blush/35 p-3 dark:border-white/10 dark:bg-white/[0.045]"><p className="text-[0.62rem] font-semibold uppercase tracking-label text-rose">{confirmacaoAlteracao.tipo === "termos" ? "Assinatura dos termos" : "Data da cirurgia"}</p><p className="mt-1 text-sm font-semibold text-burgundy dark:text-cream">{confirmacaoAlteracao.data.split("-").reverse().join("/")}{confirmacaoAlteracao.horario ? ` às ${confirmacaoAlteracao.horario}` : ""}</p></div><p className="mt-3 text-[0.68rem] leading-relaxed text-clay/75 dark:text-pearl/80">A solicitação será enviada para análise administrativa. O prazo é de até <strong className="text-burgundy dark:text-cream">5 dias úteis</strong>. Sua data atual continuará válida até a autorização.</p>{erro && <p className="mt-3 rounded-lg bg-alert/10 p-2 text-[0.62rem] text-alert">{erro}</p>}<div className="mt-4 flex gap-2"><button type="button" disabled={enviando} onClick={() => setConfirmacaoAlteracao(null)} className="flex-1 rounded-xl border border-rose/15 px-3 py-2.5 text-[0.62rem] font-bold uppercase tracking-label text-clay/75 dark:border-white/10 dark:text-pearl/80">Cancelar</button><button type="button" disabled={enviando} onClick={() => void enviarAlteracao()} className="flex-1 rounded-xl bg-burgundy px-3 py-2.5 text-[0.62rem] font-bold uppercase tracking-label text-cream disabled:opacity-50">{enviando ? "Enviando..." : "Confirmar solicitação"}</button></div></motion.div></motion.div>}</AnimatePresence>
-    <AnimatePresence>{modalAberto && <motion.div className="fixed inset-0 z-[80] grid h-[100dvh] w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-black/55 p-3 backdrop-blur-sm sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={e => { if (e.target === e.currentTarget && !enviando) setModalAberto(false); }}><motion.div role="dialog" aria-modal="true" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .98 }} className="mx-auto my-auto w-full max-w-md max-h-full overflow-y-auto overscroll-contain rounded-2xl border border-rose/15 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-clay shadow-2xl [-webkit-overflow-scrolling:touch] dark:border-white/10 dark:bg-[#171618] dark:text-white sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[0.6rem] font-semibold uppercase tracking-label text-rose">Custeio do valor restante</p><h2 className="mt-1 font-heading text-base font-semibold text-burgundy dark:text-cream">Informe como será realizado o pagamento</h2></div><button type="button" onClick={() => !enviando && setModalAberto(false)} className="rounded-full p-1.5 text-clay/50 hover:bg-blush dark:text-white/50 dark:hover:bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-blush/45 p-3 dark:bg-white/[0.045]"><div><p className="text-[0.55rem] font-semibold uppercase tracking-label text-clay/60 dark:text-white/60">Parcelas pagas</p><p className="mt-0.5 text-sm font-bold text-burgundy dark:text-rose">{parcelasPagas} de {quantidadeParcelas || "—"}</p></div><div><p className="text-[0.55rem] font-semibold uppercase tracking-label text-clay/60 dark:text-white/60">Valor pago</p><p className="mt-0.5 text-sm font-bold text-burgundy dark:text-rose">{formatarMoeda(valorPago)}</p></div><div><p className="text-[0.55rem] font-semibold uppercase tracking-label text-clay/60 dark:text-white/60">Parcelas restantes</p><p className="mt-0.5 text-sm font-bold text-burgundy dark:text-rose">{parcelasRestantes}</p></div><div><p className="text-[0.55rem] font-semibold uppercase tracking-label text-clay/60 dark:text-white/60">Valor restante</p><p className="mt-0.5 text-sm font-bold text-burgundy dark:text-rose">{formatarMoeda(saldoRestante)}</p></div></div><div className="mt-3 rounded-xl border border-gold/20 bg-gold/[0.06] p-3 dark:border-gold/25 dark:bg-gold/[0.05]"><p className="text-[0.55rem] font-semibold uppercase tracking-label text-gold">Valor a pagar no dia da assinatura dos termos</p><p className="mt-1 text-lg font-bold text-burgundy dark:text-cream">{formatarMoeda(saldoRestante)}</p><p className="mt-1 text-[0.6rem] leading-relaxed text-clay/70 dark:text-white/70">Este é o saldo restante previsto para quitação na assinatura dos termos, conforme o contrato.</p></div><div className="mt-3 grid gap-2">{formasDisponiveis.map(forma => { const titulo = forma === "cartao" ? "Cartão de crédito" : forma === "pix" ? "PIX" : forma === "cheques" ? "Cheques" : "100% boleto"; const descricao = forma === "cartao" ? "taxa configurada no contrato" : forma === "pix" ? "sem taxa adicional" : "análise de até 5 dias úteis"; return <button key={forma} type="button" onClick={() => setFormaCusteio(forma)} className={cn("flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition", formaCusteio === forma ? "border-burgundy bg-burgundy text-cream" : "border-rose/15 bg-white text-clay/70 hover:border-rose dark:border-white/10 dark:bg-white/[0.035] dark:text-white/75")}><span><span className="block text-[0.72rem] font-semibold">{titulo}</span><span className="block text-[0.6rem] opacity-60">{descricao}</span></span><span className={cn("h-3.5 w-3.5 rounded-full border", formaCusteio === forma ? "border-cream bg-cream" : "border-clay/25 dark:border-white/30")} /></button>; })}</div>{formasDisponiveis.length === 0 && <p className="mt-3 rounded-xl bg-alert/10 p-3 text-xs text-alert">Nenhuma forma de custeio está disponível para este contrato no momento.</p>}{erro && <p className="mt-3 rounded-xl bg-alert/10 p-3 text-xs text-alert">{erro}</p>}<button type="button" onClick={enviarCusteio} disabled={!formaCusteio || enviando || formasDisponiveis.length === 0} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-cream transition hover:bg-burgundy-dark disabled:cursor-not-allowed disabled:opacity-45">{enviando ? "Enviando..." : "Confirmar custeio e liberar agenda"}</button></motion.div></motion.div>}</AnimatePresence>
-  </div>;
+  if (alteracao === "cirurgia" && dataAssinaturaTermos) {
+    return <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+      <div className="border-b border-[#F0DDDD] bg-[#FFF7F7] px-[13px] py-3"><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#B65B67]">Alterar data da cirurgia</div><div className="pt-[2px] font-heading text-[15px] font-semibold text-[#7D2434]">Escolha uma nova data para sua cirurgia</div><div className="pt-[2px] text-[9.5px] font-light text-[#7A6B67]">A nova data será enviada para análise administrativa. Prazo de até 5 dias úteis.</div></div>
+      <div className="p-[13px]"><CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} dataCirurgiaAtual={dataCirurgia} modoAlteracao onSolicitarAlteracao={prepararAlteracaoCirurgia} /><button type="button" onClick={() => { setAlteracao(null); setConfirmacaoAlteracao(null); }} className="mt-[10px] w-full text-center text-[9px] font-medium text-[#8A7B77] underline">Cancelar alteração</button></div>
+      {confirmacaoAlteracao?.tipo === "cirurgia" && <ConfirmarAlteracao confirmacao={confirmacaoAlteracao} enviando={enviando} onCancelar={() => setConfirmacaoAlteracao(null)} onConfirmar={() => void enviarAlteracao()} />}
+    </section>;
+  }
+
+  if (dataCirurgia) {
+    const cirurgia = partesData(dataCirurgia);
+    return <>
+      <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+        <div className="flex items-center justify-between gap-[10px] border-b border-[#F0E6E3] px-[14px] py-[13px]"><div><div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Minha agenda</div><div className="pt-[2px] text-[10px] font-light text-[#7A6B67]">Datas registradas para o seu atendimento.</div></div><span className="rounded-full border border-[#DCEADF] bg-[#F0F7F1] px-2 py-1 text-[8px] font-bold uppercase tracking-[.06em] text-[#3F7D5B]">Confirmada</span></div>
+        <div className="grid grid-cols-2 gap-[9px] p-[11px]">
+          <DataCard titulo="Assinatura dos termos" data={termos} horario={horarioTermos} onAlterar={() => setAlteracao("termos")} />
+          <DataCard titulo="Data da sua cirurgia" data={cirurgia} onAlterar={() => setAlteracao("cirurgia")} />
+        </div>
+      </section>
+      {remarcacaoPendente && <div className="mt-[10px] rounded-[14px] border border-[#EFD9AA] bg-[#FFF9EF] px-[14px] py-3 text-[10px] font-light leading-[1.5] text-[#7A6B67]"><b className="font-semibold text-[#8E6420]">Solicitação de alteração enviada.</b> Prazo de até 5 dias úteis. Sua agenda atual permanece inalterada até a autorização administrativa.</div>}
+    </>;
+  }
+
+  return <>
+    <div className="flex flex-col gap-[11px]">
+      <div className="rounded-[18px] border border-[#DCEADF] bg-white p-[15px] shadow-[0_7px_20px_rgba(73,42,45,.05)]"><div className="flex items-start justify-between gap-3"><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#3F7D5B]">Assinatura dos termos</div><div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">{`${termos.dia} de ${termos.mes.toLowerCase()} de ${termos.ano}`}</div><div className="pt-[2px] text-[10.5px] font-light text-[#7A6B67]">Horário confirmado: {horarioTermos ?? "—"}</div></div><span className="rounded-full bg-[#F0F7F1] px-2 py-1 text-[8.5px] font-semibold text-[#3F7D5B]">Confirmada</span></div></div>
+
+      {!solicitacao || recusada ? <div className="rounded-[18px] border border-[#DCEADF] bg-[#F0F7F1] p-[15px]"><div className="flex items-center gap-[10px]"><svg width="19" height="19" viewBox="0 0 18 18" fill="none" stroke="#3F7D5B" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="m6 9 2 2 4-4"/></svg><div className="min-w-0 flex-1"><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#3F7D5B]">Próxima etapa</div><div className="pt-[2px] text-[11.5px] font-medium text-[#7D2434]">{recusada ? "Sua forma de custeio precisa ser ajustada." : "Informe como será realizado o pagamento do saldo restante."}</div></div><button type="button" onClick={abrirModal} className="rounded-[10px] bg-[#B65B67] px-[11px] py-[9px] text-[9.5px] font-semibold text-white">Informar</button></div></div> : <div className="rounded-[18px] border p-[15px]" style={aprovada ? { background: "#F0F7F1", borderColor: "#DCEADF" } : { background: "#FFF9EF", borderColor: "#EFD9AA" }}><div className="flex items-start gap-[10px]"><span className="flex h-[29px] w-[29px] flex-none items-center justify-center rounded-full" style={aprovada ? { background: "#E3F1E6", color: "#3F7D5B" } : { background: "#FBF1DD", color: "#A77A24" }}><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/>{aprovada ? <path d="m6 9 2 2 4-4"/> : <path d="M9 5.6V9l2.3 1.5"/>}</svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em]" style={{ color: aprovada ? "#3F7D5B" : "#A77A24" }}>{aprovada ? "Custeio confirmado" : "Custeio em análise"}</div><div className="pt-[2px] text-[11.5px] font-medium text-[#7D2434]">{aprovada ? `${labelForma(solicitacao.forma_custeio)} confirmado pelo financeiro.` : "Recebemos sua escolha e estamos confirmando com a equipe financeira."}</div>{solicitacao.observacao && <div className="pt-[3px] text-[9.7px] font-light leading-[1.45] text-[#7A6B67]">{solicitacao.observacao}</div>}</div></div></div>}
+
+      <CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} onConfirmada={setDataCirurgia} />
+    </div>
+
+    <AnimatePresence>{modalAberto && <><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !enviando && setModalAberto(false)} className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.30)] backdrop-blur-[2px]"/><motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ duration: .2 }} className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]"><div className="rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_-16px_45px_rgba(48,26,30,.18)]"><div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]"/><div className="flex items-start justify-between gap-3"><div><div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Custeio do saldo restante</div><div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">Como será realizado o pagamento?</div><div className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">Saldo apurado: <b className="font-semibold text-[#7D2434]">{formatarMoeda(saldoRestante)}</b>. Escolha uma opção autorizada pelo financeiro.</div></div><button type="button" onClick={() => !enviando && setModalAberto(false)} className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#7D2434]">×</button></div><div className="mt-3 flex flex-col gap-[7px]">{formasDisponiveis.map((forma) => <button key={forma} type="button" onClick={() => setFormaCusteio(forma)} className="flex items-center justify-between rounded-[12px] border px-3 py-[11px] text-left" style={formaCusteio === forma ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}><span className="text-[11px] font-medium">{labelForma(forma)}</span><span className="text-[9px] text-[#9A8A86]">{forma === "cartao" ? formatarMoeda(totalCartao) : forma === "pix" ? "sem taxa adicional" : "conferência financeira"}</span></button>)}</div>{erro && <div className="mt-2 rounded-[11px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-[9.8px] text-[#8F2A25]">{erro}</div>}<button type="button" disabled={!formaCusteio || enviando || formasDisponiveis.length === 0} onClick={() => void enviarCusteio()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-medium text-white disabled:opacity-40">{enviando ? "Confirmando..." : "Confirmar forma de custeio"}</button></div></motion.div></>}</AnimatePresence>
+  </>;
+}
+
+function DataCard({ titulo, data, horario, onAlterar }: { titulo: string; data: { dia: string; mes: string; ano: string }; horario?: string | null; onAlterar: () => void }) {
+  return <div className="flex min-h-[142px] flex-col justify-between rounded-[15px] border border-[#F0E6E3] bg-white p-[14px]"><div><div className="text-[8px] font-semibold uppercase tracking-[.15em] text-[#8A7B77]">{titulo}</div><div className="pt-2 font-heading text-[31px] font-semibold leading-none text-[#7D2434]">{data.dia}</div><div className="pt-[2px] text-[9px] font-semibold uppercase tracking-[.09em] text-[#B65B67]">{data.mes}</div><div className="pt-[3px] text-[8.5px] text-[#8A7B77]">{data.ano}{horario ? ` · ${horario}` : ""}</div></div><button type="button" onClick={onAlterar} className="inline-flex items-center justify-center rounded-[9px] border border-[#F0DDDD] bg-[#FFF7F7] px-2 py-[7px] text-[8.5px] font-semibold text-[#7D2434]">Alterar data</button></div>;
+}
+
+function ConfirmarAlteracao({ confirmacao, enviando, onCancelar, onConfirmar }: { confirmacao: ConfirmacaoAlteracao; enviando: boolean; onCancelar: () => void; onConfirmar: () => void }) {
+  const data = partesData(confirmacao.data);
+  return <div className="border-t border-[#F0E6E3] bg-[#FFF9EF] px-[13px] py-3"><div className="text-[10px] font-light leading-[1.5] text-[#7A6B67]">Nova data: <b className="font-semibold text-[#7D2434]">{data.dia} de {data.mes.toLowerCase()} de {data.ano}</b>{confirmacao.horario ? <> às <b className="font-semibold text-[#7D2434]">{confirmacao.horario}</b></> : null}. A alteração será enviada para análise administrativa.</div><div className="mt-[9px] grid grid-cols-2 gap-2"><button type="button" onClick={onCancelar} disabled={enviando} className="rounded-[10px] border border-[#E7DAD6] bg-white px-3 py-[9px] text-[9.5px] font-semibold text-[#6B1F2E]">Voltar</button><button type="button" onClick={onConfirmar} disabled={enviando} className="rounded-[10px] bg-[#6B1F2E] px-3 py-[9px] text-[9.5px] font-semibold text-white disabled:opacity-50">{enviando ? "Enviando..." : "Solicitar alteração"}</button></div></div>;
 }

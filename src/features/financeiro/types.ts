@@ -1,4 +1,49 @@
-export type AbaFinanceiro = "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
+export type AbaFinanceiro = "clientes" | "visao-geral" | "recebiveis" | "validacao" | "contratos" | "conciliacao";
+
+export type FunilClienteBucket = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" | "negativados" | "cancelados";
+
+export const FUNIL_CLIENTE_LABEL: Record<FunilClienteBucket, string> = {
+  aguardando_conferencia: "Aguardando conferência",
+  ativos: "Ativos",
+  todos: "Todos",
+  suspensos: "Suspensos",
+  negativados: "Negativados",
+  cancelados: "Cancelados",
+};
+
+export interface ClienteFunilItem {
+  clienteId: string;
+  nome: string;
+  cpf: string | null;
+  statusContrato: string;
+  bucket: Exclude<FunilClienteBucket, "todos">;
+  quitado: boolean;
+  parcelasPagas: number;
+  parcelasTotal: number;
+  saldoAReceber: number;
+  vencidas: number;
+  aguardandoValidacao: number;
+  proximaAcao: string;
+  vendedora: string | null;
+  campanha: string | null;
+  proximoVencimento: string | null;
+}
+
+export interface FunilFinanceiro {
+  itens: ClienteFunilItem[];
+  funis: Array<{ bucket: FunilClienteBucket; total: number }>;
+}
+
+export type ToneRecebivel = "neutral" | "success" | "alert" | "gold" | "rose" | "indigo";
+
+export const RECEBIVEL_STATUS_META: Record<string, { label: string; tone: ToneRecebivel }> = {
+  nao_pago: { label: "Em aberto", tone: "neutral" },
+  pago: { label: "Pago", tone: "success" },
+  pendente_confirmacao: { label: "Em validação", tone: "gold" },
+  rejeitado: { label: "Rejeitado", tone: "rose" },
+  suspensa: { label: "Suspensa", tone: "indigo" },
+  vencido: { label: "Vencido", tone: "alert" },
+};
 
 export interface PeriodoFinanceiro { inicio: string; fim: string }
 
@@ -32,6 +77,7 @@ export interface Recebivel {
   clienteId: string;
   cliente: string;
   cpf: string | null;
+  vendedora: string | null;
   numeroParcela: number;
   totalParcelas: number;
   vencimento: string | null;

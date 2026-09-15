@@ -163,7 +163,7 @@ Procurar:
 - RPCs/constraints de vagas;
 - `worker/journey.ts`.
 
-Não reintroduzir regra antiga de 90 dias. Usar a regra atual de `BUSINESS-RULES.md`.
+Não reintroduzir a regra antiga de 5 dias úteis. Usar a regra atual (até 90 dias corridos, teto — não data automática) de `BUSINESS-RULES.md`.
 
 ### Jornada/liberação
 

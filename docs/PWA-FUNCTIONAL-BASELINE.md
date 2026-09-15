@@ -167,7 +167,7 @@ As migrations antigas relacionadas à numeração de parcelas e suspensão regis
 - área de previsão/liberação financeira;
 - remarcações.
 
-A lógica antiga de 90 dias após termos é considerada **obsoleta** quando conflitar com a nova regra documentada de liberação da agenda cirúrgica após quitação + termos e prazo de 5 dias úteis.
+A lógica antiga de 5 dias úteis é considerada **obsoleta**: a regra vigente de liberação da agenda cirúrgica é, após quitação + termos (nenhum isoladamente), um prazo máximo de até 90 dias corridos — teto, não data automática.
 
 ### Configurações
 

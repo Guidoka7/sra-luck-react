@@ -1,46 +1,42 @@
-import { Heart, Sparkles } from "lucide-react";
-
 interface CardMotivacionalProps {
-  procedimento?: string | null;
+  procedimento: string | null;
+  quantidadeParcelas: number | null;
+  percentualPago: number;
 }
 
-export function CardMotivacional({ procedimento }: CardMotivacionalProps) {
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-br from-white via-blush/40 to-white p-6 shadow-card sm:p-8">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gold/10 blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-12 -left-8 h-32 w-32 rounded-full bg-rose/10 blur-2xl" />
+export function CardMotivacional({ procedimento, quantidadeParcelas, percentualPago }: CardMotivacionalProps) {
+  const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : "Plano";
+  const percentual = Math.max(0, Math.min(100, Math.round(percentualPago)));
 
-      <div className="relative flex items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gold/15">
-          <Sparkles className="h-4 w-4 text-gold" />
+  return (
+    <section className="sl-dream-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="sl-eyebrow">Seu sonho está em movimento</div>
+          <div className="sl-dream-title">{procedimento ?? "Seu procedimento"}</div>
+          <div className="sl-dream-copy">
+            Cada parcela confirmada aproxima você da sua conquista. Continue firme — sua jornada já começou e estamos com você em cada etapa.
+          </div>
+        </div>
+        <div className="sl-plan-chip">{planoLabel}</div>
+      </div>
+
+      <div className="sl-plan-note">
+        <span className="sl-plan-note-icon">
+          <svg width="12" height="12" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 2.8 10.9 6.6l4.2.6-3.05 2.97.72 4.17L9 12.38 5.23 14.34l.72-4.17L2.9 7.2l4.2-.6L9 2.8Z" />
+          </svg>
         </span>
-        <div>
-          <p className="text-sm leading-relaxed text-clay/80 sm:text-[0.95rem]">
-            Você está cada vez mais perto de realizar o seu sonho. Sua próxima
-            etapa é a{" "}
-            <span className="font-heading font-semibold text-burgundy">
-              Assinatura dos Termos Cirúrgicos
-            </span>
-            , um dos momentos mais importantes do seu processo.
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-clay/80 sm:text-[0.95rem]">
-            Escolha abaixo a melhor data para esse encontro. É nele que sua{" "}
-            <span className="font-heading font-semibold text-burgundy">
-              data de cirurgia
-            </span>{" "}
-            será definida e informada a você.
-          </p>
-          {procedimento && (
-            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-rose/10 bg-white/65 px-3 py-2.5 text-sm text-clay/70">
-              <Heart className="h-4 w-4 flex-none text-rose" />
-              <p>
-                Cada parcela aproxima você do seu procedimento: {" "}
-                <span className="font-semibold text-burgundy">{procedimento}</span>.
-              </p>
-            </div>
-          )}
+        <div className="min-w-0">
+          <div className="sl-plan-note-title">Seu plano continua ativo</div>
+          <div className="sl-plan-note-copy">Mantenha seus pagamentos em dia para avançar com tranquilidade até a liberação da sua agenda.</div>
         </div>
       </div>
-    </div>
+
+      <div className="sl-separator" />
+      <div className="sl-progress" aria-label={`${percentual}% das parcelas pagas`}>
+        <div className="sl-progress-fill" style={{ width: `${percentual}%` }} />
+      </div>
+    </section>
   );
 }

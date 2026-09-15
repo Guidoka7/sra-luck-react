@@ -1,31 +1,150 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, UserRound, LayoutGrid, List, CheckCircle2, CalendarClock } from "lucide-react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { SkeletonCards } from "@/components/ui/Skeleton";
+import { toast } from "sonner";
 import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
 import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
-import type { Cliente } from "@/types/database";
-import { ModalClienteCompactoV3 } from "@/components/admin/ModalClienteCompactoV3";
+import type { Cliente, NovaVenda } from "@/types/database";
+import { STATUS_CONTRATO_LABEL } from "@/types/database";
+import { ClienteZipDrawer } from "@/components/admin-zip/ClienteZipDrawer";
+import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 
-const statusPagamento = (c: Cliente) => { const p = c.porcentagem_pagamento; if (p == null) return "Sem parcelas"; if (p >= 100) return "Quitado"; return `${p}% pago`; };
-function BadgesCiclo({ cliente }: { cliente: Cliente }) { const quitada = Boolean(cliente.custeio_confirmado_em) || cliente.status_financeiro === "pago"; const cirurgia = cliente.status_cirurgia === "realizada"; const termos = Boolean(cliente.termos_assinados_em); return <div className="mt-1 flex flex-wrap gap-1">{termos && <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[0.5rem] font-semibold text-success"><CheckCircle2 className="h-2.5 w-2.5" /> Termos assinados</span>}{quitada && <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[0.5rem] font-semibold text-success"><CheckCircle2 className="h-2.5 w-2.5" /> Quitada</span>}{cirurgia && <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[0.5rem] font-semibold text-success"><CheckCircle2 className="h-2.5 w-2.5" /> Cirurgia realizada</span>}</div>; }
-function AgendaClienteCompacta({ cliente }: { cliente: Cliente }) { if (cliente.termos_assinados_em) return <span className="mt-1 flex items-center gap-1 text-[0.52rem] text-success"><CheckCircle2 className="h-2.5 w-2.5" /> Termos assinados</span>; if (!cliente.proximo_agendamento_data) return null; return <span className="mt-1 flex items-center gap-1 text-[0.52rem] text-rose"><CalendarClock className="h-2.5 w-2.5" /> Termos: {cliente.proximo_agendamento_data.split("-").reverse().join("/")}{cliente.proximo_agendamento_horario ? ` · ${cliente.proximo_agendamento_horario}` : ""}</span>; }
+/**
+ * Reprodução fiel de Admin Clientes.dc.html: tabs por estágio do funil de
+ * cadastro, tabela densa com filtro de banco/busca, e drawer lateral
+ * [PERFIL][FINANCEIRO] ao clicar numa cliente. Dados 100% reais — nenhum
+ * mock. "Campanha" e "Banco" só aparecem quando há dado real (novas_vendas
+ * / carnês); sem isso, mostram "—".
+ */
+
+type Funil = "novas" | "aguardando" | "cadastradas" | "canceladas";
+
+const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
+
+function statusKind(status: string | undefined): ZipKind {
+  if (status === "ativo") return "ok";
+  if (status === "suspenso") return "warn";
+  return "bad";
+}
 
 export default function ClientesPage() {
-  const [clientes, setClientes] = useState<Cliente[]>([]); const [carregando, setCarregando] = useState(true); const [erro, setErro] = useState<string | null>(null); const [busca, setBusca] = useState(""); const [visualizacao, setVisualizacao] = useState<"lista" | "cards">("lista"); const [modal, setModal] = useState<Cliente | null | false>(false);
-  async function carregar(force = false) { const url = "/api/admin/clientes"; const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null; if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true); setErro(null); try { const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url); setClientes(data.clientes ?? []); } catch (e: any) { if (!cached) { setErro(e?.message ?? "Falha ao carregar clientes."); setClientes([]); } } finally { setCarregando(false); } }
-  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
-  const filtradas = useMemo(() => { const termo = busca.trim().toLowerCase(); if (!termo) return clientes; return clientes.filter((c) => c.nome_completo.toLowerCase().includes(termo)); }, [clientes, busca]); const fecharESalvar = () => { setModal(false); void carregar(true); };
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [funil, setFunil] = useState<Funil>("cadastradas");
+  const [bancoFiltro, setBancoFiltro] = useState("Todos os bancos");
+  const [bancoMenuAberto, setBancoMenuAberto] = useState(false);
+  const [modal, setModal] = useState<Cliente | null | false>(false);
 
-  return <div className="space-y-5 pb-8">
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-rose">Gestão</p><h1 className="mt-1 text-2xl font-semibold text-burgundy sm:text-3xl">Clientes</h1><p className="mt-1 text-sm text-clay/50">Perfil, crédito, parcelas e andamento dos termos em um único espaço.</p></div><Button onClick={() => setModal(null)}><Plus className="h-4 w-4" /> Nova cliente</Button></div>
-    <Card className="flex flex-wrap items-center gap-2.5 p-3"><div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-clay/30" /><Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar pelo nome…" className="pl-10" /></div><div className="flex items-center gap-1 rounded-full border border-rose/10 bg-cream p-1"><button onClick={() => setVisualizacao("lista")} className={`rounded-full p-2 ${visualizacao === "lista" ? "bg-burgundy text-cream" : "text-clay/40"}`} aria-label="Lista"><List className="h-3.5 w-3.5" /></button><button onClick={() => setVisualizacao("cards")} className={`rounded-full p-2 ${visualizacao === "cards" ? "bg-burgundy text-cream" : "text-clay/40"}`} aria-label="Cards"><LayoutGrid className="h-3.5 w-3.5" /></button></div></Card>
-    {carregando ? <SkeletonCards count={6} /> : erro ? <Card className="p-8 text-center"><p className="text-sm text-alert">{erro}</p><Button size="sm" className="mt-3" onClick={() => carregar(true)}>Tentar novamente</Button></Card> : filtradas.length === 0 ? <Card className="p-10 text-center text-sm text-clay/45">Nenhuma cliente encontrada.</Card> : visualizacao === "lista" ? <Card className="overflow-hidden p-0"><div className="divide-y divide-rose/5">{filtradas.map((c) => <button key={c.id} type="button" onClick={() => setModal(c)} className="grid w-full grid-cols-[minmax(0,1.5fr)_minmax(120px,.7fr)_minmax(150px,.9fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition hover:bg-blush/20 sm:px-5"><div className="flex min-w-0 items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blush text-burgundy"><UserRound className="h-4 w-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-burgundy">{c.nome_completo}</span><span className="block text-[0.68rem] text-clay/40">{formatarCpf(c.cpf)}</span><AgendaClienteCompacta cliente={c} /></span></div><span className="hidden text-xs text-clay/55 sm:block">{c.procedimento || "Sem procedimento"}</span><span className="text-xs text-clay/55"><span className="block">{statusPagamento(c)}</span><BadgesCiclo cliente={c} /></span><span className="text-right text-sm font-semibold text-burgundy">{formatarMoeda(c.valor_contrato)}</span></button>)}</div></Card> : <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{filtradas.map((c) => <Card key={c.id} onClick={() => setModal(c)} className="cursor-pointer p-4 transition hover:-translate-y-0.5 hover:shadow-soft"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-blush text-burgundy"><UserRound className="h-4 w-4" /></span><div className="min-w-0"><p className="truncate text-sm font-semibold text-burgundy">{c.nome_completo}</p><p className="text-[0.68rem] text-clay/40">{formatarCpf(c.cpf)}</p><AgendaClienteCompacta cliente={c} /><BadgesCiclo cliente={c} /></div></div><div className="mt-3 flex items-end justify-between border-t border-rose/10 pt-3"><div><p className="text-[0.58rem] uppercase tracking-label text-rose">Pagamento</p><p className="mt-1 text-xs text-clay/55">{statusPagamento(c)}</p></div><p className="text-lg font-semibold text-burgundy">{formatarMoeda(c.valor_contrato)}</p></div></Card>)}</div>}
-    {modal !== false && <ModalClienteCompactoV3 cliente={modal} onClose={() => setModal(false)} onSalvo={fecharESalvar} />}
+  async function carregar(force = false) {
+    const url = "/api/admin/clientes";
+    const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null;
+    if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true);
+    try {
+      const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url);
+      setClientes(data.clientes ?? []);
+      try { const r = await fetch("/api/admin/novas-vendas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setNovasVendas(d.vendas ?? []); } catch { /* staging opcional */ }
+    } catch (e) { if (!cached) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); } finally { setCarregando(false); }
+  }
+  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
+
+  const novas = useMemo(() => novasVendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro"), [novasVendas]);
+  const aguardandoCadastro = useMemo(() => novasVendas.filter((v) => v.cliente_id && v.status === "aguardando_boletos"), [novasVendas]);
+  const cadastradas = useMemo(() => clientes.filter((c) => c.status_contrato !== "cancelado"), [clientes]);
+  const canceladas = useMemo(() => clientes.filter((c) => c.status_contrato === "cancelado"), [clientes]);
+
+  const bancos = useMemo(() => ["Todos os bancos", ...Array.from(new Set(clientes.map((c) => c.banco).filter((b): b is string => Boolean(b))))], [clientes]);
+
+  const termo = busca.trim().toLowerCase();
+  const filtradas = useMemo(() => {
+    let base = funil === "canceladas" ? canceladas : cadastradas;
+    if (bancoFiltro !== "Todos os bancos") base = base.filter((c) => c.banco === bancoFiltro);
+    if (!termo) return base;
+    return base.filter((c) => [c.nome_completo, c.cpf, c.telefone, c.consultora, c.origem_venda].some((v) => v?.toLowerCase().includes(termo)));
+  }, [cadastradas, canceladas, funil, termo, bancoFiltro]);
+  const vendasFiltradas = useMemo(() => { const base = funil === "novas" ? novas : aguardandoCadastro; if (!termo) return base; return base.filter((v) => v.nome_completo.toLowerCase().includes(termo)); }, [novas, aguardandoCadastro, funil, termo]);
+
+  const tabs: Funil[] = ["novas", "aguardando", "cadastradas", "canceladas"];
+  const tabCount: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
+
+  const fecharESalvar = () => { setModal(false); void carregar(true); };
+
+  return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+    <div style={{ flex: "1 1 560px", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
+        <div>
+          <h1 style={{ fontSize: 27 }}>Clientes</h1>
+          <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "52ch" }}>Gerencie clientes recebidas pelo CRM e acompanhe o processo de cadastro.</p>
+        </div>
+        <button onClick={() => setModal(null)} style={{ height: 34, padding: "0 15px", borderRadius: 10, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>Nova cliente
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14 }}>
+        {tabs.map((t) => {
+          const on = funil === t;
+          return <button key={t} onClick={() => setFunil(t)} style={{ height: 30, padding: "0 11px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+            {TAB_LABEL[t]}<span style={{ ...zipChip(on ? "rose" : "neutral"), height: 17, fontSize: 8 }}>{tabCount[t]}</span>
+          </button>;
+        })}
+      </div>
+
+      <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", backdropFilter: "blur(18px)", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <h2 style={{ fontSize: 15 }}>{TAB_LABEL[funil]}</h2>
+            <span style={{ fontSize: 11, color: "var(--soft)" }}>{(funil === "novas" || funil === "aguardando" ? vendasFiltradas.length : filtradas.length)} nesta página</span>
+          </div>
+          {(funil === "cadastradas" || funil === "canceladas") && <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, height: 31, width: 280, maxWidth: "44vw", padding: "0 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)" }}>
+              <span style={{ color: "var(--rose)", fontSize: 11.5 }}>⌕</span>
+              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou vendedora…" style={{ flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", fontSize: 11.5, color: "var(--ink)" }} />
+            </div>
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setBancoMenuAberto((v) => !v)} style={{ height: 31, padding: "0 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{bancoFiltro}<span style={{ fontSize: 9 }}>▾</span></button>
+              {bancoMenuAberto && <div className="zip-animate-pop-in" style={{ position: "absolute", top: 35, right: 0, zIndex: 9, width: 206, border: "1px solid var(--line)", background: "var(--s0)", borderRadius: 10, boxShadow: "var(--sh)", overflow: "hidden" }}>
+                {bancos.map((b) => <div key={b} className="zip-row-hover" onClick={() => { setBancoFiltro(b); setBancoMenuAberto(false); }} style={{ padding: "9px 12px", fontSize: 12, borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>{b}</div>)}
+              </div>}
+            </div>
+          </div>}
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          {(funil === "novas" || funil === "aguardando") ? (
+            vendasFiltradas.length === 0 ? <div style={{ padding: "52px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma venda encontrada</div><div style={{ marginTop: 5, fontSize: 12, color: "var(--soft)" }}>{funil === "novas" ? "Nenhuma venda nova aguardando conferência." : "Nenhuma cliente aguardando geração de parcelas."}</div></div>
+              : <div style={{ minWidth: 640 }}>{vendasFiltradas.map((v) => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 160px", gap: 12, padding: "12px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center", fontSize: 12.5 }}>
+                <div><div style={{ fontWeight: 600 }}>{v.nome_completo}</div><div style={{ fontSize: 11, color: "var(--soft)" }}>{v.origem_venda || "Origem não informada"}</div></div>
+                <span className="zip-mono">{formatarMoeda(Number(v.valor_contrato ?? 0))}</span>
+                {funil === "novas" ? <button onClick={() => { const cpf = window.prompt("CPF da cliente (11 dígitos):", v.cpf ?? ""); const nascimento = cpf ? window.prompt("Data de nascimento (AAAA-MM-DD):") : null; if (!cpf || !nascimento) return; void fetch(`/api/admin/novas-vendas/${v.id}/cadastrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cpf, dataNascimento: nascimento }) }).then(() => carregar(true)); }} style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>Conferir e cadastrar</button>
+                  : <span style={zipChip("warn")}>Falta gerar parcelas</span>}
+              </div>)}</div>
+          ) : (
+            <div style={{ minWidth: 860 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 132px 144px 40px", gap: 12, padding: "0 14px", height: 34, alignItems: "center", background: "var(--s1)", borderBottom: "1px solid var(--line)", fontSize: 9, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>
+                <div>Cliente</div><div>Vendedora</div><div>Campanha</div><div>Banco</div><div>Status</div><div style={{ textAlign: "right" }}>Ações</div>
+              </div>
+              {carregando ? <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</div> : filtradas.length === 0 ? <div style={{ padding: "52px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma cliente encontrada</div><div style={{ marginTop: 5, fontSize: 12, color: "var(--soft)" }}>Ajuste a busca ou os filtros desta lista.</div></div>
+                : filtradas.map((c) => <div key={c.id} onClick={() => setModal(c)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 132px 144px 40px", gap: 12, padding: "10px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center", cursor: "pointer" }}>
+                  <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.nome_completo}</div><div style={{ fontSize: 10.5, color: "var(--soft)" }}>{formatarCpf(c.cpf)}</div></div>
+                  <div style={{ fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.consultora || "—"}</div>
+                  <div style={{ fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.origem_venda || "—"}</div>
+                  <div style={{ minWidth: 0 }}>{c.banco ? <span style={zipChip("rose")}>{c.banco}</span> : <span style={{ color: "var(--soft)", fontSize: 12 }}>—</span>}</div>
+                  <div><span style={zipChip(statusKind(c.status_contrato))}>{STATUS_CONTRATO_LABEL[c.status_contrato ?? "ativo"]}</span></div>
+                  <div style={{ textAlign: "right", color: "var(--soft)", fontSize: 13 }}>⋯</div>
+                </div>)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderTop: "1px solid var(--line)", fontSize: 11, color: "var(--soft)" }}>
+          <span>{funil === "novas" || funil === "aguardando" ? vendasFiltradas.length : filtradas.length} clientes · lista contínua</span>
+        </div>
+      </div>
+    </div>
+
+    {modal !== false && <ClienteZipDrawer cliente={modal} abaInicial="perfil" onClose={() => setModal(false)} onSalvo={fecharESalvar} />}
   </div>;
 }

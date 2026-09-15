@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Bell, Building2, CalendarClock, CheckCircle2, ImagePlus, Lock, MessageCircle, MonitorCog, Moon,
-  Palette, Phone, QrCode, Save, ShieldCheck, Sun, Trash2, Unlock, UploadCloud, WalletCards,
-} from "lucide-react";
 import { useTheme } from "../../components/ui/ThemeProvider";
 import { DEFAULT_ADMIN_PALETTE, normalizarPaleta, salvarPaletaLocal, type AdminPalette } from "./adminAppearance";
+
+/**
+ * Aba GERAL de Configurações — reprodução pixel a pixel dos cards
+ * clicáveis de Admin Configuracoes.dc.html (grid auto-fit minmax(330,1fr),
+ * clique abre drawer lateral com os campos reais). A aparência (tema +
+ * paleta de cores) não existe no ZIP como card próprio, mas é uma
+ * funcionalidade real que precisa continuar acessível — foi adicionada
+ * como um 5º card, no mesmo padrão visual dos outros 4.
+ */
 
 interface ConfiguracoesData extends Record<string, unknown> {
   id?: number;
@@ -26,6 +31,7 @@ interface ConfiguracoesData extends Record<string, unknown> {
 type Feedback = { tone: "ok" | "error"; text: string } | null;
 const MAX_QR = 1.5 * 1024 * 1024;
 const DESCONTOS = [0, 5, 10, 15, 20, 25, 30];
+type CardId = "company" | "identity" | "pix" | "prefs" | "agenda";
 
 async function responseJson<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({}));
@@ -36,6 +42,13 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+const fieldLabel: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 700, color: "var(--soft)", marginBottom: 4 };
+const fieldInput: React.CSSProperties = { width: "100%", height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", padding: "0 10px", fontSize: 11.5, outline: "none" };
+
+function Row({ l, v }: { l: string; v: string }) {
+  return <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, maxWidth: "58%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span></div>;
+}
+
 export function AdminSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const [config, setConfig] = useState<ConfiguracoesData | null>(null);
@@ -43,6 +56,7 @@ export function AdminSettingsPanel() {
   const [saving, setSaving] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [palette, setPalette] = useState<AdminPalette>(DEFAULT_ADMIN_PALETTE);
+  const [drawer, setDrawer] = useState<CardId | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -67,12 +81,7 @@ export function AdminSettingsPanel() {
     setSaving(section);
     setFeedback(null);
     try {
-      const response = await fetch("/api/admin/configuracoes", {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch("/api/admin/configuracoes", { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await responseJson<{ configuracoes?: ConfiguracoesData }>(response);
       if (data.configuracoes) setConfig(data.configuracoes);
       setFeedback({ tone: "ok", text: "Configurações salvas com sucesso." });
@@ -99,96 +108,99 @@ export function AdminSettingsPanel() {
   async function saveAppearance() {
     const normalized = salvarPaletaLocal(palette);
     setPalette(normalized);
-    await patchConfig("appearance", {
-      temaCorPrimaria: normalized.primary,
-      temaCorSecundaria: normalized.accent,
-      temaCorDestaque: normalized.highlight,
-    });
+    await patchConfig("appearance", { temaCorPrimaria: normalized.primary, temaCorSecundaria: normalized.accent, temaCorDestaque: normalized.highlight });
   }
 
-  if (loading && !config) {
-    return <div className="sl-settings-loading">Carregando configurações…</div>;
-  }
+  if (loading && !config) return <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando configurações…</div>;
 
   const c = config ?? {};
-  const updated = c.updated_at ? new Date(c.updated_at).toLocaleString("pt-BR") : "—";
   const locked = Boolean(c.agenda_liberacao_financeira_bloqueada);
 
-  return (
-    <div className="sl-settings-page">
-      <div className="sl-module-heading">
-        <div>
-          <span>Configurações</span>
-          <h1>Central de controle</h1>
-          <p>Identidade, aparência, pagamentos, agenda e preferências operacionais sem perder nenhuma função anterior.</p>
+  const cards: { id: CardId; icon: string; iconBg: string; iconColor: string; title: string; sub: string; rows: [string, string][] }[] = [
+    { id: "company", icon: "⌂", iconBg: "var(--robg)", iconColor: "var(--bg)", title: "Perfil da empresa", sub: "Informações institucionais", rows: [["Empresa", String(c.nome_clinica ?? "Sra. Luck")], ["Telefone", String(c.telefone_contato ?? "—")], ["WhatsApp", String(c.whatsapp_contato ?? "—")]] },
+    { id: "identity", icon: "◈", iconBg: "var(--gobg)", iconColor: "var(--gold)", title: "Aparência do painel", sub: "Tema e cores administrativas", rows: [["Tema", theme === "dark" ? "Escuro" : "Claro"], ["Cor principal", palette.primary], ["Destaque", palette.highlight]] },
+    { id: "pix", icon: "Pix", iconBg: "var(--okbg)", iconColor: "var(--ok)", title: "Recebimentos · Chave PIX", sub: "Chave utilizada nas operações permitidas", rows: [["Chave", String(c.pix_chave || "Não configurada")], ["Desconto", `${Number(c.pix_desconto_percentual ?? 0)}%`], ["QR Code", c.pix_qrcode_base64 ? "Carregado" : "Não enviado"]] },
+    { id: "prefs", icon: "⚙", iconBg: "var(--bluebg)", iconColor: "var(--blue)", title: "Preferências do sistema", sub: "Comportamentos administrativos", rows: [["Limite orçamentário", new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(c.meta_orcamento_mensal ?? 0))], ["Fuso", "America/Sao_Paulo"], ["Moeda", "BRL"]] },
+    { id: "agenda", icon: locked ? "🔒" : "✓", iconBg: locked ? "var(--badbg)" : "var(--okbg)", iconColor: locked ? "var(--bad)" : "var(--ok)", title: "Agenda financeira", sub: "Controle global das liberações", rows: [["Estado", locked ? "Pausada" : "Ativa"], ["Descrição", locked ? "Novas liberações bloqueadas" : "Fluxo disponível"]] },
+  ];
+
+  return <div>
+    {feedback && <div style={{ marginBottom: 12, borderRadius: 9, border: `1px solid ${feedback.tone === "ok" ? "var(--okbg)" : "var(--badbg)"}`, background: feedback.tone === "ok" ? "var(--okbg)" : "var(--badbg)", color: feedback.tone === "ok" ? "var(--ok)" : "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{feedback.text}</div>}
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(330px,1fr))", gap: 12 }} className="zip-animate-fade-in">
+      {cards.map((card) => <div key={card.id} onClick={() => setDrawer(card.id)} className="zip-row-hover" style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "15px 16px", boxShadow: "0 14px 34px -31px rgba(122,38,50,.34)", cursor: "pointer", minHeight: 138 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: card.iconBg, display: "grid", placeItems: "center", color: card.iconColor, fontSize: card.icon.length > 1 ? 9 : 15, fontWeight: 800 }}>{card.icon}</div>
+            <div><div style={{ fontSize: 13, fontWeight: 700 }}>{card.title}</div><div style={{ marginTop: 2, fontSize: 10.5, color: "var(--soft)" }}>{card.sub}</div></div>
+          </div>
+          <span style={{ color: "var(--soft)", fontSize: 13 }}>›</span>
         </div>
-        <div className="sl-module-status"><CheckCircle2 size={16} /> Atualizado {updated}</div>
-      </div>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>{card.rows.map(([l, v]) => <Row key={l} l={l} v={v} />)}</div>
+      </div>)}
+    </div>
 
-      {feedback && <div className={`sl-feedback ${feedback.tone}`}>{feedback.text}</div>}
+    <div style={{ marginTop: 12, border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+      <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--robg)", display: "grid", placeItems: "center", color: "var(--bg)", fontSize: 13, flex: "none" }}>i</div>
+      <div><div style={{ fontSize: 12, fontWeight: 700 }}>Configurações enxutas por design</div><div style={{ marginTop: 3, fontSize: 11, color: "var(--soft)", lineHeight: 1.55 }}>Somente preferências já coerentes com a operação atual. Ajustes técnicos e integrações ficam separados nos tópicos próprios.</div></div>
+    </div>
 
-      <div className="sl-settings-grid">
-        <section className="sl-card sl-settings-card sl-settings-wide">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><Palette size={18} /></div><div><h2>Aparência do painel</h2><p>Modo claro/escuro e cores da identidade administrativa.</p></div></div>
-          <div className="sl-theme-choice">
-            <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><Sun size={18} /><strong>Claro</strong><span>Visual leve e institucional</span></button>
-            <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><Moon size={18} /><strong>Escuro</strong><span>Menos brilho em ambientes noturnos</span></button>
+    {drawer && <>
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(30,12,16,.42)", zIndex: 60 }} onClick={() => setDrawer(null)} />
+      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
+        <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Configuração</div><h2 style={{ fontSize: 16, marginTop: 4, lineHeight: 1.25 }}>{cards.find((c2) => c2.id === drawer)?.title}</h2></div>
+          <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
+        </div>
+
+        {drawer === "company" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div><label style={fieldLabel}>Nome da empresa</label><input style={fieldInput} value={String(c.nome_clinica ?? "")} onChange={(e) => update("nome_clinica", e.target.value)} /></div>
+          <div><label style={fieldLabel}>Telefone</label><input style={fieldInput} value={String(c.telefone_contato ?? "")} onChange={(e) => update("telefone_contato", e.target.value)} /></div>
+          <div><label style={fieldLabel}>WhatsApp</label><input style={fieldInput} value={String(c.whatsapp_contato ?? "")} onChange={(e) => update("whatsapp_contato", e.target.value)} /></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 7 }}><button onClick={() => setDrawer(null)} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Cancelar</button><button disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", telefoneContato: c.telefone_contato ?? "", whatsappContato: c.whatsapp_contato ?? "", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>{saving === "identity" ? "Salvando…" : "Salvar alterações"}</button></div>
+        </div>}
+
+        {drawer === "identity" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={fieldLabel}>Tema</label>
+            <div style={{ display: "flex", gap: 7 }}>
+              <button onClick={() => setTheme("light")} style={{ flex: 1, height: 34, border: `1px solid ${theme === "light" ? "var(--bg)" : "var(--line)"}`, borderRadius: 9, background: theme === "light" ? "var(--robg)" : "var(--s0)", color: theme === "light" ? "var(--bg)" : "var(--ink)", fontSize: 11, fontWeight: 700 }}>☾ Claro</button>
+              <button onClick={() => setTheme("dark")} style={{ flex: 1, height: 34, border: `1px solid ${theme === "dark" ? "var(--bg)" : "var(--line)"}`, borderRadius: 9, background: theme === "dark" ? "var(--robg)" : "var(--s0)", color: theme === "dark" ? "var(--bg)" : "var(--ink)", fontSize: 11, fontWeight: 700 }}>☀ Escuro</button>
+            </div>
           </div>
-          <div className="sl-color-grid">
-            <label><span>Cor principal</span><div><input type="color" value={palette.primary} onChange={(e) => { const next = { ...palette, primary: e.target.value }; setPalette(next); salvarPaletaLocal(next); }} /><input value={palette.primary} onChange={(e) => setPalette({ ...palette, primary: e.target.value })} /></div></label>
-            <label><span>Cor secundária</span><div><input type="color" value={palette.accent} onChange={(e) => { const next = { ...palette, accent: e.target.value }; setPalette(next); salvarPaletaLocal(next); }} /><input value={palette.accent} onChange={(e) => setPalette({ ...palette, accent: e.target.value })} /></div></label>
-            <label><span>Destaque</span><div><input type="color" value={palette.highlight} onChange={(e) => { const next = { ...palette, highlight: e.target.value }; setPalette(next); salvarPaletaLocal(next); }} /><input value={palette.highlight} onChange={(e) => setPalette({ ...palette, highlight: e.target.value })} /></div></label>
-          </div>
-          <div className="sl-settings-actions"><button type="button" onClick={() => { setPalette(DEFAULT_ADMIN_PALETTE); salvarPaletaLocal(DEFAULT_ADMIN_PALETTE); }}>Restaurar padrão Sra. Luck</button><button type="button" className="primary" disabled={saving === "appearance"} onClick={() => void saveAppearance()}><Save size={15} /> {saving === "appearance" ? "Salvando…" : "Salvar aparência"}</button></div>
-        </section>
+          {([["primary", "Cor principal"], ["accent", "Cor secundária"], ["highlight", "Destaque"]] as const).map(([key, label]) => <div key={key}>
+            <label style={fieldLabel}>{label}</label>
+            <div style={{ display: "flex", gap: 7 }}>
+              <input type="color" value={palette[key]} onChange={(e) => { const next = { ...palette, [key]: e.target.value }; setPalette(next); salvarPaletaLocal(next); }} style={{ width: 34, height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)" }} />
+              <input style={{ ...fieldInput, flex: 1 }} value={palette[key]} onChange={(e) => setPalette({ ...palette, [key]: e.target.value })} />
+            </div>
+          </div>)}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}><button onClick={() => { setPalette(DEFAULT_ADMIN_PALETTE); salvarPaletaLocal(DEFAULT_ADMIN_PALETTE); }} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Restaurar padrão</button><button disabled={saving === "appearance"} onClick={() => void saveAppearance()} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>{saving === "appearance" ? "Salvando…" : "Salvar aparência"}</button></div>
+        </div>}
 
-        <section className="sl-card sl-settings-card">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><Building2 size={18} /></div><div><h2>Identidade & planejamento</h2><p>Informações institucionais e limite orçamentário.</p></div></div>
-          <label className="sl-field"><span>Nome da empresa</span><input value={String(c.nome_clinica ?? "Sra. Luck")} onChange={(e) => update("nome_clinica", e.target.value)} /></label>
-          <label className="sl-field"><span>Limite orçamentário mensal</span><input type="number" min="0" step="0.01" value={Number(c.meta_orcamento_mensal ?? 0)} onChange={(e) => update("meta_orcamento_mensal", Number(e.target.value))} /></label>
-          <label className="sl-field"><span>Mensagem executiva</span><textarea value={String(c.frase_sonho ?? "")} onChange={(e) => update("frase_sonho", e.target.value)} /></label>
-          <button type="button" className="sl-save-button" disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })}><Save size={15} /> {saving === "identity" ? "Salvando…" : "Salvar identidade"}</button>
-        </section>
-
-        <section className="sl-card sl-settings-card">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><CalendarClock size={18} /></div><div><h2>Agenda financeira</h2><p>Controle global das liberações sem alterar agendamentos já confirmados.</p></div></div>
-          <div className={`sl-agenda-state ${locked ? "locked" : "open"}`}>
-            <div>{locked ? <Lock size={20} /> : <ShieldCheck size={20} />}</div>
-            <strong>{locked ? "Agenda pausada" : "Agenda ativa"}</strong>
-            <span>{locked ? "Novas liberações estão temporariamente bloqueadas." : "O fluxo de liberações está disponível normalmente."}</span>
-          </div>
-          <button type="button" className={`sl-save-button ${locked ? "" : "danger"}`} disabled={saving === "agenda"} onClick={() => void patchConfig("agenda", { agendaLiberacaoFinanceiraBloqueada: !locked })}>
-            {locked ? <Unlock size={15} /> : <Lock size={15} />} {saving === "agenda" ? "Atualizando…" : locked ? "Reabrir agenda" : "Pausar agenda"}
-          </button>
-        </section>
-
-        <section className="sl-card sl-settings-card sl-settings-wide">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><WalletCards size={18} /></div><div><h2>Pagamento & contato</h2><p>Restaura PIX, desconto e canais exibidos para a cliente.</p></div></div>
-          <div className="sl-settings-two">
-            <label className="sl-field"><span>Chave PIX</span><input value={String(c.pix_chave ?? "")} onChange={(e) => update("pix_chave", e.target.value)} /></label>
-            <label className="sl-field"><span>Desconto PIX</span><select value={Number(c.pix_desconto_percentual ?? 0)} onChange={(e) => update("pix_desconto_percentual", Number(e.target.value))}>{DESCONTOS.map((value) => <option key={value} value={value}>{value === 0 ? "Sem desconto" : `${value}% de desconto`}</option>)}</select></label>
-            <label className="sl-field"><span><Phone size={14} /> Telefone</span><input value={String(c.telefone_contato ?? "")} onChange={(e) => update("telefone_contato", e.target.value)} /></label>
-            <label className="sl-field"><span><MessageCircle size={14} /> WhatsApp</span><input value={String(c.whatsapp_contato ?? "")} onChange={(e) => update("whatsapp_contato", e.target.value)} /></label>
-          </div>
-          <div className="sl-qr-box">
-            {c.pix_qrcode_base64 ? <><img src={String(c.pix_qrcode_base64)} alt="QR Code PIX" /><div><strong>QR Code carregado</strong><span>Imagem exibida na área de pagamento da cliente.</span><div><button type="button" onClick={() => fileRef.current?.click()}><UploadCloud size={14} /> Trocar</button><button type="button" onClick={() => update("pix_qrcode_base64", "")}><Trash2 size={14} /> Remover</button></div></div></> : <button type="button" className="sl-qr-empty" onClick={() => fileRef.current?.click()}><span><QrCode size={20} /></span><div><strong>Adicionar QR Code do PIX</strong><small>PNG, JPG ou WEBP · até 1,5 MB</small></div><ImagePlus size={18} /></button>}
+        {drawer === "pix" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div><label style={fieldLabel}>Chave PIX</label><input style={fieldInput} value={String(c.pix_chave ?? "")} onChange={(e) => update("pix_chave", e.target.value)} /></div>
+          <div><label style={fieldLabel}>Desconto</label><select style={fieldInput} value={Number(c.pix_desconto_percentual ?? 0)} onChange={(e) => update("pix_desconto_percentual", Number(e.target.value))}>{DESCONTOS.map((v) => <option key={v} value={v}>{v === 0 ? "Sem desconto" : `${v}%`}</option>)}</select></div>
+          <div>
+            <label style={fieldLabel}>QR Code</label>
+            {c.pix_qrcode_base64 ? <div style={{ display: "flex", alignItems: "center", gap: 10 }}><img src={String(c.pix_qrcode_base64)} alt="QR PIX" style={{ width: 56, height: 56, borderRadius: 8, border: "1px solid var(--line)" }} /><div style={{ display: "flex", gap: 6 }}><button onClick={() => fileRef.current?.click()} style={{ height: 30, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)", fontSize: 10, fontWeight: 700 }}>Trocar</button><button onClick={() => update("pix_qrcode_base64", "")} style={{ height: 30, padding: "0 10px", border: "1px solid var(--badbg)", borderRadius: 8, background: "var(--badbg)", color: "var(--bad)", fontSize: 10, fontWeight: 700 }}>Remover</button></div></div> : <button onClick={() => fileRef.current?.click()} style={{ width: "100%", height: 60, border: "1px dashed var(--line)", borderRadius: 10, background: "var(--s1)", fontSize: 11, fontWeight: 700, color: "var(--bg)" }}>+ Adicionar QR Code do PIX</button>}
             <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => selectQr(e.target.files?.[0] ?? null)} />
           </div>
-          <div className="sl-settings-actions"><button type="button" className="primary" disabled={saving === "payments"} onClick={() => void patchConfig("payments", { pixChave: c.pix_chave ?? "", pixQrCodeBase64: c.pix_qrcode_base64 ?? "", pixDescontoPercentual: c.pix_desconto_percentual ?? 0, whatsappContato: c.whatsapp_contato ?? "", telefoneContato: c.telefone_contato ?? "" })}><Save size={15} /> {saving === "payments" ? "Salvando…" : "Salvar pagamento e contato"}</button></div>
-        </section>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "payments"} onClick={() => void patchConfig("payments", { pixChave: c.pix_chave ?? "", pixQrCodeBase64: c.pix_qrcode_base64 ?? "", pixDescontoPercentual: c.pix_desconto_percentual ?? 0, whatsappContato: c.whatsapp_contato ?? "", telefoneContato: c.telefone_contato ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>{saving === "payments" ? "Salvando…" : "Salvar alterações"}</button></div>
+        </div>}
 
-        <section className="sl-card sl-settings-card">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><Bell size={18} /></div><div><h2>Notificações</h2><p>Automações, templates, envio manual e histórico.</p></div></div>
-          <div className="sl-settings-link-copy">A configuração completa continua disponível e foi restaurada no módulo de Notificações.</div>
-          <button type="button" className="sl-save-button" onClick={() => { window.history.pushState({}, "", "/admin/notificacoes"); window.dispatchEvent(new Event("app:navigate")); }}><Bell size={15} /> Abrir central de notificações</button>
-        </section>
+        {drawer === "prefs" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div><label style={fieldLabel}>Limite orçamentário mensal</label><input type="number" min="0" step="0.01" style={fieldInput} value={Number(c.meta_orcamento_mensal ?? 0)} onChange={(e) => update("meta_orcamento_mensal", Number(e.target.value))} /></div>
+          <div><label style={fieldLabel}>Mensagem executiva</label><textarea style={{ ...fieldInput, height: "auto", padding: 9 }} rows={4} value={String(c.frase_sonho ?? "")} onChange={(e) => update("frase_sonho", e.target.value)} /></div>
+          <div><label style={fieldLabel}>Fuso horário</label><input style={fieldInput} value="America/Sao_Paulo" disabled /></div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>{saving === "identity" ? "Salvando…" : "Salvar alterações"}</button></div>
+        </div>}
 
-        <section className="sl-card sl-settings-card">
-          <div className="sl-settings-title"><div className="sl-settings-icon"><MonitorCog size={18} /></div><div><h2>Segurança & monitoramento</h2><p>Auditoria, sessões, webhooks e saúde operacional.</p></div></div>
-          <ul className="sl-security-list"><li><ShieldCheck size={15} /> Sessões administrativas protegidas</li><li><ShieldCheck size={15} /> Auditoria de ações críticas</li><li><ShieldCheck size={15} /> Validação de webhooks</li><li><ShieldCheck size={15} /> Rate limit de autenticação</li></ul>
-          <button type="button" className="sl-save-button" onClick={() => { window.history.pushState({}, "", "/admin/configuracoes/monitoramento"); window.dispatchEvent(new Event("app:navigate")); }}><MonitorCog size={15} /> Abrir monitoramento do sistema</button>
-        </section>
-      </div>
-    </div>
-  );
+        {drawer === "agenda" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ border: "1px solid var(--line)", background: locked ? "var(--badbg)" : "var(--okbg)", borderRadius: 10, padding: 12, fontSize: 11.5, color: "var(--ink)", lineHeight: 1.5 }}>{locked ? "Novas liberações estão temporariamente bloqueadas." : "O fluxo de liberações está disponível normalmente."}</div>
+          <button disabled={saving === "agenda"} onClick={() => void patchConfig("agenda", { agendaLiberacaoFinanceiraBloqueada: !locked })} style={{ height: 34, border: `1px solid ${locked ? "var(--bg)" : "var(--bad)"}`, borderRadius: 9, background: locked ? "var(--bg)" : "var(--s0)", color: locked ? "#FFFDFC" : "var(--bad)", fontSize: 11, fontWeight: 700 }}>{saving === "agenda" ? "Atualizando…" : locked ? "Reabrir agenda" : "Pausar agenda"}</button>
+        </div>}
+      </aside>
+    </>}
+  </div>;
 }
