@@ -1,9 +1,10 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { getCookie, verificarTokenAdmin } from "./session";
+import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { integrationsStatusApi } from "./integrations-status";
-import { requestLogger, sanitizeLogValue } from "./logger";
+import { pseudonymizeActorId, requestLogger, sanitizeLogValue } from "./logger";
 
 const ADMIN_COOKIE = "admin_session";
+const CLIENT_COOKIE = "cliente_session";
 const MAX_BODY = 12_000;
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
@@ -22,6 +23,15 @@ function sameOrigin(request: Request) {
 async function admin(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return false;
   return Boolean(await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET));
+}
+
+async function actorContext(request: Request, env: Env): Promise<{ actor_type: "admin" | "cliente" | "anonymous"; actor_id: string | null }> {
+  if (!env.CLIENTE_SESSION_SECRET) return { actor_type: "anonymous", actor_id: null };
+  const adminSession = await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (adminSession?.adminId) return { actor_type: "admin", actor_id: await pseudonymizeActorId(adminSession.adminId, env) };
+  const clientSession = await verificarTokenSessao(getCookie(request, CLIENT_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (clientSession?.clienteId) return { actor_type: "cliente", actor_id: await pseudonymizeActorId(clientSession.clienteId, env) };
+  return { actor_type: "anonymous", actor_id: null };
 }
 
 function limparTexto(value: unknown, max: number) {
@@ -53,11 +63,18 @@ export async function monitoramentoErros(request: Request, env: Env) {
     const nivel = nivelRecebido(body?.nivel);
     const requestId = limparTexto(body?.request_id || request.headers.get("x-request-id"), 120);
     const detalhes = sanitizeLogValue(body?.detalhes && typeof body.detalhes === "object" ? body.detalhes : {});
+    const actor = await actorContext(request, env);
+    const durationMsRaw = Number(body?.duration_ms ?? body?.detalhes?.duracao_ms);
+    const durationMs = Number.isFinite(durationMsRaw) && durationMsRaw >= 0 ? Math.round(durationMsRaw) : null;
     const db = createServiceSupabaseClient(env);
     const { error } = await db.from("monitoramento_erros").insert({
       origem,
       nivel,
       mensagem,
+      action: limparTexto(sanitizeLogValue(body?.action), 200),
+      actor_type: actor.actor_type,
+      actor_id: actor.actor_id,
+      duration_ms: durationMs,
       rota: limparTexto(sanitizeLogValue(body?.rota), 500),
       metodo: limparTexto(body?.metodo, 12),
       status_http: Number.isInteger(body?.status_http) ? body.status_http : null,
@@ -81,7 +98,7 @@ export async function monitoramentoErros(request: Request, env: Env) {
     const db = createServiceSupabaseClient(env);
     const limite = Math.min(Math.max(Number(url.searchParams.get("limite") || 100), 1), 300);
     const { data: recentes, error } = await db.from("monitoramento_erros")
-      .select("id,criado_em,origem,nivel,rota,metodo,status_http,codigo,mensagem,stack,componente,request_id,ambiente,detalhes")
+      .select("id,criado_em,origem,nivel,action,actor_type,actor_id,duration_ms,rota,metodo,status_http,codigo,mensagem,stack,componente,request_id,ambiente,detalhes")
       .order("criado_em", { ascending: false }).limit(limite);
     if (error) {
       log.error("Falha ao carregar eventos de monitoramento", { action: "observability.events.read", eventCode: "OBSERVABILITY_READ_FAILED", statusCode: 503, error });
