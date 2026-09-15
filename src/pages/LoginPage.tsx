@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiJson } from "../lib/api";
 
 function formatCpf(value: string) {
@@ -8,9 +8,17 @@ function formatCpf(value: string) {
 function formatData(value:string){const d=value.replace(/\D/g,"").slice(0,8);if(d.length<=2)return d;if(d.length<=4)return `${d.slice(0,2)}/${d.slice(2)}`;return `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`}
 function paraIso(value:string){const m=value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return null;const dd=Number(m[1]),mm=Number(m[2]),yyyy=Number(m[3]);const dt=new Date(yyyy,mm-1,dd,12);if(dt.getFullYear()!==yyyy||dt.getMonth()!==mm-1||dt.getDate()!==dd||dt>new Date())return null;return `${m[3]}-${m[2]}-${m[1]}`}
 
+type ConfigPublica = { whatsappContato?: string | null };
+
 export function LoginPage() {
-  const[cpf,setCpf]=useState("");const[nascimento,setNascimento]=useState("");const[loading,setLoading]=useState(false);const[erro,setErro]=useState<string|null>(null);
+  const[cpf,setCpf]=useState("");const[nascimento,setNascimento]=useState("");const[loading,setLoading]=useState(false);const[erro,setErro]=useState<string|null>(null);const[whatsappContato,setWhatsappContato]=useState("");
+
+  useEffect(()=>{let ativo=true;apiJson<ConfigPublica>("/api/cliente/config-publica").then(data=>{if(ativo)setWhatsappContato(data.whatsappContato||"")}).catch(()=>{});return()=>{ativo=false}},[]);
+
   async function submit(event:FormEvent){event.preventDefault();if(loading)return;const iso=paraIso(nascimento);if(cpf.replace(/\D/g,"").length<11||!iso){setErro("Confira o CPF e a data de nascimento e tente novamente.");return}setErro(null);setLoading(true);try{await apiJson("/api/cliente/auth",{method:"POST",body:JSON.stringify({cpf,dataNascimento:iso})});window.history.pushState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"))}catch(error){setErro(error instanceof Error?error.message:"Não foi possível confirmar seus dados.")}finally{setLoading(false)}}
+
+  const whatsappNumero=whatsappContato.replace(/\D/g,"");
+  const whatsappHref=whatsappNumero?`https://wa.me/${whatsappNumero}?text=${encodeURIComponent("Olá! Preciso de ajuda para acessar minha área de cliente da Sra. Luck.")}`:"";
 
   return <main className="client-app min-h-[100dvh]">
     <div className="mobile-app-frame">
@@ -23,7 +31,7 @@ export function LoginPage() {
           <label className="flex flex-col gap-[7px]"><span className="text-[11px] uppercase tracking-[.1em] text-[#9A8C88]">Data de nascimento</span><input value={nascimento} onChange={e=>setNascimento(formatData(e.target.value))} placeholder="DD/MM/AAAA" inputMode="numeric" autoComplete="bday" className="w-full rounded-[14px] border border-[#E6DAD6] bg-white px-4 py-[15px] text-[16px] text-[#2E2422] outline-none focus:border-[#6B1F2E]" required/></label>
           {erro&&<div role="alert" className="flex items-start gap-[9px] rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] px-[14px] py-3"><span className="mt-[6px] h-[6px] w-[6px] flex-none rounded-full bg-[#B3342E]"/><div><div className="text-[13px] font-medium text-[#8F2A25]">Dados inválidos</div><div className="text-[12px] font-light leading-[1.45] text-[#A4635F]">{erro}</div></div></div>}
           <button disabled={loading} type="submit" className="mt-[6px] w-full rounded-[14px] border-0 bg-[#6B1F2E] p-4 text-[15px] font-medium tracking-[.04em] text-[#FBF7F5] transition active:scale-[.99] disabled:opacity-50">{loading?"Entrando…":"Acessar minha área"}</button>
-          <div className="pt-[2px] text-center text-[12.5px] font-light text-[#9A8C88]">Precisa de ajuda para acessar?</div>
+          <div className="pt-[2px] text-center text-[12.5px] font-light text-[#9A8C88]">{whatsappHref?<a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="font-medium text-[#6B1F2E] underline decoration-[#C9A9B0] underline-offset-[3px] transition hover:text-[#541724] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B1F2E]/30">Precisa de ajuda para acessar?</a>:<span>Precisa de ajuda para acessar?</span>}</div>
         </div>
 
         <div className="flex items-center justify-center gap-2 text-[11px] font-light tracking-[.06em] text-[#B3A6A2]"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.1"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg>Seus dados protegidos com segurança.</div>
