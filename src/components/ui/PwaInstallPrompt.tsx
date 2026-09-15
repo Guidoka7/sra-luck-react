@@ -72,61 +72,8 @@ export function PwaInstallPrompt() {
   const [ios, setIos] = useState(false);
   const [preparando, setPreparando] = useState(false);
 
-  useEffect(() => {
-    if (isStandalone()) return;
-
-    setIos(isIOS());
-    setVisivel(true);
-
-    const recuperar = () => {
-      const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-      if (e) {
-        setEvento(e);
-        setPreparando(false);
-      }
-      if (!isStandalone()) setVisivel(true);
-    };
-
-    const receber = (event: Event) => {
-      const e = event as BeforeInstallPromptEvent;
-      event.preventDefault();
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
-      setEvento(e);
-      setPreparando(false);
-      setVisivel(true);
-    };
-
-    const instalado = () => {
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
-      setEvento(null);
-      setVisivel(false);
-      setPreparando(false);
-      prepararNotificacoesPosInstalacao(true);
-      registrarInstalacao();
-      toast.success("Aplicativo instalado. Agora ative as notificações.");
-    };
-
-    window.addEventListener("beforeinstallprompt", receber);
-    window.addEventListener("sra-luck-pwa-ready", recuperar);
-    window.addEventListener("appinstalled", instalado);
-    window.addEventListener("pageshow", recuperar);
-    document.addEventListener("visibilitychange", recuperar);
-    recuperar();
-
-    const interval = window.setInterval(recuperar, 1000);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("beforeinstallprompt", receber);
-      window.removeEventListener("sra-luck-pwa-ready", recuperar);
-      window.removeEventListener("appinstalled", instalado);
-      window.removeEventListener("pageshow", recuperar);
-      document.removeEventListener("visibilitychange", recuperar);
-    };
-  }, []);
-
   async function instalar() {
-    if (ios) {
+    if (isIOS()) {
       toast.info("No iPhone, toque em Compartilhar e depois em 'Adicionar à Tela de Início'.");
       return;
     }
@@ -134,6 +81,7 @@ export function PwaInstallPrompt() {
     let eventoAtual = evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
 
     if (!eventoAtual) {
+      setVisivel(true);
       setPreparando(true);
       window.dispatchEvent(new Event("sra-luck-pwa-ready"));
       await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -171,9 +119,66 @@ export function PwaInstallPrompt() {
     }
   }
 
+  useEffect(() => {
+    if (isStandalone()) return;
+
+    setIos(isIOS());
+    setVisivel(true);
+
+    const recuperar = () => {
+      const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
+      if (e) {
+        setEvento(e);
+        setPreparando(false);
+      }
+      if (!isStandalone()) setVisivel(true);
+    };
+
+    const receber = (event: Event) => {
+      const e = event as BeforeInstallPromptEvent;
+      event.preventDefault();
+      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
+      setEvento(e);
+      setPreparando(false);
+      setVisivel(true);
+    };
+
+    const instalado = () => {
+      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
+      setEvento(null);
+      setVisivel(false);
+      setPreparando(false);
+      prepararNotificacoesPosInstalacao(true);
+      registrarInstalacao();
+      toast.success("Aplicativo instalado. Agora ative as notificações.");
+    };
+
+    const solicitarInstalacao = () => {
+      void instalar();
+    };
+
+    window.addEventListener("beforeinstallprompt", receber);
+    window.addEventListener("sra-luck-pwa-ready", recuperar);
+    window.addEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
+    window.addEventListener("appinstalled", instalado);
+    window.addEventListener("pageshow", recuperar);
+    document.addEventListener("visibilitychange", recuperar);
+    recuperar();
+
+    const interval = window.setInterval(recuperar, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("beforeinstallprompt", receber);
+      window.removeEventListener("sra-luck-pwa-ready", recuperar);
+      window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
+      window.removeEventListener("appinstalled", instalado);
+      window.removeEventListener("pageshow", recuperar);
+      document.removeEventListener("visibilitychange", recuperar);
+    };
+  }, []);
+
   function dispensar() {
-    // A dispensa vale somente para esta visualização. Em uma nova visita o convite
-    // reaparece, evitando que testes antigos ocultem indefinidamente a instalação.
     setVisivel(false);
   }
 
