@@ -3,6 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 
 const ADMIN_COOKIE = "admin_session";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function jsonErro(erro: string, status: number) {
   return new Response(JSON.stringify({ erro }), {
@@ -78,9 +79,51 @@ export async function obterAdminAtivo(request: Request, env: Env): Promise<{ ses
   }
 }
 
+/**
+ * Defesa em profundidade: mesmo uma rota antiga/fallback não pode contornar o
+ * RBAC apenas por ter sido registrada antes de um handler especializado.
+ */
+export function permissaoObrigatoriaParaRota(request: Request): string | null {
+  const method = request.method.toUpperCase();
+  if (SAFE_METHODS.has(method)) return null;
+  const path = new URL(request.url).pathname;
+
+  if (/^\/api\/admin\/clientes\/[^/]+\/status-contrato$/.test(path)) return PERMISSOES_ADMIN.CLIENTES_ALTERAR_STATUS_CONTRATO;
+  if (/^\/api\/admin\/clientes\/[^/]+$/.test(path) && method === "DELETE") return PERMISSOES_ADMIN.CLIENTES_EXCLUIR;
+  if (path === "/api/admin/clientes" && method === "POST") return PERMISSOES_ADMIN.CLIENTES_EDITAR;
+  if (/^\/api\/admin\/clientes\/[^/]+$/.test(path) && method === "PATCH") return PERMISSOES_ADMIN.CLIENTES_EDITAR;
+
+  if (/^\/api\/admin\/clientes\/[^/]+\/(parcelas|boletos)$/.test(path)) return PERMISSOES_ADMIN.FINANCEIRO_GERENCIAR_PLANO;
+  if (/^\/api\/admin\/clientes\/[^/]+\/revisao-financeira$/.test(path)) return PERMISSOES_ADMIN.FINANCEIRO_GERENCIAR_PLANO;
+  if (path === "/api/admin/boletos/lote" || /^\/api\/admin\/boletos\/[^/]+$/.test(path)) return PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL;
+  if (path.startsWith("/api/admin/financeiro/")) return PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL;
+  if (path === "/api/admin/solicitacoes-liberacao-financeira" && method !== "GET") return PERMISSOES_ADMIN.FINANCEIRO_GERENCIAR_PLANO;
+
+  if (path === "/api/admin/datas" || /^\/api\/admin\/datas\/[^/]+$/.test(path)) return PERMISSOES_ADMIN.AGENDA_GERENCIAR;
+  if (path === "/api/admin/datas-liberacao-financeira") return PERMISSOES_ADMIN.AGENDA_GERENCIAR;
+  if (path === "/api/admin/remarcacoes") return PERMISSOES_ADMIN.AGENDA_GERENCIAR;
+  if (path === "/api/admin/agendamentos-termos" || /^\/api\/admin\/agendamentos\/[^/]+\/(ciclo|previsao)$/.test(path)) return PERMISSOES_ADMIN.AGENDA_GERENCIAR;
+
+  if (path === "/api/admin/configuracoes") return PERMISSOES_ADMIN.CONFIGURACOES_GERENCIAR;
+  return null;
+}
+
 export async function exigirAdmin(request: Request, env: Env): Promise<Response | null> {
   const result = await obterAdminAtivo(request, env);
-  return result instanceof Response ? result : null;
+  if (result instanceof Response) return result;
+  const permissao = permissaoObrigatoriaParaRota(request);
+  if (permissao && !temPermissaoAdmin(result.colaborador, permissao)) {
+    requestLogger(request).warn("Ação administrativa sensível bloqueada por RBAC global", {
+      action: "admin.authorization.route_permission",
+      actorType: "admin",
+      actorId: await pseudonymizeActorId(result.session.adminId, env),
+      eventCode: "ADMIN_ROUTE_PERMISSION_DENIED",
+      statusCode: 403,
+      permission: permissao,
+    });
+    return jsonErro("Seu papel não tem permissão para realizar esta ação.", 403);
+  }
+  return null;
 }
 
 export async function exigirPermissaoAdmin(request: Request, env: Env, permissao: string): Promise<{ colaborador: ColaboradorAdmin; session: AdminSessionPayload } | Response> {
