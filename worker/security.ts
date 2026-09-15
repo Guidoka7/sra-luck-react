@@ -8,6 +8,7 @@ const EXTERNAL_MUTATION_PATHS = new Set([
   "/api/integrations/mercado-pago/webhook",
   "/api/integrations/rd-station/webhook",
 ]);
+const AUTH_PATHS = new Set(["/api/cliente/auth", "/api/admin/auth", "/api/equipe/auth"]);
 
 function json(data: unknown, status: number, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), {
@@ -19,6 +20,18 @@ function json(data: unknown, status: number, headers?: HeadersInit) {
 function originOf(value: string | undefined | null): string | null {
   if (!value) return null;
   try { return new URL(value).origin; } catch { return null; }
+}
+
+function ipDoRequest(request: Request): string {
+  return request.headers.get("CF-Connecting-IP")?.trim()
+    || request.headers.get("x-real-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+}
+
+function productionLike(request: Request): boolean {
+  const url = new URL(request.url);
+  return url.protocol === "https:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
 }
 
 export function trustedOrigins(request: Request, env: Env): Set<string> {
@@ -47,11 +60,88 @@ export function enforceMutationOrigin(request: Request, env: Env): Response | nu
   }
 
   const fetchSite = (request.headers.get("Sec-Fetch-Site") || "").toLowerCase();
-  if (fetchSite === "same-origin" || fetchSite === "same-site") return null;
+  if (fetchSite === "same-origin") return null;
 
-  // Navegadores modernos enviam Origin ou Fetch Metadata em mutações fetch/form.
-  // Ausência dos dois falha fechada para impedir replay cross-site com cookie roubado.
+  // Mutações autenticadas por cookie precisam ser inequivocamente same-origin.
+  // `same-site` não basta: um subdomínio comprometido não deve conseguir usar
+  // a sessão do domínio principal como pivô de CSRF.
   return json({ erro: "Origem da requisição não pôde ser validada." }, 403);
+}
+
+export function enforceRequestSize(request: Request): Response | null {
+  const method = request.method.toUpperCase();
+  if (!UNSAFE_METHODS.has(method)) return null;
+  const path = new URL(request.url).pathname;
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (!Number.isFinite(declared) || declared < 0) return json({ erro: "Tamanho da requisição inválido." }, 400);
+  if (!declared) return null;
+
+  // Carnê administrativo pode conter várias páginas; comprovantes individuais
+  // ficam com teto bem menor. JSON comum não precisa chegar perto desses valores.
+  let max = 512 * 1024;
+  if (/\/api\/cliente\/boletos\/[^/]+\/(anexar|comprovante)$/.test(path)) max = 6 * 1024 * 1024;
+  else if (path.includes("/carne") || path.includes("/carnes")) max = 22 * 1024 * 1024;
+  else if (path.includes("/comprovante")) max = 7 * 1024 * 1024;
+  else if (EXTERNAL_MUTATION_PATHS.has(path)) max = 1024 * 1024;
+
+  return declared > max ? json({ erro: "Requisição excede o tamanho permitido." }, 413) : null;
+}
+
+function canonicalRateAction(request: Request): { action: string; max: number; window: number } | null {
+  if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return null;
+  const path = new URL(request.url).pathname;
+  if (AUTH_PATHS.has(path) || EXTERNAL_MUTATION_PATHS.has(path)) return null;
+
+  if (/^\/api\/cliente\/boletos\/[^/]+\/(anexar|comprovante)$/.test(path)) return { action: "client-proof-upload", max: 12, window: 15 * 60 };
+  if (path === "/api/cliente/payments/mercado-pago/preference") return { action: "client-mp-preference", max: 10, window: 5 * 60 };
+  if (path === "/api/cliente/credit-ops/redeem") return { action: "client-club-redeem", max: 12, window: 10 * 60 };
+  if (path === "/api/cliente/credit-ops/referrals") return { action: "client-referral", max: 10, window: 60 * 60 };
+  if (path.includes("/push")) return { action: "client-push", max: 20, window: 10 * 60 };
+  if (path.startsWith("/api/cliente/")) return { action: "client-mutation", max: 40, window: 10 * 60 };
+  if (path.startsWith("/api/equipe/")) return { action: "staff-mutation", max: 120, window: 10 * 60 };
+  if (path.startsWith("/api/admin/")) return { action: "admin-mutation", max: 240, window: 10 * 60 };
+  return null;
+}
+
+/**
+ * Rate limit de segunda camada para ações autenticadas. Login possui política
+ * própria (IP + identificador); aqui a chave combina ação + sessão HMAC e IP,
+ * nunca armazenando cookie, IP ou PII em texto puro no banco.
+ */
+export async function enforceActionRateLimit(request: Request, env: Env): Promise<Response | null> {
+  const rule = canonicalRateAction(request);
+  if (!rule) return null;
+  if (!env.CLIENTE_SESSION_SECRET || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return json({ erro: "Serviço temporariamente indisponível." }, 503);
+  }
+
+  const path = new URL(request.url).pathname;
+  const cookieName = path.startsWith("/api/admin/") ? "admin_session" : path.startsWith("/api/equipe/") ? "staff_session" : "cliente_session";
+  const token = getCookie(request, cookieName) || "anonymous";
+  const actorFp = await hmacFingerprint(`${cookieName}:${token}`, env.CLIENTE_SESSION_SECRET);
+  const ipFp = await hmacFingerprint(ipDoRequest(request), env.CLIENTE_SESSION_SECRET);
+  const keys = [
+    `action:${rule.action}:actor:${actorFp}`,
+    `action:${rule.action}:ip:${ipFp}`,
+  ];
+
+  const db = createServiceSupabaseClient(env);
+  for (const key of keys) {
+    const { data, error } = await db.rpc("rate_limit_consumir", {
+      p_chave: key,
+      p_max_tentativas: rule.max,
+      p_janela_segundos: rule.window,
+    });
+    if (error) {
+      requestLogger(request).error("Falha no rate limit de ação", { action: "security.rate_limit", eventCode: "ACTION_RATE_LIMIT_FAILED", statusCode: 503, error });
+      return json({ erro: "Não foi possível validar a operação agora." }, 503);
+    }
+    if (!Boolean(data)) {
+      requestLogger(request).warn("Ação bloqueada por rate limit", { action: "security.rate_limit", eventCode: "ACTION_RATE_LIMITED", statusCode: 429, rateAction: rule.action });
+      return json({ erro: "Muitas ações em pouco tempo. Aguarde alguns minutos e tente novamente." }, 429, { "Retry-After": String(rule.window) });
+    }
+  }
+  return null;
 }
 
 export function applyApiSecurityHeaders(response: Response, request: Request): Response {
@@ -130,7 +220,8 @@ export async function hmacFingerprint(value: string, secret: string): Promise<st
 }
 
 export async function verifyTurnstile(request: Request, env: Env, token: string | null | undefined): Promise<{ ok: true } | { ok: false; status: number; erro: string }> {
-  const required = String(env.TURNSTILE_REQUIRED || "").toLowerCase() === "true";
+  const configuredFlag = String(env.TURNSTILE_REQUIRED || "").trim().toLowerCase();
+  const required = configuredFlag === "true" || (configuredFlag !== "false" && productionLike(request));
   const secret = env.TURNSTILE_SECRET_KEY?.trim();
   if (!secret) {
     return required
@@ -142,8 +233,8 @@ export async function verifyTurnstile(request: Request, env: Env, token: string 
   const form = new FormData();
   form.set("secret", secret);
   form.set("response", token);
-  const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim();
-  if (ip) form.set("remoteip", ip);
+  const ip = ipDoRequest(request);
+  if (ip && ip !== "unknown") form.set("remoteip", ip);
 
   try {
     const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
