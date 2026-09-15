@@ -47,7 +47,6 @@ function dataHora(iso: string) {
 export function NotificacoesTab({ notificacoes, naoLidas, carregando, onMarcarLida, onMarcarTodasLidas, onAcao }: NotificacoesTabProps) {
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const filtradas = useMemo(() => filtro === "todos" ? notificacoes : notificacoes.filter((n) => classificar(n) === filtro), [filtro, notificacoes]);
-  const destaque = notificacoes.find((n) => !n.lida && n.destino) ?? null;
   const grupos = useMemo(() => {
     const map = new Map<string, NotificacaoCliente[]>();
     filtradas.forEach((n) => {
@@ -56,9 +55,6 @@ export function NotificacoesTab({ notificacoes, naoLidas, carregando, onMarcarLi
     });
     return Array.from(map.entries());
   }, [filtradas]);
-
-  const resumoTitulo = naoLidas > 0 ? (naoLidas === 1 ? "Você tem 1 novidade." : `Você tem ${naoLidas} novidades para acompanhar.`) : "Tudo em dia por aqui.";
-  const resumoTexto = naoLidas > 0 ? "Confira o que mudou desde sua última visita e veja se alguma etapa precisa da sua atenção." : "Pagamentos, agenda e avanços importantes continuam registrados aqui para você consultar quando quiser.";
 
   const filtros: { id: Filtro; label: string }[] = [
     { id: "todos", label: "Todos" },
@@ -82,35 +78,6 @@ export function NotificacoesTab({ notificacoes, naoLidas, carregando, onMarcarLi
         </div>
         {naoLidas > 0 && <button type="button" onClick={onMarcarTodasLidas} className="whitespace-nowrap pb-[2px] text-[9.5px] font-semibold text-[#7D2434]">Marcar lidas</button>}
       </div>
-
-      <div className="relative mx-5 mt-[15px] overflow-hidden rounded-[20px] bg-gradient-to-br from-[#6B1F2E] via-[#571925] to-[#46121C] px-4 pb-[15px] pt-4 text-white shadow-[0_12px_28px_rgba(84,27,40,.16)]">
-        <div className="absolute -right-7 -top-[38px] h-[130px] w-[130px] rounded-full bg-[rgba(225,199,143,.12)] blur-[2px]" />
-        <svg width="82" height="82" viewBox="0 0 40 40" fill="none" stroke="#E1C78F" strokeWidth=".58" className="absolute -bottom-[27px] -right-[15px] opacity-[.14]"><circle cx="20" cy="20" r="4.5"/><ellipse cx="20" cy="10" rx="4" ry="8"/><ellipse cx="20" cy="30" rx="4" ry="8"/><ellipse cx="10" cy="20" rx="8" ry="4"/><ellipse cx="30" cy="20" rx="8" ry="4"/></svg>
-        <div className="relative flex items-start gap-3">
-          <span className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[13px] border border-white/10 bg-white/[.09] text-[#E1C78F]"><Bell className="h-[18px] w-[18px]" strokeWidth={1.5}/></span>
-          <div className="min-w-0 flex-1">
-            <div className="font-heading text-[20px] font-semibold leading-[1.15]">{resumoTitulo}</div>
-            <div className="pt-1 text-[10.5px] font-light leading-[1.5] text-white/70">{resumoTexto}</div>
-          </div>
-        </div>
-      </div>
-
-      {destaque && (() => {
-        const m = meta(destaque); const Icon = m.Icon;
-        return <div className="px-5 pt-[14px]">
-          <div className="rounded-[18px] border border-[#E5D5D1] bg-[#FFFCFB] p-[14px] shadow-[0_8px_20px_rgba(81,45,49,.06)]">
-            <div className="flex items-start gap-[11px]">
-              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[12px]" style={{ background: m.bg, color: m.color }}><Icon className="h-[17px] w-[17px]" strokeWidth={1.5}/></span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-[6px]"><span className="rounded-full px-[7px] py-[3px] text-[8.5px] font-semibold" style={{ background: m.bg, color: m.color }}>{m.label}</span><span className="text-[9px] font-light text-[#A99894]">{dataHora(destaque.created_at)}</span></div>
-                <div className="pt-[6px] font-heading text-[19px] font-semibold leading-[1.16] text-[#3A2927]">{destaque.titulo}</div>
-                <div className="pt-1 text-[10.8px] font-light leading-[1.5] text-[#7F6F6B]">{destaque.mensagem}</div>
-              </div>
-            </div>
-            <button type="button" onClick={() => { if (!destaque.lida) onMarcarLida(destaque.id); onAcao(destaque); }} className="mt-3 w-full rounded-[12px] bg-[#6B1F2E] px-3 py-[10px] text-center text-[10.5px] font-semibold text-white shadow-[0_5px_12px_rgba(107,31,46,.12)]">Ver agora</button>
-          </div>
-        </div>;
-      })()}
 
       <div className="flex gap-[7px] overflow-x-auto px-5 pb-[5px] pt-4 [scrollbar-width:none]">
         {filtros.map((f) => <button key={f.id} type="button" onClick={() => setFiltro(f.id)} className="whitespace-nowrap rounded-full px-[11px] py-[6px] text-[9.5px] font-medium" style={filtro === f.id ? { background: "#6B1F2E", color: "#FFF", border: "1px solid #6B1F2E" } : { background: "#FFF", color: "#7A6A66", border: "1px solid #E7DAD6" }}>{f.label}</button>)}
