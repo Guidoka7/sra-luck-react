@@ -1,7 +1,6 @@
-const CACHE = 'sra-luck-pwa-v12';
+const CACHE = 'sra-luck-pwa-v13';
 const SHELL = [
   '/simulador-iphone.html',
-  '/simulador-iphone.webmanifest',
   '/brand/sra-luck-mark.png',
   '/icons/sra-luck-192.png',
   '/icons/sra-luck-512.png'
@@ -17,7 +16,15 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) return;
-  if (url.pathname === '/simulador-iphone.html' || url.pathname === '/simulador-iphone.webmanifest' || url.pathname === '/brand/sra-luck-mark.png' || url.pathname === '/icons/sra-luck-192.png' || url.pathname === '/icons/sra-luck-512.png') {
+
+  // O manifest precisa sempre refletir a versão atual do deploy. Cacheá-lo pode
+  // manter scope/start_url antigos e impedir o Chrome de liberar a instalação.
+  if (url.pathname === '/simulador-iphone.webmanifest') {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
+
+  if (url.pathname === '/simulador-iphone.html' || url.pathname === '/brand/sra-luck-mark.png' || url.pathname === '/icons/sra-luck-192.png' || url.pathname === '/icons/sra-luck-512.png') {
     event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
       const copy = response.clone();
       caches.open(CACHE).then((cache) => cache.put(event.request, copy));
