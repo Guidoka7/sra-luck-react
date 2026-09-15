@@ -5,6 +5,7 @@ import { Bell, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 const DISMISS_KEY = "sra-luck-push-prompt-dismissed-date";
+const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
@@ -18,8 +19,31 @@ function foiDispensadoHoje() {
   }
 }
 
+function temSolicitacaoPosInstalacao() {
+  try {
+    return localStorage.getItem(PUSH_AFTER_INSTALL_KEY) === "pending";
+  } catch {
+    return false;
+  }
+}
+
+function limparSolicitacaoPosInstalacao() {
+  try {
+    localStorage.removeItem(PUSH_AFTER_INSTALL_KEY);
+  } catch {}
+}
+
 function isStandalone() {
-  return typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone)));
+  return (
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches ||
+      ("standalone" in navigator &&
+        Boolean((navigator as Navigator & { standalone?: boolean }).standalone)))
+  );
+}
+
+function fluxoDeNotificacoesDisponivel() {
+  return isStandalone() || temSolicitacaoPosInstalacao();
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -47,9 +71,10 @@ async function atualizarTelemetria(pushActive: boolean) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         deviceKey,
-        deviceType: window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
-        displayMode: "standalone",
-        isPwaInstalled: true,
+        deviceType:
+          window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
+        displayMode: isStandalone() ? "standalone" : "browser",
+        isPwaInstalled: isStandalone() || temSolicitacaoPosInstalacao(),
         notificationPermission: Notification.permission,
         pushActive,
       }),
@@ -65,35 +90,43 @@ export function AtivarNotificacoesPush() {
   const [bloqueado, setBloqueado] = useState(false);
 
   useEffect(() => {
-    // A solicitação de notificações pertence somente ao aplicativo instalado.
-    // No navegador/web não mostramos o card nem consultamos a permissão.
-    if (!isStandalone()) return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      return;
+    }
+
     let cancelado = false;
 
     async function sincronizarAssinaturaPendente() {
       try {
         const raw = localStorage.getItem("sra-luck-pending-push-subscription");
         if (!raw) return false;
+
         const subscription = JSON.parse(raw);
-        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) return false;
+        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+          return false;
+        }
+
         const deviceKey = obterDeviceKey();
         const response = await fetch("/api/cliente/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subscription, deviceKey }),
         });
+
         if (response.ok) {
           localStorage.removeItem("sra-luck-pending-push-subscription");
+          limparSolicitacaoPosInstalacao();
           if (!cancelado) setAtivo(true);
           await atualizarTelemetria(true);
           return true;
         }
       } catch {}
+
       return false;
     }
 
     async function verificarAssinatura() {
+      if (!fluxoDeNotificacoesDisponivel()) return;
       if (await sincronizarAssinaturaPendente()) return;
 
       if (Notification.permission === "granted") {
@@ -101,6 +134,7 @@ export function AtivarNotificacoesPush() {
           const reg = await navigator.serviceWorker.ready;
           const subscription = await reg.pushManager.getSubscription();
           if (subscription) {
+            limparSolicitacaoPosInstalacao();
             if (!cancelado) setAtivo(true);
             await atualizarTelemetria(true);
             return;
@@ -111,36 +145,60 @@ export function AtivarNotificacoesPush() {
       await atualizarTelemetria(false);
 
       if (cancelado) return;
+
       if (Notification.permission === "denied") {
         setBloqueado(true);
         if (!foiDispensadoHoje()) setVisivel(true);
         return;
       }
 
+      setBloqueado(false);
       if (!foiDispensadoHoje()) setVisivel(true);
     }
 
+    const iniciarAposInstalacao = () => {
+      void verificarAssinatura();
+    };
+
+    const verificarAoRetomar = () => {
+      if (document.visibilityState === "visible") {
+        void verificarAssinatura();
+      }
+    };
+
+    window.addEventListener("sra-luck-pwa-installed", iniciarAposInstalacao);
+    window.addEventListener("pageshow", iniciarAposInstalacao);
+    document.addEventListener("visibilitychange", verificarAoRetomar);
+
     void verificarAssinatura();
+
     return () => {
       cancelado = true;
+      window.removeEventListener("sra-luck-pwa-installed", iniciarAposInstalacao);
+      window.removeEventListener("pageshow", iniciarAposInstalacao);
+      document.removeEventListener("visibilitychange", verificarAoRetomar);
     };
   }, []);
 
   async function ativar() {
-    if (!isStandalone()) return;
+    if (!fluxoDeNotificacoesDisponivel()) return;
+
     if (!window.isSecureContext) {
-      toast.error("Para receber notificações, abra o aplicativo instalado em um contexto seguro.");
+      toast.error("Para receber notificações, abra o aplicativo em um contexto seguro.");
       return;
     }
 
     if (Notification.permission === "denied") {
       setBloqueado(true);
       setVisivel(true);
-      toast.error("O aplicativo não tem permissão para enviar notificações. Permita as notificações nas configurações do celular.");
+      toast.error(
+        "O aplicativo não tem permissão para enviar notificações. Permita as notificações nas configurações do celular.",
+      );
       return;
     }
 
     setAtivando(true);
+
     try {
       const permission = await Notification.requestPermission();
 
@@ -148,8 +206,11 @@ export function AtivarNotificacoesPush() {
         await atualizarTelemetria(false);
         setBloqueado(permission === "denied");
         setVisivel(true);
+
         if (permission === "denied") {
-          toast.error("As notificações foram bloqueadas. Permita as notificações do aplicativo nas configurações do celular.");
+          toast.error(
+            "As notificações foram bloqueadas. Permita as notificações do aplicativo nas configurações do celular.",
+          );
         }
         return;
       }
@@ -157,18 +218,23 @@ export function AtivarNotificacoesPush() {
       const reg = await navigator.serviceWorker.ready;
       const keyRes = await fetch("/api/cliente/push/vapid", { cache: "no-store" });
       if (!keyRes.ok) throw new Error("Servidor de notificações não configurado.");
+
       const { publicKey } = await keyRes.json();
       const subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
+
       const deviceKey = obterDeviceKey();
       const saveRes = await fetch("/api/cliente/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: subscription.toJSON(), deviceKey }),
       });
+
       if (!saveRes.ok) throw new Error("Não foi possível registrar este celular.");
+
+      limparSolicitacaoPosInstalacao();
       await atualizarTelemetria(true);
       setAtivo(true);
       setVisivel(false);
@@ -188,12 +254,14 @@ export function AtivarNotificacoesPush() {
     setVisivel(false);
   }
 
-  if (ativo || !visivel || !isStandalone()) return null;
+  if (ativo || !visivel || !fluxoDeNotificacoesDisponivel()) return null;
 
   return (
     <div className="mb-4 rounded-2xl border border-burgundy/10 bg-white/95 p-4 shadow-card dark:border-white/10 dark:bg-white/[0.055]">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blush text-burgundy dark:bg-white/10 dark:text-[#F4D9DC]"><Bell className="h-5 w-5" /></div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blush text-burgundy dark:bg-white/10 dark:text-[#F4D9DC]">
+          <Bell className="h-5 w-5" />
+        </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-burgundy dark:text-pearl">
             {bloqueado ? "Notificações bloqueadas" : "Receba avisos no celular"}
@@ -201,19 +269,35 @@ export function AtivarNotificacoesPush() {
           <p className="mt-0.5 text-xs leading-relaxed text-clay/60 dark:text-pearl/55">
             {bloqueado
               ? "O aplicativo está sem permissão para enviar notificações. Permita as notificações nas configurações do celular e tente novamente."
-              : "Ative as notificações para receber mensagens da Sra. Luck mesmo com o aplicativo fechado."}
+              : "Aplicativo instalado. Ative as notificações para receber mensagens da Sra. Luck mesmo com o aplicativo fechado."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={ativar} disabled={ativando || bloqueado} className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-3.5 py-2 text-xs font-semibold text-pearl disabled:opacity-60">
+            <button
+              type="button"
+              onClick={ativar}
+              disabled={ativando || bloqueado}
+              className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-3.5 py-2 text-xs font-semibold text-pearl disabled:opacity-60"
+            >
               {ativando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
               {ativando ? "Ativando..." : bloqueado ? "Permitir nas configurações" : "Permitir notificações"}
             </button>
-            <button type="button" onClick={dispensar} className="inline-flex items-center gap-2 rounded-xl border border-burgundy/10 px-3.5 py-2 text-xs font-semibold text-burgundy dark:border-white/10 dark:text-pearl">
+            <button
+              type="button"
+              onClick={dispensar}
+              className="inline-flex items-center gap-2 rounded-xl border border-burgundy/10 px-3.5 py-2 text-xs font-semibold text-burgundy dark:border-white/10 dark:text-pearl"
+            >
               Agora não
             </button>
           </div>
         </div>
-        <button type="button" aria-label="Não ativar agora" onClick={dispensar} className="flex h-8 w-8 items-center justify-center rounded-full text-clay/40 hover:bg-blush dark:hover:bg-white/10"><X className="h-4 w-4" /></button>
+        <button
+          type="button"
+          aria-label="Não ativar agora"
+          onClick={dispensar}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-clay/40 hover:bg-blush dark:hover:bg-white/10"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
