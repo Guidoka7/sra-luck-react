@@ -31,6 +31,13 @@ const MAX_DEPTH = 6;
 const MAX_ARRAY = 30;
 const MAX_STRING = 3000;
 const REQUEST_IDS = new WeakMap<Request, string>();
+const NATIVE_CONSOLE = {
+  log: console.log.bind(console),
+  info: console.info.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
+let consoleSanitizerInstalled = false;
 
 function sanitizeString(value: string): string {
   return value
@@ -66,7 +73,7 @@ export function sanitizeLogValue(value: unknown, depth = 0): unknown {
 
 async function hmacId(value: string, secret?: string): Promise<string> {
   if (!value) return "anonymous";
-  if (!secret) return `anon_${value.length}_${value.slice(0, 2)}`;
+  if (!secret) return "usr_unavailable";
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -105,9 +112,39 @@ function emit(level: LogLevel, message: string, context: LogContext) {
     ...context,
   }) as Record<string, unknown>;
   const line = JSON.stringify(payload);
-  if (level === "fatal" || level === "error") console.error(line);
-  else if (level === "warn") console.warn(line);
-  else console.info(line);
+  if (level === "fatal" || level === "error") NATIVE_CONSOLE.error(line);
+  else if (level === "warn") NATIVE_CONSOLE.warn(line);
+  else NATIVE_CONSOLE.info(line);
+}
+
+function legacyConsoleLine(level: "info" | "warn" | "error", args: unknown[]) {
+  const sanitized = sanitizeLogValue(args);
+  const first = Array.isArray(sanitized) ? sanitized[0] : undefined;
+  const message = typeof first === "string" ? first : `Legacy console.${level}`;
+  const payload = sanitizeLogValue({
+    timestamp: new Date().toISOString(),
+    level,
+    service: "sra-luck-worker",
+    action: "legacy.console",
+    eventCode: "LEGACY_CONSOLE_LOG",
+    message,
+    args: Array.isArray(sanitized) ? sanitized.slice(1) : [],
+  });
+  return JSON.stringify(payload);
+}
+
+/**
+ * Defesa de última linha: módulos legados ainda podem usar console.* diretamente.
+ * Todo output passa a ser JSON e sofre redaction antes de chegar aos logs do runtime.
+ * Logs novos devem usar requestLogger/createLogger para incluir requestId/action/actorId.
+ */
+export function installConsoleSanitizer() {
+  if (consoleSanitizerInstalled) return;
+  consoleSanitizerInstalled = true;
+  console.log = (...args: unknown[]) => NATIVE_CONSOLE.log(legacyConsoleLine("info", args));
+  console.info = (...args: unknown[]) => NATIVE_CONSOLE.info(legacyConsoleLine("info", args));
+  console.warn = (...args: unknown[]) => NATIVE_CONSOLE.warn(legacyConsoleLine("warn", args));
+  console.error = (...args: unknown[]) => NATIVE_CONSOLE.error(legacyConsoleLine("error", args));
 }
 
 export type Logger = {
