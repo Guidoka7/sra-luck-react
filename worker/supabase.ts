@@ -6,6 +6,9 @@ export interface Env {
   CLIENTE_SESSION_SECRET?: string;
   NOTIFICACOES_CRON_SECRET?: string;
   LOG_PSEUDONYM_KEY?: string;
+  INTEGRATION_ENCRYPTION_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_REQUIRED?: string;
 
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
   // permanecem exclusivamente no backend/cofre de integrações.
