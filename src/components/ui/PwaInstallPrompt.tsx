@@ -10,7 +10,6 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const DISMISS_KEY = "sra-luck-pwa-install-dismissed-date";
-const TOUR_KEY = "sra-luck-cliente-tour-v3";
 const GLOBAL_EVENT_KEY = "__sraLuckBeforeInstallPrompt";
 const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
 
@@ -37,14 +36,6 @@ function isIOS() {
     (/iphone|ipad|ipod/i.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
   );
-}
-
-function tourConcluido() {
-  try {
-    return localStorage.getItem(TOUR_KEY) === "concluido";
-  } catch {
-    return false;
-  }
 }
 
 function foiDispensadoHoje() {
@@ -100,7 +91,7 @@ export function PwaInstallPrompt() {
     setIos(isIOS());
 
     const mostrar = () => {
-      if (!isStandalone() && tourConcluido() && !foiDispensadoHoje()) {
+      if (!isStandalone() && !foiDispensadoHoje()) {
         setVisivel(true);
       }
     };
@@ -110,8 +101,8 @@ export function PwaInstallPrompt() {
       if (e) {
         setEvento(e);
         setPreparando(false);
-        mostrar();
       }
+      mostrar();
     };
 
     const receber = (event: Event) => {
@@ -141,10 +132,7 @@ export function PwaInstallPrompt() {
     mostrar();
     recuperar();
 
-    const interval = window.setInterval(() => {
-      if (tourConcluido()) mostrar();
-      recuperar();
-    }, 500);
+    const interval = window.setInterval(recuperar, 500);
 
     return () => {
       window.clearInterval(interval);
@@ -174,7 +162,7 @@ export function PwaInstallPrompt() {
     if (!eventoAtual) {
       setPreparando(false);
       toast.info(
-        "A instalação ainda está sendo preparada pelo navegador. Aguarde alguns segundos e tente novamente.",
+        "O Chrome ainda não liberou a instalação. Se o app já estiver instalado, abra-o pela tela inicial; caso contrário, use o menu do Chrome > Adicionar à tela inicial.",
       );
       return;
     }
@@ -186,8 +174,6 @@ export function PwaInstallPrompt() {
       const escolha = await eventoAtual.userChoice;
 
       if (escolha.outcome === "accepted") {
-        // O evento appinstalled fará a transição visual quando o Chromium confirmar
-        // a instalação. A flag também cobre o caso de o app ser aberto logo depois.
         prepararNotificacoesPosInstalacao(false);
         setVisivel(false);
       }
