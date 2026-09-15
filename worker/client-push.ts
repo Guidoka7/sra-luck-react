@@ -2,6 +2,7 @@ import { obterCredencial } from "./integrations-credenciais";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { isAllowedPushEndpoint } from "./outbound-url";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -15,12 +16,8 @@ function json(data: unknown, status = 200) {
 
 function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
-  if (!origin) return true;
-  try {
-    return origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
+  if (!origin) return false;
+  try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
 async function clienteId(request: Request, env: Env) {
@@ -59,10 +56,7 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
   if (path === "/api/cliente/push/subscribe" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
     const publicKey = await obterCredencial(env, "web_push", "vapid_public_key");
-    if (!publicKey) {
-      log.warn("Chave pública VAPID indisponível", { eventCode: "PUSH_VAPID_NOT_CONFIGURED", statusCode: 503 });
-      return json({ erro: "Notificações push ainda não estão configuradas." }, 503);
-    }
+    if (!publicKey) return json({ erro: "Notificações push ainda não estão configuradas." }, 503);
 
     const body = await request.json().catch(() => ({})) as SubscriptionBody;
     const endpoint = String(body.subscription?.endpoint ?? "").trim();
@@ -70,8 +64,10 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
     const auth = String(body.subscription?.keys?.auth ?? "").trim();
     const deviceKey = String(body.deviceKey ?? "").trim().slice(0, 200) || null;
 
-    if (!endpoint || !p256dh || !auth) return json({ erro: "Assinatura push inválida." }, 400);
-    if (!/^https:\/\//i.test(endpoint) || endpoint.length > 4096 || p256dh.length > 1024 || auth.length > 1024) return json({ erro: "Assinatura push inválida." }, 400);
+    if (!isAllowedPushEndpoint(endpoint) || !p256dh || !auth || p256dh.length > 1024 || auth.length > 1024) {
+      log.warn("Assinatura push rejeitada por validação de segurança", { eventCode: "PUSH_SUBSCRIPTION_INVALID", statusCode: 400 });
+      return json({ erro: "Assinatura push inválida." }, 400);
+    }
 
     const db = createServiceSupabaseClient(env);
     const { data: existente, error: erroConsulta } = await db.from("web_push_subscriptions").select("cliente_id").eq("endpoint", endpoint).maybeSingle();
@@ -87,7 +83,7 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
       p256dh,
       auth,
       device_key: deviceKey,
-      user_agent: request.headers.get("User-Agent")?.slice(0, 1000) ?? null,
+      user_agent: request.headers.get("User-Agent")?.slice(0, 500) ?? null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "endpoint" });
 
@@ -103,8 +99,9 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
     const body = await request.json().catch(() => ({})) as { endpoint?: string; deviceKey?: string };
     const endpoint = String(body.endpoint ?? "").trim();
-    const deviceKey = String(body.deviceKey ?? "").trim();
+    const deviceKey = String(body.deviceKey ?? "").trim().slice(0, 200);
     if (!endpoint && !deviceKey) return json({ erro: "Dispositivo não informado." }, 400);
+    if (endpoint && !isAllowedPushEndpoint(endpoint)) return json({ erro: "Dispositivo inválido." }, 400);
 
     const db = createServiceSupabaseClient(env);
     let query = db.from("web_push_subscriptions").delete().eq("cliente_id", client);
