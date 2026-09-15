@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#FBF7F5" />
+    <meta name="theme-color" content="#F6E8E4" />
     <meta name="color-scheme" content="light" />
     <meta name="description" content="Sra. Luck — Cirurgia Programada" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Sra. Luck" />
-    <link rel="manifest" href="/simulador-iphone.webmanifest?v=20260915-3" />
+    <link rel="manifest" href="/simulador-iphone.webmanifest?v=20260915-4" />
     <link rel="apple-touch-icon" href="/icons/sra-luck-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,22 +22,73 @@
       html[data-sra-client="true"] body,
       html[data-sra-client="true"] #root {
         margin: 0 !important;
-        padding: 0;
+        padding: 0 !important;
+        width: 100%;
+        max-width: 100%;
         min-height: 100%;
-        background: #FBF7F5 !important;
+        background: var(--sra-client-top, #FBF7F5) !important;
         color-scheme: light;
       }
+
       html[data-sra-client="true"] #root {
         min-height: 100dvh;
+      }
+
+      @media (max-width: 639px) {
+        html[data-sra-client="true"],
+        html[data-sra-client="true"] body,
+        html[data-sra-client="true"] #root,
+        html[data-sra-client="true"] body .client-app {
+          width: 100vw !important;
+          max-width: 100vw !important;
+          min-width: 100vw !important;
+          margin: 0 !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          overflow-x: hidden !important;
+        }
+
+        html[data-sra-client="true"] body .client-app {
+          min-height: 100dvh !important;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+          background: #FBF7F5 !important;
+        }
+
+        html[data-sra-client="true"] body .client-app .mobile-app-frame {
+          width: 100vw !important;
+          max-width: 100vw !important;
+          min-width: 100vw !important;
+          min-height: 100dvh !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+        }
+
+        html[data-sra-client="true"] body .client-app .sl-bottom-nav {
+          left: 0 !important;
+          width: 100vw !important;
+          max-width: 100vw !important;
+          transform: none !important;
+        }
       }
     </style>
     <script>
       (function () {
-        var CLIENT_BACKGROUND = "#FBF7F5";
+        var HOME_TOP = "#F6E8E4";
+        var DEFAULT_TOP = "#FBF7F5";
         var CLIENT_PATHS = ["/login", "/agenda", "/app", "/cliente", "/agenda-legado"];
+        var observer = null;
 
         function isClientPath() {
           return CLIENT_PATHS.indexOf(window.location.pathname) !== -1;
+        }
+
+        function resolveTopColor() {
+          if (window.location.pathname === "/login") return DEFAULT_TOP;
+          var root = document.getElementById("root");
+          if (root && root.querySelector(".sl-home-header")) return HOME_TOP;
+          if (root && root.querySelector(".sl-tab")) return DEFAULT_TOP;
+          return HOME_TOP;
         }
 
         function syncClientChrome() {
@@ -45,22 +96,43 @@
           if (client) document.documentElement.setAttribute("data-sra-client", "true");
           else document.documentElement.removeAttribute("data-sra-client");
 
-          var theme = document.querySelector('meta[name="theme-color"]');
-          if (theme && client) theme.setAttribute("content", CLIENT_BACKGROUND);
+          if (!client) return;
 
-          if (client) {
-            document.documentElement.style.backgroundColor = CLIENT_BACKGROUND;
-            if (document.body) {
-              document.body.style.margin = "0";
-              document.body.style.backgroundColor = CLIENT_BACKGROUND;
-            }
+          var color = resolveTopColor();
+          document.documentElement.style.setProperty("--sra-client-top", color);
+          document.documentElement.style.backgroundColor = color;
+
+          var theme = document.querySelector('meta[name="theme-color"]');
+          if (theme) theme.setAttribute("content", color);
+
+          if (document.body) {
+            document.body.style.margin = "0";
+            document.body.style.backgroundColor = color;
           }
+
+          var root = document.getElementById("root");
+          if (root) root.style.backgroundColor = color;
+        }
+
+        function observeClientUi() {
+          var root = document.getElementById("root");
+          if (!root || observer) return;
+          observer = new MutationObserver(function () {
+            window.requestAnimationFrame(syncClientChrome);
+          });
+          observer.observe(root, { childList: true, subtree: true });
         }
 
         syncClientChrome();
-        document.addEventListener("DOMContentLoaded", syncClientChrome);
+        document.addEventListener("DOMContentLoaded", function () {
+          syncClientChrome();
+          observeClientUi();
+        });
         window.addEventListener("pageshow", syncClientChrome);
-        window.addEventListener("app:navigate", syncClientChrome);
+        window.addEventListener("app:navigate", function () {
+          syncClientChrome();
+          observeClientUi();
+        });
         window.addEventListener("focus", syncClientChrome);
         document.addEventListener("visibilitychange", function () {
           if (!document.hidden) syncClientChrome();
