@@ -1,24 +1,84 @@
-/* O app da cliente usa o mesmo fundo claro até a borda do viewport.
-   Isso evita uma faixa #EFE6E2 entre a status bar do PWA e o frame interno. */
+/* App da cliente: fundo, viewport e rolagem nativa. */
 html:has(.client-app),
-body:has(.client-app),
-#root:has(.client-app) {
-  margin: 0;
-  min-height: 100%;
+body:has(.client-app) {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  min-height: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  position: static !important;
   background: #FBF7F5 !important;
   color-scheme: light;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto !important;
+  touch-action: pan-y !important;
+}
+
+#root:has(.client-app) {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  min-height: 100dvh !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: #FBF7F5 !important;
 }
 
 .client-app {
+  width: 100% !important;
+  min-height: 100dvh !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: clip !important;
+  overflow-y: visible !important;
   background: #FBF7F5 !important;
+  touch-action: pan-y !important;
+  overscroll-behavior-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
 .client-app .mobile-app-frame {
   margin-top: 0 !important;
+  width: 100% !important;
+  min-height: 100dvh !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: clip !important;
+  overflow-y: visible !important;
   background: #FBF7F5 !important;
+  touch-action: pan-y !important;
 }
 
-/* Em desktop, preserva o fundo externo do protótipo ao redor do frame de 430px. */
+.client-app button,
+.client-app a,
+.client-app input,
+.client-app select,
+.client-app textarea {
+  touch-action: manipulation;
+}
+
+/* Em celular o app ocupa a largura real do aparelho e rola pelo documento. */
+@media (max-width: 639px) {
+  html:has(.client-app),
+  body:has(.client-app),
+  #root:has(.client-app),
+  .client-app,
+  .client-app .mobile-app-frame {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+  }
+
+  .client-app .mobile-app-frame {
+    box-shadow: none !important;
+  }
+}
+
+/* Em desktop preserva o fundo externo do protótipo sem afetar a rolagem. */
 @media (min-width: 640px) {
   html:has(.client-app),
   body:has(.client-app),
@@ -38,5 +98,3 @@ body:has(.client-app),
   background-color: #FBF7F5;
   color: #2E2422;
 }
-
-/* Mantém a superfície superior do PWA alinhada ao fundo principal no mobile. */
