@@ -64,10 +64,15 @@ export function resgatarPremio(recompensaId: string, idempotencyKey: string) {
   });
 }
 
-export function indicarAmiga(nome: string, telefone: string, consentimentoContato: boolean) {
+export async function indicarAmiga(nome: string, telefone: string, consentimentoContato?: boolean) {
+  let consentimento = consentimentoContato === true;
+  if (!consentimento && typeof window !== "undefined") {
+    consentimento = window.confirm("Confirme somente se sua amiga autorizou a Sra. Luck a usar o nome e telefone informados para entrar em contato com ela.");
+  }
+  if (!consentimento) throw new Error("A indicação só pode ser enviada após a autorização da pessoa indicada.");
   return api<{ indicacao: unknown }>("/api/cliente/credit-ops/referrals", {
     method: "POST",
-    body: JSON.stringify({ nome, telefone, consentimentoContato }),
+    body: JSON.stringify({ nome, telefone, consentimentoContato: true }),
   });
 }
 
