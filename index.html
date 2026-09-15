@@ -10,14 +10,63 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Sra. Luck" />
-    <link rel="manifest" href="/simulador-iphone.webmanifest" />
+    <link rel="manifest" href="/simulador-iphone.webmanifest?v=20260915-3" />
     <link rel="apple-touch-icon" href="/icons/sra-luck-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <link rel="icon" href="/brand/sra-luck-mark.png" />
     <title>Sra. Luck — Cirurgia Programada</title>
+    <style>
+      html[data-sra-client="true"],
+      html[data-sra-client="true"] body,
+      html[data-sra-client="true"] #root {
+        margin: 0 !important;
+        padding: 0;
+        min-height: 100%;
+        background: #FBF7F5 !important;
+        color-scheme: light;
+      }
+      html[data-sra-client="true"] #root {
+        min-height: 100dvh;
+      }
+    </style>
     <script>
+      (function () {
+        var CLIENT_BACKGROUND = "#FBF7F5";
+        var CLIENT_PATHS = ["/login", "/agenda", "/app", "/cliente", "/agenda-legado"];
+
+        function isClientPath() {
+          return CLIENT_PATHS.indexOf(window.location.pathname) !== -1;
+        }
+
+        function syncClientChrome() {
+          var client = isClientPath();
+          if (client) document.documentElement.setAttribute("data-sra-client", "true");
+          else document.documentElement.removeAttribute("data-sra-client");
+
+          var theme = document.querySelector('meta[name="theme-color"]');
+          if (theme && client) theme.setAttribute("content", CLIENT_BACKGROUND);
+
+          if (client) {
+            document.documentElement.style.backgroundColor = CLIENT_BACKGROUND;
+            if (document.body) {
+              document.body.style.margin = "0";
+              document.body.style.backgroundColor = CLIENT_BACKGROUND;
+            }
+          }
+        }
+
+        syncClientChrome();
+        document.addEventListener("DOMContentLoaded", syncClientChrome);
+        window.addEventListener("pageshow", syncClientChrome);
+        window.addEventListener("app:navigate", syncClientChrome);
+        window.addEventListener("focus", syncClientChrome);
+        document.addEventListener("visibilitychange", function () {
+          if (!document.hidden) syncClientChrome();
+        });
+      })();
+
       window.__sraLuckBeforeInstallPrompt = window.__sraLuckBeforeInstallPrompt || null;
 
       window.addEventListener("beforeinstallprompt", function (event) {
