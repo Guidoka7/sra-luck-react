@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { TabBoletos } from "@/components/cliente/TabBoletos";
-import { ComprovantesClienteActions } from "@/components/cliente/ComprovantesClienteActions";
 
 interface ParcelasTabProps {
   procedimento: string | null;
@@ -25,13 +24,15 @@ export function ParcelasTab({ procedimento }: ParcelasTabProps) {
   }, []);
 
   return (
-    <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-      <div className="mb-4 px-0.5">
-        <h1 className="font-heading text-xl font-semibold text-burgundy">Minhas parcelas</h1>
-        <p className="mt-0.5 text-[0.75rem] text-clay/55">Acompanhe pagamentos, comprovantes e formas de pagamento.</p>
+    <div className="sl-tab">
+      <div className="sl-tab-logo"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" /></div>
+      <div className="sl-tab-heading">
+        <h1>Minhas parcelas</h1>
+        <p>Seu contrato em uma única visão, do pagamento confirmado ao próximo vencimento.</p>
       </div>
-      <TabBoletos procedimento={procedimento} pagamento={pagamento} />
-      <ComprovantesClienteActions />
+      <div className="sl-parcelas-content">
+        <TabBoletos procedimento={procedimento} pagamento={pagamento} />
+      </div>
     </div>
   );
 }
