@@ -11,6 +11,14 @@
   <link rel="manifest" href="/simulador-iphone.webmanifest">
   <link rel="apple-touch-icon" href="/icons/sra-luck-app-256.png">
   <title>Instalar Sra. Luck</title>
+  <script>
+    window.__sraLuckDedicatedInstallPrompt = window.__sraLuckDedicatedInstallPrompt || null;
+    window.addEventListener('beforeinstallprompt', function (event) {
+      event.preventDefault();
+      window.__sraLuckDedicatedInstallPrompt = event;
+      window.dispatchEvent(new Event('sra-luck-dedicated-install-ready'));
+    });
+  </script>
   <style>
     :root{color-scheme:light;--wine:#6B1F2E;--ink:#2E2422;--muted:#756561;--rose:#B86575;--paper:#FFFDFC;--soft:#FBF7F5;--line:#EFE3E0}
     *{box-sizing:border-box}
@@ -48,9 +56,9 @@
         <p class="copy">Tenha acesso mais rápido à sua jornada, parcelas e avisos. Depois da instalação, vamos pedir sua autorização para receber notificações importantes.</p>
         <div id="statusBox" class="status"><span id="dot" class="dot"></span><span id="status">Preparando a instalação no Chrome...</span></div>
         <div id="iosSteps" class="ios"><b>iPhone/iPad:</b> toque em <b>Compartilhar</b> no Safari e depois em <b>Adicionar à Tela de Início</b>. Em seguida abra o ícone Sra. Luck pela tela inicial.</div>
-        <button id="primary" class="primary" type="button">Instalar aplicativo</button>
+        <button id="primary" class="primary" type="button">Preparar instalação</button>
         <button id="continue" class="secondary" type="button">Agora não</button>
-        <div class="mini">A instalação usa o mesmo fluxo PWA da versão anterior do Sra. Luck.</div>
+        <div id="mini" class="mini">A instalação será aberta assim que o Chrome liberar o prompt nativo.</div>
       </div>
     </section>
   </main>
@@ -59,16 +67,27 @@
       const SW = '/simulador-iphone-sw.js';
       const INSTALLED = 'sra-luck-pwa-installed-v1';
       const PUSH_AFTER_INSTALL = 'sra-luck-push-after-install';
-      let deferredInstall = null, busy = false, installReady = false, redirecting = false;
+      const START_KEY = 'sra-luck-pwa-engagement-start-v1';
+      const INTERACTED_KEY = 'sra-luck-pwa-engagement-click-v1';
+      const RELOAD_KEY = 'sra-luck-pwa-engagement-reload-v1';
+      const ENGAGEMENT_MS = 32000;
+
+      let deferredInstall = window.__sraLuckDedicatedInstallPrompt || null;
+      let busy = false;
+      let installReady = Boolean(deferredInstall);
+      let redirecting = false;
+      let userInteracted = false;
+      let timer = null;
 
       const params = new URLSearchParams(location.search);
-      const requestedReturn = params.get('return') || sessionStorage.getItem('sra-luck-install-return') || '/agenda';
+      const requestedReturn = params.get('return') || '/agenda';
       const returnUrl = requestedReturn.startsWith('/') && !requestedReturn.startsWith('//') ? requestedReturn : '/agenda';
       const primary = document.getElementById('primary');
       const continueBtn = document.getElementById('continue');
       const status = document.getElementById('status');
       const dot = document.getElementById('dot');
       const iosSteps = document.getElementById('iosSteps');
+      const mini = document.getElementById('mini');
 
       function isStandalone() {
         return Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
@@ -88,7 +107,9 @@
           localStorage.setItem(INSTALLED, 'true');
           localStorage.setItem('sra-luck-pwa-install-modal-v2-seen', 'true');
           localStorage.setItem(PUSH_AFTER_INSTALL, 'pending');
-          sessionStorage.removeItem('sra-luck-install-return');
+          localStorage.removeItem(START_KEY);
+          localStorage.removeItem(INTERACTED_KEY);
+          sessionStorage.removeItem(RELOAD_KEY);
         } catch (_) {}
       }
       function finishInstall() {
@@ -98,8 +119,38 @@
         setStatus('✓ Aplicativo instalado. Preparando a ativação das notificações...', 'ready');
         setTimeout(function () { location.replace(returnUrl); }, 850);
       }
-
-      // Mesma estratégia da main do sra-luck-pwa que já funcionava.
+      function readStart() {
+        try {
+          const value = Number(localStorage.getItem(START_KEY) || 0);
+          if (value > 0) return value;
+          localStorage.setItem(START_KEY, String(Date.now()));
+          return Date.now();
+        } catch (_) {
+          return Date.now();
+        }
+      }
+      function setInteracted() {
+        userInteracted = true;
+        try { localStorage.setItem(INTERACTED_KEY, 'true'); } catch (_) {}
+      }
+      function hasInteracted() {
+        if (userInteracted) return true;
+        try { return localStorage.getItem(INTERACTED_KEY) === 'true'; } catch (_) { return false; }
+      }
+      async function canonicalize() {
+        try {
+          const response = await fetch('/api/pwa/origin', { cache: 'no-store', credentials: 'same-origin' });
+          if (!response.ok) return false;
+          const data = await response.json();
+          const origin = typeof data.origin === 'string' ? data.origin.replace(/\/$/, '') : '';
+          if (!origin || !origin.startsWith('https://') || origin === location.origin) return false;
+          const target = origin + '/simulador-iphone.html?return=' + encodeURIComponent(returnUrl);
+          location.replace(target);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
       async function registerSW() {
         if (!('serviceWorker' in navigator)) return null;
         const reg = await navigator.serviceWorker.register(SW, { scope: '/', updateViaCache: 'none' });
@@ -107,23 +158,75 @@
         await navigator.serviceWorker.ready;
         return reg;
       }
+      function syncPrompt() {
+        const event = window.__sraLuckDedicatedInstallPrompt || deferredInstall;
+        if (!event) return false;
+        deferredInstall = event;
+        installReady = true;
+        primary.disabled = false;
+        primary.textContent = 'Instalar aplicativo';
+        setStatus('O Chrome está pronto para instalar o aplicativo.', 'ready');
+        mini.textContent = 'Toque em Instalar aplicativo para abrir a confirmação nativa do Chrome.';
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        return true;
+      }
+      function startReadinessTimer() {
+        const startedAt = readStart();
+        if (timer) clearInterval(timer);
+        timer = setInterval(function () {
+          if (syncPrompt()) return;
+          const elapsed = Date.now() - startedAt;
+          const remaining = Math.max(0, Math.ceil((ENGAGEMENT_MS - elapsed) / 1000));
 
+          if (remaining > 0) {
+            setStatus('Preparando a instalação no Chrome… ' + remaining + 's');
+            primary.textContent = hasInteracted() ? 'Preparando…' : 'Preparar instalação';
+            primary.disabled = hasInteracted();
+            return;
+          }
+
+          setStatus('Validando a instalação com o Chrome...');
+          primary.disabled = true;
+
+          if (hasInteracted()) {
+            let reloaded = false;
+            try { reloaded = sessionStorage.getItem(RELOAD_KEY) === 'true'; } catch (_) {}
+            if (!reloaded) {
+              try { sessionStorage.setItem(RELOAD_KEY, 'true'); } catch (_) {}
+              setTimeout(function () { location.reload(); }, 900);
+              return;
+            }
+          }
+
+          setTimeout(function () {
+            if (syncPrompt()) return;
+            primary.disabled = false;
+            primary.textContent = 'Tentar novamente';
+            setStatus(isMobile()
+              ? 'O Chrome ainda não liberou o instalador neste acesso. Toque em Tentar novamente; se persistir, use ⋮ → Adicionar à tela inicial.'
+              : 'O Chrome ainda não liberou o instalador. Tente novamente neste navegador.');
+          }, 1800);
+        }, 500);
+      }
       function setupInstallEvents() {
         if (isStandalone()) return;
+        window.addEventListener('sra-luck-dedicated-install-ready', syncPrompt);
         window.addEventListener('beforeinstallprompt', function (event) {
           event.preventDefault();
+          window.__sraLuckDedicatedInstallPrompt = event;
           deferredInstall = event;
-          installReady = true;
-          primary.disabled = false;
-          setStatus('O Chrome está pronto para instalar o aplicativo.', 'ready');
+          syncPrompt();
         });
         window.addEventListener('appinstalled', function () {
           deferredInstall = null;
+          window.__sraLuckDedicatedInstallPrompt = null;
           installReady = false;
           finishInstall();
         });
       }
-
       async function install() {
         if (isStandalone()) {
           markInstalled();
@@ -136,67 +239,76 @@
           setStatus('No iPhone, use Compartilhar → Adicionar à Tela de Início.');
           return false;
         }
-        if (deferredInstall) {
-          const promptEvent = deferredInstall;
-          deferredInstall = null;
-          await promptEvent.prompt();
-          const choice = await promptEvent.userChoice;
-          if (choice.outcome === 'accepted') {
-            finishInstall();
-            return true;
-          }
-          setStatus('Instalação cancelada. Você pode tentar novamente quando quiser.');
+        if (!syncPrompt()) {
+          setInteracted();
+          primary.disabled = true;
+          primary.textContent = 'Preparando…';
+          startReadinessTimer();
           return false;
         }
-        if (!installReady) {
-          setStatus(isMobile()
-            ? 'O Chrome ainda está preparando o instalador. Aguarde alguns segundos e toque novamente em Instalar aplicativo.'
-            : 'Abra este acesso no Chrome ou Edge para instalar o aplicativo.');
+
+        const promptEvent = deferredInstall;
+        deferredInstall = null;
+        window.__sraLuckDedicatedInstallPrompt = null;
+        installReady = false;
+        await promptEvent.prompt();
+        const choice = await promptEvent.userChoice;
+        if (choice.outcome === 'accepted') {
+          finishInstall();
+          return true;
         }
+        setStatus('Instalação cancelada. Você pode tentar novamente quando quiser.');
+        primary.disabled = false;
+        primary.textContent = 'Tentar novamente';
         return false;
       }
-
       async function primaryAction() {
         if (busy) return;
         busy = true;
-        primary.disabled = true;
-        primary.textContent = 'Preparando...';
         try {
+          setInteracted();
           await registerSW();
           await install();
         } catch (error) {
+          primary.disabled = false;
+          primary.textContent = 'Tentar novamente';
           setStatus(error && error.message ? error.message : 'Não foi possível concluir a instalação.', 'error');
         } finally {
-          if (!redirecting) {
-            busy = false;
-            primary.disabled = false;
-            primary.textContent = 'Instalar aplicativo';
+          busy = false;
+        }
+      }
+      async function init() {
+        if (await canonicalize()) return;
+        setupInstallEvents();
+
+        if (isStandalone()) {
+          markInstalled();
+          location.replace(returnUrl);
+          return;
+        }
+        if (isIOS()) {
+          iosSteps.classList.add('show');
+          setStatus('No iPhone, a instalação é feita pelo menu Compartilhar do Safari.');
+          primary.textContent = 'Ver como instalar';
+          return;
+        }
+
+        try {
+          await registerSW();
+          if (!syncPrompt()) {
+            setStatus('Service Worker pronto. Preparando o instalador do Chrome...');
+            startReadinessTimer();
           }
+        } catch (error) {
+          primary.disabled = false;
+          primary.textContent = 'Tentar novamente';
+          setStatus(error && error.message ? error.message : 'Não foi possível preparar o aplicativo.', 'error');
         }
       }
 
       primary.addEventListener('click', primaryAction);
       continueBtn.addEventListener('click', function () { location.replace(returnUrl); });
-      setupInstallEvents();
-
-      if (isStandalone()) {
-        markInstalled();
-        location.replace(returnUrl);
-        return;
-      }
-
-      if (isIOS()) {
-        iosSteps.classList.add('show');
-        setStatus('No iPhone, a instalação é feita pelo menu Compartilhar do Safari.');
-      } else {
-        registerSW()
-          .then(function () {
-            if (!installReady) setStatus('Service Worker pronto. Aguardando o Chrome liberar a instalação...');
-          })
-          .catch(function (error) {
-            setStatus(error && error.message ? error.message : 'Não foi possível preparar o aplicativo.', 'error');
-          });
-      }
+      init();
     })();
   </script>
 </body>

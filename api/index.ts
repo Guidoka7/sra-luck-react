@@ -11,6 +11,26 @@ function firstEnv(...names: string[]): string | undefined {
   return undefined;
 }
 
+function canonicalProductionOrigin(request: Request): string {
+  const explicit = firstEnv("PUBLIC_APP_URL", "NOTIFICACOES_APP_URL");
+  if (explicit) {
+    try {
+      const url = new URL(explicit.startsWith("http") ? explicit : `https://${explicit}`);
+      if (url.protocol === "https:") return url.origin;
+    } catch {}
+  }
+
+  const vercelProductionUrl = firstEnv("VERCEL_PROJECT_PRODUCTION_URL");
+  if (vercelProductionUrl) {
+    try {
+      const url = new URL(vercelProductionUrl.startsWith("http") ? vercelProductionUrl : `https://${vercelProductionUrl}`);
+      if (url.protocol === "https:") return url.origin;
+    } catch {}
+  }
+
+  return new URL(request.url).origin;
+}
+
 function buildEnv(request: Request): Env {
   return {
     SUPABASE_URL: firstEnv("SUPABASE_URL", "VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
@@ -47,5 +67,18 @@ function buildEnv(request: Request): Env {
 }
 
 export default async function handler(request: Request) {
+  const url = new URL(request.url);
+
+  if (request.method === "GET" && url.pathname === "/api/pwa/origin") {
+    return Response.json(
+      { origin: canonicalProductionOrigin(request) },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
+  }
+
   return worker.fetch(request, buildEnv(request));
 }

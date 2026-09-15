@@ -1,52 +1,26 @@
-const CACHE = 'sra-luck-pwa-v16';
-const SHELL = [
-  '/simulador-iphone.html',
-  '/brand/sra-luck-mark.png',
-  '/icons/sra-luck-192.png',
-  '/icons/sra-luck-512.png'
-];
+const CACHE_PREFIX = 'sra-luck-pwa-';
+const CACHE = 'sra-luck-pwa-v17';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
+// Mantém um fetch handler ativo para compatibilidade com critérios de PWA,
+// mas sem cachear a página/manifest e sem interferir nas APIs.
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) return;
-
-  // O manifest precisa refletir imediatamente o scope/start_url do deploy atual.
-  if (url.pathname === '/simulador-iphone.webmanifest') {
-    event.respondWith(fetch(event.request, { cache: 'no-store' }));
-    return;
-  }
-
-  if (
-    url.pathname === '/simulador-iphone.html' ||
-    url.pathname === '/brand/sra-luck-mark.png' ||
-    url.pathname === '/icons/sra-luck-192.png' ||
-    url.pathname === '/icons/sra-luck-512.png'
-  ) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-        return response;
-      }))
-    );
-  }
+  event.respondWith(fetch(event.request));
 });
 
 self.addEventListener('push', (event) => {
