@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { registrarErro } from "@/lib/monitoramento";
 
 /** Ativa os recursos PWA nas áreas React de cliente e colaboradores. */
 export function PwaRegister() {
@@ -32,11 +33,21 @@ export function PwaRegister() {
     navigator.serviceWorker
       .register("/simulador-iphone-sw.js", { scope: "/", updateViaCache: "none" })
       .then(async (registration) => {
-        try { await registration.update(); } catch {}
-        try { await navigator.serviceWorker.ready; } catch {}
+        try {
+          await registration.update();
+        } catch (error) {
+          registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao atualizar Service Worker", nivel: "warn", codigo: "PWA_SW_UPDATE_FAILED", action: "pwa.service_worker.update" });
+        }
+        try {
+          await navigator.serviceWorker.ready;
+        } catch (error) {
+          registrarErro({ mensagem: error instanceof Error ? error.message : "Service Worker não ficou pronto", nivel: "warn", codigo: "PWA_SW_READY_FAILED", action: "pwa.service_worker.ready" });
+        }
         avisar();
       })
-      .catch(() => {});
+      .catch((error) => {
+        registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao registrar Service Worker", nivel: "error", codigo: "PWA_SW_REGISTER_FAILED", action: "pwa.service_worker.register" });
+      });
 
     const onControllerChange = () => avisar();
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
