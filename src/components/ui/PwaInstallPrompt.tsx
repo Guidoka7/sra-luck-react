@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, Smartphone, X } from "lucide-react";
+import { Download, Loader2, MoreVertical, RefreshCw, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -97,6 +97,26 @@ export function PwaInstallPrompt() {
   const [visivel, setVisivel] = useState(false);
   const [instalando, setInstalando] = useState(false);
   const [ios, setIos] = useState(false);
+  const [mostrarPassos, setMostrarPassos] = useState(false);
+  const [swAtivo, setSwAtivo] = useState<boolean | null>(null);
+
+  function eventoAtual() {
+    return evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
+  }
+
+  async function atualizarDiagnostico() {
+    if (!("serviceWorker" in navigator)) {
+      setSwAtivo(false);
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/");
+      setSwAtivo(Boolean(registration?.active || registration?.waiting || registration?.installing));
+    } catch {
+      setSwAtivo(false);
+    }
+  }
 
   async function instalar() {
     if (isKnownInstalled()) {
@@ -106,27 +126,25 @@ export function PwaInstallPrompt() {
     }
 
     if (isIOS()) {
-      marcarModalComoVisto();
-      toast.info("No iPhone, toque em Compartilhar e depois em 'Adicionar à Tela de Início'.");
+      setMostrarPassos(true);
       return;
     }
 
-    const eventoAtual = evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
+    const installEvent = eventoAtual();
 
-    if (!eventoAtual) {
-      setVisivel(true);
-      toast.info(
-        "O Chrome ainda não liberou o instalador. Toque no menu ⋮ e escolha 'Instalar app' ou 'Adicionar à tela inicial'. Você também pode tentar novamente por Configurações.",
-      );
+    if (!installEvent) {
+      // Não existe API que permita forçar o instalador do Chrome sem o
+      // BeforeInstallPromptEvent. Mostramos o caminho nativo real do Android.
+      setMostrarPassos(true);
+      void atualizarDiagnostico();
       return;
     }
 
     setInstalando(true);
 
     try {
-      // prompt() precisa acontecer diretamente a partir do gesto do usuário.
-      await eventoAtual.prompt();
-      const escolha = await eventoAtual.userChoice;
+      await installEvent.prompt();
+      const escolha = await installEvent.userChoice;
 
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
       setEvento(null);
@@ -139,7 +157,8 @@ export function PwaInstallPrompt() {
         setVisivel(false);
       }
     } catch {
-      toast.error("O Chrome não conseguiu abrir o instalador. Tente novamente em Configurações.");
+      setMostrarPassos(true);
+      toast.error("O Chrome não abriu o instalador. Use o menu do navegador para concluir a instalação.");
     } finally {
       setInstalando(false);
     }
@@ -149,15 +168,19 @@ export function PwaInstallPrompt() {
     if (isKnownInstalled()) return;
 
     setIos(isIOS());
+    void atualizarDiagnostico();
 
-    // Exibe automaticamente somente no primeiro acesso da cliente ao app.
     if (!modalPrimeiroAcessoJaVisto()) {
       setVisivel(true);
     }
 
     const recuperar = () => {
       const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-      if (e) setEvento(e);
+      if (e) {
+        setEvento(e);
+        setMostrarPassos(false);
+      }
+      void atualizarDiagnostico();
     };
 
     const receber = (event: Event) => {
@@ -165,6 +188,7 @@ export function PwaInstallPrompt() {
       event.preventDefault();
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
       setEvento(e);
+      setMostrarPassos(false);
 
       if (!modalPrimeiroAcessoJaVisto() && !isKnownInstalled()) {
         setVisivel(true);
@@ -175,6 +199,7 @@ export function PwaInstallPrompt() {
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
       setEvento(null);
       setVisivel(false);
+      setMostrarPassos(false);
       prepararNotificacoesPosInstalacao(true);
       registrarInstalacao();
       toast.success("Aplicativo instalado. Agora ative as notificações.");
@@ -186,9 +211,9 @@ export function PwaInstallPrompt() {
         return;
       }
       setVisivel(true);
-      // O evento customizado é disparado sincronamente pelo clique em Configurações.
-      // Se o Chrome já forneceu beforeinstallprompt, prompt() preserva o gesto do usuário.
-      void instalar();
+      const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
+      if (!e) setMostrarPassos(true);
+      else void instalar();
     };
 
     window.addEventListener("beforeinstallprompt", receber);
@@ -214,9 +239,17 @@ export function PwaInstallPrompt() {
     setVisivel(false);
   }
 
+  function recarregarVerificacao() {
+    // Mantém o modal elegível para reaparecer depois do reload.
+    try {
+      localStorage.removeItem(FIRST_ACCESS_MODAL_KEY);
+    } catch {}
+    window.location.reload();
+  }
+
   if (!visivel || isKnownInstalled()) return null;
 
-  const prontoParaInstalar = Boolean(evento ?? (typeof window !== "undefined" ? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] : null));
+  const prontoParaInstalar = Boolean(eventoAtual());
 
   return (
     <div
@@ -248,18 +281,54 @@ export function PwaInstallPrompt() {
             Tenha acesso mais rápido à sua jornada, parcelas e avisos. Depois da instalação, vamos pedir sua autorização para receber notificações importantes.
           </p>
 
-          <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <span className={`h-2 w-2 rounded-full ${prontoParaInstalar ? "bg-[#3F7D5B]" : "bg-[#D19A54]"}`} />
-              <span className="text-[10.5px] font-medium text-[#5E4D49]">
-                {ios
-                  ? "No iPhone, a instalação é feita pelo menu Compartilhar."
-                  : prontoParaInstalar
-                    ? "O Chrome está pronto para instalar o aplicativo."
-                    : "O Chrome está preparando a opção de instalação."}
-              </span>
+          {!mostrarPassos ? (
+            <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className={`h-2 w-2 rounded-full ${prontoParaInstalar ? "bg-[#3F7D5B]" : "bg-[#D19A54]"}`} />
+                <span className="text-[10.5px] font-medium text-[#5E4D49]">
+                  {ios
+                    ? "No iPhone, a instalação é feita pelo menu Compartilhar."
+                    : prontoParaInstalar
+                      ? "O Chrome está pronto para instalar o aplicativo."
+                      : swAtivo === false
+                        ? "O navegador ainda está preparando os recursos do aplicativo."
+                        : "O Chrome ainda não liberou o instalador automático."}
+                </span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="mt-5 rounded-[18px] border border-[#E8D9D5] bg-[#FBF7F5] p-4">
+              <div className="flex items-center gap-2 text-[#6B1F2E]">
+                <MoreVertical className="h-4 w-4" />
+                <span className="text-[11px] font-semibold">Instalar pelo menu do navegador</span>
+              </div>
+              <ol className="mt-3 space-y-2.5 text-[10.5px] leading-[1.5] text-[#665652]">
+                {ios ? (
+                  <>
+                    <li><strong>1.</strong> Toque em <strong>Compartilhar</strong>.</li>
+                    <li><strong>2.</strong> Escolha <strong>Adicionar à Tela de Início</strong>.</li>
+                    <li><strong>3.</strong> Confirme em <strong>Adicionar</strong>.</li>
+                  </>
+                ) : (
+                  <>
+                    <li><strong>1.</strong> Toque nos <strong>três pontinhos ⋮</strong> no canto superior direito do Chrome.</li>
+                    <li><strong>2.</strong> Escolha <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>.</li>
+                    <li><strong>3.</strong> Confirme a instalação do <strong>Sra. Luck</strong>.</li>
+                  </>
+                )}
+              </ol>
+              {!ios && (
+                <button
+                  type="button"
+                  onClick={recarregarVerificacao}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#D9C6C1] bg-white px-3 py-2.5 text-[10px] font-semibold text-[#6B1F2E]"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Atualizar e verificar novamente
+                </button>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
@@ -267,8 +336,14 @@ export function PwaInstallPrompt() {
             disabled={instalando}
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#6B1F2E] px-4 py-[13px] text-[12px] font-semibold text-white shadow-[0_8px_20px_rgba(107,31,46,.18)] disabled:opacity-60"
           >
-            {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {instalando ? "Abrindo instalação..." : ios ? "Ver como instalar" : "Instalar aplicativo"}
+            {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : prontoParaInstalar ? <Download className="h-4 w-4" /> : <MoreVertical className="h-4 w-4" />}
+            {instalando
+              ? "Abrindo instalação..."
+              : ios
+                ? "Ver como instalar"
+                : prontoParaInstalar
+                  ? "Instalar aplicativo"
+                  : "Como instalar no Chrome"}
           </button>
 
           <button
