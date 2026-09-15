@@ -11,6 +11,8 @@ interface BeforeInstallPromptEvent extends Event {
 
 const GLOBAL_EVENT_KEY = "__sraLuckBeforeInstallPrompt";
 const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
+const INSTALLED_KEY = "sra-luck-pwa-installed-v1";
+const FIRST_ACCESS_MODAL_KEY = "sra-luck-pwa-install-modal-v1-seen";
 
 type WindowWithInstallEvent = Window & {
   [GLOBAL_EVENT_KEY]?: BeforeInstallPromptEvent | null;
@@ -33,8 +35,33 @@ function isIOS() {
   );
 }
 
+function isKnownInstalled() {
+  if (isStandalone()) return true;
+  try {
+    return localStorage.getItem(INSTALLED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function modalPrimeiroAcessoJaVisto() {
+  try {
+    return localStorage.getItem(FIRST_ACCESS_MODAL_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function marcarModalComoVisto() {
+  try {
+    localStorage.setItem(FIRST_ACCESS_MODAL_KEY, "true");
+  } catch {}
+}
+
 function prepararNotificacoesPosInstalacao(dispararEvento = false) {
   try {
+    localStorage.setItem(INSTALLED_KEY, "true");
+    localStorage.setItem(FIRST_ACCESS_MODAL_KEY, "true");
     localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
   } catch {}
 
@@ -55,7 +82,7 @@ function registrarInstalacao() {
         deviceKey,
         deviceType:
           window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
-        displayMode: "standalone",
+        displayMode: isStandalone() ? "standalone" : "browser",
         isPwaInstalled: true,
         notificationPermission: "Notification" in window ? Notification.permission : "default",
         pushActive: false,
@@ -70,28 +97,26 @@ export function PwaInstallPrompt() {
   const [visivel, setVisivel] = useState(false);
   const [instalando, setInstalando] = useState(false);
   const [ios, setIos] = useState(false);
-  const [preparando, setPreparando] = useState(false);
 
   async function instalar() {
+    if (isKnownInstalled()) {
+      setVisivel(false);
+      toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
+      return;
+    }
+
     if (isIOS()) {
+      marcarModalComoVisto();
       toast.info("No iPhone, toque em Compartilhar e depois em 'Adicionar à Tela de Início'.");
       return;
     }
 
-    let eventoAtual = evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
+    const eventoAtual = evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
 
     if (!eventoAtual) {
       setVisivel(true);
-      setPreparando(true);
-      window.dispatchEvent(new Event("sra-luck-pwa-ready"));
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      eventoAtual = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-    }
-
-    if (!eventoAtual) {
-      setPreparando(false);
       toast.info(
-        "O Chrome ainda está preparando a instalação. Use a página por alguns segundos e toque novamente em Instalar aplicativo. Se preferir, abra o menu ⋮ do Chrome e escolha Adicionar à tela inicial.",
+        "O Chrome ainda não liberou o instalador. Toque no menu ⋮ e escolha 'Instalar app' ou 'Adicionar à tela inicial'. Você também pode tentar novamente por Configurações.",
       );
       return;
     }
@@ -99,39 +124,40 @@ export function PwaInstallPrompt() {
     setInstalando(true);
 
     try {
+      // prompt() precisa acontecer diretamente a partir do gesto do usuário.
       await eventoAtual.prompt();
       const escolha = await eventoAtual.userChoice;
+
+      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
+      setEvento(null);
+      marcarModalComoVisto();
 
       if (escolha.outcome === "accepted") {
         prepararNotificacoesPosInstalacao(false);
         setVisivel(false);
+      } else {
+        setVisivel(false);
       }
-
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
-      setEvento(null);
     } catch {
-      toast.error(
-        "O navegador não conseguiu abrir a instalação. Tente novamente pelo botão Instalar aplicativo.",
-      );
+      toast.error("O Chrome não conseguiu abrir o instalador. Tente novamente em Configurações.");
     } finally {
       setInstalando(false);
-      setPreparando(false);
     }
   }
 
   useEffect(() => {
-    if (isStandalone()) return;
+    if (isKnownInstalled()) return;
 
     setIos(isIOS());
-    setVisivel(true);
+
+    // Exibe automaticamente somente no primeiro acesso da cliente ao app.
+    if (!modalPrimeiroAcessoJaVisto()) {
+      setVisivel(true);
+    }
 
     const recuperar = () => {
       const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-      if (e) {
-        setEvento(e);
-        setPreparando(false);
-      }
-      if (!isStandalone()) setVisivel(true);
+      if (e) setEvento(e);
     };
 
     const receber = (event: Event) => {
@@ -139,21 +165,29 @@ export function PwaInstallPrompt() {
       event.preventDefault();
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
       setEvento(e);
-      setPreparando(false);
-      setVisivel(true);
+
+      if (!modalPrimeiroAcessoJaVisto() && !isKnownInstalled()) {
+        setVisivel(true);
+      }
     };
 
     const instalado = () => {
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
       setEvento(null);
       setVisivel(false);
-      setPreparando(false);
       prepararNotificacoesPosInstalacao(true);
       registrarInstalacao();
       toast.success("Aplicativo instalado. Agora ative as notificações.");
     };
 
     const solicitarInstalacao = () => {
+      if (isKnownInstalled()) {
+        toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
+        return;
+      }
+      setVisivel(true);
+      // O evento customizado é disparado sincronamente pelo clique em Configurações.
+      // Se o Chrome já forneceu beforeinstallprompt, prompt() preserva o gesto do usuário.
       void instalar();
     };
 
@@ -165,10 +199,7 @@ export function PwaInstallPrompt() {
     document.addEventListener("visibilitychange", recuperar);
     recuperar();
 
-    const interval = window.setInterval(recuperar, 1000);
-
     return () => {
-      window.clearInterval(interval);
       window.removeEventListener("beforeinstallprompt", receber);
       window.removeEventListener("sra-luck-pwa-ready", recuperar);
       window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
@@ -179,63 +210,75 @@ export function PwaInstallPrompt() {
   }, []);
 
   function dispensar() {
+    marcarModalComoVisto();
     setVisivel(false);
   }
 
-  if (!visivel || isStandalone()) return null;
+  if (!visivel || isKnownInstalled()) return null;
+
+  const prontoParaInstalar = Boolean(evento ?? (typeof window !== "undefined" ? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] : null));
 
   return (
-    <div className="mb-4 rounded-2xl border border-burgundy/10 bg-white/95 p-4 shadow-card backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.055]">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blush text-burgundy dark:bg-white/10 dark:text-[#F4D9DC]">
-          <Smartphone className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-burgundy dark:text-pearl">Instale o aplicativo Sra. Luck</p>
-          <p className="mt-0.5 text-xs leading-relaxed text-clay/60 dark:text-pearl/55">
-            {ios
-              ? "No iPhone, use Compartilhar → Adicionar à Tela de Início para abrir como aplicativo."
-              : evento
-                ? "O aplicativo está pronto para ser instalado neste celular."
-                : "Deixe esta tela aberta por alguns segundos. Assim que o Chrome liberar a instalação, toque no botão abaixo."}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={instalar}
-              disabled={instalando || preparando}
-              className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-3.5 py-2 text-xs font-semibold text-pearl disabled:opacity-60"
-            >
-              {instalando || preparando ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-              {ios
-                ? "Como instalar"
-                : instalando
-                  ? "Abrindo instalação..."
-                  : preparando
-                    ? "Verificando..."
-                    : "Instalar aplicativo"}
-            </button>
-            <button
-              type="button"
-              onClick={dispensar}
-              className="inline-flex items-center gap-2 rounded-xl border border-burgundy/10 px-3.5 py-2 text-xs font-semibold text-burgundy dark:border-white/10 dark:text-pearl"
-            >
-              Agora não
-            </button>
+    <div
+      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/45 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6 backdrop-blur-[2px] sm:items-center sm:py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pwa-install-title"
+    >
+      <div className="w-full max-w-[420px] overflow-hidden rounded-[28px] border border-white/70 bg-[#FFFDFC] shadow-[0_24px_70px_rgba(38,25,23,.28)]">
+        <div className="relative px-5 pb-5 pt-6 sm:px-6 sm:pb-6">
+          <button
+            type="button"
+            aria-label="Fechar convite de instalação"
+            onClick={dispensar}
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#F6EFED] text-[#8A7772] transition-colors hover:bg-[#EFE3E0]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+
+          <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#F7E9E8] text-[#6B1F2E]">
+            <Smartphone className="h-7 w-7" />
           </div>
+
+          <p className="mt-5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#B86575]">Seu aplicativo Sra. Luck</p>
+          <h2 id="pwa-install-title" className="mt-1 font-heading text-[27px] font-semibold leading-[1.08] text-[#2E2422]">
+            Instale na tela inicial
+          </h2>
+          <p className="mt-3 text-[12px] font-light leading-[1.6] text-[#756561]">
+            Tenha acesso mais rápido à sua jornada, parcelas e avisos. Depois da instalação, vamos pedir sua autorização para receber notificações importantes.
+          </p>
+
+          <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className={`h-2 w-2 rounded-full ${prontoParaInstalar ? "bg-[#3F7D5B]" : "bg-[#D19A54]"}`} />
+              <span className="text-[10.5px] font-medium text-[#5E4D49]">
+                {ios
+                  ? "No iPhone, a instalação é feita pelo menu Compartilhar."
+                  : prontoParaInstalar
+                    ? "O Chrome está pronto para instalar o aplicativo."
+                    : "O Chrome está preparando a opção de instalação."}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={instalar}
+            disabled={instalando}
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#6B1F2E] px-4 py-[13px] text-[12px] font-semibold text-white shadow-[0_8px_20px_rgba(107,31,46,.18)] disabled:opacity-60"
+          >
+            {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {instalando ? "Abrindo instalação..." : ios ? "Ver como instalar" : "Instalar aplicativo"}
+          </button>
+
+          <button
+            type="button"
+            onClick={dispensar}
+            className="mt-2.5 w-full rounded-[13px] px-4 py-3 text-[11px] font-medium text-[#8A7772]"
+          >
+            Agora não
+          </button>
         </div>
-        <button
-          type="button"
-          aria-label="Não instalar agora"
-          onClick={dispensar}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-clay/40 hover:bg-blush dark:hover:bg-white/10"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
     </div>
   );
