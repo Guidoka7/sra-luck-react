@@ -16,10 +16,28 @@ function json(data: unknown, status = 200) {
  * guarda metas orçamentárias e outros dados internos do admin. O cartão de
  * crédito é tratado à parte, via Mercado Pago (worker/integrations-core.ts),
  * e não passa por esta config.
+ *
+ * A rota pública existe apenas para permitir que a tela de login abra o
+ * WhatsApp oficial configurado no sistema antes de existir uma sessão.
  */
 export async function clientConfigApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
-  if (url.pathname !== "/api/cliente/config" || request.method !== "GET") return null;
+  if (request.method !== "GET") return null;
+
+  if (url.pathname === "/api/cliente/config-publica") {
+    const db = createServiceSupabaseClient(env);
+    const { data, error } = await db
+      .from("configuracoes")
+      .select("whatsapp_contato")
+      .maybeSingle();
+    if (error) return json({ erro: error.message }, 500);
+
+    return json({
+      whatsappContato: data?.whatsapp_contato || null,
+    });
+  }
+
+  if (url.pathname !== "/api/cliente/config") return null;
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
 
   const sessao = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
