@@ -22,6 +22,8 @@
       window.addEventListener("appinstalled", function () {
         window.__sraLuckBeforeInstallPrompt = null;
         try {
+          localStorage.setItem("sra-luck-pwa-installed-v1", "true");
+          localStorage.setItem("sra-luck-pwa-install-modal-v1-seen", "true");
           localStorage.setItem("sra-luck-push-after-install", "pending");
         } catch (_) {}
         window.dispatchEvent(new Event("sra-luck-pwa-installed"));
