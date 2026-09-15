@@ -17,14 +17,17 @@
   credenciais cifradas via painel de Integrações, taxa por cliente em
   `clientes.financeiro_taxa_cartao`). O redesign **não introduz um sistema de
   cartão paralelo** — o botão "Cartão" em `TabBoletos.tsx` já chama esse fluxo.
-- **Clube de Vantagens**: o backend (`worker/credit-ops.ts` + migration_022)
-  já existia, mas nunca foi exposto na experiência real da cliente. Esta
-  entrega conecta a UI nova a esse backend, endurecendo-o com resgate atômico
-  (RPC `clube_resgatar`) e o bônus idempotente da 1ª parcela
-  (`clube_conceder_bonus_primeira_parcela`, chamado de dentro de
-  `financeiro_baixar_boleto`/`financeiro_validar_comprovante`). **A
-  administração do Clube (`/admin/clube`) fica fora desta entrega** — módulo
-  com especificação própria a definir depois.
+- **Clube de Vantagens**: a antiga `migration_022_operacao_credito_ecossistema.sql`
+  continha as estruturas do Clube junto de um subsistema maior de crédito/agenda,
+  mas ela não consta no histórico aplicado do projeto real. Para não habilitar
+  aquele subsistema paralelo, esta entrega usa a `migration_048_clube_endurecimento.sql`,
+  que provisiona somente o subconjunto necessário ao Clube, com acesso direto
+  bloqueado para `anon`/`authenticated`, resgate atômico via RPC `clube_resgatar`
+  e bônus idempotente da primeira parcela. O bônus/notificação é acionado por um
+  trigger específico de mudança de status em `boletos`, sem substituir as RPCs
+  financeiras existentes e sem interferir no Mercado Pago. **A administração do
+  Clube (`/admin/clube`) fica fora desta entrega** — módulo com especificação
+  própria a definir depois.
 
 ## Matriz tela → dado → fonte → ação do painel
 
@@ -43,7 +46,7 @@
 | Clube — histórico | `cliente_pontos_eventos` | idem | idem | resgates/bônus geram evento | idem |
 | Clube — indicações | status da indicação | `indicacoes_clientes` | `POST /api/cliente/credit-ops/referrals` | — (confirmação fica para o módulo admin) | ao abrir a tela |
 | Clube — prêmios/resgate | catálogo, custo, disponibilidade | `clube_recompensas` | `GET .../club`, `POST /api/cliente/credit-ops/redeem` (atômico via RPC `clube_resgatar`) | — (catálogo hoje só via `POST /api/admin/credit-ops/rewards`, já existente) | ao abrir a tela |
-| Clube — voucher 1ª parcela | benefício concedido 1x | `clube_beneficios_cliente` (**novo**) | concedido dentro de `financeiro_baixar_boleto`/`financeiro_validar_comprovante` quando `numero_parcela = 1` | regra fixa (`clube_config`) | evento de pagamento |
+| Clube — voucher 1ª parcela | benefício concedido 1x | `clube_beneficios_cliente` | trigger `trg_clube_notificar_boleto_status` → `clube_conceder_bonus_primeira_parcela` quando a parcela 1 passa para `pago` | regra fixa (`clube_config`) | evento de pagamento |
 | Configurações/Mais | menu simplificado | estático + sessão | `POST /api/cliente/logout` | — | — |
 
 ## Pendências / fora de escopo desta entrega
