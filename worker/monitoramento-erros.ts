@@ -52,6 +52,14 @@ export async function monitoramentoErros(request: Request, env: Env) {
   const url = new URL(request.url);
   const log = requestLogger(request);
 
+  // Compatibilidade para PWAs/bundles antigos ainda em cache. O domínio novo de
+  // journey depende de tabelas que não fazem parte do schema de produção atual.
+  // Responder 200 com contrato nulo faz o cliente antigo cair no fluxo legado
+  // já existente sem gerar 500/404 no monitoramento.
+  if (url.pathname === "/api/cliente/journey" && request.method === "GET") {
+    return json({ contrato: null, legado: true });
+  }
+
   if (url.pathname === "/api/cliente/app-telemetry" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
 
