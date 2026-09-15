@@ -1,7 +1,6 @@
-const CACHE = 'sra-luck-pwa-v15';
+const CACHE = 'sra-luck-pwa-v16';
 const SHELL = [
   '/simulador-iphone.html',
-  '/simulador-iphone.webmanifest',
   '/brand/sra-luck-mark.png',
   '/icons/sra-luck-192.png',
   '/icons/sra-luck-512.png'
@@ -28,9 +27,14 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) return;
 
+  // O manifest precisa refletir imediatamente o scope/start_url do deploy atual.
+  if (url.pathname === '/simulador-iphone.webmanifest') {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
+
   if (
     url.pathname === '/simulador-iphone.html' ||
-    url.pathname === '/simulador-iphone.webmanifest' ||
     url.pathname === '/brand/sra-luck-mark.png' ||
     url.pathname === '/icons/sra-luck-192.png' ||
     url.pathname === '/icons/sra-luck-512.png'
