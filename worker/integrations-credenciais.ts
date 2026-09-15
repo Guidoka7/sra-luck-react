@@ -70,7 +70,6 @@ async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClien
 export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
   const campo = campoDoProvedor(provedor, chave);
   const doAmbiente = campo ? (env[campo.envVar] as string | undefined) || null : null;
-  // Credenciais persistidas exigem uma chave dedicada; segredo de sessão não é reutilizado como chave criptográfica.
   if (!env.INTEGRATION_ENCRYPTION_KEY) return doAmbiente;
   try {
     const db = createServiceSupabaseClient(env);
@@ -102,7 +101,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     const disponivel = await tabelaDisponivel(db);
     const { data: linhas } = disponivel ? await db.from("integracoes_credenciais").select("provedor,chave,valor_mascarado,ativo,atualizado_em").eq("ativo", true) : { data: [] as { provedor: string; chave: string; valor_mascarado: string; ativo: boolean; atualizado_em: string }[] };
     const salvos = new Map((linhas ?? []).map((linha) => [`${linha.provedor}:${linha.chave}`, linha]));
-    const provedores = Object.entries(CATALOGO_PROVEDORES).map(([id, config]) => ({ id, nome: config.nome, grupo: config.grupo, campos: config.campos.map((campo) => {
+    const provedores = Object.entries(CATALOGO_PROVEDORES).map(([id, config]) => ({ id, nome: config.nome, grupo: config.grupo, campos: config.campos.map((campo: CampoCredencial) => {
       const salvo = salvos.get(`${id}:${campo.chave}`); const noAmbiente = Boolean(env[campo.envVar as keyof Env]);
       return { chave: campo.chave, label: campo.label, obrigatorio: campo.obrigatorio, origem: salvo ? "painel" : noAmbiente ? "variavel_de_ambiente" : "nao_configurado", mascara: salvo?.valor_mascarado ?? null, atualizadoEm: salvo?.atualizado_em ?? null };
     }) }));
