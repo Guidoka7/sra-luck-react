@@ -1,1 +1,1 @@
-// safety
+// checkpoint only
