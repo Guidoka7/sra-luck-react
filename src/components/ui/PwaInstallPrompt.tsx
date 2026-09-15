@@ -1,22 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, MoreVertical, RefreshCw, Smartphone, X } from "lucide-react";
+import { Download, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
-const GLOBAL_EVENT_KEY = "__sraLuckBeforeInstallPrompt";
-const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
 const INSTALLED_KEY = "sra-luck-pwa-installed-v1";
-const FIRST_ACCESS_MODAL_KEY = "sra-luck-pwa-install-modal-v1-seen";
-
-type WindowWithInstallEvent = Window & {
-  [GLOBAL_EVENT_KEY]?: BeforeInstallPromptEvent | null;
-};
+const FIRST_ACCESS_MODAL_KEY = "sra-luck-pwa-install-modal-v2-seen";
 
 function isStandalone() {
   return (
@@ -24,14 +13,6 @@ function isStandalone() {
     (window.matchMedia?.("(display-mode: standalone)").matches ||
       ("standalone" in navigator &&
         Boolean((navigator as Navigator & { standalone?: boolean }).standalone)))
-  );
-}
-
-function isIOS() {
-  return (
-    typeof navigator !== "undefined" &&
-    (/iphone|ipad|ipod/i.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
   );
 }
 
@@ -58,151 +39,29 @@ function marcarModalComoVisto() {
   } catch {}
 }
 
-function prepararNotificacoesPosInstalacao(dispararEvento = false) {
+function abrirInstaladorDedicado() {
+  marcarModalComoVisto();
   try {
-    localStorage.setItem(INSTALLED_KEY, "true");
-    localStorage.setItem(FIRST_ACCESS_MODAL_KEY, "true");
-    localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
+    sessionStorage.setItem("sra-luck-install-return", "/agenda");
   } catch {}
-
-  if (dispararEvento) {
-    window.dispatchEvent(new Event("sra-luck-pwa-installed"));
-  }
-}
-
-function registrarInstalacao() {
-  try {
-    const deviceKey = localStorage.getItem("sra-luck-device-key");
-    if (!deviceKey) return;
-
-    void fetch("/api/cliente/app-telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        deviceKey,
-        deviceType:
-          window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
-        displayMode: isStandalone() ? "standalone" : "browser",
-        isPwaInstalled: true,
-        notificationPermission: "Notification" in window ? Notification.permission : "default",
-        pushActive: false,
-      }),
-      keepalive: true,
-    });
-  } catch {}
+  window.location.assign("/simulador-iphone.html?return=%2Fagenda");
 }
 
 export function PwaInstallPrompt() {
-  const [evento, setEvento] = useState<BeforeInstallPromptEvent | null>(null);
   const [visivel, setVisivel] = useState(false);
-  const [instalando, setInstalando] = useState(false);
-  const [ios, setIos] = useState(false);
-  const [mostrarPassos, setMostrarPassos] = useState(false);
-  const [swAtivo, setSwAtivo] = useState<boolean | null>(null);
-
-  function eventoAtual() {
-    return evento ?? (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-  }
-
-  async function atualizarDiagnostico() {
-    if (!("serviceWorker" in navigator)) {
-      setSwAtivo(false);
-      return;
-    }
-
-    try {
-      const registration = await navigator.serviceWorker.getRegistration("/");
-      setSwAtivo(Boolean(registration?.active || registration?.waiting || registration?.installing));
-    } catch {
-      setSwAtivo(false);
-    }
-  }
-
-  async function instalar() {
-    if (isKnownInstalled()) {
-      setVisivel(false);
-      toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
-      return;
-    }
-
-    if (isIOS()) {
-      setMostrarPassos(true);
-      return;
-    }
-
-    const installEvent = eventoAtual();
-
-    if (!installEvent) {
-      // Não existe API que permita forçar o instalador do Chrome sem o
-      // BeforeInstallPromptEvent. Mostramos o caminho nativo real do Android.
-      setMostrarPassos(true);
-      void atualizarDiagnostico();
-      return;
-    }
-
-    setInstalando(true);
-
-    try {
-      await installEvent.prompt();
-      const escolha = await installEvent.userChoice;
-
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
-      setEvento(null);
-      marcarModalComoVisto();
-
-      if (escolha.outcome === "accepted") {
-        prepararNotificacoesPosInstalacao(false);
-        setVisivel(false);
-      } else {
-        setVisivel(false);
-      }
-    } catch {
-      setMostrarPassos(true);
-      toast.error("O Chrome não abriu o instalador. Use o menu do navegador para concluir a instalação.");
-    } finally {
-      setInstalando(false);
-    }
-  }
 
   useEffect(() => {
     if (isKnownInstalled()) return;
-
-    setIos(isIOS());
-    void atualizarDiagnostico();
 
     if (!modalPrimeiroAcessoJaVisto()) {
       setVisivel(true);
     }
 
-    const recuperar = () => {
-      const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-      if (e) {
-        setEvento(e);
-        setMostrarPassos(false);
-      }
-      void atualizarDiagnostico();
-    };
-
-    const receber = (event: Event) => {
-      const e = event as BeforeInstallPromptEvent;
-      event.preventDefault();
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
-      setEvento(e);
-      setMostrarPassos(false);
-
-      if (!modalPrimeiroAcessoJaVisto() && !isKnownInstalled()) {
-        setVisivel(true);
-      }
-    };
-
     const instalado = () => {
-      (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = null;
-      setEvento(null);
+      try {
+        localStorage.setItem(INSTALLED_KEY, "true");
+      } catch {}
       setVisivel(false);
-      setMostrarPassos(false);
-      prepararNotificacoesPosInstalacao(true);
-      registrarInstalacao();
-      toast.success("Aplicativo instalado. Agora ative as notificações.");
     };
 
     const solicitarInstalacao = () => {
@@ -210,46 +69,35 @@ export function PwaInstallPrompt() {
         toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
         return;
       }
-      setVisivel(true);
-      const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
-      if (!e) setMostrarPassos(true);
-      else void instalar();
+      abrirInstaladorDedicado();
     };
 
-    window.addEventListener("beforeinstallprompt", receber);
-    window.addEventListener("sra-luck-pwa-ready", recuperar);
-    window.addEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
     window.addEventListener("appinstalled", instalado);
-    window.addEventListener("pageshow", recuperar);
-    document.addEventListener("visibilitychange", recuperar);
-    recuperar();
+    window.addEventListener("sra-luck-pwa-installed", instalado);
+    window.addEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", receber);
-      window.removeEventListener("sra-luck-pwa-ready", recuperar);
-      window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
       window.removeEventListener("appinstalled", instalado);
-      window.removeEventListener("pageshow", recuperar);
-      document.removeEventListener("visibilitychange", recuperar);
+      window.removeEventListener("sra-luck-pwa-installed", instalado);
+      window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
     };
   }, []);
+
+  function instalar() {
+    if (isKnownInstalled()) {
+      setVisivel(false);
+      toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
+      return;
+    }
+    abrirInstaladorDedicado();
+  }
 
   function dispensar() {
     marcarModalComoVisto();
     setVisivel(false);
   }
 
-  function recarregarVerificacao() {
-    // Mantém o modal elegível para reaparecer depois do reload.
-    try {
-      localStorage.removeItem(FIRST_ACCESS_MODAL_KEY);
-    } catch {}
-    window.location.reload();
-  }
-
   if (!visivel || isKnownInstalled()) return null;
-
-  const prontoParaInstalar = Boolean(eventoAtual());
 
   return (
     <div
@@ -281,69 +129,22 @@ export function PwaInstallPrompt() {
             Tenha acesso mais rápido à sua jornada, parcelas e avisos. Depois da instalação, vamos pedir sua autorização para receber notificações importantes.
           </p>
 
-          {!mostrarPassos ? (
-            <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className={`h-2 w-2 rounded-full ${prontoParaInstalar ? "bg-[#3F7D5B]" : "bg-[#D19A54]"}`} />
-                <span className="text-[10.5px] font-medium text-[#5E4D49]">
-                  {ios
-                    ? "No iPhone, a instalação é feita pelo menu Compartilhar."
-                    : prontoParaInstalar
-                      ? "O Chrome está pronto para instalar o aplicativo."
-                      : swAtivo === false
-                        ? "O navegador ainda está preparando os recursos do aplicativo."
-                        : "O Chrome ainda não liberou o instalador automático."}
-                </span>
-              </div>
+          <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2 w-2 rounded-full bg-[#3F7D5B]" />
+              <span className="text-[10.5px] font-medium text-[#5E4D49]">
+                Vamos abrir o instalador dedicado do Sra. Luck.
+              </span>
             </div>
-          ) : (
-            <div className="mt-5 rounded-[18px] border border-[#E8D9D5] bg-[#FBF7F5] p-4">
-              <div className="flex items-center gap-2 text-[#6B1F2E]">
-                <MoreVertical className="h-4 w-4" />
-                <span className="text-[11px] font-semibold">Instalar pelo menu do navegador</span>
-              </div>
-              <ol className="mt-3 space-y-2.5 text-[10.5px] leading-[1.5] text-[#665652]">
-                {ios ? (
-                  <>
-                    <li><strong>1.</strong> Toque em <strong>Compartilhar</strong>.</li>
-                    <li><strong>2.</strong> Escolha <strong>Adicionar à Tela de Início</strong>.</li>
-                    <li><strong>3.</strong> Confirme em <strong>Adicionar</strong>.</li>
-                  </>
-                ) : (
-                  <>
-                    <li><strong>1.</strong> Toque nos <strong>três pontinhos ⋮</strong> no canto superior direito do Chrome.</li>
-                    <li><strong>2.</strong> Escolha <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>.</li>
-                    <li><strong>3.</strong> Confirme a instalação do <strong>Sra. Luck</strong>.</li>
-                  </>
-                )}
-              </ol>
-              {!ios && (
-                <button
-                  type="button"
-                  onClick={recarregarVerificacao}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[11px] border border-[#D9C6C1] bg-white px-3 py-2.5 text-[10px] font-semibold text-[#6B1F2E]"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Atualizar e verificar novamente
-                </button>
-              )}
-            </div>
-          )}
+          </div>
 
           <button
             type="button"
             onClick={instalar}
-            disabled={instalando}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#6B1F2E] px-4 py-[13px] text-[12px] font-semibold text-white shadow-[0_8px_20px_rgba(107,31,46,.18)] disabled:opacity-60"
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#6B1F2E] px-4 py-[13px] text-[12px] font-semibold text-white shadow-[0_8px_20px_rgba(107,31,46,.18)]"
           >
-            {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : prontoParaInstalar ? <Download className="h-4 w-4" /> : <MoreVertical className="h-4 w-4" />}
-            {instalando
-              ? "Abrindo instalação..."
-              : ios
-                ? "Ver como instalar"
-                : prontoParaInstalar
-                  ? "Instalar aplicativo"
-                  : "Como instalar no Chrome"}
+            <Download className="h-4 w-4" />
+            Instalar aplicativo
           </button>
 
           <button

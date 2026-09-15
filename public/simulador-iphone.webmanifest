@@ -5,7 +5,7 @@
   "description": "Aplicativo da Sra. Luck para clientes.",
   "lang": "pt-BR",
   "start_url": "/agenda",
-  "scope": "/",
+  "scope": "/agenda",
   "display": "standalone",
   "display_override": ["standalone"],
   "orientation": "portrait",
