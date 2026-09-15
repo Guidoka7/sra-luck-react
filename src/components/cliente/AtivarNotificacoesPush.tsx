@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 const DISMISS_KEY = "sra-luck-push-prompt-dismissed-date";
 const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
-const INSTALLED_KEY = "sra-luck-pwa-installed-v1";
+const INSTALLED_KEY = "sra-luck-pwa-installed-v2";
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
@@ -41,6 +41,13 @@ function isStandalone() {
       ("standalone" in navigator &&
         Boolean((navigator as Navigator & { standalone?: boolean }).standalone)))
   );
+}
+
+function marcarInstaladoSeStandalone() {
+  if (!isStandalone()) return;
+  try {
+    localStorage.setItem(INSTALLED_KEY, "true");
+  } catch {}
 }
 
 function isKnownInstalled() {
@@ -128,7 +135,6 @@ export function AtivarNotificacoesPush() {
     try {
       let permission = Notification.permission;
       if (permission === "default") {
-        // requestPermission() acontece diretamente a partir do clique da cliente.
         permission = await Notification.requestPermission();
       }
 
@@ -187,6 +193,7 @@ export function AtivarNotificacoesPush() {
       return;
     }
 
+    marcarInstaladoSeStandalone();
     let cancelado = false;
 
     async function sincronizarAssinaturaPendente() {
@@ -220,7 +227,11 @@ export function AtivarNotificacoesPush() {
     }
 
     async function verificarAssinatura() {
-      if (!fluxoDeNotificacoesDisponivel()) return;
+      marcarInstaladoSeStandalone();
+      if (!fluxoDeNotificacoesDisponivel()) {
+        if (!cancelado) setVisivel(false);
+        return;
+      }
       if (await sincronizarAssinaturaPendente()) return;
 
       if (Notification.permission === "granted") {
@@ -238,7 +249,6 @@ export function AtivarNotificacoesPush() {
       }
 
       await atualizarTelemetria(false);
-
       if (cancelado) return;
 
       if (Notification.permission === "denied") {
@@ -254,6 +264,7 @@ export function AtivarNotificacoesPush() {
     const iniciarAposInstalacao = () => {
       try {
         localStorage.setItem(INSTALLED_KEY, "true");
+        localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
       } catch {}
       setVisivel(true);
       void verificarAssinatura();
@@ -272,7 +283,7 @@ export function AtivarNotificacoesPush() {
 
     window.addEventListener("sra-luck-pwa-installed", iniciarAposInstalacao);
     window.addEventListener("sra-luck-push-request", solicitarNotificacoes);
-    window.addEventListener("pageshow", iniciarAposInstalacao);
+    window.addEventListener("pageshow", verificarAoRetomar);
     document.addEventListener("visibilitychange", verificarAoRetomar);
 
     void verificarAssinatura();
@@ -281,7 +292,7 @@ export function AtivarNotificacoesPush() {
       cancelado = true;
       window.removeEventListener("sra-luck-pwa-installed", iniciarAposInstalacao);
       window.removeEventListener("sra-luck-push-request", solicitarNotificacoes);
-      window.removeEventListener("pageshow", iniciarAposInstalacao);
+      window.removeEventListener("pageshow", verificarAoRetomar);
       document.removeEventListener("visibilitychange", verificarAoRetomar);
     };
   }, []);
