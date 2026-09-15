@@ -23,10 +23,14 @@ export interface ColaboradorAdmin {
 }
 
 export const PERMISSOES_ADMIN = {
+  CLIENTES_EDITAR: "clientes.editar",
   CLIENTES_ALTERAR_STATUS_CONTRATO: "clientes.alterar_status_contrato",
   CLIENTES_EXCLUIR: "clientes.excluir",
+  FINANCEIRO_GERENCIAR_PLANO: "financeiro.gerenciar_plano",
   FINANCEIRO_BAIXA_MANUAL: "financeiro.baixa_manual",
   FINANCEIRO_VALIDAR_COMPROVANTE: "financeiro.validar_comprovante",
+  AGENDA_GERENCIAR: "agenda.gerenciar",
+  CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
   INTEGRACOES_GERENCIAR_CREDENCIAIS: "integracoes.gerenciar_credenciais",
   EQUIPE_GERENCIAR: "equipe.gerenciar",
   RELATORIOS_EXPORTAR: "relatorios.exportar",
