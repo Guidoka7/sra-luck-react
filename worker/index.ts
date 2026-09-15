@@ -22,7 +22,16 @@ import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
 import { adminCarnes } from "./admin-carnes";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
-import { applyApiSecurityHeaders, enforceClientAccountState, enforceMutationOrigin, hmacFingerprint, verifyTurnstile } from "./security";
+import {
+  applyApiSecurityHeaders,
+  enforceClientAccountState,
+  enforceJsonBodySize,
+  enforceMutationOrigin,
+  enforceMutationRateLimit,
+  hmacFingerprint,
+  sanitizeApiErrorResponse,
+  verifyTurnstile,
+} from "./security";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -201,8 +210,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const secure = url.protocol === "https:";
 
+  const bodyLimit = enforceJsonBodySize(request);
+  if (bodyLimit) return bodyLimit;
   const csrf = enforceMutationOrigin(request, env);
   if (csrf) return csrf;
+  const mutationLimit = await enforceMutationRateLimit(request, env);
+  if (mutationLimit) return mutationLimit;
 
   if (url.pathname === "/api/health" && request.method === "GET") return json({ status: "ok" });
   if (url.pathname === "/api/ready" && request.method === "GET") {
@@ -260,8 +273,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const staff = await staffApi(request, env); if (staff) return staff;
   const creditOps = await creditOpsApi(request, env); if (creditOps) return creditOps;
 
-  // Subsistema antigo removido do runtime: dependia de contratos_credito/agenda_janelas inexistentes
-  // e duplicava o fluxo canônico de clientes + boletos + agendamentos.
   if (url.pathname.startsWith("/api/admin/journey/") || url.pathname === "/api/cliente/journey" || url.pathname.startsWith("/api/cliente/journey/")) {
     return json({ erro: "Fluxo legado desativado. Use a jornada atual." }, 410);
   }
@@ -304,7 +315,8 @@ export default {
     const inicio = Date.now();
     try {
       const rawResponse = await handleRequest(request, env);
-      const response = applyApiSecurityHeaders(withRequestId(rawResponse, requestId), request);
+      const sanitizedResponse = await sanitizeApiErrorResponse(rawResponse, request);
+      const response = applyApiSecurityHeaders(withRequestId(sanitizedResponse, requestId), request);
       const durationMs = Date.now() - inicio;
       const context = { action: "http.request", statusCode: response.status, durationMs };
       if (response.status >= 500) log.error("Requisição concluída com falha de servidor", { ...context, eventCode: "HTTP_5XX" });
