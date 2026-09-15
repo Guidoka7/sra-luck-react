@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 const DISMISS_KEY = "sra-luck-push-prompt-dismissed-date";
 const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
+const INSTALLED_KEY = "sra-luck-pwa-installed-v1";
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
@@ -42,8 +43,17 @@ function isStandalone() {
   );
 }
 
+function isKnownInstalled() {
+  if (isStandalone()) return true;
+  try {
+    return localStorage.getItem(INSTALLED_KEY) === "true" || temSolicitacaoPosInstalacao();
+  } catch {
+    return temSolicitacaoPosInstalacao();
+  }
+}
+
 function fluxoDeNotificacoesDisponivel() {
-  return isStandalone() || temSolicitacaoPosInstalacao();
+  return isKnownInstalled();
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -74,7 +84,7 @@ async function atualizarTelemetria(pushActive: boolean) {
         deviceType:
           window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
         displayMode: isStandalone() ? "standalone" : "browser",
-        isPwaInstalled: isStandalone() || temSolicitacaoPosInstalacao(),
+        isPwaInstalled: isKnownInstalled(),
         notificationPermission: Notification.permission,
         pushActive,
       }),
@@ -92,50 +102,58 @@ export function AtivarNotificacoesPush() {
   async function ativar() {
     if (!fluxoDeNotificacoesDisponivel()) {
       toast.info("Instale o aplicativo antes de ativar as notificações.");
+      window.dispatchEvent(new Event("sra-luck-pwa-install-request"));
+      return;
+    }
+
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      toast.error("Este navegador não oferece suporte às notificações do aplicativo.");
       return;
     }
 
     if (!window.isSecureContext) {
-      toast.error("Para receber notificações, abra o aplicativo em um contexto seguro.");
+      toast.error("Para receber notificações, abra o aplicativo em uma conexão segura.");
       return;
     }
 
     if (Notification.permission === "denied") {
       setBloqueado(true);
       setVisivel(true);
-      toast.error(
-        "O aplicativo não tem permissão para enviar notificações. Permita as notificações nas configurações do celular.",
-      );
+      toast.error("As notificações estão bloqueadas nas configurações do celular/navegador.");
       return;
     }
 
     setAtivando(true);
 
     try {
-      const permission = await Notification.requestPermission();
+      let permission = Notification.permission;
+      if (permission === "default") {
+        // requestPermission() acontece diretamente a partir do clique da cliente.
+        permission = await Notification.requestPermission();
+      }
 
       if (permission !== "granted") {
         await atualizarTelemetria(false);
         setBloqueado(permission === "denied");
         setVisivel(true);
-
-        if (permission === "denied") {
-          toast.error(
-            "As notificações foram bloqueadas. Permita as notificações do aplicativo nas configurações do celular.",
-          );
-        }
         return;
       }
 
       const reg = await navigator.serviceWorker.ready;
-      const keyRes = await fetch("/api/cliente/push/vapid", { cache: "no-store" });
-      if (!keyRes.ok) throw new Error("Servidor de notificações não configurado.");
+      let subscription = await reg.pushManager.getSubscription();
 
-      const { publicKey } = await keyRes.json();
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
+      if (!subscription) {
+        const keyRes = await fetch("/api/cliente/push/vapid", { cache: "no-store" });
+        const keyData = await keyRes.json().catch(() => ({}));
+        if (!keyRes.ok || !keyData?.publicKey) {
+          throw new Error(keyData?.erro ?? "Servidor de notificações não configurado.");
+        }
+
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+        });
+      }
 
       const deviceKey = obterDeviceKey();
       const saveRes = await fetch("/api/cliente/push/subscribe", {
@@ -143,8 +161,11 @@ export function AtivarNotificacoesPush() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: subscription.toJSON(), deviceKey }),
       });
+      const saveData = await saveRes.json().catch(() => ({}));
 
-      if (!saveRes.ok) throw new Error("Não foi possível registrar este celular.");
+      if (!saveRes.ok) {
+        throw new Error(saveData?.erro ?? "Não foi possível registrar este celular.");
+      }
 
       limparSolicitacaoPosInstalacao();
       await atualizarTelemetria(true);
@@ -154,6 +175,7 @@ export function AtivarNotificacoesPush() {
       window.dispatchEvent(new Event("sra-luck-push-updated"));
       toast.success("🔔 Notificações ativadas neste celular.");
     } catch (error: any) {
+      await atualizarTelemetria(false);
       toast.error(error?.message ?? "Não foi possível ativar as notificações.");
     } finally {
       setAtivando(false);
@@ -189,6 +211,7 @@ export function AtivarNotificacoesPush() {
           limparSolicitacaoPosInstalacao();
           if (!cancelado) setAtivo(true);
           await atualizarTelemetria(true);
+          window.dispatchEvent(new Event("sra-luck-push-updated"));
           return true;
         }
       } catch {}
@@ -208,6 +231,7 @@ export function AtivarNotificacoesPush() {
             limparSolicitacaoPosInstalacao();
             if (!cancelado) setAtivo(true);
             await atualizarTelemetria(true);
+            window.dispatchEvent(new Event("sra-luck-push-updated"));
             return;
           }
         } catch {}
@@ -228,6 +252,10 @@ export function AtivarNotificacoesPush() {
     }
 
     const iniciarAposInstalacao = () => {
+      try {
+        localStorage.setItem(INSTALLED_KEY, "true");
+      } catch {}
+      setVisivel(true);
       void verificarAssinatura();
     };
 
@@ -279,18 +307,18 @@ export function AtivarNotificacoesPush() {
           </p>
           <p className="mt-0.5 text-xs leading-relaxed text-clay/60 dark:text-pearl/55">
             {bloqueado
-              ? "O aplicativo está sem permissão para enviar notificações. Permita as notificações nas configurações do celular e tente novamente."
+              ? "Libere as notificações nas configurações do celular/navegador e tente novamente."
               : "Aplicativo instalado. Ative as notificações para receber mensagens da Sra. Luck mesmo com o aplicativo fechado."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={ativar}
-              disabled={ativando || bloqueado}
+              disabled={ativando}
               className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-3.5 py-2 text-xs font-semibold text-pearl disabled:opacity-60"
             >
               {ativando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-              {ativando ? "Ativando..." : bloqueado ? "Permitir nas configurações" : "Permitir notificações"}
+              {ativando ? "Ativando..." : bloqueado ? "Verificar permissão" : "Permitir notificações"}
             </button>
             <button
               type="button"
