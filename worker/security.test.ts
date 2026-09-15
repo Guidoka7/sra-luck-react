@@ -55,18 +55,20 @@ describe("security middleware", () => {
       body,
     });
     expect(request.headers.get("content-length")).toBeNull();
-    expect((await enforceStreamingRequestSize(request))?.status).toBe(413);
+    const guarded = await enforceStreamingRequestSize(request);
+    expect(guarded.denied?.status).toBe(413);
   });
 
-  it("aceita body chunked/sem Content-Length dentro do teto e preserva o body original", async () => {
+  it("aceita body chunked/sem Content-Length dentro do teto e reconstrói os mesmos bytes", async () => {
     const body = JSON.stringify({ dataId: "abc", horario: "09:00" });
     const request = new Request("https://app.sraluck.example/api/cliente/agendar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
     });
-    expect(await enforceStreamingRequestSize(request)).toBeNull();
-    await expect(request.text()).resolves.toBe(body);
+    const guarded = await enforceStreamingRequestSize(request);
+    expect(guarded.denied).toBeNull();
+    await expect(guarded.request.text()).resolves.toBe(body);
   });
 
   it("aplica headers defensivos e HSTS em HTTPS", () => {
