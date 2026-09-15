@@ -6,7 +6,11 @@
     <meta name="theme-color" content="#6B1F2E" />
     <meta name="description" content="Sra. Luck — Cirurgia Programada" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sra. Luck" />
     <link rel="manifest" href="/simulador-iphone.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/sra-luck-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -24,15 +28,15 @@
       window.addEventListener("appinstalled", function () {
         window.__sraLuckBeforeInstallPrompt = null;
         try {
-          localStorage.setItem("sra-luck-pwa-installed-v1", "true");
-          localStorage.setItem("sra-luck-pwa-install-modal-v1-seen", "true");
+          localStorage.setItem("sra-luck-pwa-installed-v2", "true");
           localStorage.setItem("sra-luck-push-after-install", "pending");
+          localStorage.removeItem("sra-luck-pwa-install-dismissed-date-v3");
         } catch (_) {}
         window.dispatchEvent(new Event("sra-luck-pwa-installed"));
       });
 
-      // Registra cedo para que o Chromium possa avaliar a instalabilidade mesmo
-      // quando a navegação /login -> /agenda acontece dentro da SPA sem reload.
+      // Registra cedo para que o Chromium avalie a instalabilidade mesmo quando
+      // /login -> /agenda acontece dentro da SPA sem um novo carregamento.
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
           navigator.serviceWorker
