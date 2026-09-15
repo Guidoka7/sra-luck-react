@@ -25,8 +25,7 @@ export function JornadaTab(props: JornadaTabProps) {
       </div>
 
       <section className="sl-updates">
-        <div className="sl-updates-head">
-          <div className="sl-updates-label">Atualizações</div>
+        <div className="sl-updates-head" style={{ justifyContent: "flex-end" }}>
           <button type="button" onClick={onVerNotificacoes} className="sl-updates-link">Ver todas</button>
         </div>
         {compactas.length === 0 ? (
