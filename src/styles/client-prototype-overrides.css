@@ -1,0 +1,12 @@
+/* O protótipo aprovado é exclusivamente claro e usa o fundo externo #EFE6E2. */
+body:has(.client-app) {
+  margin: 0;
+  background: #EFE6E2 !important;
+  color-scheme: light;
+}
+.dark .client-app,
+.dark .client-app .mobile-app-frame {
+  color-scheme: light;
+  background-color: #FBF7F5;
+  color: #2E2422;
+}
