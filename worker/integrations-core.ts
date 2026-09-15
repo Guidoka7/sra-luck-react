@@ -41,7 +41,7 @@ function encargosPorAtraso(valor: number, dataVencimento: string) {
   return { diasEmAtraso, encargos: diasEmAtraso > 0 ? juros + multa : 0 };
 }
 
-/** Snapshot estritamente allowlisted para persistência. Nunca grava payer, cartão, e-mail, telefone, documento ou payload bruto. */
+/** Snapshot estritamente allowlisted. Nunca persiste payer, cartão, e-mail, telefone, documento ou payload bruto. */
 export function safeMercadoPagoSnapshot(payment: any) {
   const metadata = payment?.metadata && typeof payment.metadata === "object" ? payment.metadata : {};
   return {
@@ -59,24 +59,40 @@ export function safeMercadoPagoSnapshot(payment: any) {
   };
 }
 
+export function isTrustedMercadoPagoCheckoutUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    return host === "mercadopago.com.br" || host.endsWith(".mercadopago.com.br")
+      || host === "mercadopago.com" || host.endsWith(".mercadopago.com");
+  } catch { return false; }
+}
+
 async function createMercadoPagoPreference(request: Request, env: Env) {
   const client = await requireClient(request, env);
   if (!client) return json({ erro: "Sessão expirada." }, 401);
-  const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(client, env), action: "payment.mercado_pago.preference.create", provider: "mercado_pago" });
+  const actor = await pseudonymizeActorId(client, env);
+  const log = requestLogger(request).child({ actorType: "cliente", actorId: actor, action: "payment.mercado_pago.preference.create", provider: "mercado_pago" });
   const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
   if (!accessToken) return json({ erro: "Pagamento por cartão temporariamente indisponível." }, 503);
 
-  const body = await request.json().catch(() => ({})) as { boletoId?: string };
-  const boletoId = String(body.boletoId || "");
-  if (!/^[0-9a-f-]{36}$/i.test(boletoId)) return json({ erro: "Parcela inválida." }, 400);
+  const payload = await request.json().catch(() => ({})) as { boletoId?: string };
+  const boletoId = String(payload.boletoId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(boletoId)) return json({ erro: "Parcela inválida." }, 400);
 
   const db = createServiceSupabaseClient(env);
-  // Rate limit simples por cliente para impedir criação abusiva de preferências.
-  if (env.CLIENTE_SESSION_SECRET) {
-    const chave = `mp-pref:${await pseudonymizeActorId(client, env)}`;
-    const { data: permitido } = await db.rpc("login_pode_tentar", { p_chave: chave, p_max_falhas: 12, p_janela_segundos: 600 });
-    if (!Boolean(permitido)) return json({ erro: "Muitas tentativas de pagamento. Aguarde alguns minutos." }, 429);
+  const { data: permitido, error: rateError } = await db.rpc("rate_limit_consumir", {
+    p_chave: `mp-pref:${actor}`,
+    p_max_tentativas: 12,
+    p_janela_segundos: 600,
+  });
+  if (rateError) {
+    log.error("Falha no rate limit do checkout", { eventCode: "MP_RATE_LIMIT_FAILED", error: rateError });
+    return json({ erro: "Não foi possível validar o pagamento agora." }, 503);
   }
+  if (!Boolean(permitido)) return json({ erro: "Muitas tentativas de pagamento. Aguarde alguns minutos." }, 429);
 
   const { data: boleto, error } = await db.from("boletos")
     .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,suspensa,clientes(financeiro_taxa_cartao)")
@@ -107,15 +123,18 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
     metadata: { boleto_id: boleto.id },
   };
 
-  const response = await fetch("https://api.mercadopago.com/checkout/preferences", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(preference) });
+  const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(preference),
+  });
   const mp = await response.json().catch(() => ({})) as any;
-  if (!response.ok || !mp?.id || !mp?.init_point) {
-    if (env.CLIENTE_SESSION_SECRET) await db.rpc("login_registrar_falha", { p_chave: `mp-pref:${await pseudonymizeActorId(client, env)}`, p_max_falhas: 12, p_janela_segundos: 600 });
-    log.error("Falha ao criar preferência Mercado Pago", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PREFERENCE_FAILED", statusCode: 502, providerStatus: response.status });
+  if (!response.ok || !mp?.id || !isTrustedMercadoPagoCheckoutUrl(mp?.init_point)) {
+    log.error("Falha ou URL inválida ao criar preferência Mercado Pago", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PREFERENCE_FAILED", statusCode: 502, providerStatus: response.status });
     return json({ erro: "Não foi possível abrir o pagamento por cartão." }, 502);
   }
   log.info("Preferência Mercado Pago criada", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PREFERENCE_CREATED" });
-  return json({ preferenceId: String(mp.id), checkoutUrl: String(mp.init_point) });
+  return json({ preferenceId: String(mp.id), checkoutUrl: mp.init_point });
 }
 
 export async function validateMercadoPagoSignature(request: Request, webhookSecret: string | null, nowMs = Date.now()) {
@@ -147,8 +166,8 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     return json({ erro: "Assinatura inválida." }, 401);
   }
 
-  const payload = await request.json().catch(() => ({})) as any;
-  const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
+  const incoming = await request.json().catch(() => ({})) as any;
+  const paymentId = String(new URL(request.url).searchParams.get("data.id") || incoming?.data?.id || "");
   if (!/^\d{1,30}$/.test(paymentId)) return json({ ok: true, ignored: true }, 200);
   const db = createServiceSupabaseClient(env);
 
@@ -162,7 +181,7 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   const snapshot = safeMercadoPagoSnapshot(payment);
   const externalReference = String(snapshot.external_reference || "");
   const boletoId = externalReference.startsWith("boleto:") ? externalReference.slice(7) : String(snapshot.metadata.boleto_id || "");
-  if (!/^[0-9a-f-]{36}$/i.test(boletoId)) return json({ ok: true, ignored: true }, 200);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(boletoId)) return json({ ok: true, ignored: true }, 200);
   const { data: boleto } = await db.from("boletos").select("id,cliente_id,valor,status,observacoes").eq("id", boletoId).maybeSingle();
   if (!boleto) return json({ ok: true, ignored: true }, 200);
 
@@ -196,10 +215,19 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     if (error) log.error("Pagamento aprovado, mas parcela não entrou na fila humana", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PENDING_CONFIRMATION_FAILED", error });
   }
 
-  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({ provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id, payload: snapshot, status: "processado", processado_em: new Date().toISOString() }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
+  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({
+    provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id,
+    payload: snapshot, status: "processado", processado_em: new Date().toISOString(),
+  }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
   if (integrationEventError) log.warn("Webhook processado, mas evento de integração não foi persistido", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_INTEGRATION_EVENT_FAILED", error: integrationEventError });
 
-  await db.from("logs_alteracoes").insert({ usuario: "sistema:mercado_pago", acao: "recebeu_evento_mercado_pago", entidade: "boletos", entidade_id: boleto.id, detalhes: { paymentId, statusProvedor, transactionAmount: snapshot.transaction_amount, cliente_id: boleto.cliente_id, baixaAutomatica: false, aguardandoConferenciaHumana: statusProvedor === "approved" } });
+  await db.from("logs_alteracoes").insert({
+    usuario: "sistema:mercado_pago",
+    acao: "recebeu_evento_mercado_pago",
+    entidade: "boletos",
+    entidade_id: boleto.id,
+    detalhes: { paymentId, statusProvedor, transactionAmount: snapshot.transaction_amount, baixaAutomatica: false, aguardandoConferenciaHumana: statusProvedor === "approved" },
+  });
   log.info("Webhook Mercado Pago processado", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_WEBHOOK_PROCESSED", providerPaymentStatus: statusProvedor, awaitingHumanReview: statusProvedor === "approved" });
   return json({ ok: true, statusProvedor, aguardandoConferencia: statusProvedor === "approved", baixaAutomatica: false }, 200);
 }
@@ -207,8 +235,8 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
 async function testarConexao(request: Request, env: Env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
-  const body = await request.json().catch(() => ({})) as { provedor?: string };
-  const provedor = String(body.provedor || "");
+  const payload = await request.json().catch(() => ({})) as { provedor?: string };
+  const provedor = String(payload.provedor || "");
   const db = createServiceSupabaseClient(env);
   const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "integration.connection.test", provider: provedor });
   let resultado: { conectado: boolean; detalhe: string };
