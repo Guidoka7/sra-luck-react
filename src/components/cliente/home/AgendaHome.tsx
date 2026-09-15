@@ -7,7 +7,6 @@ import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLibe
 import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
 import { RegrasLiberacao } from "@/components/cliente/RegrasLiberacao";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
-import { FluxoCirurgicoCliente } from "@/components/cliente/FluxoCirurgicoCliente";
 import { percentualNecessario } from "@/lib/utils";
 import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
@@ -123,7 +122,7 @@ export function AgendaHome({
       </div>
 
       <div className="px-5 pt-[15px]">
-        <FluxoCirurgicoCliente fallback={conteudoLegado} datasLegadas={datasDisponiveis} />
+        {conteudoLegado}
       </div>
     </section>
   );
