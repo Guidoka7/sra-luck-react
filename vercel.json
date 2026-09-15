@@ -4,6 +4,11 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist/client",
+  "git": {
+    "deploymentEnabled": {
+      "fix/client-visual-exato-html": false
+    }
+  },
   "routes": [
     {
       "src": "/api/(.*)",
