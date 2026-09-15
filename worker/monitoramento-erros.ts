@@ -51,6 +51,71 @@ export async function monitoramentoErros(request: Request, env: Env) {
 
   const url = new URL(request.url);
   const log = requestLogger(request);
+
+  if (url.pathname === "/api/cliente/app-telemetry" && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
+
+    const length = Number(request.headers.get("content-length") || 0);
+    if (length > MAX_BODY) return json({ erro: "Evento muito grande." }, 413);
+
+    // O componente vive no layout global e também roda antes do login. Nesse caso,
+    // a telemetria deve ser apenas ignorada, sem gerar 401/404 no monitoramento.
+    if (!env.CLIENTE_SESSION_SECRET) return json({ ok: true, ignored: true });
+    const session = await verificarTokenSessao(getCookie(request, CLIENT_COOKIE), env.CLIENTE_SESSION_SECRET);
+    if (!session?.clienteId) return json({ ok: true, ignored: true });
+
+    let body: any;
+    try { body = await request.json(); } catch { return json({ erro: "Evento inválido." }, 400); }
+
+    const deviceKey = limparTexto(body?.deviceKey, 200);
+    if (!deviceKey) return json({ erro: "Identificador do dispositivo ausente." }, 400);
+
+    const now = new Date().toISOString();
+    const db = createServiceSupabaseClient(env);
+    const { data: existente, error: readError } = await db
+      .from("cliente_app_devices")
+      .select("pwa_installed_at,notifications_activated_at")
+      .eq("cliente_id", session.clienteId)
+      .eq("device_key", deviceKey)
+      .maybeSingle();
+
+    if (readError) {
+      log.error("Falha ao consultar telemetria da cliente", { action: "telemetry.app.read", eventCode: "APP_TELEMETRY_READ_FAILED", statusCode: 503, error: readError });
+      return json({ erro: "Não foi possível registrar a telemetria." }, 503);
+    }
+
+    const isPwaInstalled = Boolean(body?.isPwaInstalled);
+    const pushActive = Boolean(body?.pushActive);
+    const notificationPermission = limparTexto(body?.notificationPermission, 40) || "default";
+    const payload: Record<string, unknown> = {
+      cliente_id: session.clienteId,
+      device_key: deviceKey,
+      device_type: limparTexto(body?.deviceType, 40) || "unknown",
+      display_mode: limparTexto(body?.displayMode, 40) || "browser",
+      is_pwa_installed: isPwaInstalled,
+      notification_permission: notificationPermission,
+      push_active: pushActive,
+      user_agent: limparTexto(sanitizeLogValue(request.headers.get("User-Agent")), 500),
+      last_access_at: now,
+      updated_at: now,
+    };
+
+    if (!existente) payload.first_access_at = now;
+    if (isPwaInstalled && !existente?.pwa_installed_at) payload.pwa_installed_at = now;
+    if (notificationPermission === "granted" && pushActive && !existente?.notifications_activated_at) payload.notifications_activated_at = now;
+
+    const { error } = await db
+      .from("cliente_app_devices")
+      .upsert(payload, { onConflict: "cliente_id,device_key" });
+
+    if (error) {
+      log.error("Falha ao persistir telemetria da cliente", { action: "telemetry.app.persist", eventCode: "APP_TELEMETRY_PERSIST_FAILED", statusCode: 503, error });
+      return json({ erro: "Não foi possível registrar a telemetria." }, 503);
+    }
+
+    return json({ ok: true });
+  }
+
   if (url.pathname === "/api/monitoramento/erro" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
     const length = Number(request.headers.get("content-length") || 0);
