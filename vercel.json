@@ -4,24 +4,24 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist/client",
-  "headers": [
+  "routes": [
     {
-      "source": "/simulador-iphone.webmanifest",
-      "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
-      ]
+      "src": "/simulador-iphone.webmanifest",
+      "headers": {
+        "Content-Type": "application/manifest+json; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate"
+      },
+      "continue": true
     },
     {
-      "source": "/simulador-iphone-sw.js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
-      ]
-    }
-  ],
-  "routes": [
+      "src": "/simulador-iphone-sw.js",
+      "headers": {
+        "Content-Type": "application/javascript; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Service-Worker-Allowed": "/"
+      },
+      "continue": true
+    },
     {
       "src": "/api/(.*)",
       "dest": "/api/index"
