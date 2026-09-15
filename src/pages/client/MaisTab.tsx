@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
+import { registrarErro } from "@/lib/monitoramento";
 
 type SubTela = "clube" | "documentos" | "atendimento" | "faq" | "seguranca" | null;
 
@@ -49,19 +50,29 @@ function FaqItem({ pergunta, resposta }: { pergunta: string; resposta: string })
 export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
   const [sub, setSub] = useState<SubTela>(null);
   const [contato, setContato] = useState<{ whatsapp: string | null; telefone: string | null }>({ whatsapp: null, telefone: null });
+  const [contatoFalhou, setContatoFalhou] = useState(false);
 
   useEffect(() => {
-    fetch("/api/cliente/config", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((dados) => { if (dados) setContato({ whatsapp: dados.whatsappContato ?? null, telefone: dados.telefoneContato ?? null }); }).catch(() => {});
+    fetch("/api/cliente/config", { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) {
+          registrarErro({ mensagem: `Configuração de contato respondeu HTTP ${r.status}`, nivel: "warn", codigo: "CLIENT_CONFIG_HTTP_FAILED", action: "client.config.read", status_http: r.status, request_id: r.headers.get("x-request-id") || undefined });
+          setContatoFalhou(true);
+          return null;
+        }
+        return r.json();
+      })
+      .then((dados) => { if (dados) setContato({ whatsapp: dados.whatsappContato ?? null, telefone: dados.telefoneContato ?? null }); })
+      .catch((error) => {
+        setContatoFalhou(true);
+        registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao carregar canais de atendimento", nivel: "warn", codigo: "CLIENT_CONFIG_LOAD_FAILED", action: "client.config.read" });
+      });
   }, []);
 
   if (sub === "clube") return <ClubeScreen onVoltar={() => setSub(null)} onIrParcelas={onIrParcelas} />;
-
   if (sub === "documentos") return <div className="sl-tab pb-6"><SubHeader titulo="Meus documentos" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="flex h-10 w-10 items-center justify-center rounded-[13px] border border-[#E9D9D5] bg-[#FFF9F8] text-[#B86575]"><IconeMenu tipo="documentos"/></div><div className="pt-3 font-heading text-[19px] font-semibold text-[#43322F]">Documentos da sua jornada</div><p className="pt-1 text-[10.8px] font-light leading-[1.55] text-[#8D7D79]">Para solicitar uma cópia do contrato, comprovantes ou outro documento, fale com a equipe pelo Atendimento.</p><button type="button" onClick={() => setSub("atendimento")} className="mt-4 w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[10px] text-[10.5px] font-semibold text-white">Ir para Atendimento</button></div></div></div>;
-
-  if (sub === "atendimento") return <div className="sl-tab pb-6"><SubHeader titulo="Atendimento" onVoltar={() => setSub(null)} /><div className="grid gap-[9px] px-[18px] pt-4">{contato.whatsapp && <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><IconeMenu tipo="atendimento"/></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">WhatsApp</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">Fale agora com a equipe</span></span></a>}{contato.telefone && <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="M7.5 3.5 10 8 8 9.5c1.4 2.8 3.7 5.1 6.5 6.5l1.5-2 4.5 2.5c-.4 2.5-2.2 4-4.5 4C9.1 20.5 3.5 14.9 3.5 8c0-2.3 1.5-4.1 4-4.5Z"/></svg></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">Ligar para a equipe</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">{contato.telefone}</span></span></a>}{!contato.whatsapp && !contato.telefone && <div className="rounded-[17px] border border-[#ECE2DF] bg-white p-4 text-[10.8px] font-light text-[#8D7D79]">Os canais de atendimento ainda não foram configurados pela equipe.</div>}</div></div>;
-
+  if (sub === "atendimento") return <div className="sl-tab pb-6"><SubHeader titulo="Atendimento" onVoltar={() => setSub(null)} /><div className="grid gap-[9px] px-[18px] pt-4">{contato.whatsapp && <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><IconeMenu tipo="atendimento"/></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">WhatsApp</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">Fale agora com a equipe</span></span></a>}{contato.telefone && <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="M7.5 3.5 10 8 8 9.5c1.4 2.8 3.7 5.1 6.5 6.5l1.5-2 4.5 2.5c-.4 2.5-2.2 4-4.5 4C9.1 20.5 3.5 14.9 3.5 8c0-2.3 1.5-4.1 4-4.5Z"/></svg></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">Ligar para a equipe</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">{contato.telefone}</span></span></a>}{!contato.whatsapp && !contato.telefone && <div className="rounded-[17px] border border-[#ECE2DF] bg-white p-4 text-[10.8px] font-light text-[#8D7D79]">{contatoFalhou ? "Não foi possível carregar os canais de atendimento agora. Tente novamente em instantes." : "Os canais de atendimento ainda não foram configurados pela equipe."}</div>}</div></div>;
   if (sub === "faq") return <div className="sl-tab pb-6"><SubHeader titulo="Dúvidas frequentes" onVoltar={() => setSub(null)} /><div className="grid gap-2 px-[18px] pt-4">{FAQS.map((item) => <FaqItem key={item.pergunta} {...item}/>)}</div></div>;
-
   if (sub === "seguranca") return <div className="sl-tab pb-6"><SubHeader titulo="Segurança" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="sl-more-icon"><IconeMenu tipo="seguranca"/></div><p className="pt-3 text-[10.8px] font-light leading-[1.55] text-[#7F6F6B]">Seu acesso é feito por CPF e data de nascimento. Nunca compartilhe dados bancários fora dos canais oficiais da Sra. Luck.</p><button type="button" onClick={onSair} className="mt-4 w-full rounded-[11px] border border-[#EAD0CF] bg-[#FBF0EF] px-3 py-[10px] text-[10.5px] font-semibold text-[#8F2A25]">Encerrar acesso com segurança</button></div></div></div>;
 
   const itens = [
@@ -72,28 +83,5 @@ export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
     { id: "seguranca" as const, nome: "Segurança", subtitulo: "Acesso, privacidade e proteção dos seus dados" },
   ];
 
-  return <div className="sl-tab pb-5">
-    <div className="px-5 pt-[calc(max(env(safe-area-inset-top),0px)+18px)]">
-      <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="mb-[13px] w-[91px] object-contain" />
-      <div className="font-heading text-[29px] font-semibold leading-[1.1] text-[#2E2422]">Mais</div>
-      <div className="pt-1 text-[13px] font-light text-[#8A7B77]">Tudo o que você precisa, em um só lugar.</div>
-    </div>
-
-    <div className="sl-more-profile">
-      <div className="relative flex-none"><div className="sl-more-avatar">{iniciais(nomeCliente)}</div><div className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#6B1F2E]"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="#FBF7F5" strokeWidth="1.2"><rect x="2" y="4" width="10" height="7.5" rx="2"/><circle cx="7" cy="7.7" r="2.1"/></svg></div></div>
-      <div className="min-w-0"><div className="truncate font-heading text-[21px] font-semibold leading-[1.15] text-[#2E2422]">{nomeCliente}</div><div className="sl-active-pill"><span className="h-[5px] w-[5px] rounded-full bg-[#3F7D5B]"/>Plano ativo</div></div>
-    </div>
-
-    <div className="sl-more-menu">
-      {itens.map((item) => <button key={item.id} type="button" onClick={() => setSub(item.id)} className="sl-more-item">
-        <span className="flex min-w-0 items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo={item.id}/></span><span className="min-w-0"><span className="sl-more-name block">{item.nome}</span><span className="sl-more-sub block truncate">{item.subtitulo}</span></span></span>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C8B9B5" strokeWidth="1.15"><path d="M5 3l4 4-4 4"/></svg>
-      </button>)}
-      <button type="button" onClick={onSair} className="sl-more-item border-b-0">
-        <span className="flex items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo="sair"/></span><span><span className="sl-more-name block text-[#6B1F2E]">Sair</span><span className="sl-more-sub block">Encerrar acesso com segurança</span></span></span>
-      </button>
-    </div>
-
-    <div className="mx-5 mt-5 flex flex-col items-center gap-[5px] opacity-[.58]"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[76px]"/><div className="text-[9.5px] font-light tracking-[.08em] text-[#B7A7A3]">versão 1.0</div></div>
-  </div>;
+  return <div className="sl-tab pb-5"><div className="px-5 pt-[calc(max(env(safe-area-inset-top),0px)+18px)]"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="mb-[13px] w-[91px] object-contain" /><div className="font-heading text-[29px] font-semibold leading-[1.1] text-[#2E2422]">Mais</div><div className="pt-1 text-[13px] font-light text-[#8A7B77]">Tudo o que você precisa, em um só lugar.</div></div><div className="sl-more-profile"><div className="relative flex-none"><div className="sl-more-avatar">{iniciais(nomeCliente)}</div><div className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#6B1F2E]"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="#FBF7F5" strokeWidth="1.2"><rect x="2" y="4" width="10" height="7.5" rx="2"/><circle cx="7" cy="7.7" r="2.1"/></svg></div></div><div className="min-w-0"><div className="truncate font-heading text-[21px] font-semibold leading-[1.15] text-[#2E2422]">{nomeCliente}</div><div className="sl-active-pill"><span className="h-[5px] w-[5px] rounded-full bg-[#3F7D5B]"/>Plano ativo</div></div></div><div className="sl-more-menu">{itens.map((item) => <button key={item.id} type="button" onClick={() => setSub(item.id)} className="sl-more-item"><span className="flex min-w-0 items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo={item.id}/></span><span className="min-w-0"><span className="sl-more-name block">{item.nome}</span><span className="sl-more-sub block truncate">{item.subtitulo}</span></span></span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C8B9B5" strokeWidth="1.15"><path d="M5 3l4 4-4 4"/></svg></button>)}<button type="button" onClick={onSair} className="sl-more-item border-b-0"><span className="flex items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo="sair"/></span><span><span className="sl-more-name block">Sair</span><span className="sl-more-sub block">Encerrar acesso com segurança</span></span></span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C8B9B5" strokeWidth="1.15"><path d="M5 3l4 4-4 4"/></svg></button></div></div>;
 }
