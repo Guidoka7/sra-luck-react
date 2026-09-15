@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - main
+      - security/lgpd-hardening
   pull_request:
     branches:
       - main
