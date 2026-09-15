@@ -1,12 +1,16 @@
+type NivelLog = "info" | "warn" | "error" | "fatal";
+
 type EventoErro = {
   mensagem: string;
   stack?: string;
   componente?: string;
   codigo?: string;
-  nivel?: "warning" | "error" | "critical";
+  nivel?: NivelLog;
   origem?: "frontend" | "api" | "diagnostico";
   status_http?: number;
   metodo?: string;
+  request_id?: string;
+  action?: string;
   detalhes?: Record<string, unknown>;
 };
 
@@ -16,17 +20,44 @@ let instalado = false;
 let fetchOriginal: typeof window.fetch | null = null;
 const ENDPOINT = "/api/monitoramento/erro";
 const QUEUE_KEY = "sra_luck_monitoramento_pendente";
-const SENSIVE = /cpf|senha|password|token|secret|authorization|cookie|session|payload/i;
+const SENSITIVE_KEY = /(cpf|senha|password|authorization|cookie|session|token|secret|api[_-]?key|service[_-]?role|data[_-]?nascimento|birth|email|telefone|phone|whatsapp|endereco|address|pix|card|cvv|p256dh|endpoint|auth|payload)/i;
+const BEARER_RE = /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b/g;
+const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const CPF_RE = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g;
+const PHONE_RE = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-\s]?\d{4}/g;
 
-function normalizarErro(value: unknown) {
-  if (value instanceof Error) return { mensagem: value.message || "Erro desconhecido", stack: value.stack };
-  if (typeof value === "string") return { mensagem: value };
-  try { return { mensagem: JSON.stringify(value) || "Erro desconhecido" }; } catch { return { mensagem: String(value) }; }
+function requestId() {
+  try { return crypto.randomUUID(); } catch { return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
 }
 
-function sanitizarDetalhes(value?: Record<string, unknown>) {
-  if (!value) return {};
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !SENSIVE.test(key)).slice(0, 30));
+function sanitizarString(value: string) {
+  return value
+    .replace(BEARER_RE, "[SECRET_REDACTED]")
+    .replace(JWT_RE, "[SECRET_REDACTED]")
+    .replace(EMAIL_RE, "[PII_REDACTED]")
+    .replace(CPF_RE, "[PII_REDACTED]")
+    .replace(PHONE_RE, "[PII_REDACTED]")
+    .slice(0, 3000);
+}
+
+function sanitizar(value: unknown, depth = 0): unknown {
+  if (depth > 6) return "[TRUNCATED]";
+  if (value == null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") return sanitizarString(value);
+  if (value instanceof Error) return { name: value.name, mensagem: sanitizarString(value.message), stack: value.stack ? sanitizarString(value.stack) : undefined };
+  if (Array.isArray(value)) return value.slice(0, 30).map((item) => sanitizar(item, depth + 1));
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 60);
+    return Object.fromEntries(entries.map(([key, item]) => [key, SENSITIVE_KEY.test(key) ? "[REDACTED]" : sanitizar(item, depth + 1)]));
+  }
+  return sanitizarString(String(value));
+}
+
+function normalizarErro(value: unknown) {
+  if (value instanceof Error) return { mensagem: sanitizarString(value.message || "Erro desconhecido"), stack: value.stack ? sanitizarString(value.stack) : undefined };
+  if (typeof value === "string") return { mensagem: sanitizarString(value) };
+  try { return { mensagem: sanitizarString(JSON.stringify(sanitizar(value)) || "Erro desconhecido") }; } catch { return { mensagem: "Erro desconhecido" }; }
 }
 
 function enfileirar(payload: string) {
@@ -34,7 +65,7 @@ function enfileirar(payload: string) {
     const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
     const atualizada = [...fila.slice(-19), JSON.parse(payload)];
     localStorage.setItem(QUEUE_KEY, JSON.stringify(atualizada));
-  } catch { /* nunca interromper a aplicação por causa do monitoramento */ }
+  } catch { /* monitoramento nunca interrompe a aplicação */ }
 }
 
 async function enviar(payload: string) {
@@ -55,7 +86,7 @@ async function reenviarFila() {
     if (!fila.length) return;
     const restantes: unknown[] = [];
     for (const item of fila.slice(-20)) {
-      const ok = await enviar(JSON.stringify(item));
+      const ok = await enviar(JSON.stringify(sanitizar(item)));
       if (!ok) restantes.push(item);
     }
     if (restantes.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(restantes));
@@ -65,14 +96,24 @@ async function reenviarFila() {
 
 export function registrarErro(evento: EventoErro) {
   if (typeof window === "undefined") return;
-  const mensagem = evento.mensagem?.trim().slice(0, 1200);
+  const mensagem = sanitizarString(evento.mensagem?.trim() || "").slice(0, 1200);
   if (!mensagem) return;
   const agora = Date.now();
   const assinatura = `${evento.origem || "frontend"}|${evento.codigo || ""}|${evento.metodo || ""}|${evento.status_http || ""}|${window.location.pathname}|${mensagem}`;
   if (assinatura === ultimo && agora - ultimoEm < 5000) return;
   ultimo = assinatura;
   ultimoEm = agora;
-  const payload = JSON.stringify({ ...evento, mensagem, origem: evento.origem || "frontend", rota: window.location.pathname, ambiente: import.meta.env.MODE, detalhes: sanitizarDetalhes(evento.detalhes) });
+  const payload = JSON.stringify(sanitizar({
+    ...evento,
+    mensagem,
+    stack: evento.stack ? sanitizarString(evento.stack) : undefined,
+    origem: evento.origem || "frontend",
+    nivel: evento.nivel || "error",
+    request_id: evento.request_id || requestId(),
+    rota: window.location.pathname,
+    ambiente: import.meta.env.MODE,
+    detalhes: evento.detalhes || {},
+  }));
   void enviar(payload).then((ok) => { if (!ok) enfileirar(payload); });
 }
 
@@ -83,19 +124,19 @@ export function instalarMonitoramentoGlobal() {
   void reenviarFila();
   const originalConsoleError = console.error;
 
-  const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: "critical", codigo: "GLOBAL_JS_ERROR", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
-  const onRejection = (event: PromiseRejectionEvent) => { const erro = normalizarErro(event.reason); registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "UNHANDLED_REJECTION", nivel: "critical" }); };
+  const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: "fatal", codigo: "GLOBAL_JS_ERROR", action: "frontend.global.error", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
+  const onRejection = (event: PromiseRejectionEvent) => { const erro = normalizarErro(event.reason); registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "UNHANDLED_REJECTION", action: "frontend.promise.unhandled", nivel: "fatal" }); };
   const onResourceError = (event: Event) => {
     const target = event.target as HTMLImageElement | HTMLScriptElement | HTMLLinkElement | null;
     if (!target || target === document.documentElement) return;
     const source = target instanceof HTMLImageElement || target instanceof HTMLScriptElement ? target.src : target.href;
-    registrarErro({ mensagem: `Falha ao carregar recurso${source ? `: ${source}` : ""}`, codigo: "RESOURCE_LOAD_ERROR", nivel: "error", detalhes: { tag: target.tagName, recurso: source?.slice(0, 500) } });
+    registrarErro({ mensagem: "Falha ao carregar recurso", codigo: "RESOURCE_LOAD_ERROR", action: "frontend.resource.load", nivel: "error", detalhes: { tag: target.tagName, recurso: source?.split("?")[0]?.slice(0, 500) } });
   };
 
   console.error = (...args: unknown[]) => {
     originalConsoleError(...args);
     const erro = normalizarErro(args[0]);
-    registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "CONSOLE_ERROR", nivel: "error", detalhes: { argumentos: args.slice(1).map((x) => normalizarErro(x).mensagem).join(" | ").slice(0, 2500) } });
+    registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "CONSOLE_ERROR", action: "frontend.console.error", nivel: "error", detalhes: { argumentos: args.slice(1).map((x) => normalizarErro(x).mensagem).join(" | ").slice(0, 2500) } });
   };
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -105,11 +146,11 @@ export function instalarMonitoramentoGlobal() {
     const inicio = Date.now();
     try {
       const response = await fetchOriginal!(input, init);
-      if (!response.ok) registrarErro({ origem: "api", nivel: response.status >= 500 ? "critical" : "error", codigo: "API_HTTP_ERROR", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      if (!response.ok) registrarErro({ origem: "api", nivel: response.status >= 500 ? "error" : "warn", codigo: "API_HTTP_ERROR", action: "api.request.failed", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, request_id: response.headers.get("x-request-id") || undefined, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
       return response;
     } catch (error) {
       const erro = normalizarErro(error);
-      registrarErro({ origem: "api", nivel: "critical", codigo: "API_NETWORK_ERROR", mensagem: erro.mensagem, stack: erro.stack, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      registrarErro({ origem: "api", nivel: "error", codigo: "API_NETWORK_ERROR", action: "api.network.failed", mensagem: erro.mensagem, stack: erro.stack, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
       throw error;
     }
   };
