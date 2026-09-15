@@ -84,34 +84,51 @@ export function enforceRequestSize(request: Request): Response | null {
     : null;
 }
 
+export type StreamingSizeGuardResult = { request: Request; denied: Response | null };
+
 /**
- * Segunda barreira de tamanho: mede o stream clonado quando o cliente omite Content-Length.
- * Interrompe ao ultrapassar o limite e preserva o body original para o handler.
+ * Segunda barreira de tamanho: mede o stream ORIGINAL quando Content-Length não existe,
+ * interrompe cedo no teto e reconstrói a Request apenas se o corpo for válido. Assim não
+ * existe o backpressure do tee/clone e o handler recebe exatamente os mesmos bytes.
  */
-export async function enforceStreamingRequestSize(request: Request): Promise<Response | null> {
-  if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return null;
-  if (request.headers.get("content-length") !== null || !request.body) return null;
+export async function enforceStreamingRequestSize(request: Request): Promise<StreamingSizeGuardResult> {
+  if (!UNSAFE_METHODS.has(request.method.toUpperCase()) || request.headers.get("content-length") !== null || !request.body) {
+    return { request, denied: null };
+  }
 
   const max = requestSizeLimit(new URL(request.url).pathname);
-  const reader = request.clone().body?.getReader();
-  if (!reader) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
   let total = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      total += value?.byteLength ?? 0;
-      if (total > max) {
-        await reader.cancel().catch(() => undefined);
-        return json({ erro: "Requisição excede o tamanho permitido." }, 413);
+      if (value) {
+        total += value.byteLength;
+        if (total > max) {
+          await reader.cancel().catch(() => undefined);
+          return { request, denied: json({ erro: "Requisição excede o tamanho permitido." }, 413) };
+        }
+        chunks.push(value);
       }
     }
-    return null;
   } catch {
-    return json({ erro: "Não foi possível validar o corpo da requisição." }, 400);
+    return { request, denied: json({ erro: "Não foi possível validar o corpo da requisição." }, 400) };
   } finally {
     try { reader.releaseLock(); } catch { /* noop */ }
   }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const rebuilt = new Request(request.url, {
+    method: request.method,
+    headers: new Headers(request.headers),
+    body: bytes,
+    redirect: request.redirect,
+  });
+  return { request: rebuilt, denied: null };
 }
 
 function canonicalRateAction(request: Request): { action: string; max: number; window: number } | null {
