@@ -15,8 +15,6 @@ export interface ClubePontosEvento {
   id: string;
   tipo: "indicacao" | "bonus" | "resgate" | "ajuste";
   pontos: number;
-  referencia: string | null;
-  metadata: Record<string, unknown>;
   created_at: string;
 }
 
@@ -30,7 +28,6 @@ export interface ClubeBeneficio {
 
 export interface ClubeIndicacao {
   id: string;
-  nome_indicado: string;
   status: "enviada" | "qualificada" | "venda" | "invalidada";
   pontos_creditados: number;
   created_at: string;
@@ -67,10 +64,10 @@ export function resgatarPremio(recompensaId: string, idempotencyKey: string) {
   });
 }
 
-export function indicarAmiga(nome: string, telefone: string) {
+export function indicarAmiga(nome: string, telefone: string, consentimentoContato: boolean) {
   return api<{ indicacao: unknown }>("/api/cliente/credit-ops/referrals", {
     method: "POST",
-    body: JSON.stringify({ nome, telefone }),
+    body: JSON.stringify({ nome, telefone, consentimentoContato }),
   });
 }
 
