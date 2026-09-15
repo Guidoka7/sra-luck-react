@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,11 +37,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Full dependency audit report
-        run: npm audit --audit-level=moderate || true
+      - name: Secret scan — working tree + Git history
+        run: node scripts/security-secret-scan.mjs
 
-      - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+      - name: Full dependency audit
+        run: npm audit --audit-level=moderate
 
       - name: Unit tests
         run: npm run test
@@ -49,3 +51,11 @@ jobs:
 
       - name: Production build validation
         run: npm run build
+
+      - name: Publish updated lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-security
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
