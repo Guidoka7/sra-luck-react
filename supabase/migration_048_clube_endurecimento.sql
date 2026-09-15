@@ -1,51 +1,119 @@
 -- ============================================================================
--- MIGRATION 048: Endurecimento do Clube de Vantagens (resgate atômico +
--- benefício da 1ª parcela)
+-- MIGRATION 048: Clube de Vantagens do app cliente
 --
--- Contexto: o backend do Clube de Vantagens (migration_022) existe
--- (clube_recompensas, cliente_pontos, cliente_pontos_eventos,
--- indicacoes_clientes, clube_resgates) mas nunca foi exposto na experiência
--- real da cliente e tinha duas lacunas: (1) o resgate de pontos não era
--- atômico (race condition possível em cliques concorrentes) e (2) não havia
--- como conceder benefícios que não custam pontos (voucher da 1ª parcela).
+-- O arquivo legado migration_022_operacao_credito_ecossistema nunca foi
+-- aplicado integralmente no projeto de produção. Por isso esta migration NÃO
+-- assume que as tabelas do Clube já existam: ela provisiona somente o subconjunto
+-- necessário ao app da cliente, sem ativar o subsistema paralelo de contratos/
+-- agenda daquela migration antiga.
 --
--- Escopo desta migration: só o necessário para o app da cliente funcionar
--- corretamente (resgate seguro + bônus automático da 1ª parcela + extrato
--- de indicações). A administração do Clube (confirmar indicação, aprovar
--- resgate, ajuste manual, config de pontos) fica para quando o módulo
--- administrativo tiver especificação própria — não criamos aqui rotas nem
--- funções que só fariam sentido com essa tela.
+-- Escopo:
+-- - catálogo, saldo, ledger de pontos, indicações e resgates;
+-- - benefício de uso único da primeira parcela;
+-- - resgate atômico/idempotente;
+-- - bônus/notificação quando um boleto muda de status;
+-- - acesso direto bloqueado para anon/authenticated; o Worker é a autoridade.
 --
--- Esta migration é ADITIVA: não remove nem renomeia nada existente.
+-- A migration é aditiva e não remove nem renomeia dados existentes.
 -- ============================================================================
 
+begin;
+
+create extension if not exists pgcrypto;
+
 -- ----------------------------------------------------------------------------
--- 1. Catálogo de prêmios: ordenação e ícone (exibição client-side).
+-- 1. Estruturas mínimas do Clube (subconjunto seguro da migration_022 antiga).
 -- ----------------------------------------------------------------------------
-alter table clube_recompensas
+create table if not exists public.clube_recompensas (
+  id uuid primary key default gen_random_uuid(),
+  titulo text not null,
+  descricao text,
+  categoria text,
+  pontos integer not null check (pontos > 0),
+  estoque integer,
+  ativo boolean not null default true,
+  imagem_url text,
+  ordem integer not null default 0,
+  icone_key text,
+  instrucoes_pos_resgate text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.clube_recompensas
   add column if not exists ordem integer not null default 0,
   add column if not exists icone_key text,
   add column if not exists instrucoes_pos_resgate text;
 
--- ----------------------------------------------------------------------------
--- 2. Resgates: chave de idempotência para o débito atômico (mesmo padrão de
---    financeiro_recebimentos.idempotency_key, migration_033).
--- ----------------------------------------------------------------------------
-alter table clube_resgates
+create table if not exists public.cliente_pontos (
+  cliente_id uuid primary key references public.clientes(id) on delete cascade,
+  saldo integer not null default 0 check (saldo >= 0),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.cliente_pontos_eventos (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid not null references public.clientes(id) on delete cascade,
+  tipo text not null check (tipo in ('indicacao','bonus','resgate','ajuste')),
+  pontos integer not null,
+  referencia text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.indicacoes_clientes (
+  id uuid primary key default gen_random_uuid(),
+  indicador_cliente_id uuid not null references public.clientes(id) on delete cascade,
+  nome_indicado text not null,
+  telefone_indicado text,
+  rd_lead_id text,
+  status text not null default 'enviada' check (status in ('enviada','qualificada','venda','invalidada')),
+  pontos_creditados integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.clube_resgates (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid not null references public.clientes(id) on delete cascade,
+  recompensa_id uuid not null references public.clube_recompensas(id) on delete restrict,
+  pontos integer not null,
+  status text not null default 'solicitado' check (status in ('solicitado','aprovado','separacao','entregue','cancelado')),
+  idempotency_key text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.clube_resgates
   add column if not exists idempotency_key text;
 
 create unique index if not exists idx_clube_resgates_idempotency_key
-  on clube_resgates(idempotency_key) where idempotency_key is not null;
+  on public.clube_resgates(idempotency_key)
+  where idempotency_key is not null;
+create index if not exists idx_clube_resgates_cliente_created
+  on public.clube_resgates(cliente_id, created_at desc);
+create index if not exists idx_cliente_pontos_eventos_cliente_created
+  on public.cliente_pontos_eventos(cliente_id, created_at desc);
+create index if not exists idx_indicacoes_clientes_indicador_created
+  on public.indicacoes_clientes(indicador_cliente_id, created_at desc);
+
+-- Catálogo inicial já previsto na migration_022 original. Só é inserido quando
+-- o catálogo estiver completamente vazio, evitando duplicar ou substituir dados.
+insert into public.clube_recompensas (titulo, descricao, categoria, pontos, estoque, ordem)
+select * from (values
+  ('Kit Giovanna Baby','Kit presente com itens selecionados para autocuidado.','Autocuidado',600,20,10),
+  ('Massagem relaxante','Sessão de massagem em parceiro credenciado.','Bem-estar',900,20,20),
+  ('Nécessaire premium','Nécessaire Sra. Luck em edição especial.','Mimo',450,50,30),
+  ('Vale-spa','Crédito para experiência de spa em parceiro selecionado.','Experiência',1200,10,40),
+  ('Kit autocuidado','Seleção de cuidados pessoais e aromaterapia.','Autocuidado',750,30,50),
+  ('Voucher de beleza','Voucher para serviço de beleza em estabelecimento parceiro.','Experiência',1000,15,60)
+) as seed(titulo, descricao, categoria, pontos, estoque, ordem)
+where not exists (select 1 from public.clube_recompensas);
 
 -- ----------------------------------------------------------------------------
--- 3. Benefícios não pontuáveis da cliente (voucher de consulta liberado pela
---    confirmação da 1ª parcela). Ledger de pontos continua em
---    cliente_pontos_eventos; esta tabela é para benefícios de uso único que
---    não circulam como saldo.
+-- 2. Benefício de uso único e configuração do bônus da primeira parcela.
 -- ----------------------------------------------------------------------------
-create table if not exists clube_beneficios_cliente (
+create table if not exists public.clube_beneficios_cliente (
   id uuid primary key default gen_random_uuid(),
-  cliente_id uuid not null references clientes(id) on delete cascade,
+  cliente_id uuid not null references public.clientes(id) on delete cascade,
   beneficio_key text not null,
   status text not null default 'disponivel' check (status in ('disponivel','utilizado','cancelado')),
   origem text not null,
@@ -56,37 +124,59 @@ create table if not exists clube_beneficios_cliente (
   unique (cliente_id, beneficio_key, origem)
 );
 
-create index if not exists idx_clube_beneficios_cliente_cliente_id on clube_beneficios_cliente(cliente_id);
+create index if not exists idx_clube_beneficios_cliente_cliente_id
+  on public.clube_beneficios_cliente(cliente_id);
 
-alter table clube_beneficios_cliente enable row level security;
-create policy "admin_full_access_clube_beneficios_cliente" on clube_beneficios_cliente
-  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-
--- ----------------------------------------------------------------------------
--- 4. Configuração do Clube (singleton) — só o bônus da 1ª parcela por
---    enquanto (pontos por indicação continua sem fluxo de confirmação até o
---    módulo admin existir, então não criamos config para algo ainda sem uso).
--- ----------------------------------------------------------------------------
-create table if not exists clube_config (
+create table if not exists public.clube_config (
   id integer primary key default 1 check (id = 1),
-  pontos_primeira_parcela integer not null default 50,
+  pontos_primeira_parcela integer not null default 50 check (pontos_primeira_parcela >= 0),
   voucher_primeira_parcela_ativo boolean not null default true,
   voucher_primeira_parcela_titulo text not null default 'Voucher de Consulta com o Doutor',
   updated_at timestamptz not null default now()
 );
-insert into clube_config (id) values (1) on conflict (id) do nothing;
 
-alter table clube_config enable row level security;
-create policy "admin_full_access_clube_config" on clube_config
-  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+insert into public.clube_config (id) values (1) on conflict (id) do nothing;
 
 -- ----------------------------------------------------------------------------
--- 5. Bônus idempotente da 1ª parcela — chamado de dentro das transações que
---    confirmam uma parcela como paga (financeiro_baixar_boleto e
---    financeiro_validar_comprovante, redefinidas abaixo). Idempotência via
---    a constraint unique(cliente_id, beneficio_key, origem) acima: só
---    concede pontos/voucher quando o INSERT do benefício realmente ocorre
---    pela primeira vez.
+-- 3. Hardening: o app nunca acessa estas tabelas diretamente. Toda regra passa
+--    pelo Cloudflare Worker, que valida a sessão e usa service_role no servidor.
+-- ----------------------------------------------------------------------------
+alter table public.clube_recompensas enable row level security;
+alter table public.cliente_pontos enable row level security;
+alter table public.cliente_pontos_eventos enable row level security;
+alter table public.indicacoes_clientes enable row level security;
+alter table public.clube_resgates enable row level security;
+alter table public.clube_beneficios_cliente enable row level security;
+alter table public.clube_config enable row level security;
+
+-- Remove políticas permissivas caso esta migration rode em um ambiente onde uma
+-- versão anterior tenha sido aplicada parcialmente.
+drop policy if exists admin_full_access_clube_recompensas on public.clube_recompensas;
+drop policy if exists admin_full_access_cliente_pontos on public.cliente_pontos;
+drop policy if exists admin_full_access_cliente_pontos_eventos on public.cliente_pontos_eventos;
+drop policy if exists admin_full_access_indicacoes_clientes on public.indicacoes_clientes;
+drop policy if exists admin_full_access_clube_resgates on public.clube_resgates;
+drop policy if exists admin_full_access_clube_beneficios_cliente on public.clube_beneficios_cliente;
+drop policy if exists admin_full_access_clube_config on public.clube_config;
+
+revoke all privileges on table public.clube_recompensas from public, anon, authenticated;
+revoke all privileges on table public.cliente_pontos from public, anon, authenticated;
+revoke all privileges on table public.cliente_pontos_eventos from public, anon, authenticated;
+revoke all privileges on table public.indicacoes_clientes from public, anon, authenticated;
+revoke all privileges on table public.clube_resgates from public, anon, authenticated;
+revoke all privileges on table public.clube_beneficios_cliente from public, anon, authenticated;
+revoke all privileges on table public.clube_config from public, anon, authenticated;
+
+grant select, insert, update, delete on table public.clube_recompensas to service_role;
+grant select, insert, update, delete on table public.cliente_pontos to service_role;
+grant select, insert, update, delete on table public.cliente_pontos_eventos to service_role;
+grant select, insert, update, delete on table public.indicacoes_clientes to service_role;
+grant select, insert, update, delete on table public.clube_resgates to service_role;
+grant select, insert, update, delete on table public.clube_beneficios_cliente to service_role;
+grant select, insert, update, delete on table public.clube_config to service_role;
+
+-- ----------------------------------------------------------------------------
+-- 4. Bônus idempotente da primeira parcela.
 -- ----------------------------------------------------------------------------
 create or replace function public.clube_conceder_bonus_primeira_parcela(
   p_cliente_id uuid,
@@ -111,13 +201,18 @@ begin
   returning id into v_beneficio_id;
 
   if v_beneficio_id is null then
-    -- Benefício já concedido anteriormente (reprocessamento) — não duplica.
     return;
   end if;
 
   if v_config.pontos_primeira_parcela > 0 then
     insert into public.cliente_pontos_eventos (cliente_id, tipo, pontos, referencia, metadata)
-    values (p_cliente_id, 'bonus', v_config.pontos_primeira_parcela, p_boleto_id::text, jsonb_build_object('motivo', 'primeira_parcela'));
+    values (
+      p_cliente_id,
+      'bonus',
+      v_config.pontos_primeira_parcela,
+      p_boleto_id::text,
+      jsonb_build_object('motivo', 'primeira_parcela')
+    );
 
     insert into public.cliente_pontos (cliente_id, saldo, updated_at)
     values (p_cliente_id, v_config.pontos_primeira_parcela, now())
@@ -131,7 +226,11 @@ begin
     p_cliente_id,
     'clube',
     'Bônus da primeira parcela liberado!',
-    format('Você ganhou %s moedas e o %s no Clube de Vantagens.', v_config.pontos_primeira_parcela, v_config.voucher_primeira_parcela_titulo),
+    format(
+      'Você ganhou %s moedas e o %s no Clube de Vantagens.',
+      v_config.pontos_primeira_parcela,
+      v_config.voucher_primeira_parcela_titulo
+    ),
     '🎁',
     'clube',
     v_beneficio_id
@@ -140,173 +239,67 @@ end;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 6. Redefinição de financeiro_baixar_boleto / financeiro_validar_comprovante
---    para, na MESMA transação que confirma o pagamento, notificar a cliente
---    e conceder o bônus da 1ª parcela quando aplicável. Corpo idêntico ao de
---    migration_033 (confirmado sem alterações posteriores), apenas com os
---    efeitos colaterais acrescentados no final.
+-- 5. Notificação/bônus no mesmo commit da alteração do boleto, sem substituir
+--    as RPCs financeiras existentes. Isso preserva integralmente a lógica do
+--    Financeiro e do Mercado Pago atual.
 -- ----------------------------------------------------------------------------
-create or replace function public.financeiro_baixar_boleto(
-  p_boleto_id uuid,
-  p_data_pagamento date,
-  p_juros numeric,
-  p_multa numeric,
-  p_desconto numeric,
-  p_forma_pagamento text,
-  p_instituicao_conta text,
-  p_observacao text,
-  p_usuario text,
-  p_idempotency_key text
-)
-returns public.financeiro_recebimentos
+create or replace function public.clube_notificar_boleto_status()
+returns trigger
 language plpgsql
 security invoker
 set search_path = ''
 as $$
-declare
-  v_boleto public.boletos%rowtype;
-  v_recebimento public.financeiro_recebimentos%rowtype;
-  v_juros numeric(12,2) := round(coalesce(p_juros, 0), 2);
-  v_multa numeric(12,2) := round(coalesce(p_multa, 0), 2);
-  v_desconto numeric(12,2) := round(coalesce(p_desconto, 0), 2);
-  v_total numeric(12,2);
 begin
-  if p_data_pagamento is null then raise exception 'Data do pagamento obrigatoria'; end if;
-  if p_forma_pagamento not in ('pix', 'dinheiro', 'transferencia', 'boleto', 'cartao', 'cheque', 'outro') then
-    raise exception 'Forma de pagamento invalida';
-  end if;
-  if v_juros < 0 or v_multa < 0 or v_desconto < 0 then raise exception 'Composicao financeira invalida'; end if;
-
-  select * into v_boleto from public.boletos where id = p_boleto_id for update;
-  if not found then raise exception 'Parcela nao encontrada'; end if;
-
-  select * into v_recebimento
-  from public.financeiro_recebimentos
-  where idempotency_key = p_idempotency_key;
-  if found then return v_recebimento; end if;
-
-  if v_boleto.status = 'pago' then raise exception 'Parcela ja liquidada'; end if;
-
-  v_total := round(v_boleto.valor + v_juros + v_multa - v_desconto, 2);
-  if v_total < 0 then raise exception 'Desconto superior ao valor devido'; end if;
-
-  insert into public.financeiro_recebimentos (
-    boleto_id, cliente_id, valor_original, juros, multa, desconto, valor_recebido,
-    data_pagamento, forma_pagamento, instituicao_conta, origem, status_validacao,
-    comprovante_url, observacao, idempotency_key, criado_por, validado_por, validado_em
-  ) values (
-    v_boleto.id, v_boleto.cliente_id, v_boleto.valor, v_juros, v_multa, v_desconto, v_total,
-    p_data_pagamento, p_forma_pagamento, nullif(btrim(p_instituicao_conta), ''), 'manual', 'validado',
-    v_boleto.comprovante_url, nullif(btrim(p_observacao), ''), p_idempotency_key, p_usuario, p_usuario, now()
-  ) returning * into v_recebimento;
-
-  update public.boletos
-  set status = 'pago', data_pagamento = p_data_pagamento,
-      observacoes = coalesce(nullif(btrim(p_observacao), ''), observacoes)
-  where id = v_boleto.id;
-
-  insert into public.logs_alteracoes (usuario, acao, entidade, entidade_id, detalhes)
-  values (p_usuario, 'baixou_parcela_manual', 'boletos', v_boleto.id,
-    jsonb_build_object('recebimento_id', v_recebimento.id, 'cliente_id', v_boleto.cliente_id,
-      'valor_original', v_boleto.valor, 'juros', v_juros, 'multa', v_multa,
-      'desconto', v_desconto, 'valor_recebido', v_total, 'forma_pagamento', p_forma_pagamento));
-
-  insert into public.notificacoes_cliente (cliente_id, tipo, titulo, mensagem, emoji, destino, referencia_id)
-  values (v_boleto.cliente_id, 'parcela', 'Pagamento confirmado',
-    format('Sua parcela %s foi confirmada como paga.', v_boleto.numero_parcela), '✅', 'parcelas', v_boleto.id);
-
-  if v_boleto.numero_parcela = 1 then
-    perform public.clube_conceder_bonus_primeira_parcela(v_boleto.cliente_id, v_boleto.id);
+  if old.status is not distinct from new.status then
+    return new;
   end if;
 
-  return v_recebimento;
-end;
-$$;
-
-create or replace function public.financeiro_validar_comprovante(
-  p_boleto_id uuid,
-  p_acao text,
-  p_observacao text,
-  p_usuario text,
-  p_idempotency_key text
-)
-returns public.financeiro_recebimentos
-language plpgsql
-security invoker
-set search_path = ''
-as $$
-declare
-  v_boleto public.boletos%rowtype;
-  v_recebimento public.financeiro_recebimentos%rowtype;
-begin
-  if p_acao not in ('confirmar', 'rejeitar') then raise exception 'Acao de validacao invalida'; end if;
-  if p_acao = 'rejeitar' and nullif(btrim(p_observacao), '') is null then
-    raise exception 'Motivo da rejeicao obrigatorio';
-  end if;
-
-  select * into v_boleto from public.boletos where id = p_boleto_id for update;
-  if not found then raise exception 'Parcela nao encontrada'; end if;
-
-  select * into v_recebimento
-  from public.financeiro_recebimentos
-  where idempotency_key = p_idempotency_key;
-  if found then return v_recebimento; end if;
-
-  if v_boleto.status <> 'pendente_confirmacao' then raise exception 'Comprovante nao esta pendente de validacao'; end if;
-
-  if p_acao = 'confirmar' then
-    insert into public.financeiro_recebimentos (
-      boleto_id, cliente_id, valor_original, valor_recebido, data_pagamento,
-      forma_pagamento, origem, status_validacao, comprovante_url, observacao,
-      idempotency_key, criado_por, validado_por, validado_em
-    ) values (
-      v_boleto.id, v_boleto.cliente_id, v_boleto.valor, v_boleto.valor, current_date,
-      'comprovante', 'comprovante', 'validado', v_boleto.comprovante_url, nullif(btrim(p_observacao), ''),
-      p_idempotency_key, p_usuario, p_usuario, now()
-    ) returning * into v_recebimento;
-
-    update public.boletos
-    set status = 'pago', data_pagamento = current_date,
-        observacoes = coalesce(nullif(btrim(p_observacao), ''), observacoes)
-    where id = v_boleto.id;
-
+  if new.status = 'pago' then
     insert into public.notificacoes_cliente (cliente_id, tipo, titulo, mensagem, emoji, destino, referencia_id)
-    values (v_boleto.cliente_id, 'parcela', 'Comprovante confirmado',
-      format('O comprovante da parcela %s foi confirmado pelo financeiro.', v_boleto.numero_parcela), '✅', 'parcelas', v_boleto.id);
+    values (
+      new.cliente_id,
+      'parcela',
+      'Pagamento confirmado',
+      format('Sua parcela %s foi confirmada como paga.', new.numero_parcela),
+      '✅',
+      'parcelas',
+      new.id
+    );
 
-    if v_boleto.numero_parcela = 1 then
-      perform public.clube_conceder_bonus_primeira_parcela(v_boleto.cliente_id, v_boleto.id);
+    if new.numero_parcela = 1 then
+      perform public.clube_conceder_bonus_primeira_parcela(new.cliente_id, new.id);
     end if;
-  else
-    insert into public.financeiro_recebimentos (
-      boleto_id, cliente_id, valor_original, valor_recebido, origem, status_validacao,
-      comprovante_url, observacao, motivo_rejeicao, idempotency_key, criado_por, validado_por, validado_em
-    ) values (
-      v_boleto.id, v_boleto.cliente_id, v_boleto.valor, 0, 'comprovante', 'rejeitado',
-      v_boleto.comprovante_url, p_observacao, p_observacao, p_idempotency_key, p_usuario, p_usuario, now()
-    ) returning * into v_recebimento;
-
-    update public.boletos
-    set status = 'rejeitado', data_pagamento = null, observacoes = p_observacao
-    where id = v_boleto.id;
-
+  elsif new.status = 'rejeitado' then
     insert into public.notificacoes_cliente (cliente_id, tipo, titulo, mensagem, emoji, destino, referencia_id)
-    values (v_boleto.cliente_id, 'parcela', 'Comprovante rejeitado',
-      format('O comprovante da parcela %s foi rejeitado: %s', v_boleto.numero_parcela, p_observacao), '⚠️', 'parcelas', v_boleto.id);
+    values (
+      new.cliente_id,
+      'parcela',
+      'Comprovante rejeitado',
+      case
+        when nullif(btrim(new.observacoes), '') is not null
+          then format('O comprovante da parcela %s foi rejeitado: %s', new.numero_parcela, new.observacoes)
+        else format('O comprovante da parcela %s foi rejeitado. Entre em contato com a equipe.', new.numero_parcela)
+      end,
+      '⚠️',
+      'parcelas',
+      new.id
+    );
   end if;
 
-  insert into public.logs_alteracoes (usuario, acao, entidade, entidade_id, detalhes)
-  values (p_usuario, case when p_acao = 'confirmar' then 'confirmou_comprovante' else 'rejeitou_comprovante' end,
-    'boletos', v_boleto.id, jsonb_build_object('recebimento_id', v_recebimento.id, 'cliente_id', v_boleto.cliente_id, 'acao', p_acao));
-
-  return v_recebimento;
+  return new;
 end;
 $$;
 
+drop trigger if exists trg_clube_notificar_boleto_status on public.boletos;
+create trigger trg_clube_notificar_boleto_status
+after update of status on public.boletos
+for each row
+when (old.status is distinct from new.status)
+execute function public.clube_notificar_boleto_status();
+
 -- ----------------------------------------------------------------------------
--- 7. Resgate atômico de prêmios (substitui o read-then-write do endpoint
---    /api/cliente/credit-ops/redeem por uma transação única com lock de
---    linha, igual ao padrão de financeiro_baixar_boleto).
+-- 6. Resgate atômico e realmente idempotente. O advisory lock serializa retries
+--    concorrentes com a mesma chave antes de verificar/insertar o resgate.
 -- ----------------------------------------------------------------------------
 create or replace function public.clube_resgatar(
   p_cliente_id uuid,
@@ -323,11 +316,33 @@ declare
   v_resgate public.clube_resgates%rowtype;
   v_saldo_atual integer;
 begin
-  select * into v_resgate from public.clube_resgates where idempotency_key = p_idempotency_key;
-  if found then return v_resgate; end if;
+  if p_cliente_id is null or p_recompensa_id is null then
+    raise exception 'Cliente e recompensa sao obrigatorios';
+  end if;
+  if nullif(btrim(p_idempotency_key), '') is null or length(p_idempotency_key) > 120 then
+    raise exception 'Chave de idempotencia invalida';
+  end if;
 
-  select * into v_recompensa from public.clube_recompensas where id = p_recompensa_id and ativo = true for update;
-  if not found then raise exception 'Recompensa indisponivel'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('clube_resgatar:' || p_idempotency_key, 0));
+
+  select * into v_resgate
+  from public.clube_resgates
+  where idempotency_key = p_idempotency_key;
+
+  if found then
+    if v_resgate.cliente_id <> p_cliente_id or v_resgate.recompensa_id <> p_recompensa_id then
+      raise exception 'Chave de idempotencia ja utilizada em outro resgate';
+    end if;
+    return v_resgate;
+  end if;
+
+  select * into v_recompensa
+  from public.clube_recompensas
+  where id = p_recompensa_id and ativo = true
+  for update;
+  if not found then
+    raise exception 'Recompensa indisponivel';
+  end if;
 
   if v_recompensa.estoque is not null and v_recompensa.estoque <= 0 then
     raise exception 'Recompensa sem estoque disponivel';
@@ -337,16 +352,25 @@ begin
   values (p_cliente_id, 0)
   on conflict (cliente_id) do nothing;
 
-  select * into v_pontos from public.cliente_pontos where cliente_id = p_cliente_id for update;
+  select * into v_pontos
+  from public.cliente_pontos
+  where cliente_id = p_cliente_id
+  for update;
+
   v_saldo_atual := coalesce(v_pontos.saldo, 0);
-  if v_saldo_atual < v_recompensa.pontos then raise exception 'Saldo de pontos insuficiente'; end if;
+  if v_saldo_atual < v_recompensa.pontos then
+    raise exception 'Saldo de pontos insuficiente';
+  end if;
 
   update public.cliente_pontos
-  set saldo = v_saldo_atual - v_recompensa.pontos, updated_at = now()
+  set saldo = v_saldo_atual - v_recompensa.pontos,
+      updated_at = now()
   where cliente_id = p_cliente_id;
 
   if v_recompensa.estoque is not null then
-    update public.clube_recompensas set estoque = estoque - 1 where id = v_recompensa.id;
+    update public.clube_recompensas
+    set estoque = estoque - 1
+    where id = v_recompensa.id;
   end if;
 
   insert into public.clube_resgates (cliente_id, recompensa_id, pontos, status, idempotency_key)
@@ -354,14 +378,53 @@ begin
   returning * into v_resgate;
 
   insert into public.cliente_pontos_eventos (cliente_id, tipo, pontos, referencia, metadata)
-  values (p_cliente_id, 'resgate', -v_recompensa.pontos, v_resgate.id::text, jsonb_build_object('recompensa_id', v_recompensa.id, 'titulo', v_recompensa.titulo));
+  values (
+    p_cliente_id,
+    'resgate',
+    -v_recompensa.pontos,
+    v_resgate.id::text,
+    jsonb_build_object('recompensa_id', v_recompensa.id, 'titulo', v_recompensa.titulo)
+  );
 
   insert into public.notificacoes_cliente (cliente_id, tipo, titulo, mensagem, emoji, destino, referencia_id)
-  values (p_cliente_id, 'clube', 'Resgate solicitado',
-    format('Seu resgate de "%s" foi enviado para a equipe.', v_recompensa.titulo), '🎁', 'clube', v_resgate.id);
+  values (
+    p_cliente_id,
+    'clube',
+    'Resgate solicitado',
+    format('Seu resgate de "%s" foi enviado para a equipe.', v_recompensa.titulo),
+    '🎁',
+    'clube',
+    v_resgate.id
+  );
+
+  insert into public.logs_alteracoes (usuario, acao, entidade, entidade_id, detalhes)
+  values (
+    'cliente:' || p_cliente_id::text,
+    'solicitou_resgate_clube',
+    'clube_resgates',
+    v_resgate.id,
+    jsonb_build_object(
+      'cliente_id', p_cliente_id,
+      'recompensa_id', v_recompensa.id,
+      'pontos', v_recompensa.pontos,
+      'idempotency_key', p_idempotency_key
+    )
+  );
 
   return v_resgate;
 end;
 $$;
+
+-- RPCs do Clube ficam exclusivas do Worker/service_role.
+revoke all on function public.clube_conceder_bonus_primeira_parcela(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.clube_conceder_bonus_primeira_parcela(uuid, uuid) to service_role;
+
+revoke all on function public.clube_notificar_boleto_status() from public, anon, authenticated;
+grant execute on function public.clube_notificar_boleto_status() to service_role;
+
+revoke all on function public.clube_resgatar(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.clube_resgatar(uuid, uuid, text) to service_role;
+
+commit;
 
 select 'Migration 048 aplicada com sucesso!' as mensagem;
