@@ -121,7 +121,6 @@ export function PwaInstallPrompt() {
       setEvento(null);
       marcarInstalado();
       setVisivel(false);
-      window.dispatchEvent(new Event("sra-luck-pwa-installed"));
       toast.success("Aplicativo instalado. Agora ative as notificações.");
     };
 
@@ -137,7 +136,6 @@ export function PwaInstallPrompt() {
     window.addEventListener("beforeinstallprompt", receberPrompt);
     window.addEventListener("sra-luck-pwa-ready", sincronizar);
     window.addEventListener("appinstalled", instalado);
-    window.addEventListener("sra-luck-pwa-installed", instalado);
     window.addEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
     window.addEventListener("pageshow", sincronizar);
     document.addEventListener("visibilitychange", sincronizar);
@@ -148,7 +146,6 @@ export function PwaInstallPrompt() {
       window.removeEventListener("beforeinstallprompt", receberPrompt);
       window.removeEventListener("sra-luck-pwa-ready", sincronizar);
       window.removeEventListener("appinstalled", instalado);
-      window.removeEventListener("sra-luck-pwa-installed", instalado);
       window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
       window.removeEventListener("pageshow", sincronizar);
       document.removeEventListener("visibilitychange", sincronizar);
