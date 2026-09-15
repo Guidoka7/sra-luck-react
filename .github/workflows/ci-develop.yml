@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - main
+      - fix/client-visual-exato-html
   pull_request:
     branches:
       - main
