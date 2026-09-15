@@ -2,6 +2,23 @@ import { buildPushPayload } from "@block65/webcrypto-web-push";
 import { obterCredencial } from "./integrations-credenciais";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
+/**
+ * @block65/webcrypto-web-push (via uint8array-extras) codifica o payload
+ * chamando `globalThis.btoa`/`globalThis.atob`. No runtime isolado da Vercel
+ * Edge/Cloudflare Workers essa forma qualificada por `globalThis.` quebra com
+ * "Illegal invocation" (mesmo com VAPID válido) — só a chamada do identificador
+ * global direto funciona. Reexpor como wrapper corrige o envio sem precisar
+ * alterar a dependência de terceiros.
+ */
+if (typeof globalThis.btoa === "function") {
+  const btoaDireto = btoa;
+  globalThis.btoa = (data: string) => btoaDireto(data);
+}
+if (typeof globalThis.atob === "function") {
+  const atobDireto = atob;
+  globalThis.atob = (data: string) => atobDireto(data);
+}
+
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
 export interface WebPushPayload {
