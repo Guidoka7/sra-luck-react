@@ -1,4 +1,4 @@
-import worker from "../worker/index";
+import worker from "../worker/secure-entry";
 import type { Env } from "../worker/supabase";
 
 export const config = { runtime: "edge" };
@@ -17,6 +17,10 @@ function buildEnv(request: Request): Env {
     SUPABASE_SERVICE_ROLE_KEY: firstEnv("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY"),
     CLIENTE_SESSION_SECRET: firstEnv("CLIENTE_SESSION_SECRET"),
     NOTIFICACOES_CRON_SECRET: firstEnv("NOTIFICACOES_CRON_SECRET"),
+    LOG_PSEUDONYM_KEY: firstEnv("LOG_PSEUDONYM_KEY"),
+    INTEGRATION_ENCRYPTION_KEY: firstEnv("INTEGRATION_ENCRYPTION_KEY"),
+    TURNSTILE_SECRET_KEY: firstEnv("TURNSTILE_SECRET_KEY"),
+    TURNSTILE_REQUIRED: firstEnv("TURNSTILE_REQUIRED"),
 
     WEB_PUSH_VAPID_PUBLIC_KEY: firstEnv("WEB_PUSH_VAPID_PUBLIC_KEY"),
     WEB_PUSH_VAPID_PRIVATE_KEY: firstEnv("WEB_PUSH_VAPID_PRIVATE_KEY"),
