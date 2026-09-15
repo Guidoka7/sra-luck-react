@@ -7,7 +7,9 @@ interface SessionGateProps {
 
 function previewPermitido(): boolean {
   const host = window.location.hostname.toLowerCase();
-  return host.endsWith(".vercel.app") || host === "localhost" || host === "127.0.0.1";
+  // Preview sem autenticação fica restrito ao ambiente local de desenvolvimento.
+  // Domínios públicos (inclusive *.vercel.app) nunca podem ignorar a validação de sessão.
+  return host === "localhost" || host === "127.0.0.1";
 }
 
 export function SessionGate({ audience, children }: SessionGateProps) {
@@ -40,7 +42,7 @@ export function SessionGate({ audience, children }: SessionGateProps) {
   }, [audience, state]);
 
   if (state === "ok") {
-    return <>{preview && <div style={{position:"fixed",right:10,bottom:84,zIndex:9999,background:"#7f6038",color:"white",fontSize:10,padding:"6px 9px",borderRadius:999}}>Modo preview</div>}{children}</>;
+    return <>{preview && <div style={{position:"fixed",right:10,bottom:84,zIndex:9999,background:"#7f6038",color:"white",fontSize:10,padding:"6px 9px",borderRadius:999}}>Modo preview local</div>}{children}</>;
   }
 
   return (
