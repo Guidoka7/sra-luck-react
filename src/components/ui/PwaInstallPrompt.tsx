@@ -68,6 +68,7 @@ export function PwaInstallPrompt() {
   const [evento, setEvento] = useState<BeforeInstallPromptEvent | null>(null);
   const [instalando, setInstalando] = useState(false);
   const [ios, setIos] = useState(false);
+  const [semPromptDisponivel, setSemPromptDisponivel] = useState(false);
 
   useEffect(() => {
     setIos(isIOS());
@@ -79,7 +80,10 @@ export function PwaInstallPrompt() {
 
     const sincronizar = () => {
       const capturado = (window as WindowWithInstallPrompt)[GLOBAL_EVENT_KEY] ?? null;
-      if (capturado) setEvento(capturado);
+      if (capturado) {
+        setEvento(capturado);
+        setSemPromptDisponivel(false);
+      }
       if (!isKnownInstalled() && !foiDispensadoHoje()) setVisivel(true);
     };
 
@@ -146,10 +150,12 @@ export function PwaInstallPrompt() {
 
       if (!promptEvent) {
         toast.info("O Chrome ainda não liberou o instalador. Mantenha esta tela aberta por alguns segundos e tente novamente; se necessário use ⋮ → Adicionar à tela inicial.");
+        setSemPromptDisponivel(true);
         setVisivel(true);
         return;
       }
 
+      setSemPromptDisponivel(false);
       await promptEvent.prompt();
       const escolha = await promptEvent.userChoice;
 
@@ -214,15 +220,22 @@ export function PwaInstallPrompt() {
 
           <div className="mt-5 rounded-[16px] border border-[#EFE3E0] bg-[#FBF7F5] px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <span className={`h-2 w-2 rounded-full ${evento ? "bg-[#3F7D5B]" : "bg-[#D19A54]"}`} />
+              <span className={`h-2 w-2 rounded-full ${evento ? "bg-[#3F7D5B]" : semPromptDisponivel ? "bg-[#B3342E]" : "bg-[#D19A54]"}`} />
               <span className="text-[10.5px] font-medium text-[#5E4D49]">
                 {ios
                   ? "Use o menu Compartilhar do Safari para concluir."
                   : evento
                     ? "O Chrome está pronto para instalar o aplicativo."
-                    : "O Chrome está preparando o instalador."}
+                    : semPromptDisponivel
+                      ? "O Chrome ainda não liberou o instalador nesta visita."
+                      : "O Chrome está preparando o instalador."}
               </span>
             </div>
+            {!ios && semPromptDisponivel && (
+              <p className="mt-2 text-[10.5px] font-light leading-[1.5] text-[#8A7772]">
+                Toque no menu <b>⋮</b> do Chrome (canto superior direito) e escolha <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>. Depois, abra o ícone Sra. Luck pela tela inicial para ativar as notificações.
+              </p>
+            )}
           </div>
 
           <button
