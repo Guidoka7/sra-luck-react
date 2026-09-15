@@ -1,1 +1,1 @@
-// recovering original content
+// SAFETY: restore original immediately
