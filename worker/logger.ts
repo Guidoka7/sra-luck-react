@@ -30,6 +30,7 @@ const PHONE_RE = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-\s]?\d{4}/g;
 const MAX_DEPTH = 6;
 const MAX_ARRAY = 30;
 const MAX_STRING = 3000;
+const REQUEST_IDS = new WeakMap<Request, string>();
 
 function sanitizeString(value: string): string {
   return value
@@ -88,7 +89,11 @@ function normalizeRequestId(value: string | null): string {
 }
 
 export function getRequestId(request: Request): string {
-  return normalizeRequestId(request.headers.get("x-request-id"));
+  const cached = REQUEST_IDS.get(request);
+  if (cached) return cached;
+  const id = normalizeRequestId(request.headers.get("x-request-id"));
+  REQUEST_IDS.set(request, id);
+  return id;
 }
 
 function emit(level: LogLevel, message: string, context: LogContext) {
