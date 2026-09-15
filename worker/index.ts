@@ -16,6 +16,8 @@ import { adminSurgeryFlow } from "./admin-surgery-flow";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
+import { clientNotificacoesApi } from "./client-notificacoes";
+import { clientConfigApi } from "./client-config";
 import { staffApi } from "./staff-api";
 import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
@@ -265,6 +267,10 @@ export default {
     if (creditOps) return creditOps;
     const journey = await journeyApi(request, env);
     if (journey) return journey;
+    const clientNotificacoes = await clientNotificacoesApi(request, env);
+    if (clientNotificacoes) return clientNotificacoes;
+    const clientConfig = await clientConfigApi(request, env);
+    if (clientConfig) return clientConfig;
 
     if (url.pathname === "/api/cliente/agenda" && request.method === "GET") return agenda(request, env);
     if (url.pathname === "/api/cliente/agendar" && request.method === "POST") {
