@@ -26,12 +26,14 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
     atualizar();
     window.addEventListener("appinstalled", atualizar);
     window.addEventListener("sra-luck-pwa-installed", atualizar);
+    window.addEventListener("sra-luck-push-updated", atualizar);
     window.addEventListener("focus", atualizar);
     document.addEventListener("visibilitychange", atualizar);
 
     return () => {
       window.removeEventListener("appinstalled", atualizar);
       window.removeEventListener("sra-luck-pwa-installed", atualizar);
+      window.removeEventListener("sra-luck-push-updated", atualizar);
       window.removeEventListener("focus", atualizar);
       document.removeEventListener("visibilitychange", atualizar);
     };
