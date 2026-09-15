@@ -11,6 +11,7 @@ import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import AdminLayout from "./app/admin/(painel)/layout";
 import "./app/globals.css";
 import "./styles/typography.css";
+import "./styles/client-prototype.css";
 import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
 import "./styles/staff-real.css";
