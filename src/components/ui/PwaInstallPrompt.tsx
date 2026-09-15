@@ -9,17 +9,12 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-const DISMISS_KEY = "sra-luck-pwa-install-dismissed-date";
 const GLOBAL_EVENT_KEY = "__sraLuckBeforeInstallPrompt";
 const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
 
 type WindowWithInstallEvent = Window & {
   [GLOBAL_EVENT_KEY]?: BeforeInstallPromptEvent | null;
 };
-
-function hoje() {
-  return new Date().toLocaleDateString("sv-SE");
-}
 
 function isStandalone() {
   return (
@@ -36,14 +31,6 @@ function isIOS() {
     (/iphone|ipad|ipod/i.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
   );
-}
-
-function foiDispensadoHoje() {
-  try {
-    return localStorage.getItem(DISMISS_KEY) === hoje();
-  } catch {
-    return false;
-  }
 }
 
 function prepararNotificacoesPosInstalacao(dispararEvento = false) {
@@ -89,12 +76,7 @@ export function PwaInstallPrompt() {
     if (isStandalone()) return;
 
     setIos(isIOS());
-
-    const mostrar = () => {
-      if (!isStandalone() && !foiDispensadoHoje()) {
-        setVisivel(true);
-      }
-    };
+    setVisivel(true);
 
     const recuperar = () => {
       const e = (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] ?? null;
@@ -102,7 +84,7 @@ export function PwaInstallPrompt() {
         setEvento(e);
         setPreparando(false);
       }
-      mostrar();
+      if (!isStandalone()) setVisivel(true);
     };
 
     const receber = (event: Event) => {
@@ -111,7 +93,7 @@ export function PwaInstallPrompt() {
       (window as WindowWithInstallEvent)[GLOBAL_EVENT_KEY] = e;
       setEvento(e);
       setPreparando(false);
-      mostrar();
+      setVisivel(true);
     };
 
     const instalado = () => {
@@ -129,10 +111,9 @@ export function PwaInstallPrompt() {
     window.addEventListener("appinstalled", instalado);
     window.addEventListener("pageshow", recuperar);
     document.addEventListener("visibilitychange", recuperar);
-    mostrar();
     recuperar();
 
-    const interval = window.setInterval(recuperar, 500);
+    const interval = window.setInterval(recuperar, 1000);
 
     return () => {
       window.clearInterval(interval);
@@ -162,7 +143,7 @@ export function PwaInstallPrompt() {
     if (!eventoAtual) {
       setPreparando(false);
       toast.info(
-        "O Chrome ainda não liberou a instalação. Se o app já estiver instalado, abra-o pela tela inicial; caso contrário, use o menu do Chrome > Adicionar à tela inicial.",
+        "O Chrome ainda está preparando a instalação. Use a página por alguns segundos e toque novamente em Instalar aplicativo. Se preferir, abra o menu ⋮ do Chrome e escolha Adicionar à tela inicial.",
       );
       return;
     }
@@ -191,9 +172,8 @@ export function PwaInstallPrompt() {
   }
 
   function dispensar() {
-    try {
-      localStorage.setItem(DISMISS_KEY, hoje());
-    } catch {}
+    // A dispensa vale somente para esta visualização. Em uma nova visita o convite
+    // reaparece, evitando que testes antigos ocultem indefinidamente a instalação.
     setVisivel(false);
   }
 
@@ -210,7 +190,9 @@ export function PwaInstallPrompt() {
           <p className="mt-0.5 text-xs leading-relaxed text-clay/60 dark:text-pearl/55">
             {ios
               ? "No iPhone, use Compartilhar → Adicionar à Tela de Início para abrir como aplicativo."
-              : "Instale no celular para abrir em tela cheia, receber avisos e ter acesso mais rápido."}
+              : evento
+                ? "O aplicativo está pronto para ser instalado neste celular."
+                : "Deixe esta tela aberta por alguns segundos. Assim que o Chrome liberar a instalação, toque no botão abaixo."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -229,7 +211,7 @@ export function PwaInstallPrompt() {
                 : instalando
                   ? "Abrindo instalação..."
                   : preparando
-                    ? "Preparando..."
+                    ? "Verificando..."
                     : "Instalar aplicativo"}
             </button>
             <button
