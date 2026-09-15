@@ -38,3 +38,5 @@ body:has(.client-app),
   background-color: #FBF7F5;
   color: #2E2422;
 }
+
+/* Mantém a superfície superior do PWA alinhada ao fundo principal no mobile. */
