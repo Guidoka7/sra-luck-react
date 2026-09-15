@@ -1,11 +1,18 @@
 import { useEffect } from "react";
 import { registrarErro } from "@/lib/monitoramento";
+import { PwaInstallPrompt } from "@/components/ui/PwaInstallPrompt";
+import { AtivarNotificacoesPush } from "@/components/cliente/AtivarNotificacoesPush";
 
 /** Ativa os recursos PWA nas áreas React de cliente e colaboradores. */
 export function PwaRegister() {
+  const pathname = window.location.pathname;
+  const areaCliente =
+    pathname.startsWith("/agenda") ||
+    pathname.startsWith("/app") ||
+    pathname.startsWith("/cliente");
+
   useEffect(() => {
-    const pathname = window.location.pathname;
-    const areaPwa = pathname.startsWith("/agenda") || pathname.startsWith("/app") || pathname.startsWith("/cliente") || pathname.startsWith("/equipe");
+    const areaPwa = areaCliente || pathname.startsWith("/equipe");
     if (!areaPwa) return;
 
     let manifestLink = document.querySelector<HTMLLinkElement>('link[data-sra-luck-client-manifest="true"]');
@@ -55,7 +62,14 @@ export function PwaRegister() {
       ativo = false;
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     };
-  }, []);
+  }, [areaCliente, pathname]);
 
-  return null;
+  if (!areaCliente) return null;
+
+  return (
+    <div className="mx-auto w-full max-w-[30rem] px-4 pt-3">
+      <PwaInstallPrompt />
+      <AtivarNotificacoesPush />
+    </div>
+  );
 }
