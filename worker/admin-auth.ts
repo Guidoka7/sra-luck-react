@@ -1,5 +1,6 @@
 import { getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { pseudonymizeActorId, requestLogger } from "./logger";
 
 const ADMIN_COOKIE = "admin_session";
 
@@ -46,12 +47,6 @@ export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string):
   return colaborador.cargo === "administrativo" || colaborador.permissoes.includes(chave);
 }
 
-/**
- * Fonte de verdade server-side para autorização administrativa.
- *
- * Autenticação (Supabase Auth) prova identidade; esta consulta prova autorização.
- * Nunca confiar em cargo/role recebido do frontend ou armazenado em localStorage.
- */
 export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env): Promise<ColaboradorAdmin | null> {
   const db = createServiceSupabaseClient(env);
   const { data, error } = await db
@@ -74,22 +69,23 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
 
 export async function exigirAdmin(request: Request, env: Env): Promise<Response | null> {
   if (!env.CLIENTE_SESSION_SECRET || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    requestLogger(request).fatal("Configuração obrigatória ausente para autorização administrativa", { action: "admin.authorization.validate", eventCode: "ADMIN_AUTH_CONFIG_MISSING", statusCode: 503 });
     return jsonErro("Serviço temporariamente indisponível.", 503);
   }
 
   const token = getCookie(request, ADMIN_COOKIE);
   const session: AdminSessionPayload | null = await verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET);
-  if (!session) {
-    return jsonErro("Sessão administrativa expirada.", 401);
-  }
+  if (!session) return jsonErro("Sessão administrativa expirada.", 401);
 
+  const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(session.adminId, env), action: "admin.authorization.validate" });
   try {
     const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env);
     if (!colaborador) {
+      log.warn("Administrador autenticado sem autorização ativa", { eventCode: "ADMIN_AUTH_DENIED", statusCode: 403 });
       return jsonErro("Acesso administrativo não autorizado.", 403);
     }
   } catch (error) {
-    console.error("Falha ao validar autorização administrativa:", error);
+    log.error("Falha técnica ao validar autorização administrativa", { eventCode: "ADMIN_AUTH_LOOKUP_FAILED", statusCode: 503, error });
     return jsonErro("Não foi possível validar sua autorização agora.", 503);
   }
 
