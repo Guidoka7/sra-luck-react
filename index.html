@@ -14,11 +14,13 @@
     <title>Sra. Luck — Cirurgia Programada</title>
     <script>
       window.__sraLuckBeforeInstallPrompt = window.__sraLuckBeforeInstallPrompt || null;
+
       window.addEventListener("beforeinstallprompt", function (event) {
         event.preventDefault();
         window.__sraLuckBeforeInstallPrompt = event;
         window.dispatchEvent(new Event("sra-luck-pwa-ready"));
       });
+
       window.addEventListener("appinstalled", function () {
         window.__sraLuckBeforeInstallPrompt = null;
         try {
@@ -28,6 +30,19 @@
         } catch (_) {}
         window.dispatchEvent(new Event("sra-luck-pwa-installed"));
       });
+
+      // Registra cedo para que o Chromium possa avaliar a instalabilidade mesmo
+      // quando a navegação /login -> /agenda acontece dentro da SPA sem reload.
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker
+            .register("/simulador-iphone-sw.js", { scope: "/", updateViaCache: "none" })
+            .then(function (registration) {
+              return registration.update().catch(function () {});
+            })
+            .catch(function () {});
+        });
+      }
     </script>
   </head>
   <body>
