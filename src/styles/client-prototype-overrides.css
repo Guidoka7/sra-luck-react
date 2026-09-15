@@ -1,9 +1,37 @@
-/* O protótipo aprovado é exclusivamente claro e usa o fundo externo #EFE6E2. */
-body:has(.client-app) {
+/* O app da cliente usa o mesmo fundo claro até a borda do viewport.
+   Isso evita uma faixa #EFE6E2 entre a status bar do PWA e o frame interno. */
+html:has(.client-app),
+body:has(.client-app),
+#root:has(.client-app) {
   margin: 0;
-  background: #EFE6E2 !important;
+  min-height: 100%;
+  background: #FBF7F5 !important;
   color-scheme: light;
 }
+
+.client-app {
+  background: #FBF7F5 !important;
+}
+
+.client-app .mobile-app-frame {
+  margin-top: 0 !important;
+  background: #FBF7F5 !important;
+}
+
+/* Em desktop, preserva o fundo externo do protótipo ao redor do frame de 430px. */
+@media (min-width: 640px) {
+  html:has(.client-app),
+  body:has(.client-app),
+  #root:has(.client-app),
+  .client-app {
+    background: #EFE6E2 !important;
+  }
+
+  .client-app .mobile-app-frame {
+    background: #FBF7F5 !important;
+  }
+}
+
 .dark .client-app,
 .dark .client-app .mobile-app-frame {
   color-scheme: light;
