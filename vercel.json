@@ -6,13 +6,6 @@
   "outputDirectory": "dist/client",
   "routes": [
     {
-      "src": "/simulador-iphone.html",
-      "headers": {
-        "Cache-Control": "no-store, no-cache, must-revalidate"
-      },
-      "continue": true
-    },
-    {
       "src": "/simulador-iphone.webmanifest",
       "headers": {
         "Content-Type": "application/manifest+json; charset=utf-8",

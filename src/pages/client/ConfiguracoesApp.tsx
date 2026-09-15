@@ -1,28 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-
-const INSTALLED_KEY = "sra-luck-pwa-installed-v1";
-const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
-
-function isStandalone() {
-  return (
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    ("standalone" in navigator &&
-      Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
-  );
-}
-
-function isKnownInstalled() {
-  if (isStandalone()) return true;
-  try {
-    return (
-      localStorage.getItem(INSTALLED_KEY) === "true" ||
-      localStorage.getItem(PUSH_AFTER_INSTALL_KEY) === "pending"
-    );
-  } catch {
-    return false;
-  }
-}
+import { isPwaInstalada } from "@/lib/pwaInstall";
 
 function permissionAtual(): NotificationPermission | "unsupported" {
   return "Notification" in window ? Notification.permission : "unsupported";
@@ -38,7 +16,7 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
     let ativo = true;
 
     const atualizar = async () => {
-      const instaladoAgora = isKnownInstalled();
+      const instaladoAgora = isPwaInstalada();
       const permissaoAgora = permissionAtual();
       let assinaturaAtiva = false;
 

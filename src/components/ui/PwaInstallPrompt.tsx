@@ -3,15 +3,19 @@
 import { useEffect, useState } from "react";
 import { Download, Loader2, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  PWA_DISMISS_KEY,
+  isIOSDevice,
+  isPwaInstalada,
+  isStandalonePwa,
+  marcarPwaInstalada,
+} from "@/lib/pwaInstall";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-const INSTALLED_KEY = "sra-luck-pwa-installed-v2";
-const DISMISS_KEY = "sra-luck-pwa-install-dismissed-date-v3";
-const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
 const GLOBAL_EVENT_KEY = "__sraLuckBeforeInstallPrompt";
 
 type WindowWithInstallPrompt = Window & {
@@ -22,46 +26,17 @@ function hoje() {
   return new Date().toLocaleDateString("sv-SE");
 }
 
-function isStandalone() {
-  return (
-    typeof window !== "undefined" &&
-    (window.matchMedia?.("(display-mode: standalone)").matches ||
-      ("standalone" in navigator &&
-        Boolean((navigator as Navigator & { standalone?: boolean }).standalone)))
-  );
-}
-
-function isIOS() {
-  return (
-    typeof navigator !== "undefined" &&
-    (/iphone|ipad|ipod/i.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
-  );
-}
-
-function isKnownInstalled() {
-  if (isStandalone()) return true;
-  try {
-    return localStorage.getItem(INSTALLED_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
+const isStandalone = isStandalonePwa;
+const isIOS = isIOSDevice;
+const isKnownInstalled = isPwaInstalada;
+const marcarInstalado = marcarPwaInstalada;
 
 function foiDispensadoHoje() {
   try {
-    return localStorage.getItem(DISMISS_KEY) === hoje();
+    return localStorage.getItem(PWA_DISMISS_KEY) === hoje();
   } catch {
     return false;
   }
-}
-
-function marcarInstalado() {
-  try {
-    localStorage.setItem(INSTALLED_KEY, "true");
-    localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
-    localStorage.removeItem(DISMISS_KEY);
-  } catch {}
 }
 
 async function aguardarPrompt(timeoutMs = 2500): Promise<BeforeInstallPromptEvent | null> {
@@ -108,14 +83,6 @@ export function PwaInstallPrompt() {
       if (!isKnownInstalled() && !foiDispensadoHoje()) setVisivel(true);
     };
 
-    const receberPrompt = (event: Event) => {
-      const promptEvent = event as BeforeInstallPromptEvent;
-      event.preventDefault();
-      (window as WindowWithInstallPrompt)[GLOBAL_EVENT_KEY] = promptEvent;
-      setEvento(promptEvent);
-      if (!foiDispensadoHoje()) setVisivel(true);
-    };
-
     const instalado = () => {
       (window as WindowWithInstallPrompt)[GLOBAL_EVENT_KEY] = null;
       setEvento(null);
@@ -133,7 +100,6 @@ export function PwaInstallPrompt() {
       sincronizar();
     };
 
-    window.addEventListener("beforeinstallprompt", receberPrompt);
     window.addEventListener("sra-luck-pwa-ready", sincronizar);
     window.addEventListener("appinstalled", instalado);
     window.addEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
@@ -143,7 +109,6 @@ export function PwaInstallPrompt() {
     sincronizar();
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", receberPrompt);
       window.removeEventListener("sra-luck-pwa-ready", sincronizar);
       window.removeEventListener("appinstalled", instalado);
       window.removeEventListener("sra-luck-pwa-install-request", solicitarInstalacao);
@@ -192,9 +157,7 @@ export function PwaInstallPrompt() {
       setEvento(null);
 
       if (escolha.outcome === "accepted") {
-        try {
-          localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
-        } catch {}
+        // A instalação real só é confirmada pelo evento nativo "appinstalled" (ver `instalado`).
         setVisivel(false);
       } else {
         setVisivel(true);
@@ -210,7 +173,7 @@ export function PwaInstallPrompt() {
 
   function dispensar() {
     try {
-      localStorage.setItem(DISMISS_KEY, hoje());
+      localStorage.setItem(PWA_DISMISS_KEY, hoje());
     } catch {}
     setVisivel(false);
   }

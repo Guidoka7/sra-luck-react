@@ -3,10 +3,14 @@
 import { useEffect, useState } from "react";
 import { Bell, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  PWA_PUSH_AFTER_INSTALL_KEY,
+  isPwaInstalada,
+  isStandalonePwa,
+  marcarPwaInstalada,
+} from "@/lib/pwaInstall";
 
 const DISMISS_KEY = "sra-luck-push-prompt-dismissed-date";
-const PUSH_AFTER_INSTALL_KEY = "sra-luck-push-after-install";
-const INSTALLED_KEY = "sra-luck-pwa-installed-v2";
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
@@ -20,47 +24,19 @@ function foiDispensadoHoje() {
   }
 }
 
-function temSolicitacaoPosInstalacao() {
-  try {
-    return localStorage.getItem(PUSH_AFTER_INSTALL_KEY) === "pending";
-  } catch {
-    return false;
-  }
-}
-
 function limparSolicitacaoPosInstalacao() {
   try {
-    localStorage.removeItem(PUSH_AFTER_INSTALL_KEY);
+    localStorage.removeItem(PWA_PUSH_AFTER_INSTALL_KEY);
   } catch {}
-}
-
-function isStandalone() {
-  return (
-    typeof window !== "undefined" &&
-    (window.matchMedia?.("(display-mode: standalone)").matches ||
-      ("standalone" in navigator &&
-        Boolean((navigator as Navigator & { standalone?: boolean }).standalone)))
-  );
 }
 
 function marcarInstaladoSeStandalone() {
-  if (!isStandalone()) return;
-  try {
-    localStorage.setItem(INSTALLED_KEY, "true");
-  } catch {}
-}
-
-function isKnownInstalled() {
-  if (isStandalone()) return true;
-  try {
-    return localStorage.getItem(INSTALLED_KEY) === "true" || temSolicitacaoPosInstalacao();
-  } catch {
-    return temSolicitacaoPosInstalacao();
-  }
+  if (!isStandalonePwa()) return;
+  marcarPwaInstalada();
 }
 
 function fluxoDeNotificacoesDisponivel() {
-  return isKnownInstalled();
+  return isPwaInstalada();
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -90,8 +66,8 @@ async function atualizarTelemetria(pushActive: boolean) {
         deviceKey,
         deviceType:
           window.innerWidth < 768 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop",
-        displayMode: isStandalone() ? "standalone" : "browser",
-        isPwaInstalled: isKnownInstalled(),
+        displayMode: isStandalonePwa() ? "standalone" : "browser",
+        isPwaInstalled: isPwaInstalada(),
         notificationPermission: Notification.permission,
         pushActive,
       }),
@@ -262,10 +238,7 @@ export function AtivarNotificacoesPush() {
     }
 
     const iniciarAposInstalacao = () => {
-      try {
-        localStorage.setItem(INSTALLED_KEY, "true");
-        localStorage.setItem(PUSH_AFTER_INSTALL_KEY, "pending");
-      } catch {}
+      marcarPwaInstalada();
       setVisivel(true);
       void verificarAssinatura();
     };

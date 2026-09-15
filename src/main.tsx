@@ -7,6 +7,7 @@ import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
+import { limparFlagsPwaAntigas } from "./lib/pwaInstall";
 import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import AdminLayout from "./app/admin/(painel)/layout";
 import "./app/globals.css";
@@ -114,6 +115,7 @@ function App() {
   );
 }
 
+limparFlagsPwaAntigas();
 const cleanupMonitoramento = instalarMonitoramentoGlobal();
 
 createRoot(document.getElementById("root")!).render(
