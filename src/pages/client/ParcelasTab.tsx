@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
-import { TabBoletos } from "@/components/cliente/TabBoletos";
+import { ParcelasPrototype, type PagamentoConfig } from "@/components/cliente/parcelas/ParcelasPrototype";
 
 interface ParcelasTabProps {
   procedimento: string | null;
 }
 
-interface PagamentoConfig {
-  pixChave: string | null;
-  pixQrCodeUrl: string | null;
-  pixDescontoPercentual?: number;
-}
-
-export function ParcelasTab({ procedimento }: ParcelasTabProps) {
+export function ParcelasTab({ procedimento: _procedimento }: ParcelasTabProps) {
   const [pagamento, setPagamento] = useState<PagamentoConfig | undefined>(undefined);
 
   useEffect(() => {
@@ -30,9 +24,7 @@ export function ParcelasTab({ procedimento }: ParcelasTabProps) {
         <h1>Minhas parcelas</h1>
         <p>Seu contrato em uma única visão, do pagamento confirmado ao próximo vencimento.</p>
       </div>
-      <div className="sl-parcelas-content">
-        <TabBoletos procedimento={procedimento} pagamento={pagamento} />
-      </div>
+      <ParcelasPrototype pagamento={pagamento} />
     </div>
   );
 }
