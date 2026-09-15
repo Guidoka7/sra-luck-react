@@ -1,19 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-
-interface InstallmentSummaryRow {
-  id: string;
-  numero_parcela: number;
-  total_parcelas?: number | null;
-  valor?: number | string | null;
-  status: string;
-  data_vencimento?: string | null;
-  data_pagamento?: string | null;
-  valor_recebido?: number | string | null;
-  comprovante_url?: string | null;
-  boleto_url?: string | null;
-  banco_emissor?: string | null;
-}
+import { getCookie, verificarTokenSessao } from "./session";
+import { pseudonymizeActorId, requestLogger } from "./logger";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -23,28 +10,11 @@ function json(data: unknown, status = 200) {
 }
 
 async function body(request: Request): Promise<Record<string, unknown>> {
-  try {
-    return await request.json() as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  try { return await request.json() as Record<string, unknown>; } catch { return {}; }
 }
 
-function mesmaOrigem(request: Request) {
-  const origin = request.headers.get("Origin");
-  if (!origin) return true;
-  try {
-    return origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
-
-async function exigirAdmin(request: Request, env: Env) {
-  if (!env.CLIENTE_SESSION_SECRET) return null;
-  const token = getCookie(request, "admin_session");
-  const session = await verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET);
-  return session?.adminId ?? null;
+function uuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function exigirCliente(request: Request, env: Env) {
@@ -54,274 +24,149 @@ async function exigirCliente(request: Request, env: Env) {
   return session?.clienteId ?? null;
 }
 
+async function consumirLimite(
+  db: ReturnType<typeof createServiceSupabaseClient>,
+  chave: string,
+  max: number,
+  janela: number,
+) {
+  const { data, error } = await db.rpc("rate_limit_consumir", {
+    p_chave: chave,
+    p_max_tentativas: max,
+    p_janela_segundos: janela,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/**
+ * Credit Ops antigo usava contratos_credito/agenda_janelas, estruturas que não
+ * pertencem ao fluxo canônico. Mantemos apenas o Clube, que usa tabelas atuais.
+ */
 export async function creditOpsApi(request: Request, env: Env): Promise<Response | null> {
-  const url = new URL(request.url);
-  const path = url.pathname;
+  const path = new URL(request.url).pathname;
 
   if (path.startsWith("/api/admin/credit-ops/")) {
-    const adminId = await exigirAdmin(request, env);
-    if (!adminId) return json({ erro: "Sessão administrativa expirada." }, 401);
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
-      return json({ erro: "Requisição de origem não autorizada." }, 403);
-    }
-    const db = createServiceSupabaseClient(env);
-
-    if (path === "/api/admin/credit-ops/contracts" && request.method === "GET") {
-      const { data, error } = await db
-        .from("contratos_credito")
-        .select("*, clientes(id,nome_completo,cpf,telefone,email)")
-        .order("created_at", { ascending: false });
-      if (error) return json({ erro: error.message }, 500);
-      return json({ contratos: data ?? [] });
-    }
-
-    if (path === "/api/admin/credit-ops/contracts" && request.method === "POST") {
-      const b = await body(request);
-      const clienteId = String(b.clienteId ?? "");
-      const codigo = String(b.codigo ?? "").trim();
-      const valor = Number(b.valorContrato ?? 0);
-      if (!clienteId || !codigo || !(valor > 0)) return json({ erro: "Cliente, código e valor do contrato são obrigatórios." }, 400);
-      const { data, error } = await db.from("contratos_credito").insert({
-        cliente_id: clienteId,
-        codigo,
-        rd_deal_id: b.rdDealId || null,
-        campanha: b.campanha || null,
-        origem: b.origem || null,
-        modalidade: b.modalidade === "100_boleto" ? "100_boleto" : "flex",
-        valor_contrato: valor,
-        percentual_minimo: Number(b.percentualMinimo ?? 60),
-        etapa: "aguardando_conferencia",
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ contrato: data }, 201);
-    }
-
-    const contract = path.match(/^\/api\/admin\/credit-ops\/contracts\/([^/]+)$/);
-    if (contract && request.method === "PATCH") {
-      const b = await body(request);
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      const map: Record<string, string> = {
-        campanha: "campanha",
-        origem: "origem",
-        modalidade: "modalidade",
-        etapa: "etapa",
-        percentualMinimo: "percentual_minimo",
-        saldoFinalApurado: "saldo_final_apurado",
-        formaQuitacao: "forma_quitacao",
-        pagarNoDiaTermos: "pagar_no_dia_termos",
-        previsaoAtingirPercentual: "previsao_atingir_percentual",
-        termosAssinadosEm: "termos_assinados_em",
-        agendaCirurgicaLiberarEm: "agenda_cirurgica_liberar_em",
-        cirurgiaEm: "cirurgia_em",
-      };
-      for (const [from, to] of Object.entries(map)) if (b[from] !== undefined) patch[to] = b[from];
-      const { data, error } = await db.from("contratos_credito").update(patch).eq("id", decodeURIComponent(contract[1])).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ contrato: data });
-    }
-
-    if (path === "/api/admin/credit-ops/finance/daily" && request.method === "GET") {
-      const day = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
-      const start = `${day}T00:00:00.000Z`;
-      const end = `${day}T23:59:59.999Z`;
-      const [paid, proofs, overdue, events] = await Promise.all([
-        db.from("boletos").select("*, clientes(id,nome_completo)").gte("recebido_em", start).lte("recebido_em", end).order("recebido_em", { ascending: false }),
-        db.from("comprovantes_pagamento").select("*, clientes(id,nome_completo), boletos(id,numero_parcela,total_parcelas,valor,banco_emissor)").in("status", ["aguardando_validacao", "em_analise"]).order("created_at", { ascending: false }).limit(200),
-        db.from("boletos").select("*, clientes(id,nome_completo)").lt("data_vencimento", day).neq("status", "pago").order("data_vencimento", { ascending: true }).limit(200),
-        db.from("conciliacao_financeira_eventos").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false }).limit(300),
-      ]);
-      const errors = [paid.error, proofs.error, overdue.error, events.error]
-        .filter((value): value is NonNullable<typeof value> => Boolean(value))
-        .map((value) => value.message);
-      return json({
-        data: day,
-        liquidados: paid.data ?? [],
-        aguardandoValidacao: proofs.data ?? [],
-        vencidos: overdue.data ?? [],
-        eventos: events.data ?? [],
-        erros: errors,
-      });
-    }
-
-    if (path === "/api/admin/credit-ops/rewards" && request.method === "GET") {
-      const { data, error } = await db.from("clube_recompensas").select("*").order("pontos", { ascending: true });
-      if (error) return json({ erro: error.message }, 500);
-      return json({ recompensas: data ?? [] });
-    }
-
-    if (path === "/api/admin/credit-ops/rewards" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("clube_recompensas").insert({
-        titulo: b.titulo,
-        descricao: b.descricao || null,
-        categoria: b.categoria || null,
-        pontos: Number(b.pontos),
-        estoque: b.estoque === undefined ? null : Number(b.estoque),
-        ativo: b.ativo !== false,
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ recompensa: data }, 201);
-    }
-
-    if (path === "/api/admin/credit-ops/team" && request.method === "GET") {
-      const [staff, rules, commissions, training] = await Promise.all([
-        db.from("colaboradores").select("*").order("nome"),
-        db.from("comissao_regras").select("*").eq("ativo", true).order("perfil"),
-        db.from("comissao_eventos").select("*, colaboradores(nome,perfil)").order("created_at", { ascending: false }).limit(300),
-        db.from("treinamentos").select("*").eq("ativo", true).order("created_at", { ascending: false }),
-      ]);
-      return json({ colaboradores: staff.data ?? [], regras: rules.data ?? [], comissoes: commissions.data ?? [], treinamentos: training.data ?? [] });
-    }
-
-    if (path === "/api/admin/credit-ops/team/commission-rules" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("comissao_regras").insert({
-        perfil: b.perfil,
-        nome: b.nome,
-        tipo: b.tipo,
-        valor: Number(b.valor),
-        meta_base: b.metaBase === undefined ? null : Number(b.metaBase),
-        configuracao: b.configuracao || {},
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ regra: data }, 201);
-    }
-
-    if (path === "/api/admin/credit-ops/team/trainings" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("treinamentos").insert({
-        titulo: b.titulo,
-        descricao: b.descricao || null,
-        tipo: b.tipo || "texto",
-        conteudo_url: b.conteudoUrl || null,
-        conteudo_texto: b.conteudoTexto || null,
-        perfis: Array.isArray(b.perfis) ? b.perfis : ["todos"],
-        obrigatorio: Boolean(b.obrigatorio),
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ treinamento: data }, 201);
-    }
-
-    return null;
+    return json({ erro: "Módulo legado desativado." }, 410);
   }
 
-  if (path.startsWith("/api/cliente/credit-ops/")) {
-    const clienteId = await exigirCliente(request, env);
-    if (!clienteId) return json({ erro: "Sessão expirada." }, 401);
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
-      return json({ erro: "Requisição de origem não autorizada." }, 403);
-    }
-    const db = createServiceSupabaseClient(env);
+  if (!path.startsWith("/api/cliente/credit-ops/")) return null;
 
-    if (path === "/api/cliente/credit-ops/summary" && request.method === "GET") {
-      const { data: contrato, error } = await db.from("contratos_credito").select("*").eq("cliente_id", clienteId).neq("etapa", "cancelado").order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (error) return json({ erro: error.message }, 500);
-      if (!contrato) return json({ contrato: null });
+  const clienteId = await exigirCliente(request, env);
+  if (!clienteId) return json({ erro: "Sessão expirada." }, 401);
 
-      const { data: parcelasData, error: parcelasError } = await db
-        .from("boletos")
-        .select("id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,valor_recebido,comprovante_url,boleto_url,banco_emissor")
-        .eq("cliente_id", clienteId)
-        .order("numero_parcela");
-      if (parcelasError) return json({ erro: parcelasError.message }, 500);
+  // O resumo antigo dependia de contratos_credito. Parcelas/Jornada atuais têm
+  // endpoints próprios e não devem reativar uma segunda fonte de verdade.
+  if (path === "/api/cliente/credit-ops/summary") {
+    return json({ erro: "Fluxo legado desativado." }, 410);
+  }
 
-      const parcelas = (parcelasData ?? []) as unknown as InstallmentSummaryRow[];
-      const pagas = parcelas.filter((parcela) => parcela.status === "pago");
-      const recebidos = pagas.reduce((soma, parcela) => soma + Number(parcela.valor_recebido ?? parcela.valor ?? 0), 0);
-      const totalParcelas = parcelas.reduce(
-        (maior, parcela) => Math.max(maior, Number(parcela.total_parcelas ?? 0)),
-        parcelas.length,
-      );
-      const parcelasPagas = pagas.length;
-      const percentual = totalParcelas > 0
-        ? Math.round((parcelasPagas / totalParcelas) * 1000) / 10
-        : 0;
-      const percentualMinimo = Number(contrato.percentual_minimo ?? 60);
-      const parcelasNecessarias = totalParcelas > 0
-        ? Math.ceil((totalParcelas * percentualMinimo) / 100)
-        : 0;
+  const db = createServiceSupabaseClient(env);
+  const actor = await pseudonymizeActorId(clienteId, env);
+  const log = requestLogger(request).child({ actorType: "cliente", actorId: actor, action: "club.action" });
 
-      return json({
-        contrato,
-        parcelas,
-        recebido: recebidos,
-        percentual,
-        parcelasPagas,
-        totalParcelas,
-        parcelasNecessarias,
-        parcelasRestantesParaMeta: Math.max(0, parcelasNecessarias - parcelasPagas),
-      });
+  if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
+    const [saldoRes, rewardsRes, historyRes, beneficiosRes, indicacoesRes] = await Promise.all([
+      db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
+      db.from("clube_recompensas").select("id,titulo,descricao,categoria,pontos,estoque,ativo,ordem,icone_key,instrucoes_pos_resgate").eq("ativo", true).order("ordem").order("pontos"),
+      db.from("cliente_pontos_eventos").select("id,tipo,pontos,referencia,metadata,created_at").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
+      db.from("clube_beneficios_cliente").select("id,beneficio_key,status,origem,created_at").eq("cliente_id", clienteId),
+      db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }).limit(100),
+    ]);
+
+    const error = saldoRes.error ?? rewardsRes.error ?? historyRes.error ?? beneficiosRes.error ?? indicacoesRes.error;
+    if (error) {
+      log.error("Falha ao carregar Clube", { eventCode: "CLUB_LOAD_FAILED", error });
+      return json({ erro: "Não foi possível carregar o Clube agora." }, 503);
     }
 
-    if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-      const [{ data: saldo }, { data: rewards }, { data: history }, { data: beneficios }, { data: indicacoes }] = await Promise.all([
-        db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-        db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
-        db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
-        db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
-        db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
-      ]);
-      const listaIndicacoes = indicacoes ?? [];
-      return json({
-        saldo: Number(saldo?.saldo ?? 0),
-        recompensas: rewards ?? [],
-        historico: history ?? [],
-        beneficios: beneficios ?? [],
-        indicacoes: {
-          confirmadas: listaIndicacoes.filter((item) => item.status === "venda").length,
-          emAnalise: listaIndicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
-          itens: listaIndicacoes,
-        },
-      });
-    }
+    const indicacoes = indicacoesRes.data ?? [];
+    return json({
+      saldo: Number(saldoRes.data?.saldo ?? 0),
+      recompensas: rewardsRes.data ?? [],
+      historico: historyRes.data ?? [],
+      beneficios: beneficiosRes.data ?? [],
+      indicacoes: {
+        confirmadas: indicacoes.filter((item) => item.status === "venda").length,
+        emAnalise: indicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
+        itens: indicacoes,
+      },
+    });
+  }
 
-    if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
-      const b = await body(request);
-      const nome = String(b.nome ?? "").trim();
-      if (!nome) return json({ erro: "Informe o nome da pessoa indicada." }, 400);
+  if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
+    const b = await body(request);
+    const nome = String(b.nome ?? "").trim().replace(/\s+/g, " ");
+    const telefone = String(b.telefone ?? "").replace(/\D/g, "");
+    if (nome.length < 2 || nome.length > 120) return json({ erro: "Informe um nome válido." }, 400);
+    if (telefone && (telefone.length < 10 || telefone.length > 13)) return json({ erro: "Informe um telefone válido." }, 400);
+
+    try {
+      if (!(await consumirLimite(db, `club:referral:${actor}`, 12, 3600))) return json({ erro: "Limite de indicações atingido. Tente novamente mais tarde." }, 429);
       const { data, error } = await db.from("indicacoes_clientes").insert({
         indicador_cliente_id: clienteId,
         nome_indicado: nome,
-        telefone_indicado: b.telefone || null,
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+        telefone_indicado: telefone || null,
+      }).select("id,nome_indicado,status,pontos_creditados,created_at").single();
+      if (error) throw error;
+      log.info("Indicação criada", { eventCode: "CLUB_REFERRAL_CREATED", entityType: "indicacao", entityId: data.id });
       return json({ indicacao: data }, 201);
+    } catch (error) {
+      log.error("Falha ao criar indicação", { eventCode: "CLUB_REFERRAL_FAILED", error });
+      return json({ erro: "Não foi possível enviar a indicação." }, 400);
     }
+  }
 
-    const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
-    if (usarBeneficio && request.method === "POST") {
-      const beneficioId = decodeURIComponent(usarBeneficio[1]);
-      const { data, error } = await db
-        .from("clube_beneficios_cliente")
+  const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
+  if (usarBeneficio && request.method === "POST") {
+    const beneficioId = decodeURIComponent(usarBeneficio[1]);
+    if (!uuid(beneficioId)) return json({ erro: "Benefício inválido." }, 400);
+    try {
+      if (!(await consumirLimite(db, `club:benefit:${actor}`, 20, 3600))) return json({ erro: "Muitas tentativas. Tente novamente mais tarde." }, 429);
+      const { data, error } = await db.from("clube_beneficios_cliente")
         .update({ status: "utilizado", updated_at: new Date().toISOString() })
         .eq("id", beneficioId)
         .eq("cliente_id", clienteId)
         .eq("status", "disponivel")
-        .select("*")
+        .select("id,beneficio_key,status,origem,created_at")
         .maybeSingle();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) throw error;
       if (!data) return json({ erro: "Benefício não encontrado ou já utilizado." }, 404);
+      log.info("Benefício utilizado", { eventCode: "CLUB_BENEFIT_USED", entityType: "beneficio", entityId: beneficioId });
       return json({ beneficio: data });
+    } catch (error) {
+      log.error("Falha ao utilizar benefício", { eventCode: "CLUB_BENEFIT_FAILED", error });
+      return json({ erro: "Não foi possível utilizar o benefício." }, 400);
     }
+  }
 
-    if (path === "/api/cliente/credit-ops/redeem" && request.method === "POST") {
-      const b = await body(request);
-      const rewardId = String(b.recompensaId ?? "");
-      const idempotencyKey = String(b.idempotencyKey ?? "");
-      if (!rewardId) return json({ erro: "Recompensa não informada." }, 400);
-      if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
+  if (path === "/api/cliente/credit-ops/redeem" && request.method === "POST") {
+    const b = await body(request);
+    const rewardId = String(b.recompensaId ?? "");
+    const idempotencyKey = String(b.idempotencyKey ?? "");
+    if (!uuid(rewardId)) return json({ erro: "Recompensa inválida." }, 400);
+    if (!/^[A-Za-z0-9._:-]{8,120}$/.test(idempotencyKey)) return json({ erro: "Chave de idempotência inválida." }, 400);
+
+    try {
+      if (!(await consumirLimite(db, `club:redeem:${actor}`, 20, 3600))) return json({ erro: "Muitas tentativas de resgate. Tente novamente mais tarde." }, 429);
       const { data: resgate, error } = await db.rpc("clube_resgatar", {
         p_cliente_id: clienteId,
         p_recompensa_id: rewardId,
         p_idempotency_key: idempotencyKey,
       });
-      if (error) return json({ erro: error.message }, 400);
+      if (error) {
+        const msg = String(error.message || "");
+        if (/saldo|pontos|estoque|indispon/i.test(msg)) return json({ erro: "Saldo insuficiente ou recompensa indisponível." }, 409);
+        throw error;
+      }
       const { data: pontos } = await db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle();
+      log.info("Resgate concluído", { eventCode: "CLUB_REDEEMED", entityType: "recompensa", entityId: rewardId });
       return json({ resgate, saldo: Number(pontos?.saldo ?? 0) }, 201);
+    } catch (error) {
+      log.error("Falha ao resgatar recompensa", { eventCode: "CLUB_REDEEM_FAILED", error });
+      return json({ erro: "Não foi possível concluir o resgate." }, 400);
     }
-
-    return null;
   }
 
-  return null;
+  return json({ erro: "Rota não encontrada." }, 404);
 }
