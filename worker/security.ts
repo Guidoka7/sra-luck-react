@@ -22,6 +22,11 @@ function originOf(value: string | undefined | null): string | null {
   try { return new URL(value).origin; } catch { return null; }
 }
 
+function hostnameOf(value: string | undefined | null): string | null {
+  if (!value) return null;
+  try { return new URL(value).hostname.toLowerCase(); } catch { return null; }
+}
+
 function ipDoRequest(request: Request): string {
   return request.headers.get("CF-Connecting-IP")?.trim()
     || request.headers.get("x-real-ip")?.trim()
@@ -68,23 +73,55 @@ export function enforceMutationOrigin(request: Request, env: Env): Response | nu
   return json({ erro: "Origem da requisição não pôde ser validada." }, 403);
 }
 
-export function enforceRequestSize(request: Request): Response | null {
+function requestSizeLimit(path: string): number {
+  // Carnê administrativo pode conter várias páginas; comprovantes individuais
+  // ficam com teto bem menor. JSON comum não precisa chegar perto desses valores.
+  if (/\/api\/cliente\/boletos\/[^/]+\/(anexar|comprovante)$/.test(path)) return 6 * 1024 * 1024;
+  if (path.includes("/carne") || path.includes("/carnes")) return 22 * 1024 * 1024;
+  if (path.includes("/comprovante")) return 7 * 1024 * 1024;
+  if (EXTERNAL_MUTATION_PATHS.has(path)) return 1024 * 1024;
+  return 512 * 1024;
+}
+
+/**
+ * Limita corpo mesmo quando Content-Length estiver ausente/for chunked.
+ * A leitura usa clone + streaming e interrompe assim que ultrapassa o teto,
+ * preservando o body original para o handler da rota.
+ */
+export async function enforceRequestSize(request: Request): Promise<Response | null> {
   const method = request.method.toUpperCase();
   if (!UNSAFE_METHODS.has(method)) return null;
   const path = new URL(request.url).pathname;
-  const declared = Number(request.headers.get("content-length") || 0);
-  if (!Number.isFinite(declared) || declared < 0) return json({ erro: "Tamanho da requisição inválido." }, 400);
-  if (!declared) return null;
+  const max = requestSizeLimit(path);
+  const rawLength = request.headers.get("content-length");
 
-  // Carnê administrativo pode conter várias páginas; comprovantes individuais
-  // ficam com teto bem menor. JSON comum não precisa chegar perto desses valores.
-  let max = 512 * 1024;
-  if (/\/api\/cliente\/boletos\/[^/]+\/(anexar|comprovante)$/.test(path)) max = 6 * 1024 * 1024;
-  else if (path.includes("/carne") || path.includes("/carnes")) max = 22 * 1024 * 1024;
-  else if (path.includes("/comprovante")) max = 7 * 1024 * 1024;
-  else if (EXTERNAL_MUTATION_PATHS.has(path)) max = 1024 * 1024;
+  if (rawLength !== null) {
+    const declared = Number(rawLength);
+    if (!Number.isFinite(declared) || declared < 0) return json({ erro: "Tamanho da requisição inválido." }, 400);
+    if (declared > max) return json({ erro: "Requisição excede o tamanho permitido." }, 413);
+    return null;
+  }
 
-  return declared > max ? json({ erro: "Requisição excede o tamanho permitido." }, 413) : null;
+  if (!request.body) return null;
+  const reader = request.clone().body?.getReader();
+  if (!reader) return null;
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value?.byteLength ?? 0;
+      if (total > max) {
+        await reader.cancel().catch(() => undefined);
+        return json({ erro: "Requisição excede o tamanho permitido." }, 413);
+      }
+    }
+  } catch {
+    return json({ erro: "Não foi possível validar o corpo da requisição." }, 400);
+  } finally {
+    try { reader.releaseLock(); } catch { /* noop */ }
+  }
+  return null;
 }
 
 function canonicalRateAction(request: Request): { action: string; max: number; window: number } | null {
@@ -219,7 +256,26 @@ export async function hmacFingerprint(value: string, secret: string): Promise<st
   return Array.from(new Uint8Array(signature)).slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function verifyTurnstile(request: Request, env: Env, token: string | null | undefined): Promise<{ ok: true } | { ok: false; status: number; erro: string }> {
+type TurnstileVerifyResult = {
+  success?: boolean;
+  hostname?: string;
+  action?: string;
+  "error-codes"?: string[];
+};
+
+function turnstileAllowedHostnames(request: Request, env: Env): Set<string> {
+  const hosts = new Set<string>([new URL(request.url).hostname.toLowerCase()]);
+  const configured = hostnameOf(env.PUBLIC_APP_URL);
+  if (configured) hosts.add(configured);
+  return hosts;
+}
+
+export async function verifyTurnstile(
+  request: Request,
+  env: Env,
+  token: string | null | undefined,
+  expectedAction?: string,
+): Promise<{ ok: true } | { ok: false; status: number; erro: string }> {
   const configuredFlag = String(env.TURNSTILE_REQUIRED || "").trim().toLowerCase();
   const required = configuredFlag === "true" || (configuredFlag !== "false" && productionLike(request));
   const secret = env.TURNSTILE_SECRET_KEY?.trim();
@@ -238,10 +294,31 @@ export async function verifyTurnstile(request: Request, env: Env, token: string 
 
   try {
     const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
-    const result = await response.json().catch(() => null) as { success?: boolean } | null;
-    return response.ok && result?.success === true
-      ? { ok: true }
-      : { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
+    const result = await response.json().catch(() => null) as TurnstileVerifyResult | null;
+    if (!response.ok || result?.success !== true) {
+      return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
+    }
+
+    const hostname = String(result.hostname || "").toLowerCase();
+    if (productionLike(request) && (!hostname || !turnstileAllowedHostnames(request, env).has(hostname))) {
+      requestLogger(request).warn("Turnstile recusado por hostname divergente", {
+        action: "security.turnstile.verify",
+        eventCode: "TURNSTILE_HOSTNAME_MISMATCH",
+        statusCode: 403,
+      });
+      return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
+    }
+
+    if (expectedAction && String(result.action || "") !== expectedAction) {
+      requestLogger(request).warn("Turnstile recusado por action divergente", {
+        action: "security.turnstile.verify",
+        eventCode: "TURNSTILE_ACTION_MISMATCH",
+        statusCode: 403,
+      });
+      return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
+    }
+
+    return { ok: true };
   } catch {
     return { ok: false, status: 503, erro: "Não foi possível validar a proteção anti-bot agora." };
   }
