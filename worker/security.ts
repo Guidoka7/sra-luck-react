@@ -46,10 +46,6 @@ export function trustedOrigins(request: Request, env: Env): Set<string> {
   return origins;
 }
 
-/**
- * Defesa CSRF central para todas as mutações autenticadas por cookie.
- * Webhooks externos autenticam pela assinatura/segredo próprio e são isentos.
- */
 export function enforceMutationOrigin(request: Request, env: Env): Response | null {
   if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return null;
   const path = new URL(request.url).pathname;
@@ -58,24 +54,16 @@ export function enforceMutationOrigin(request: Request, env: Env): Response | nu
 
   const origin = request.headers.get("Origin");
   if (origin) {
-    if (!trustedOrigins(request, env).has(originOf(origin) ?? "")) {
-      return json({ erro: "Origem não autorizada." }, 403);
-    }
+    if (!trustedOrigins(request, env).has(originOf(origin) ?? "")) return json({ erro: "Origem não autorizada." }, 403);
     return null;
   }
 
   const fetchSite = (request.headers.get("Sec-Fetch-Site") || "").toLowerCase();
   if (fetchSite === "same-origin") return null;
-
-  // Mutações autenticadas por cookie precisam ser inequivocamente same-origin.
-  // `same-site` não basta: um subdomínio comprometido não deve conseguir usar
-  // a sessão do domínio principal como pivô de CSRF.
   return json({ erro: "Origem da requisição não pôde ser validada." }, 403);
 }
 
-function requestSizeLimit(path: string): number {
-  // Carnê administrativo pode conter várias páginas; comprovantes individuais
-  // ficam com teto bem menor. JSON comum não precisa chegar perto desses valores.
+export function requestSizeLimit(path: string): number {
   if (/\/api\/cliente\/boletos\/[^/]+\/(anexar|comprovante)$/.test(path)) return 6 * 1024 * 1024;
   if (path.includes("/carne") || path.includes("/carnes")) return 22 * 1024 * 1024;
   if (path.includes("/comprovante")) return 7 * 1024 * 1024;
@@ -83,26 +71,28 @@ function requestSizeLimit(path: string): number {
   return 512 * 1024;
 }
 
-/**
- * Limita corpo mesmo quando Content-Length estiver ausente/for chunked.
- * A leitura usa clone + streaming e interrompe assim que ultrapassa o teto,
- * preservando o body original para o handler da rota.
- */
-export async function enforceRequestSize(request: Request): Promise<Response | null> {
+/** Fast-path pelo Content-Length. A barreira streaming do secure-entry cobre requisições chunked/sem Content-Length. */
+export function enforceRequestSize(request: Request): Response | null {
   const method = request.method.toUpperCase();
   if (!UNSAFE_METHODS.has(method)) return null;
-  const path = new URL(request.url).pathname;
-  const max = requestSizeLimit(path);
   const rawLength = request.headers.get("content-length");
+  if (rawLength === null) return null;
+  const declared = Number(rawLength);
+  if (!Number.isFinite(declared) || declared < 0) return json({ erro: "Tamanho da requisição inválido." }, 400);
+  return declared > requestSizeLimit(new URL(request.url).pathname)
+    ? json({ erro: "Requisição excede o tamanho permitido." }, 413)
+    : null;
+}
 
-  if (rawLength !== null) {
-    const declared = Number(rawLength);
-    if (!Number.isFinite(declared) || declared < 0) return json({ erro: "Tamanho da requisição inválido." }, 400);
-    if (declared > max) return json({ erro: "Requisição excede o tamanho permitido." }, 413);
-    return null;
-  }
+/**
+ * Segunda barreira de tamanho: mede o stream clonado quando o cliente omite Content-Length.
+ * Interrompe ao ultrapassar o limite e preserva o body original para o handler.
+ */
+export async function enforceStreamingRequestSize(request: Request): Promise<Response | null> {
+  if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return null;
+  if (request.headers.get("content-length") !== null || !request.body) return null;
 
-  if (!request.body) return null;
+  const max = requestSizeLimit(new URL(request.url).pathname);
   const reader = request.clone().body?.getReader();
   if (!reader) return null;
   let total = 0;
@@ -116,12 +106,12 @@ export async function enforceRequestSize(request: Request): Promise<Response | n
         return json({ erro: "Requisição excede o tamanho permitido." }, 413);
       }
     }
+    return null;
   } catch {
     return json({ erro: "Não foi possível validar o corpo da requisição." }, 400);
   } finally {
     try { reader.releaseLock(); } catch { /* noop */ }
   }
-  return null;
 }
 
 function canonicalRateAction(request: Request): { action: string; max: number; window: number } | null {
@@ -140,35 +130,21 @@ function canonicalRateAction(request: Request): { action: string; max: number; w
   return null;
 }
 
-/**
- * Rate limit de segunda camada para ações autenticadas. Login possui política
- * própria (IP + identificador); aqui a chave combina ação + sessão HMAC e IP,
- * nunca armazenando cookie, IP ou PII em texto puro no banco.
- */
 export async function enforceActionRateLimit(request: Request, env: Env): Promise<Response | null> {
   const rule = canonicalRateAction(request);
   if (!rule) return null;
-  if (!env.CLIENTE_SESSION_SECRET || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    return json({ erro: "Serviço temporariamente indisponível." }, 503);
-  }
+  if (!env.CLIENTE_SESSION_SECRET || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return json({ erro: "Serviço temporariamente indisponível." }, 503);
 
   const path = new URL(request.url).pathname;
   const cookieName = path.startsWith("/api/admin/") ? "admin_session" : path.startsWith("/api/equipe/") ? "staff_session" : "cliente_session";
   const token = getCookie(request, cookieName) || "anonymous";
   const actorFp = await hmacFingerprint(`${cookieName}:${token}`, env.CLIENTE_SESSION_SECRET);
   const ipFp = await hmacFingerprint(ipDoRequest(request), env.CLIENTE_SESSION_SECRET);
-  const keys = [
-    `action:${rule.action}:actor:${actorFp}`,
-    `action:${rule.action}:ip:${ipFp}`,
-  ];
+  const keys = [`action:${rule.action}:actor:${actorFp}`, `action:${rule.action}:ip:${ipFp}`];
 
   const db = createServiceSupabaseClient(env);
   for (const key of keys) {
-    const { data, error } = await db.rpc("rate_limit_consumir", {
-      p_chave: key,
-      p_max_tentativas: rule.max,
-      p_janela_segundos: rule.window,
-    });
+    const { data, error } = await db.rpc("rate_limit_consumir", { p_chave: key, p_max_tentativas: rule.max, p_janela_segundos: rule.window });
     if (error) {
       requestLogger(request).error("Falha no rate limit de ação", { action: "security.rate_limit", eventCode: "ACTION_RATE_LIMIT_FAILED", statusCode: 503, error });
       return json({ erro: "Não foi possível validar a operação agora." }, 503);
@@ -197,17 +173,8 @@ export function applyApiSecurityHeaders(response: Response, request: Request): R
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-export type ClientAccess = {
-  clienteId: string;
-  statusContrato: string;
-  ativo: boolean;
-};
+export type ClientAccess = { clienteId: string; statusContrato: string; ativo: boolean };
 
-/**
- * Revalida a situação contratual em toda requisição da cliente.
- * Token válido sozinho não autoriza uma conta desativada/cancelada.
- * Em suspensão, a área continua consultável, mas mutações ficam bloqueadas.
- */
 export async function enforceClientAccountState(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (!path.startsWith("/api/cliente/")) return null;
@@ -216,18 +183,9 @@ export async function enforceClientAccountState(request: Request, env: Env): Pro
 
   const sessao = await verificarTokenSessao(getCookie(request, "cliente_session"), env.CLIENTE_SESSION_SECRET);
   if (!sessao) return null;
-
   const db = createServiceSupabaseClient(env);
-  const { data, error } = await db.from("clientes")
-    .select("id,ativo,status_contrato")
-    .eq("id", sessao.clienteId)
-    .maybeSingle();
-
-  const log = requestLogger(request).child({
-    actorType: "cliente",
-    actorId: await pseudonymizeActorId(sessao.clienteId, env),
-    action: "client.account.revalidate",
-  });
+  const { data, error } = await db.from("clientes").select("id,ativo,status_contrato").eq("id", sessao.clienteId).maybeSingle();
+  const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(sessao.clienteId, env), action: "client.account.revalidate" });
 
   if (error) {
     log.error("Falha ao revalidar situação da cliente", { eventCode: "CLIENT_ACCOUNT_REVALIDATE_FAILED", statusCode: 503, error });
@@ -237,16 +195,13 @@ export async function enforceClientAccountState(request: Request, env: Env): Pro
   const status = String(data?.status_contrato || "ativo").toLowerCase();
   if (!data || data.ativo !== true || status === "cancelado") {
     log.warn("Sessão de cliente revogada pela situação cadastral", { eventCode: "CLIENT_SESSION_REVOKED", statusCode: 401 });
-    return json({ erro: "Seu acesso não está ativo." }, 401, {
-      "Set-Cookie": clearSessionCookie(new URL(request.url).protocol === "https:"),
-    });
+    return json({ erro: "Seu acesso não está ativo." }, 401, { "Set-Cookie": clearSessionCookie(new URL(request.url).protocol === "https:") });
   }
 
   if (status === "suspenso" && UNSAFE_METHODS.has(request.method.toUpperCase())) {
     log.warn("Mutação bloqueada para contrato suspenso", { eventCode: "CLIENT_SUSPENDED_MUTATION_BLOCKED", statusCode: 423 });
     return json({ erro: "Seu contrato está suspenso. As ações da jornada estão temporariamente bloqueadas." }, 423);
   }
-
   return null;
 }
 
@@ -256,12 +211,7 @@ export async function hmacFingerprint(value: string, secret: string): Promise<st
   return Array.from(new Uint8Array(signature)).slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-type TurnstileVerifyResult = {
-  success?: boolean;
-  hostname?: string;
-  action?: string;
-  "error-codes"?: string[];
-};
+type TurnstileVerifyResult = { success?: boolean; hostname?: string; action?: string; "error-codes"?: string[] };
 
 function turnstileAllowedHostnames(request: Request, env: Env): Set<string> {
   const hosts = new Set<string>([new URL(request.url).hostname.toLowerCase()]);
@@ -279,11 +229,7 @@ export async function verifyTurnstile(
   const configuredFlag = String(env.TURNSTILE_REQUIRED || "").trim().toLowerCase();
   const required = configuredFlag === "true" || (configuredFlag !== "false" && productionLike(request));
   const secret = env.TURNSTILE_SECRET_KEY?.trim();
-  if (!secret) {
-    return required
-      ? { ok: false, status: 503, erro: "Proteção anti-bot não configurada." }
-      : { ok: true };
-  }
+  if (!secret) return required ? { ok: false, status: 503, erro: "Proteção anti-bot não configurada." } : { ok: true };
   if (!token) return { ok: false, status: 400, erro: "Confirme a verificação de segurança." };
 
   const form = new FormData();
@@ -295,29 +241,18 @@ export async function verifyTurnstile(
   try {
     const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
     const result = await response.json().catch(() => null) as TurnstileVerifyResult | null;
-    if (!response.ok || result?.success !== true) {
-      return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
-    }
+    if (!response.ok || result?.success !== true) return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
 
     const hostname = String(result.hostname || "").toLowerCase();
     if (productionLike(request) && (!hostname || !turnstileAllowedHostnames(request, env).has(hostname))) {
-      requestLogger(request).warn("Turnstile recusado por hostname divergente", {
-        action: "security.turnstile.verify",
-        eventCode: "TURNSTILE_HOSTNAME_MISMATCH",
-        statusCode: 403,
-      });
+      requestLogger(request).warn("Turnstile recusado por hostname divergente", { action: "security.turnstile.verify", eventCode: "TURNSTILE_HOSTNAME_MISMATCH", statusCode: 403 });
       return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
     }
 
     if (expectedAction && String(result.action || "") !== expectedAction) {
-      requestLogger(request).warn("Turnstile recusado por action divergente", {
-        action: "security.turnstile.verify",
-        eventCode: "TURNSTILE_ACTION_MISMATCH",
-        statusCode: 403,
-      });
+      requestLogger(request).warn("Turnstile recusado por action divergente", { action: "security.turnstile.verify", eventCode: "TURNSTILE_ACTION_MISMATCH", statusCode: 403 });
       return { ok: false, status: 403, erro: "Verificação de segurança inválida ou expirada." };
     }
-
     return { ok: true };
   } catch {
     return { ok: false, status: 503, erro: "Não foi possível validar a proteção anti-bot agora." };
