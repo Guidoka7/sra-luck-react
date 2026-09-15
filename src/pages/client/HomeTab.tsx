@@ -53,25 +53,23 @@ export function HomeTab({
         onAbrirNotificacoes={onAbrirNotificacoes}
       />
 
-      <div className="flex flex-col gap-4 pt-4">
-        <CardMotivacional procedimento={procedimento} quantidadeParcelas={quantidadeParcelas} percentualPago={porcentagemPagamento} />
+      <CardMotivacional procedimento={procedimento} quantidadeParcelas={quantidadeParcelas} percentualPago={porcentagemPagamento} />
 
-        <AgendaHome
-          agendamentoAtivo={agendamentoAtivo}
-          agendamentoConcluido={agendamentoConcluido}
-          datasDisponiveis={datasDisponiveis}
-          quantidadeParcelas={quantidadeParcelas}
-          podeAgendar={podeAgendar}
-          agendaLiberada={agendaLiberada}
-          statusRevisaoFinanceira={statusRevisaoFinanceira}
-          observacaoRevisaoFinanceira={observacaoRevisaoFinanceira}
-          custeioAprovado={custeioAprovado}
-          confirmando={confirmando}
-          onEscolherData={onEscolherData}
-        />
+      <AgendaHome
+        agendamentoAtivo={agendamentoAtivo}
+        agendamentoConcluido={agendamentoConcluido}
+        datasDisponiveis={datasDisponiveis}
+        quantidadeParcelas={quantidadeParcelas}
+        podeAgendar={podeAgendar}
+        agendaLiberada={agendaLiberada}
+        statusRevisaoFinanceira={statusRevisaoFinanceira}
+        observacaoRevisaoFinanceira={observacaoRevisaoFinanceira}
+        custeioAprovado={custeioAprovado}
+        confirmando={confirmando}
+        onEscolherData={onEscolherData}
+      />
 
-        <DisciplinaCard />
-      </div>
+      <DisciplinaCard />
     </div>
   );
 }
