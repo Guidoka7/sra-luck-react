@@ -89,8 +89,7 @@ export function NotificacoesTab({ notificacoes, naoLidas, carregando, onMarcarLi
         <div className="relative flex items-start gap-3">
           <span className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[13px] border border-white/10 bg-white/[.09] text-[#E1C78F]"><Bell className="h-[18px] w-[18px]" strokeWidth={1.5}/></span>
           <div className="min-w-0 flex-1">
-            <div className="text-[8.5px] font-semibold uppercase tracking-[.15em] text-[#E1C78F]">Sua central de acompanhamento</div>
-            <div className="pt-[3px] font-heading text-[20px] font-semibold leading-[1.15]">{resumoTitulo}</div>
+            <div className="font-heading text-[20px] font-semibold leading-[1.15]">{resumoTitulo}</div>
             <div className="pt-1 text-[10.5px] font-light leading-[1.5] text-white/70">{resumoTexto}</div>
           </div>
         </div>
@@ -99,7 +98,6 @@ export function NotificacoesTab({ notificacoes, naoLidas, carregando, onMarcarLi
       {destaque && (() => {
         const m = meta(destaque); const Icon = m.Icon;
         return <div className="px-5 pt-[14px]">
-          <div className="px-[2px] pb-[7px] text-[8.5px] font-semibold uppercase tracking-[.14em] text-[#A9837C]">Precisa da sua atenção</div>
           <div className="rounded-[18px] border border-[#E5D5D1] bg-[#FFFCFB] p-[14px] shadow-[0_8px_20px_rgba(81,45,49,.06)]">
             <div className="flex items-start gap-[11px]">
               <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[12px]" style={{ background: m.bg, color: m.color }}><Icon className="h-[17px] w-[17px]" strokeWidth={1.5}/></span>
