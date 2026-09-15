@@ -7,15 +7,8 @@ interface JornadaTabProps extends JourneyStepsInput {
   onVerNotificacoes: () => void;
 }
 
-function dataCurta(iso: string) {
-  const data = new Date(iso);
-  return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
-
 export function JornadaTab(props: JornadaTabProps) {
-  const { notificacoesCompactas, onVerNotificacoes, ...stepsInput } = props;
-  const passos = deriveJourneySteps(stepsInput);
-  const compactas = notificacoesCompactas.slice(0, 3);
+  const passos = deriveJourneySteps(props);
 
   return (
     <div className="sl-tab pb-[10px]">
@@ -23,31 +16,6 @@ export function JornadaTab(props: JornadaTabProps) {
         <div className="flex min-h-[31px] items-center"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[91px] object-contain" /></div>
         <span className="sl-journey-chip">Sua jornada</span>
       </div>
-
-      <section className="sl-updates">
-        <div className="sl-updates-head" style={{ justifyContent: "flex-end" }}>
-          <button type="button" onClick={onVerNotificacoes} className="sl-updates-link">Ver todas</button>
-        </div>
-        {compactas.length === 0 ? (
-          <div className="border-y border-[#EEE5E2] py-[10px] text-[10.5px] font-light text-[#9A8D89]">Nenhuma atualização nova no momento.</div>
-        ) : (
-          <div className="border-t border-[#EEE5E2]">
-            {compactas.map((item) => (
-              <button type="button" key={item.id} onClick={onVerNotificacoes} className="sl-update-row w-full text-left">
-                <span className="sl-update-dot" style={{ background: item.lida ? "#C9BFBC" : "#B3342E" }} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="truncate text-[11px] leading-[1.3] text-[#4A3734]" style={{ fontWeight: item.lida ? 400 : 600 }}>{item.titulo}</div>
-                    <span className="whitespace-nowrap pt-px text-[8.8px] font-normal text-[#A89A96]">{dataCurta(item.created_at)}</span>
-                  </div>
-                  <div className="truncate pt-[2px] text-[9.7px] font-light leading-[1.4] text-[#8A7B77]">{item.mensagem}</div>
-                </div>
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="#B6AAA6" strokeWidth="1.25" className="mt-[3px] flex-none"><path d="M5 3.5 8.5 7 5 10.5" /></svg>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
 
       <div className="flex items-end justify-between gap-3 px-5 pb-2 pt-[19px]">
         <div>
