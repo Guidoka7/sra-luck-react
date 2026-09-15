@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { registrarErro } from "@/lib/monitoramento";
+import { ConfiguracoesApp } from "@/pages/client/ConfiguracoesApp";
 
-type SubTela = "clube" | "documentos" | "atendimento" | "faq" | "seguranca" | null;
+type SubTela = "clube" | "documentos" | "atendimento" | "faq" | "configuracoes" | "seguranca" | null;
 
 interface MaisTabProps {
   nomeCliente: string;
@@ -17,12 +18,13 @@ const FAQS = [
   { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },
 ];
 
-function IconeMenu({ tipo }: { tipo: "clube" | "documentos" | "atendimento" | "faq" | "seguranca" | "sair" }) {
+function IconeMenu({ tipo }: { tipo: "clube" | "documentos" | "atendimento" | "faq" | "configuracoes" | "seguranca" | "sair" }) {
   const base = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.45, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (tipo === "clube") return <svg {...base}><path d="M20 12v9H4v-9"/><path d="M2 7h20v5H2z"/><path d="M12 21V7"/><path d="M12 7H7.4a2.4 2.4 0 1 1 2.08-3.6L12 7Z"/><path d="M12 7h4.6a2.4 2.4 0 1 0-2.08-3.6L12 7Z"/></svg>;
   if (tipo === "documentos") return <svg {...base}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>;
   if (tipo === "atendimento") return <svg {...base}><path d="M21 12a8.5 8.5 0 0 1-9 8.5 9.7 9.7 0 0 1-3.8-.8L3 21l1.4-4.6A8.5 8.5 0 1 1 21 12Z"/><path d="M8.5 11.8h.01M12 11.8h.01M15.5 11.8h.01"/></svg>;
   if (tipo === "faq") return <svg {...base}><circle cx="12" cy="12" r="9"/><path d="M9.8 9.2a2.45 2.45 0 0 1 4.7.9c0 1.8-2.5 2.1-2.5 3.6"/><path d="M12 17.2h.01"/></svg>;
+  if (tipo === "configuracoes") return <svg {...base}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.08A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.08A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.08A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.36.38.69.65.97.28.28.62.49 1 .61H21v4h-.08a1.7 1.7 0 0 0-1.52.42Z"/></svg>;
   if (tipo === "seguranca") return <svg {...base}><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg>;
   return <svg {...base}><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>;
 }
@@ -73,6 +75,7 @@ export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
   if (sub === "documentos") return <div className="sl-tab pb-6"><SubHeader titulo="Meus documentos" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="flex h-10 w-10 items-center justify-center rounded-[13px] border border-[#E9D9D5] bg-[#FFF9F8] text-[#B86575]"><IconeMenu tipo="documentos"/></div><div className="pt-3 font-heading text-[19px] font-semibold text-[#43322F]">Documentos da sua jornada</div><p className="pt-1 text-[10.8px] font-light leading-[1.55] text-[#8D7D79]">Para solicitar uma cópia do contrato, comprovantes ou outro documento, fale com a equipe pelo Atendimento.</p><button type="button" onClick={() => setSub("atendimento")} className="mt-4 w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[10px] text-[10.5px] font-semibold text-white">Ir para Atendimento</button></div></div></div>;
   if (sub === "atendimento") return <div className="sl-tab pb-6"><SubHeader titulo="Atendimento" onVoltar={() => setSub(null)} /><div className="grid gap-[9px] px-[18px] pt-4">{contato.whatsapp && <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><IconeMenu tipo="atendimento"/></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">WhatsApp</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">Fale agora com a equipe</span></span></a>}{contato.telefone && <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="M7.5 3.5 10 8 8 9.5c1.4 2.8 3.7 5.1 6.5 6.5l1.5-2 4.5 2.5c-.4 2.5-2.2 4-4.5 4C9.1 20.5 3.5 14.9 3.5 8c0-2.3 1.5-4.1 4-4.5Z"/></svg></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">Ligar para a equipe</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">{contato.telefone}</span></span></a>}{!contato.whatsapp && !contato.telefone && <div className="rounded-[17px] border border-[#ECE2DF] bg-white p-4 text-[10.8px] font-light text-[#8D7D79]">{contatoFalhou ? "Não foi possível carregar os canais de atendimento agora. Tente novamente em instantes." : "Os canais de atendimento ainda não foram configurados pela equipe."}</div>}</div></div>;
   if (sub === "faq") return <div className="sl-tab pb-6"><SubHeader titulo="Dúvidas frequentes" onVoltar={() => setSub(null)} /><div className="grid gap-2 px-[18px] pt-4">{FAQS.map((item) => <FaqItem key={item.pergunta} {...item}/>)}</div></div>;
+  if (sub === "configuracoes") return <ConfiguracoesApp onVoltar={() => setSub(null)} />;
   if (sub === "seguranca") return <div className="sl-tab pb-6"><SubHeader titulo="Segurança" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="sl-more-icon"><IconeMenu tipo="seguranca"/></div><p className="pt-3 text-[10.8px] font-light leading-[1.55] text-[#7F6F6B]">Seu acesso é feito por CPF e data de nascimento. Nunca compartilhe dados bancários fora dos canais oficiais da Sra. Luck.</p><button type="button" onClick={onSair} className="mt-4 w-full rounded-[11px] border border-[#EAD0CF] bg-[#FBF0EF] px-3 py-[10px] text-[10.5px] font-semibold text-[#8F2A25]">Encerrar acesso com segurança</button></div></div></div>;
 
   const itens = [
@@ -80,6 +83,7 @@ export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
     { id: "documentos" as const, nome: "Meus documentos", subtitulo: "Contrato e documentos da sua jornada" },
     { id: "atendimento" as const, nome: "Atendimento", subtitulo: "Fale com a equipe Sra. Luck" },
     { id: "faq" as const, nome: "Dúvidas frequentes", subtitulo: "Respostas rápidas para as perguntas mais comuns" },
+    { id: "configuracoes" as const, nome: "Configurações", subtitulo: "Aplicativo e notificações deste celular" },
     { id: "seguranca" as const, nome: "Segurança", subtitulo: "Acesso, privacidade e proteção dos seus dados" },
   ];
 
