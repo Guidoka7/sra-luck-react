@@ -1,11 +1,13 @@
 import { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, Users } from "lucide-react";
+import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import "../../styles/staff-pwa.css";
 import "../../styles/staff-login.css";
 
 export function StaffLoginPage() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,7 +20,7 @@ export function StaffLoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ email, senha }),
+        body: JSON.stringify({ email, senha, turnstileToken }),
       });
       const data = await response.json().catch(() => ({})) as { erro?: string };
       if (!response.ok) throw new Error(data.erro || "Não foi possível entrar.");
@@ -40,10 +42,11 @@ export function StaffLoginPage() {
         <form onSubmit={submit}>
           <label><span><Mail size={15}/>E-mail corporativo</span><input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} autoComplete="email" required /></label>
           <label><span><LockKeyhole size={15}/>Senha</span><input type="password" value={senha} onChange={(e)=>setSenha(e.target.value)} autoComplete="current-password" required /></label>
+          <TurnstileWidget onToken={setTurnstileToken} />
           {erro && <div className="st-login-error">{erro}</div>}
           <button type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar no portal"}</button>
         </form>
-        <small>Acessos são criados e gerenciados pela administração Sra. Luck.</small>
+        <small>Acessos são individuais, protegidos e gerenciados pela administração Sra. Luck.</small>
       </section>
     </main>
   );
