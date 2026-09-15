@@ -1,19 +1,7 @@
+import { exigirPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-
-interface InstallmentSummaryRow {
-  id: string;
-  numero_parcela: number;
-  total_parcelas?: number | null;
-  valor?: number | string | null;
-  status: string;
-  data_vencimento?: string | null;
-  data_pagamento?: string | null;
-  valor_recebido?: number | string | null;
-  comprovante_url?: string | null;
-  boleto_url?: string | null;
-  banco_emissor?: string | null;
-}
+import { getCookie, verificarTokenSessao } from "./session";
+import { pseudonymizeActorId, requestLogger } from "./logger";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -23,304 +11,180 @@ function json(data: unknown, status = 200) {
 }
 
 async function body(request: Request): Promise<Record<string, unknown>> {
-  try {
-    return await request.json() as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  try { return await request.json() as Record<string, unknown>; }
+  catch { return {}; }
 }
 
 function mesmaOrigem(request: Request) {
   const origin = request.headers.get("Origin");
-  if (!origin) return true;
-  try {
-    return origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
-
-async function exigirAdmin(request: Request, env: Env) {
-  if (!env.CLIENTE_SESSION_SECRET) return null;
-  const token = getCookie(request, "admin_session");
-  const session = await verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET);
-  return session?.adminId ?? null;
+  if (!origin) return false;
+  try { return origin === new URL(request.url).origin; }
+  catch { return false; }
 }
 
 async function exigirCliente(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
-  const token = getCookie(request, "cliente_session");
-  const session = await verificarTokenSessao(token, env.CLIENTE_SESSION_SECRET);
+  const session = await verificarTokenSessao(getCookie(request, "cliente_session"), env.CLIENTE_SESSION_SECRET);
   return session?.clienteId ?? null;
 }
 
+function uuid(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null;
+}
+
+function texto(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function telefoneBrasil(value: unknown): string | null {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 13) return null;
+  return digits;
+}
+
+function erroResgate(message: string): { erro: string; status: number } {
+  const m = message.toLowerCase();
+  if (m.includes("saldo de pontos insuficiente")) return { erro: "Você ainda não possui moedas suficientes para este resgate.", status: 409 };
+  if (m.includes("sem estoque") || m.includes("recompensa indisponivel")) return { erro: "Este prêmio não está disponível no momento.", status: 409 };
+  if (m.includes("idempotencia")) return { erro: "Este resgate já foi processado ou a solicitação é inválida.", status: 409 };
+  return { erro: "Não foi possível concluir o resgate agora.", status: 409 };
+}
+
 export async function creditOpsApi(request: Request, env: Env): Promise<Response | null> {
-  const url = new URL(request.url);
-  const path = url.pathname;
+  const path = new URL(request.url).pathname;
 
   if (path.startsWith("/api/admin/credit-ops/")) {
-    const adminId = await exigirAdmin(request, env);
-    if (!adminId) return json({ erro: "Sessão administrativa expirada." }, 401);
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
-      return json({ erro: "Requisição de origem não autorizada." }, 403);
-    }
-    const db = createServiceSupabaseClient(env);
-
-    if (path === "/api/admin/credit-ops/contracts" && request.method === "GET") {
-      const { data, error } = await db
-        .from("contratos_credito")
-        .select("*, clientes(id,nome_completo,cpf,telefone,email)")
-        .order("created_at", { ascending: false });
-      if (error) return json({ erro: error.message }, 500);
-      return json({ contratos: data ?? [] });
+    // O antigo módulo de contratos/finance/team dependia do subsistema paralelo
+    // contratos_credito/conciliacao_financeira_eventos, que não faz parte do
+    // runtime canônico. Mantê-lo acessível aumentava a superfície de ataque.
+    if (path.startsWith("/api/admin/credit-ops/contracts")
+      || path === "/api/admin/credit-ops/finance/daily"
+      || path.startsWith("/api/admin/credit-ops/team")) {
+      return json({ erro: "Endpoint legado desativado." }, 410);
     }
 
-    if (path === "/api/admin/credit-ops/contracts" && request.method === "POST") {
+    if (path === "/api/admin/credit-ops/rewards" && (request.method === "GET" || request.method === "POST")) {
+      const auth = await exigirPermissaoAdmin(request, env, PERMISSOES_ADMIN.CLUBE_GERENCIAR);
+      if (auth instanceof Response) return auth;
+      if (request.method === "POST" && !mesmaOrigem(request)) return json({ erro: "Origem não autorizada." }, 403);
+      const db = createServiceSupabaseClient(env);
+
+      if (request.method === "GET") {
+        const { data, error } = await db.from("clube_recompensas")
+          .select("id,titulo,descricao,categoria,pontos,estoque,ativo,ordem,icone_key,instrucoes_pos_resgate,created_at")
+          .order("ordem").order("pontos");
+        if (error) return json({ erro: "Não foi possível carregar os prêmios." }, 500);
+        return json({ recompensas: data ?? [] });
+      }
+
       const b = await body(request);
-      const clienteId = String(b.clienteId ?? "");
-      const codigo = String(b.codigo ?? "").trim();
-      const valor = Number(b.valorContrato ?? 0);
-      if (!clienteId || !codigo || !(valor > 0)) return json({ erro: "Cliente, código e valor do contrato são obrigatórios." }, 400);
-      const { data, error } = await db.from("contratos_credito").insert({
-        cliente_id: clienteId,
-        codigo,
-        rd_deal_id: b.rdDealId || null,
-        campanha: b.campanha || null,
-        origem: b.origem || null,
-        modalidade: b.modalidade === "100_boleto" ? "100_boleto" : "flex",
-        valor_contrato: valor,
-        percentual_minimo: Number(b.percentualMinimo ?? 60),
-        etapa: "aguardando_conferencia",
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ contrato: data }, 201);
-    }
-
-    const contract = path.match(/^\/api\/admin\/credit-ops\/contracts\/([^/]+)$/);
-    if (contract && request.method === "PATCH") {
-      const b = await body(request);
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      const map: Record<string, string> = {
-        campanha: "campanha",
-        origem: "origem",
-        modalidade: "modalidade",
-        etapa: "etapa",
-        percentualMinimo: "percentual_minimo",
-        saldoFinalApurado: "saldo_final_apurado",
-        formaQuitacao: "forma_quitacao",
-        pagarNoDiaTermos: "pagar_no_dia_termos",
-        previsaoAtingirPercentual: "previsao_atingir_percentual",
-        termosAssinadosEm: "termos_assinados_em",
-        agendaCirurgicaLiberarEm: "agenda_cirurgica_liberar_em",
-        cirurgiaEm: "cirurgia_em",
-      };
-      for (const [from, to] of Object.entries(map)) if (b[from] !== undefined) patch[to] = b[from];
-      const { data, error } = await db.from("contratos_credito").update(patch).eq("id", decodeURIComponent(contract[1])).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ contrato: data });
-    }
-
-    if (path === "/api/admin/credit-ops/finance/daily" && request.method === "GET") {
-      const day = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
-      const start = `${day}T00:00:00.000Z`;
-      const end = `${day}T23:59:59.999Z`;
-      const [paid, proofs, overdue, events] = await Promise.all([
-        db.from("boletos").select("*, clientes(id,nome_completo)").gte("recebido_em", start).lte("recebido_em", end).order("recebido_em", { ascending: false }),
-        db.from("comprovantes_pagamento").select("*, clientes(id,nome_completo), boletos(id,numero_parcela,total_parcelas,valor,banco_emissor)").in("status", ["aguardando_validacao", "em_analise"]).order("created_at", { ascending: false }).limit(200),
-        db.from("boletos").select("*, clientes(id,nome_completo)").lt("data_vencimento", day).neq("status", "pago").order("data_vencimento", { ascending: true }).limit(200),
-        db.from("conciliacao_financeira_eventos").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false }).limit(300),
-      ]);
-      const errors = [paid.error, proofs.error, overdue.error, events.error]
-        .filter((value): value is NonNullable<typeof value> => Boolean(value))
-        .map((value) => value.message);
-      return json({
-        data: day,
-        liquidados: paid.data ?? [],
-        aguardandoValidacao: proofs.data ?? [],
-        vencidos: overdue.data ?? [],
-        eventos: events.data ?? [],
-        erros: errors,
-      });
-    }
-
-    if (path === "/api/admin/credit-ops/rewards" && request.method === "GET") {
-      const { data, error } = await db.from("clube_recompensas").select("*").order("pontos", { ascending: true });
-      if (error) return json({ erro: error.message }, 500);
-      return json({ recompensas: data ?? [] });
-    }
-
-    if (path === "/api/admin/credit-ops/rewards" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("clube_recompensas").insert({
-        titulo: b.titulo,
-        descricao: b.descricao || null,
-        categoria: b.categoria || null,
-        pontos: Number(b.pontos),
-        estoque: b.estoque === undefined ? null : Number(b.estoque),
-        ativo: b.ativo !== false,
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      const titulo = texto(b.titulo, 120);
+      const descricao = texto(b.descricao, 500) || null;
+      const categoria = texto(b.categoria, 80) || null;
+      const pontos = Number(b.pontos);
+      const estoque = b.estoque == null || b.estoque === "" ? null : Number(b.estoque);
+      if (titulo.length < 2 || !Number.isInteger(pontos) || pontos < 1 || pontos > 1_000_000) return json({ erro: "Dados do prêmio inválidos." }, 400);
+      if (estoque !== null && (!Number.isInteger(estoque) || estoque < 0 || estoque > 1_000_000)) return json({ erro: "Estoque inválido." }, 400);
+      const { data, error } = await db.from("clube_recompensas").insert({ titulo, descricao, categoria, pontos, estoque, ativo: b.ativo !== false }).select("id,titulo,descricao,categoria,pontos,estoque,ativo,ordem,icone_key,instrucoes_pos_resgate,created_at").single();
+      if (error) return json({ erro: "Não foi possível cadastrar o prêmio." }, 400);
       return json({ recompensa: data }, 201);
-    }
-
-    if (path === "/api/admin/credit-ops/team" && request.method === "GET") {
-      const [staff, rules, commissions, training] = await Promise.all([
-        db.from("colaboradores").select("*").order("nome"),
-        db.from("comissao_regras").select("*").eq("ativo", true).order("perfil"),
-        db.from("comissao_eventos").select("*, colaboradores(nome,perfil)").order("created_at", { ascending: false }).limit(300),
-        db.from("treinamentos").select("*").eq("ativo", true).order("created_at", { ascending: false }),
-      ]);
-      return json({ colaboradores: staff.data ?? [], regras: rules.data ?? [], comissoes: commissions.data ?? [], treinamentos: training.data ?? [] });
-    }
-
-    if (path === "/api/admin/credit-ops/team/commission-rules" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("comissao_regras").insert({
-        perfil: b.perfil,
-        nome: b.nome,
-        tipo: b.tipo,
-        valor: Number(b.valor),
-        meta_base: b.metaBase === undefined ? null : Number(b.metaBase),
-        configuracao: b.configuracao || {},
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ regra: data }, 201);
-    }
-
-    if (path === "/api/admin/credit-ops/team/trainings" && request.method === "POST") {
-      const b = await body(request);
-      const { data, error } = await db.from("treinamentos").insert({
-        titulo: b.titulo,
-        descricao: b.descricao || null,
-        tipo: b.tipo || "texto",
-        conteudo_url: b.conteudoUrl || null,
-        conteudo_texto: b.conteudoTexto || null,
-        perfis: Array.isArray(b.perfis) ? b.perfis : ["todos"],
-        obrigatorio: Boolean(b.obrigatorio),
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ treinamento: data }, 201);
     }
 
     return null;
   }
 
-  if (path.startsWith("/api/cliente/credit-ops/")) {
-    const clienteId = await exigirCliente(request, env);
-    if (!clienteId) return json({ erro: "Sessão expirada." }, 401);
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
-      return json({ erro: "Requisição de origem não autorizada." }, 403);
+  if (!path.startsWith("/api/cliente/credit-ops/")) return null;
+  const clienteId = await exigirCliente(request, env);
+  if (!clienteId) return json({ erro: "Sessão expirada." }, 401);
+  if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) return json({ erro: "Origem não autorizada." }, 403);
+  const db = createServiceSupabaseClient(env);
+  const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(clienteId, env), action: "client.club" });
+
+  if (path === "/api/cliente/credit-ops/summary") {
+    return json({ erro: "Endpoint legado desativado. Use as rotas atuais de parcelas e jornada." }, 410);
+  }
+
+  if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
+    const [saldoResult, rewardsResult, historyResult, beneficiosResult, indicacoesResult] = await Promise.all([
+      db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
+      db.from("clube_recompensas").select("id,titulo,descricao,categoria,pontos,estoque,ativo,ordem,icone_key,instrucoes_pos_resgate").eq("ativo", true).order("ordem").order("pontos"),
+      db.from("cliente_pontos_eventos").select("id,tipo,pontos,created_at").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
+      db.from("clube_beneficios_cliente").select("id,beneficio_key,status,origem,created_at").eq("cliente_id", clienteId),
+      db.from("indicacoes_clientes").select("id,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
+    ]);
+    const error = saldoResult.error ?? rewardsResult.error ?? historyResult.error ?? beneficiosResult.error ?? indicacoesResult.error;
+    if (error) {
+      log.error("Falha ao carregar Clube", { eventCode: "CLUB_LOAD_FAILED", statusCode: 500, error });
+      return json({ erro: "Não foi possível carregar o Clube agora." }, 500);
     }
-    const db = createServiceSupabaseClient(env);
+    const listaIndicacoes = indicacoesResult.data ?? [];
+    return json({
+      saldo: Number(saldoResult.data?.saldo ?? 0),
+      recompensas: rewardsResult.data ?? [],
+      historico: historyResult.data ?? [],
+      beneficios: beneficiosResult.data ?? [],
+      indicacoes: {
+        confirmadas: listaIndicacoes.filter((item) => item.status === "venda").length,
+        emAnalise: listaIndicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
+        itens: listaIndicacoes,
+      },
+    });
+  }
 
-    if (path === "/api/cliente/credit-ops/summary" && request.method === "GET") {
-      const { data: contrato, error } = await db.from("contratos_credito").select("*").eq("cliente_id", clienteId).neq("etapa", "cancelado").order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (error) return json({ erro: error.message }, 500);
-      if (!contrato) return json({ contrato: null });
+  if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
+    const b = await body(request);
+    const nome = texto(b.nome, 120);
+    const telefone = telefoneBrasil(b.telefone);
+    const consentimento = b.consentimentoContato === true;
+    if (nome.length < 2 || !telefone) return json({ erro: "Informe nome e telefone válidos da pessoa indicada." }, 400);
+    if (!consentimento) return json({ erro: "Confirme que a pessoa indicada autorizou o contato antes de compartilhar os dados." }, 400);
 
-      const { data: parcelasData, error: parcelasError } = await db
-        .from("boletos")
-        .select("id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,valor_recebido,comprovante_url,boleto_url,banco_emissor")
-        .eq("cliente_id", clienteId)
-        .order("numero_parcela");
-      if (parcelasError) return json({ erro: parcelasError.message }, 500);
-
-      const parcelas = (parcelasData ?? []) as unknown as InstallmentSummaryRow[];
-      const pagas = parcelas.filter((parcela) => parcela.status === "pago");
-      const recebidos = pagas.reduce((soma, parcela) => soma + Number(parcela.valor_recebido ?? parcela.valor ?? 0), 0);
-      const totalParcelas = parcelas.reduce(
-        (maior, parcela) => Math.max(maior, Number(parcela.total_parcelas ?? 0)),
-        parcelas.length,
-      );
-      const parcelasPagas = pagas.length;
-      const percentual = totalParcelas > 0
-        ? Math.round((parcelasPagas / totalParcelas) * 1000) / 10
-        : 0;
-      const percentualMinimo = Number(contrato.percentual_minimo ?? 60);
-      const parcelasNecessarias = totalParcelas > 0
-        ? Math.ceil((totalParcelas * percentualMinimo) / 100)
-        : 0;
-
-      return json({
-        contrato,
-        parcelas,
-        recebido: recebidos,
-        percentual,
-        parcelasPagas,
-        totalParcelas,
-        parcelasNecessarias,
-        parcelasRestantesParaMeta: Math.max(0, parcelasNecessarias - parcelasPagas),
-      });
+    const { data, error } = await db.from("indicacoes_clientes").insert({
+      indicador_cliente_id: clienteId,
+      nome_indicado: nome,
+      telefone_indicado: telefone,
+      consentimento_contato: true,
+      consentimento_registrado_em: new Date().toISOString(),
+    }).select("id,status,pontos_creditados,created_at").single();
+    if (error) {
+      log.error("Falha ao registrar indicação", { eventCode: "CLUB_REFERRAL_CREATE_FAILED", statusCode: 500, error });
+      return json({ erro: "Não foi possível registrar a indicação agora." }, 500);
     }
+    return json({ indicacao: data }, 201);
+  }
 
-    if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-      const [{ data: saldo }, { data: rewards }, { data: history }, { data: beneficios }, { data: indicacoes }] = await Promise.all([
-        db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-        db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
-        db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
-        db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
-        db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
-      ]);
-      const listaIndicacoes = indicacoes ?? [];
-      return json({
-        saldo: Number(saldo?.saldo ?? 0),
-        recompensas: rewards ?? [],
-        historico: history ?? [],
-        beneficios: beneficios ?? [],
-        indicacoes: {
-          confirmadas: listaIndicacoes.filter((item) => item.status === "venda").length,
-          emAnalise: listaIndicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
-          itens: listaIndicacoes,
-        },
-      });
+  const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
+  if (usarBeneficio && request.method === "POST") {
+    const beneficioId = uuid(decodeURIComponent(usarBeneficio[1]));
+    if (!beneficioId) return json({ erro: "Benefício inválido." }, 400);
+    const { data, error } = await db.from("clube_beneficios_cliente")
+      .update({ status: "utilizado", updated_at: new Date().toISOString() })
+      .eq("id", beneficioId).eq("cliente_id", clienteId).eq("status", "disponivel")
+      .select("id,beneficio_key,status,origem,created_at").maybeSingle();
+    if (error) return json({ erro: "Não foi possível utilizar o benefício agora." }, 500);
+    if (!data) return json({ erro: "Benefício não encontrado ou já utilizado." }, 404);
+    return json({ beneficio: data });
+  }
+
+  if (path === "/api/cliente/credit-ops/redeem" && request.method === "POST") {
+    const b = await body(request);
+    const rewardId = uuid(b.recompensaId);
+    const idempotencyKey = texto(b.idempotencyKey, 120);
+    if (!rewardId) return json({ erro: "Recompensa inválida." }, 400);
+    if (!/^[A-Za-z0-9:_-]{16,120}$/.test(idempotencyKey)) return json({ erro: "Chave de idempotência inválida." }, 400);
+
+    const { data: resgate, error } = await db.rpc("clube_resgatar", { p_cliente_id: clienteId, p_recompensa_id: rewardId, p_idempotency_key: idempotencyKey });
+    if (error) {
+      const safe = erroResgate(error.message || "");
+      return json({ erro: safe.erro }, safe.status);
     }
-
-    if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
-      const b = await body(request);
-      const nome = String(b.nome ?? "").trim();
-      if (!nome) return json({ erro: "Informe o nome da pessoa indicada." }, 400);
-      const { data, error } = await db.from("indicacoes_clientes").insert({
-        indicador_cliente_id: clienteId,
-        nome_indicado: nome,
-        telefone_indicado: b.telefone || null,
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
-      return json({ indicacao: data }, 201);
-    }
-
-    const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
-    if (usarBeneficio && request.method === "POST") {
-      const beneficioId = decodeURIComponent(usarBeneficio[1]);
-      const { data, error } = await db
-        .from("clube_beneficios_cliente")
-        .update({ status: "utilizado", updated_at: new Date().toISOString() })
-        .eq("id", beneficioId)
-        .eq("cliente_id", clienteId)
-        .eq("status", "disponivel")
-        .select("*")
-        .maybeSingle();
-      if (error) return json({ erro: error.message }, 400);
-      if (!data) return json({ erro: "Benefício não encontrado ou já utilizado." }, 404);
-      return json({ beneficio: data });
-    }
-
-    if (path === "/api/cliente/credit-ops/redeem" && request.method === "POST") {
-      const b = await body(request);
-      const rewardId = String(b.recompensaId ?? "");
-      const idempotencyKey = String(b.idempotencyKey ?? "");
-      if (!rewardId) return json({ erro: "Recompensa não informada." }, 400);
-      if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
-      const { data: resgate, error } = await db.rpc("clube_resgatar", {
-        p_cliente_id: clienteId,
-        p_recompensa_id: rewardId,
-        p_idempotency_key: idempotencyKey,
-      });
-      if (error) return json({ erro: error.message }, 400);
-      const { data: pontos } = await db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle();
-      return json({ resgate, saldo: Number(pontos?.saldo ?? 0) }, 201);
-    }
-
-    return null;
+    const { data: pontos } = await db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle();
+    const row = resgate as any;
+    return json({
+      resgate: row ? { id: row.id, recompensa_id: row.recompensa_id, pontos: row.pontos, status: row.status, created_at: row.created_at } : null,
+      saldo: Number(pontos?.saldo ?? 0),
+    }, 201);
   }
 
   return null;
