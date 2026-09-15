@@ -15,7 +15,6 @@ export function AdminLoginPage() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
-  const isVercelPreview = window.location.hostname.toLowerCase().endsWith(".vercel.app");
 
   useEffect(() => {
     fetch("/api/admin/session", { credentials: "include", cache: "no-store" })
@@ -73,12 +72,6 @@ export function AdminLoginPage() {
             {loading ? "Entrando…" : "Entrar"}
           </button>
         </form>
-        {isVercelPreview && (
-          <div className="mt-6 border-t border-rose/15 pt-5 text-center dark:border-white/10">
-            <p className="mb-3 text-xs leading-5 text-clay/55 dark:text-pearl/50">Quer apenas conferir o visual do painel sem usar uma conta administrativa?</p>
-            <a href="/admin/visao-geral?preview=1" className="inline-flex w-full items-center justify-center rounded-full border border-burgundy/20 bg-white/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-burgundy dark:border-white/10 dark:bg-white/[0.04] dark:text-pearl">Abrir demonstração</a>
-          </div>
-        )}
       </section>
     </main>
   );

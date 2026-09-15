@@ -1,23 +1,20 @@
 "use client";
 
 import { type FC, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { addMonths, format, getDaysInMonth, isBefore, isToday, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, LockKeyhole } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/Button";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
 export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; }
+
 function parseDataLocal(iso: string) { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
 function formatarData(iso: string | null) { return iso ? format(parseDataLocal(iso), "dd/MM/yyyy") : "—"; }
+const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
 
 export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao }) => {
   const hoje = startOfDay(new Date());
   const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>([]);
-  const [mesAtual, setMesAtual] = useState(() => startOfMonth(hoje));
-  const [direcao, setDirecao] = useState<1 | -1>(1);
+  const [mesAtual, setMesAtual] = useState(() => startOfMonth(dataCirurgiaAtual ? parseDataLocal(dataCirurgiaAtual) : hoje));
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(dataCirurgiaAtual);
   const [confirmando, setConfirmando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -36,14 +33,27 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
       setCusteioConfirmado(Boolean(data.financeiro?.custeioConfirmadoEm));
     } catch {}
   }
-  useEffect(() => { void carregar(); const t = setInterval(() => void carregar(), 5000); return () => clearInterval(t); }, []);
 
-  const porData = useMemo(() => new Map(datas.map(d => [d.data, d])), [datas]);
-  const primeiroDiaSemana = mesAtual.getDay();
-  const diasDoMes = getDaysInMonth(mesAtual);
-  const celulas = Array.from({ length: primeiroDiaSemana + diasDoMes }, (_, i) => i < primeiroDiaSemana ? null : i - primeiroDiaSemana + 1);
-  function mudarMes(delta: 1 | -1) { setDirecao(delta); setMesAtual(atual => delta === 1 ? addMonths(atual, 1) : subMonths(atual, 1)); setDiaSelecionado(null); setErro(null); }
-  function selecionarDia(dia: Date) { if (isBefore(dia, hoje)) return; const chave = format(dia, "yyyy-MM-dd"); if (!porData.has(chave) || (porData.get(chave)?.vagasRestantes ?? 0) <= 0) return; setDiaSelecionado(chave === diaSelecionado ? null : chave); setErro(null); }
+  useEffect(() => { void carregar(); const timer = setInterval(() => void carregar(), 5000); return () => clearInterval(timer); }, []);
+
+  const porData = useMemo(() => new Map(datas.map((item) => [item.data, item])), [datas]);
+  const celulas = Array.from({ length: mesAtual.getDay() + getDaysInMonth(mesAtual) }, (_, index) => index < mesAtual.getDay() ? null : index - mesAtual.getDay() + 1);
+
+  function mudarMes(delta: 1 | -1) {
+    setMesAtual((atual) => delta === 1 ? addMonths(atual, 1) : subMonths(atual, 1));
+    setDiaSelecionado(null);
+    setErro(null);
+  }
+
+  function selecionarDia(dia: Date) {
+    if (isBefore(dia, hoje)) return;
+    const chave = format(dia, "yyyy-MM-dd");
+    const entrada = porData.get(chave);
+    if (!entrada || entrada.vagasRestantes <= 0) return;
+    setDiaSelecionado(chave === diaSelecionado ? null : chave);
+    setErro(null);
+  }
+
   async function confirmar() {
     if (!diaSelecionado) return;
     if (modoAlteracao) { onSolicitarAlteracao?.(diaSelecionado); return; }
@@ -59,19 +69,45 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   if (!modoAlteracao && !custeioConfirmado) {
-    return <section className="overflow-hidden rounded-2xl border border-gold/20 bg-gold/[0.045] p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold"><LockKeyhole className="h-4 w-4" /></span><div><p className="text-[0.55rem] font-bold uppercase tracking-label text-gold">Agenda cirúrgica aguardando quitação</p><h3 className="mt-1 font-heading text-sm font-semibold text-burgundy">A quitação do saldo precisa ser confirmada</h3><p className="mt-1 text-[0.66rem] leading-relaxed text-clay/70">Depois que a quitação estiver confirmada e os termos estiverem assinados, sua agenda cirúrgica é liberada para escolha da data (prazo máximo de até 90 dias).</p></div></div></section>;
+    return <section className="relative min-h-[305px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white p-[13px]">
+      <div className="pointer-events-none select-none opacity-[.36] blur-[4px]"><div className="pb-2 text-center font-heading text-[16px] font-semibold text-[#7D2434]">Escolha a data da sua cirurgia</div><CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado /></div>
+      <div className="absolute inset-0 flex items-center justify-center p-5"><div className="rounded-[15px] border border-[#E9D4B2] bg-white/[.97] p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]"><svg width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="#8E3243" strokeWidth="1.25" className="mx-auto"><rect x="3.8" y="8" width="10.4" height="7" rx="1.8"/><path d="M6.2 8V5.9a2.8 2.8 0 0 1 5.6 0V8"/></svg><div className="pt-[7px] font-heading text-[18px] font-semibold text-[#7D2434]">Agenda cirúrgica bloqueada</div><div className="pt-[5px] text-[10px] font-light leading-[1.5] text-[#7A6B67]">A quitação do saldo precisa ser confirmada antes da escolha da data da cirurgia.</div></div></div>
+    </section>;
   }
 
   if (!modoAlteracao && !agendaLiberada) {
-    return <section className="overflow-hidden rounded-2xl border border-gold/20 bg-gold/[0.045] p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold"><Clock3 className="h-4 w-4" /></span><div><p className="text-[0.55rem] font-bold uppercase tracking-label text-gold">Agenda cirúrgica em preparação</p><h3 className="mt-1 font-heading text-sm font-semibold text-burgundy">Estamos preparando sua agenda</h3><p className="mt-1 text-[0.66rem] leading-relaxed text-clay/70">{agendaLiberarEm ? <>A liberação tem prazo máximo até <strong className="text-burgundy">{formatarData(agendaLiberarEm)}</strong>, mas pode acontecer antes.</> : <>Estamos aguardando a confirmação dos marcos necessários para liberar sua agenda.</>}</p></div></div></section>;
+    return <section className="rounded-[18px] border border-[#EFD9AA] bg-[#FFF9EF] p-[14px]"><div className="flex items-start gap-[10px]"><span className="flex h-[31px] w-[31px] flex-none items-center justify-center rounded-full bg-[#FBF1DD] text-[#A77A24]"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#A77A24]">Agenda cirúrgica em preparação</div><div className="pt-[3px] font-heading text-[17px] font-semibold text-[#7D2434]">Estamos preparando sua agenda</div><div className="pt-[4px] text-[10px] font-light leading-[1.5] text-[#7A6B67]">{agendaLiberarEm ? <>A liberação tem prazo máximo até <b className="font-semibold text-[#7D2434]">{formatarData(agendaLiberarEm)}</b>, mas pode acontecer antes.</> : <>Estamos aguardando a confirmação dos marcos necessários para liberar sua agenda.</>}</div></div></div></section>;
   }
 
   if (!modoAlteracao && agendaLiberada && datas.length === 0) {
-    return <section className="overflow-hidden rounded-2xl border border-success/20 bg-success/[0.035] p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success"><CheckCircle2 className="h-4 w-4" /></span><div><p className="text-[0.55rem] font-bold uppercase tracking-label text-success">Agenda cirúrgica liberada</p><h3 className="mt-1 font-heading text-sm font-semibold text-burgundy">Aguardando novas datas da equipe</h3><p className="mt-1 text-[0.66rem] leading-relaxed text-clay/70">Sua etapa financeira está concluída e o prazo já terminou. Assim que novas datas forem publicadas, elas aparecerão aqui para escolha.</p></div></div></section>;
+    return <section className="rounded-[18px] border border-[#DCEADF] bg-[#F0F7F1] p-[14px]"><div className="flex items-start gap-[10px]"><span className="flex h-[31px] w-[31px] flex-none items-center justify-center rounded-full bg-[#E3F1E6] text-[#3F7D5B]"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="m6 9 2 2 4-4"/></svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#3F7D5B]">Agenda cirúrgica liberada</div><div className="pt-[3px] font-heading text-[17px] font-semibold text-[#7D2434]">Aguardando novas datas da equipe</div><div className="pt-[4px] text-[10px] font-light leading-[1.5] text-[#698273]">Assim que novas datas forem publicadas, elas aparecerão aqui para escolha.</div></div></div></section>;
   }
 
-  return <section className="overflow-hidden rounded-2xl border border-rose/15 bg-white/80 shadow-[0_14px_40px_-28px_rgba(0,0,0,.35)] dark:border-white/10 dark:bg-white/[0.035]">
-    {!modoAlteracao && <div className="border-b border-rose/10 bg-blush/25 px-3 py-3 sm:px-4"><div className="flex items-start gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose/10 text-rose"><CheckCircle2 className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="text-[0.55rem] font-bold uppercase tracking-[0.14em] text-rose">Escolha a data da sua cirurgia</p><h3 className="mt-0.5 font-heading text-sm font-semibold leading-tight text-burgundy dark:text-cream">Sua agenda cirúrgica está liberada</h3><p className="mt-0.5 text-[0.62rem] leading-[1.4] text-clay/70 dark:text-pearl/80">Os termos foram assinados em <strong className="text-burgundy dark:text-cream">{format(parseDataLocal(dataAssinatura), "dd/MM/yyyy")}</strong>. Escolha abaixo uma data liberada pela equipe.</p></div></div></div>}
-    <div className="p-3 sm:p-4"><div className="mb-3 flex items-center justify-between"><button type="button" onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronLeft className="h-4 w-4" /></button><AnimatePresence mode="wait"><motion.h3 key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, y: direcao === 1 ? 8 : -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: direcao === 1 ? -8 : 8 }} className="font-heading text-sm font-semibold capitalize text-burgundy dark:text-cream">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</motion.h3></AnimatePresence><button type="button" onClick={() => mudarMes(1)} aria-label="Próximo mês" className="flex h-8 w-8 items-center justify-center rounded-full text-burgundy/70 dark:text-pearl/75 hover:bg-blush"><ChevronRight className="h-4 w-4" /></button></div><div className="mx-auto mb-2 grid w-full max-w-[34rem] grid-cols-7 gap-1.5 text-center">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => <span key={d} className="text-[0.58rem] font-semibold uppercase tracking-label text-rose/80">{d}</span>)}</div><motion.div key={format(mesAtual, "yyyy-MM")} initial={{ opacity: 0, x: direcao === 1 ? 16 : -16 }} animate={{ opacity: 1, x: 0 }} className="mx-auto grid w-full max-w-[34rem] grid-cols-7 gap-1.5">{celulas.map((numero, i) => { if (numero === null) return <span key={`vazio-${i}`} className="aspect-square" />; const dia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), numero); const chave = format(dia, "yyyy-MM-dd"); const entrada = porData.get(chave); const passado = isBefore(dia, hoje); const disponivel = Boolean(entrada && entrada.vagasRestantes > 0 && !passado); const selecionado = chave === diaSelecionado; const ehHoje = isToday(dia); return <button type="button" key={chave} onClick={() => selecionarDia(dia)} disabled={!disponivel} className={cn("group relative aspect-square animate-fadeIn rounded-xl border text-[0.78rem] transition-all sm:text-[0.9rem]", passado && "border-transparent text-clay/30 dark:text-pearl/30", !passado && !disponivel && "cursor-not-allowed border-transparent bg-alert/[0.06] text-alert/55 line-through", disponivel && !selecionado && "border-success/35 bg-success/10 font-medium text-success hover:-translate-y-0.5 hover:border-success/55 hover:bg-success/20", selecionado && "border-2 border-rose bg-burgundy font-semibold text-cream dark:text-white")}><span className={cn("flex h-full w-full items-center justify-center", ehHoje && !selecionado && "rounded-xl ring-2 ring-rose/60 ring-inset")}><span className={cn(ehHoje && !selecionado && "font-bold text-rose")}>{numero}</span></span></button>; })}</motion.div><div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-t border-rose/10 pt-3 text-[0.62rem] text-clay/70 dark:text-pearl/75"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-success/40 bg-success/15" /> Liberada</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alert/40" /> Indisponível</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full ring-2 ring-rose/60" /> Hoje</span></div>{diaSelecionado && <div className="mt-4 border-t border-rose/10 pt-4"><div className="flex flex-col items-center gap-2 rounded-xl bg-blush/50 p-3.5 text-center dark:bg-white/[0.045]"><p className="text-xs text-clay/80 dark:text-pearl/85">Você selecionou <strong className="text-burgundy dark:text-cream">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</strong></p><Button type="button" onClick={confirmar} loading={confirmando} className="dark:text-white">{modoAlteracao ? "Solicitar alteração" : "Confirmar data"}</Button>{modoAlteracao && <button type="button" onClick={() => window.location.reload()} className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-clay/70 underline dark:text-pearl/75">Cancelar alteração</button>}</div>{erro && <p className="mt-2 rounded-lg bg-alert/10 p-2 text-center text-[0.62rem] text-alert">{erro}</p>}</div>}</div>
+  return <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+    {!modoAlteracao && <div className="border-b border-[#F0DDDD] bg-[#FFF7F7] px-[13px] py-3"><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#B65B67]">Escolha a data da sua cirurgia</div><div className="pt-[2px] font-heading text-[15px] font-semibold text-[#7D2434]">Sua agenda cirúrgica está liberada</div><div className="pt-[2px] text-[9.5px] font-light text-[#7A6B67]">Os termos foram assinados em <b className="font-medium text-[#7D2434]">{format(parseDataLocal(dataAssinatura), "dd/MM/yyyy")}</b>. Escolha uma data liberada pela equipe.</div></div>}
+    <div className="p-[13px]">
+      <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={diaSelecionado} onSelecionar={selecionarDia} mudarMes={mudarMes} />
+      {diaSelecionado && <div className="mt-[11px] rounded-[12px] bg-[#F9F0EE] p-[11px] text-center"><div className="text-[10.2px] font-light text-[#7A6B67]">Você selecionou <b className="font-semibold text-[#7D2434]">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</b></div><button type="button" onClick={() => void confirmar()} disabled={confirmando} className="mt-[9px] w-full rounded-[11px] bg-[#6B1F2E] px-[13px] py-[11px] text-[11px] font-medium text-white disabled:opacity-50">{confirmando ? "Confirmando..." : modoAlteracao ? "Solicitar alteração" : "Confirmar data"}</button>{modoAlteracao && <button type="button" onClick={() => window.location.reload()} className="mt-[8px] text-[9px] font-medium text-[#8A7B77] underline">Cancelar alteração</button>}</div>}
+      {erro && <div className="mt-2 rounded-[10px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-center text-[9.5px] text-[#8F2A25]">{erro}</div>}
+    </div>
   </section>;
 };
+
+function CalendarGrid({ mesAtual, celulas, porData, hoje, selecionado, onSelecionar, mudarMes, bloqueado = false }: { mesAtual: Date; celulas: (number | null)[]; porData: Map<string, DataCirurgiaDisponivel>; hoje: Date; selecionado: string | null; onSelecionar: (dia: Date) => void; mudarMes: (delta: 1 | -1) => void; bloqueado?: boolean }) {
+  return <>
+    <div className="mb-[11px] flex items-center justify-between"><button type="button" onClick={() => mudarMes(-1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">‹</button><div className="font-heading text-[15px] font-semibold capitalize text-[#7D2434]">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</div><button type="button" onClick={() => mudarMes(1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">›</button></div>
+    <div className="grid grid-cols-7 gap-[5px] pb-[7px] text-center">{DIAS.map((dia, index) => <div key={`${dia}-${index}`} className="text-[8px] font-semibold uppercase text-[#B65B67]">{dia}</div>)}</div>
+    <div className="grid grid-cols-7 gap-[5px]">{celulas.map((numero, index) => {
+      if (numero === null) return <div key={`vazio-${index}`} className="aspect-square" />;
+      const dia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), numero);
+      const chave = format(dia, "yyyy-MM-dd");
+      const entrada = porData.get(chave);
+      const passado = isBefore(dia, hoje);
+      const disponivel = Boolean(entrada && entrada.vagasRestantes > 0 && !passado);
+      const ativo = chave === selecionado;
+      const ehHoje = isToday(dia);
+      const estilo = ativo ? { background: "#6B1F2E", borderColor: "#6B1F2E", color: "#FFF", fontWeight: 600 } : disponivel ? { background: "#F3F8F4", borderColor: "#D5E8D9", color: "#3F7D5B", fontWeight: 500 } : { background: passado ? "transparent" : "#FAF5F4", borderColor: "transparent", color: passado ? "#D0C5C2" : "#B8AAA6", fontWeight: 400, textDecoration: passado ? "none" : "line-through" };
+      return <button type="button" key={chave} disabled={!disponivel || bloqueado} onClick={() => onSelecionar(dia)} className="relative aspect-square rounded-[9px] border text-[10.5px]" style={estilo}><span className="flex h-full w-full items-center justify-center">{numero}</span>{ehHoje && !ativo && <span className="absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-[#B65B67]" />}</button>;
+    })}</div>
+  </>;
+}

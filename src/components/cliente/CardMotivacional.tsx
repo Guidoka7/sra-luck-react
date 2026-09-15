@@ -1,5 +1,3 @@
-import { Sparkles } from "lucide-react";
-
 interface CardMotivacionalProps {
   procedimento: string | null;
   quantidadeParcelas: number | null;
@@ -7,45 +5,38 @@ interface CardMotivacionalProps {
 }
 
 export function CardMotivacional({ procedimento, quantidadeParcelas, percentualPago }: CardMotivacionalProps) {
-  const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : null;
+  const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : "Plano";
   const percentual = Math.max(0, Math.min(100, Math.round(percentualPago)));
 
   return (
-    <div className="relative overflow-hidden rounded-[22px] border border-gold/20 bg-gradient-to-br from-white via-blush/35 to-white p-4 shadow-card sm:p-5">
-      <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gold/10 blur-2xl" />
-
-      <p className="relative flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-label text-gold">
-        <Sparkles className="h-3 w-3" /> Seu sonho está em movimento
-      </p>
-
-      <div className="relative mt-1.5 flex flex-wrap items-center gap-2">
-        <h2 className="font-heading text-lg font-semibold leading-tight text-burgundy">
-          {procedimento ?? "Seu procedimento"}
-        </h2>
-        {planoLabel && (
-          <span className="rounded-full bg-burgundy/8 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-label text-burgundy">
-            {planoLabel}
-          </span>
-        )}
+    <section className="sl-dream-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="sl-eyebrow">Seu sonho está em movimento</div>
+          <div className="sl-dream-title">{procedimento ?? "Seu procedimento"}</div>
+          <div className="sl-dream-copy">
+            Cada parcela confirmada aproxima você da sua conquista. Continue firme — sua jornada já começou e estamos com você em cada etapa.
+          </div>
+        </div>
+        <div className="sl-plan-chip">{planoLabel}</div>
       </div>
 
-      <p className="relative mt-2 text-[0.78rem] leading-relaxed text-clay/70">
-        Cada parcela confirmada aproxima você da sua conquista. Continue firme — sua jornada já começou e estamos com
-        você em cada etapa.
-      </p>
-
-      <div className="relative mt-3.5">
-        <div className="flex items-center justify-between text-[0.6rem] font-semibold uppercase tracking-label text-clay/45">
-          <span>Seu plano continua ativo</span>
-          <span className="text-burgundy">{percentual}%</span>
-        </div>
-        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-clay/10">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-burgundy to-rose transition-[width] duration-700"
-            style={{ width: `${percentual}%` }}
-          />
+      <div className="sl-plan-note">
+        <span className="sl-plan-note-icon">
+          <svg width="12" height="12" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 2.8 10.9 6.6l4.2.6-3.05 2.97.72 4.17L9 12.38 5.23 14.34l.72-4.17L2.9 7.2l4.2-.6L9 2.8Z" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <div className="sl-plan-note-title">Seu plano continua ativo</div>
+          <div className="sl-plan-note-copy">Mantenha seus pagamentos em dia para avançar com tranquilidade até a liberação da sua agenda.</div>
         </div>
       </div>
-    </div>
+
+      <div className="sl-separator" />
+      <div className="sl-progress" aria-label={`${percentual}% das parcelas pagas`}>
+        <div className="sl-progress-fill" style={{ width: `${percentual}%` }} />
+      </div>
+    </section>
   );
 }

@@ -105,22 +105,26 @@ export function AgendaPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-[100dvh] items-center justify-center bg-bloom">
-        <img src="/brand/sra-luck-mark.png" alt="Sra. Luck" className="h-10 w-10 animate-pulse object-contain" />
+      <main className="client-app flex min-h-[100dvh] items-center justify-center">
+        <div className="mobile-app-frame flex items-center justify-center">
+          <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[104px] animate-pulse object-contain" />
+        </div>
       </main>
     );
   }
 
   if (!agenda || !boletos) {
     return (
-      <main className="flex min-h-[100dvh] items-center justify-center bg-bloom p-6">
-        <section className="surface-glass w-full max-w-md rounded-[28px] p-8 text-center">
-          <p className="text-sm text-clay/70">Não foi possível carregar sua área.</p>
-          {erro && <p className="mt-2 text-xs text-alert">{erro}</p>}
-          <button className="mt-5 rounded-full bg-burgundy px-5 py-2.5 text-xs font-semibold uppercase tracking-label text-pearl" onClick={() => void carregar()}>
-            Tentar novamente
-          </button>
-        </section>
+      <main className="client-app min-h-[100dvh]">
+        <div className="mobile-app-frame flex items-center justify-center px-5">
+          <section className="w-full rounded-[20px] border border-[#EFE2DE] bg-white p-6 text-center shadow-[0_5px_18px_rgba(46,36,34,.055)]">
+            <p className="text-[13px] font-normal text-[#7F6E6A]">Não foi possível carregar sua área.</p>
+            {erro && <p className="mt-2 text-[11px] text-[#B3342E]">{erro}</p>}
+            <button className="mt-5 rounded-[14px] bg-[#6B1F2E] px-5 py-3 text-[12px] font-medium text-[#FBF7F5]" onClick={() => void carregar()}>
+              Tentar novamente
+            </button>
+          </section>
+        </div>
       </main>
     );
   }
@@ -133,7 +137,7 @@ export function AgendaPage() {
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   return (
-    <main className="client-app min-h-[100dvh] bg-bloom px-4 pb-24 sm:px-6">
+    <main className="client-app min-h-[100dvh]">
       {celebrando && (
         <CelebracaoData
           data={celebrando}
@@ -147,8 +151,8 @@ export function AgendaPage() {
 
       <MomentoEspecialCelebracao />
 
-      <div className="mobile-app-frame mx-auto w-full max-w-2xl sm:max-w-[30rem]">
-        {erro && <div role="alert" className="mb-4 rounded-2xl border border-alert/20 bg-alert/5 px-4 py-3 text-sm text-alert">{erro}</div>}
+      <div className="mobile-app-frame">
+        {erro && <div role="alert" className="mx-5 mt-3 rounded-[14px] border border-[#F0D3D1] bg-[#FBEBEA] px-4 py-3 text-[11px] text-[#8F2A25]">{erro}</div>}
 
         {aba === "inicio" && (
           <HomeTab

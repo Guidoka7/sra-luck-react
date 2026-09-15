@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
+import { pseudonymizeActorId, requestLogger } from "./logger";
 
 const COOKIE_NAME = "cliente_session";
 const BUCKET = "boletos-clientes";
@@ -35,18 +36,22 @@ function extensao(tipo: TipoPermitido) {
 export async function handleClienteBoletos(request: Request, env: Env, boletoId?: string, action?: "anexar" | "arquivo" | "comprovante") {
   const sessao = await sessaoCliente(request, env);
   if (!sessao) return json({ erro: "Sessão expirada." }, 401);
+  const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(sessao.clienteId, env), entityType: boletoId ? "boleto" : undefined, entityId: boletoId ?? null });
 
   const supabase = createServiceSupabaseClient(env);
 
   if (!boletoId && request.method === "GET") {
-    const { data: cliente, error: erroCliente } = await supabase
-      .from("clientes")
-      .select("id, quantidade_parcelas, status_revisao_financeira, data_atingiu_percentual, observacao_revisao_financeira")
-      .eq("id", sessao.clienteId).single();
-    if (erroCliente || !cliente) return json({ erro: "Cliente não encontrada." }, 404);
+    const { data: cliente, error: erroCliente } = await supabase.from("clientes").select("id, quantidade_parcelas, status_revisao_financeira, data_atingiu_percentual, observacao_revisao_financeira").eq("id", sessao.clienteId).single();
+    if (erroCliente || !cliente) {
+      if (erroCliente) log.error("Falha ao carregar cliente para boletos", { action: "client.boletos.list", eventCode: "BOLETOS_CLIENT_LOOKUP_FAILED", statusCode: 404, error: erroCliente });
+      return json({ erro: "Cliente não encontrada." }, 404);
+    }
 
     const { data: boletos, error: erroBoletos } = await supabase.from("boletos").select("*").eq("cliente_id", cliente.id).order("numero_parcela", { ascending: true });
-    if (erroBoletos) return json({ erro: "Erro ao buscar boletos." }, 500);
+    if (erroBoletos) {
+      log.error("Falha ao carregar boletos", { action: "client.boletos.list", eventCode: "BOLETOS_LIST_FAILED", statusCode: 500, error: erroBoletos });
+      return json({ erro: "Erro ao buscar boletos." }, 500);
+    }
 
     const { data: porcentagem } = await supabase.rpc("porcentagem_pagamento", { p_cliente_id: cliente.id });
     const { data: podeAgendar } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
@@ -72,7 +77,10 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     const { data: boleto } = await supabase.from("boletos").select("cliente_id, boleto_url").eq("id", boletoId).single();
     if (!boleto || boleto.cliente_id !== sessao.clienteId || !boleto.boleto_url) return json({ erro: "Boleto ainda não disponível." }, 404);
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(boleto.boleto_url, 300);
-    if (error || !data?.signedUrl) return json({ erro: "Não foi possível gerar o link do boleto." }, 500);
+    if (error || !data?.signedUrl) {
+      if (error) log.error("Falha ao gerar URL assinada do boleto", { action: "client.boleto.file", eventCode: "BOLETO_SIGNED_URL_FAILED", statusCode: 500, error });
+      return json({ erro: "Não foi possível gerar o link do boleto." }, 500);
+    }
     return Response.redirect(data.signedUrl, 302);
   }
 
@@ -80,7 +88,10 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     const { data: boleto } = await supabase.from("boletos").select("cliente_id, comprovante_url").eq("id", boletoId).single();
     if (!boleto || boleto.cliente_id !== sessao.clienteId || !boleto.comprovante_url) return json({ erro: "Comprovante não encontrado." }, 404);
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(boleto.comprovante_url, 300);
-    if (error || !data?.signedUrl) return json({ erro: "Não foi possível gerar o link do comprovante." }, 500);
+    if (error || !data?.signedUrl) {
+      if (error) log.error("Falha ao gerar URL assinada do comprovante", { action: "client.receipt.file", eventCode: "RECEIPT_SIGNED_URL_FAILED", statusCode: 500, error });
+      return json({ erro: "Não foi possível gerar o link do comprovante." }, 500);
+    }
     return Response.redirect(data.signedUrl, 302);
   }
 
@@ -88,16 +99,22 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     const { data: boleto } = await supabase.from("boletos").select("id, cliente_id, comprovante_url, status").eq("id", boletoId).single();
     if (!boleto || boleto.cliente_id !== sessao.clienteId) return json({ erro: "Boleto não encontrado." }, 404);
     if (!boleto.comprovante_url) return json({ erro: "Esta parcela não possui comprovante." }, 404);
-    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId);
-    if (updateError) return json({ erro: "Não foi possível remover o comprovante." }, 500);
+    if (boleto.status === "pago") return json({ erro: "Comprovante de parcela paga não pode ser removido." }, 409);
+    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    if (updateError) {
+      log.error("Falha ao remover referência do comprovante", { action: "client.receipt.delete", eventCode: "RECEIPT_DB_DELETE_FAILED", statusCode: 500, error: updateError });
+      return json({ erro: "Não foi possível remover o comprovante." }, 500);
+    }
     const { error } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
-    if (error) console.error("Erro ao remover arquivo do comprovante:", error);
+    if (error) log.warn("Banco atualizado, mas arquivo do comprovante não foi removido", { action: "client.receipt.delete", eventCode: "RECEIPT_STORAGE_DELETE_FAILED", error });
+    else log.info("Comprovante removido", { action: "client.receipt.delete", eventCode: "RECEIPT_DELETED" });
     return json({ sucesso: true, status: "nao_pago" });
   }
 
   if (action === "anexar" && request.method === "POST") {
     const { data: boleto } = await supabase.from("boletos").select("id, cliente_id, numero_parcela, status, comprovante_url").eq("id", boletoId).single();
     if (!boleto || boleto.cliente_id !== sessao.clienteId) return json({ erro: "Boleto não encontrado." }, 404);
+    if (boleto.status === "pago") return json({ erro: "Parcela já paga não aceita novo comprovante." }, 409);
     const { data: clienteAntes } = await supabase.from("clientes").select("status_revisao_financeira").eq("id", sessao.clienteId).single();
 
     let formData: FormData;
@@ -112,19 +129,28 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
 
     const caminho = `${sessao.clienteId}/${boletoId}/${Date.now()}.${extensao(tipo)}`;
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(caminho, arquivo, { contentType: tipo, upsert: false });
-    if (uploadError) { console.error("Erro upload comprovante:", uploadError); return json({ erro: "Erro ao enviar o arquivo." }, 500); }
+    if (uploadError) {
+      log.error("Falha no upload do comprovante", { action: "client.receipt.upload", eventCode: "RECEIPT_UPLOAD_FAILED", statusCode: 500, error: uploadError });
+      return json({ erro: "Erro ao enviar o arquivo." }, 500);
+    }
 
-    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId);
+    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
-      await supabase.storage.from(BUCKET).remove([caminho]);
+      const { error: rollbackError } = await supabase.storage.from(BUCKET).remove([caminho]);
+      if (rollbackError) log.error("Falha no rollback do arquivo após erro de banco", { action: "client.receipt.upload.rollback", eventCode: "RECEIPT_UPLOAD_ROLLBACK_FAILED", error: rollbackError });
+      log.error("Arquivo enviado, mas comprovante não foi salvo no banco", { action: "client.receipt.upload", eventCode: "RECEIPT_DB_SAVE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Erro ao salvar o comprovante." }, 500);
     }
-    if (boleto.comprovante_url && boleto.comprovante_url !== caminho) await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
+    if (boleto.comprovante_url && boleto.comprovante_url !== caminho) {
+      const { error: oldFileError } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
+      if (oldFileError) log.warn("Novo comprovante salvo, mas arquivo anterior não foi removido", { action: "client.receipt.upload.cleanup", eventCode: "RECEIPT_OLD_FILE_DELETE_FAILED", error: oldFileError });
+    }
 
     if (clienteAntes?.status_revisao_financeira === "recusada") {
       const { data: podeAgendar } = await supabase.rpc("pode_agendar", { p_cliente_id: sessao.clienteId });
       if (Boolean(podeAgendar)) await supabase.from("clientes").update({ status_revisao_financeira: "pendente", data_atingiu_percentual: new Date().toISOString(), observacao_revisao_financeira: null }).eq("id", sessao.clienteId);
     }
+    log.info("Comprovante enviado para conferência", { action: "client.receipt.upload", eventCode: "RECEIPT_UPLOADED" });
     return json({ sucesso: true, boleto_id: boletoId, status: "pendente_confirmacao" });
   }
 

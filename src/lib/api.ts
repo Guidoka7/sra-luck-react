@@ -22,7 +22,7 @@ export async function apiJson<T>(input: RequestInfo | URL, init?: RequestInit): 
       },
     });
   } catch (error) {
-    registrarErro({ origem: "api", codigo: "NETWORK_ERROR", mensagem: error instanceof Error ? error.message : "Falha de rede" });
+    registrarErro({ origem: "api", nivel: "error", codigo: "NETWORK_ERROR", action: "api.network.failed", mensagem: error instanceof Error ? error.message : "Falha de rede" });
     throw new Error("Não foi possível conectar ao servidor. Confira sua conexão e tente novamente.");
   }
 
@@ -36,10 +36,12 @@ export async function apiJson<T>(input: RequestInfo | URL, init?: RequestInit): 
       : fallbackHttpMessage(response.status);
     registrarErro({
       origem: "api",
-      nivel: response.status >= 500 ? "critical" : "warning",
+      nivel: response.status >= 500 ? "error" : "warn",
       codigo: "HTTP_ERROR",
+      action: "api.request.failed",
       mensagem: message,
       status_http: response.status,
+      request_id: response.headers.get("x-request-id") || undefined,
       detalhes: { metodo: init?.method || "GET", rota: typeof input === "string" ? input.split("?")[0] : String(input) },
     });
     throw new Error(message);

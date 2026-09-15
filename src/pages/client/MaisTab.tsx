@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronDown, FileText, Gift, HelpCircle, LockKeyhole, LogOut, MessageCircle, Phone } from "lucide-react";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
-import { primeiroNome } from "@/lib/utils";
+import { registrarErro } from "@/lib/monitoramento";
 
 type SubTela = "clube" | "documentos" | "atendimento" | "faq" | "seguranca" | null;
 
@@ -12,168 +11,77 @@ interface MaisTabProps {
 }
 
 const FAQS = [
-  { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, iniciamos um levantamento financeiro de até 5 dias úteis. Aprovado, sua agenda é liberada para escolher a data da assinatura dos termos." },
-  { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Parcelas, cada parcela mostra o status do comprovante (em análise, confirmado ou rejeitado)." },
-  { pergunta: "Posso pagar uma parcela no cartão de crédito?", resposta: "Sim — ao abrir o pagamento de uma parcela, a opção de cartão leva você para o checkout seguro do Mercado Pago." },
-  { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Você ganha pontos ao confirmar sua primeira parcela e ao indicar amigas que se tornarem clientes. Troque os pontos por benefícios no próprio app." },
+  { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, iniciamos um levantamento financeiro de até 5 dias úteis. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura e da quitação confirmada, a agenda da cirurgia pode ser liberada antes, respeitando o prazo máximo de até 90 dias corridos." },
+  { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Parcelas, cada parcela mostra o status do comprovante: em análise, confirmado ou rejeitado." },
+  { pergunta: "Posso pagar uma parcela no cartão de crédito?", resposta: "Sim. Ao abrir o pagamento de uma parcela, a opção de cartão leva você para o checkout seguro do Mercado Pago." },
+  { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },
 ];
 
-function FaqItem({ pergunta, resposta }: { pergunta: string; resposta: string }) {
-  const [aberto, setAberto] = useState(false);
-  return (
-    <div className="rounded-xl border border-rose/12 bg-white/80">
-      <button type="button" onClick={() => setAberto((v) => !v)} className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left">
-        <span className="text-[0.8rem] font-semibold text-burgundy">{pergunta}</span>
-        <ChevronDown className={`h-4 w-4 flex-none text-clay/40 transition-transform ${aberto ? "rotate-180" : ""}`} />
-      </button>
-      {aberto && <p className="border-t border-rose/10 px-3.5 pb-3.5 pt-2.5 text-[0.75rem] leading-relaxed text-clay/60">{resposta}</p>}
-    </div>
-  );
+function IconeMenu({ tipo }: { tipo: "clube" | "documentos" | "atendimento" | "faq" | "seguranca" | "sair" }) {
+  const base = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.45, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (tipo === "clube") return <svg {...base}><path d="M20 12v9H4v-9"/><path d="M2 7h20v5H2z"/><path d="M12 21V7"/><path d="M12 7H7.4a2.4 2.4 0 1 1 2.08-3.6L12 7Z"/><path d="M12 7h4.6a2.4 2.4 0 1 0-2.08-3.6L12 7Z"/></svg>;
+  if (tipo === "documentos") return <svg {...base}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>;
+  if (tipo === "atendimento") return <svg {...base}><path d="M21 12a8.5 8.5 0 0 1-9 8.5 9.7 9.7 0 0 1-3.8-.8L3 21l1.4-4.6A8.5 8.5 0 1 1 21 12Z"/><path d="M8.5 11.8h.01M12 11.8h.01M15.5 11.8h.01"/></svg>;
+  if (tipo === "faq") return <svg {...base}><circle cx="12" cy="12" r="9"/><path d="M9.8 9.2a2.45 2.45 0 0 1 4.7.9c0 1.8-2.5 2.1-2.5 3.6"/><path d="M12 17.2h.01"/></svg>;
+  if (tipo === "seguranca") return <svg {...base}><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg>;
+  return <svg {...base}><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>;
+}
+
+function iniciais(nome: string) {
+  const p = nome.trim().split(/\s+/).filter(Boolean);
+  return `${p[0]?.[0] ?? ""}${p.length > 1 ? p[p.length - 1][0] : ""}`.toUpperCase();
 }
 
 function SubHeader({ titulo, onVoltar }: { titulo: string; onVoltar: () => void }) {
-  return (
-    <button type="button" onClick={onVoltar} className="mb-3 flex items-center gap-1.5 text-[0.72rem] font-semibold text-burgundy">
-      <ArrowLeft className="h-4 w-4" /> {titulo}
-    </button>
-  );
+  return <div className="px-[18px] pt-[calc(max(env(safe-area-inset-top),0px)+18px)]">
+    <button type="button" onClick={onVoltar} className="flex items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button>
+    <div className="pt-[16px] font-heading text-[29px] font-semibold leading-[1.08] text-[#2E2422]">{titulo}</div>
+  </div>;
+}
+
+function FaqItem({ pergunta, resposta }: { pergunta: string; resposta: string }) {
+  const [aberto, setAberto] = useState(false);
+  return <div className="overflow-hidden rounded-[16px] border border-[#ECE2DF] bg-white">
+    <button type="button" onClick={() => setAberto((v) => !v)} className="flex w-full items-center justify-between gap-3 px-[14px] py-[13px] text-left"><span className="text-[12px] font-medium leading-[1.35] text-[#4B3936]">{pergunta}</span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#B6AAA6" strokeWidth="1.2" className={`flex-none transition-transform ${aberto ? "rotate-180" : ""}`}><path d="M3.5 5.5 7 9l3.5-3.5"/></svg></button>
+    {aberto && <div className="border-t border-[#F3EBE8] px-[14px] pb-[14px] pt-[10px] text-[10.7px] font-light leading-[1.55] text-[#7F6F6B]">{resposta}</div>}
+  </div>;
 }
 
 export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
   const [sub, setSub] = useState<SubTela>(null);
   const [contato, setContato] = useState<{ whatsapp: string | null; telefone: string | null }>({ whatsapp: null, telefone: null });
+  const [contatoFalhou, setContatoFalhou] = useState(false);
 
   useEffect(() => {
     fetch("/api/cliente/config", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((dados) => {
-        if (dados) setContato({ whatsapp: dados.whatsappContato ?? null, telefone: dados.telefoneContato ?? null });
+      .then(async (r) => {
+        if (!r.ok) {
+          registrarErro({ mensagem: `Configuração de contato respondeu HTTP ${r.status}`, nivel: "warn", codigo: "CLIENT_CONFIG_HTTP_FAILED", action: "client.config.read", status_http: r.status, request_id: r.headers.get("x-request-id") || undefined });
+          setContatoFalhou(true);
+          return null;
+        }
+        return r.json();
       })
-      .catch(() => {});
+      .then((dados) => { if (dados) setContato({ whatsapp: dados.whatsappContato ?? null, telefone: dados.telefoneContato ?? null }); })
+      .catch((error) => {
+        setContatoFalhou(true);
+        registrarErro({ mensagem: error instanceof Error ? error.message : "Falha ao carregar canais de atendimento", nivel: "warn", codigo: "CLIENT_CONFIG_LOAD_FAILED", action: "client.config.read" });
+      });
   }, []);
 
   if (sub === "clube") return <ClubeScreen onVoltar={() => setSub(null)} onIrParcelas={onIrParcelas} />;
-
-  if (sub === "documentos") {
-    return (
-      <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <SubHeader titulo="Mais" onVoltar={() => setSub(null)} />
-        <h1 className="font-heading text-xl font-semibold text-burgundy">Meus documentos</h1>
-        <p className="mt-3 text-[0.8rem] leading-relaxed text-clay/60">
-          Para solicitar uma cópia do seu contrato, comprovantes ou qualquer outro documento, fale com a nossa equipe
-          pelo Atendimento — enviamos tudo diretamente para você.
-        </p>
-        <button type="button" onClick={() => setSub("atendimento")} className="mt-4 rounded-full bg-burgundy px-4 py-2.5 text-xs font-bold uppercase tracking-label text-pearl">
-          Ir para Atendimento
-        </button>
-      </div>
-    );
-  }
-
-  if (sub === "atendimento") {
-    return (
-      <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <SubHeader titulo="Mais" onVoltar={() => setSub(null)} />
-        <h1 className="font-heading text-xl font-semibold text-burgundy">Atendimento</h1>
-        <div className="mt-4 flex flex-col gap-2.5">
-          {contato.whatsapp && (
-            <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-2xl bg-burgundy px-4 py-3.5 text-pearl">
-              <MessageCircle className="h-5 w-5" />
-              <div><p className="text-sm font-semibold">WhatsApp</p><p className="text-[0.68rem] text-pearl/75">Fale agora com a equipe</p></div>
-            </a>
-          )}
-          {contato.telefone && (
-            <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-2xl border border-rose/15 bg-white/85 px-4 py-3.5">
-              <Phone className="h-5 w-5 text-burgundy" />
-              <div><p className="text-sm font-semibold text-burgundy">Ligar para a equipe</p><p className="text-[0.68rem] text-clay/55">{contato.telefone}</p></div>
-            </a>
-          )}
-          {!contato.whatsapp && !contato.telefone && (
-            <p className="text-sm text-clay/50">Os canais de atendimento ainda não foram configurados pela equipe.</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (sub === "faq") {
-    return (
-      <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <SubHeader titulo="Mais" onVoltar={() => setSub(null)} />
-        <h1 className="font-heading text-xl font-semibold text-burgundy">Dúvidas frequentes</h1>
-        <div className="mt-4 flex flex-col gap-2">
-          {FAQS.map((item) => <FaqItem key={item.pergunta} {...item} />)}
-        </div>
-      </div>
-    );
-  }
-
-  if (sub === "seguranca") {
-    return (
-      <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <SubHeader titulo="Mais" onVoltar={() => setSub(null)} />
-        <h1 className="font-heading text-xl font-semibold text-burgundy">Segurança</h1>
-        <p className="mt-3 text-[0.8rem] leading-relaxed text-clay/60">
-          Seus dados são acessados apenas com o seu CPF e data de nascimento. Nunca pedimos sua senha ou dados
-          bancários por telefone, WhatsApp ou e-mail fora do aplicativo.
-        </p>
-        <button type="button" onClick={onSair} className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-alert/20 bg-alert/8 px-4 py-3 text-xs font-bold uppercase tracking-label text-alert">
-          <LogOut className="h-3.5 w-3.5" /> Encerrar acesso com segurança
-        </button>
-      </div>
-    );
-  }
+  if (sub === "documentos") return <div className="sl-tab pb-6"><SubHeader titulo="Meus documentos" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="flex h-10 w-10 items-center justify-center rounded-[13px] border border-[#E9D9D5] bg-[#FFF9F8] text-[#B86575]"><IconeMenu tipo="documentos"/></div><div className="pt-3 font-heading text-[19px] font-semibold text-[#43322F]">Documentos da sua jornada</div><p className="pt-1 text-[10.8px] font-light leading-[1.55] text-[#8D7D79]">Para solicitar uma cópia do contrato, comprovantes ou outro documento, fale com a equipe pelo Atendimento.</p><button type="button" onClick={() => setSub("atendimento")} className="mt-4 w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[10px] text-[10.5px] font-semibold text-white">Ir para Atendimento</button></div></div></div>;
+  if (sub === "atendimento") return <div className="sl-tab pb-6"><SubHeader titulo="Atendimento" onVoltar={() => setSub(null)} /><div className="grid gap-[9px] px-[18px] pt-4">{contato.whatsapp && <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><IconeMenu tipo="atendimento"/></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">WhatsApp</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">Fale agora com a equipe</span></span></a>}{contato.telefone && <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="M7.5 3.5 10 8 8 9.5c1.4 2.8 3.7 5.1 6.5 6.5l1.5-2 4.5 2.5c-.4 2.5-2.2 4-4.5 4C9.1 20.5 3.5 14.9 3.5 8c0-2.3 1.5-4.1 4-4.5Z"/></svg></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">Ligar para a equipe</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">{contato.telefone}</span></span></a>}{!contato.whatsapp && !contato.telefone && <div className="rounded-[17px] border border-[#ECE2DF] bg-white p-4 text-[10.8px] font-light text-[#8D7D79]">{contatoFalhou ? "Não foi possível carregar os canais de atendimento agora. Tente novamente em instantes." : "Os canais de atendimento ainda não foram configurados pela equipe."}</div>}</div></div>;
+  if (sub === "faq") return <div className="sl-tab pb-6"><SubHeader titulo="Dúvidas frequentes" onVoltar={() => setSub(null)} /><div className="grid gap-2 px-[18px] pt-4">{FAQS.map((item) => <FaqItem key={item.pergunta} {...item}/>)}</div></div>;
+  if (sub === "seguranca") return <div className="sl-tab pb-6"><SubHeader titulo="Segurança" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="sl-more-icon"><IconeMenu tipo="seguranca"/></div><p className="pt-3 text-[10.8px] font-light leading-[1.55] text-[#7F6F6B]">Seu acesso é feito por CPF e data de nascimento. Nunca compartilhe dados bancários fora dos canais oficiais da Sra. Luck.</p><button type="button" onClick={onSair} className="mt-4 w-full rounded-[11px] border border-[#EAD0CF] bg-[#FBF0EF] px-3 py-[10px] text-[10.5px] font-semibold text-[#8F2A25]">Encerrar acesso com segurança</button></div></div></div>;
 
   const itens = [
-    { id: "clube" as const, icone: Gift, nome: "Clube de vantagens", sub: "Pontos, indicações e prêmios" },
-    { id: "documentos" as const, icone: FileText, nome: "Meus documentos", sub: "Contrato e comprovantes" },
-    { id: "atendimento" as const, icone: MessageCircle, nome: "Atendimento", sub: "Fale com a nossa equipe" },
-    { id: "faq" as const, icone: HelpCircle, nome: "Dúvidas frequentes", sub: "Perguntas mais comuns" },
-    { id: "seguranca" as const, icone: LockKeyhole, nome: "Segurança", sub: "Como protegemos seus dados" },
+    { id: "clube" as const, nome: "Clube de vantagens", subtitulo: "Presentes e experiências para sua jornada" },
+    { id: "documentos" as const, nome: "Meus documentos", subtitulo: "Contrato e documentos da sua jornada" },
+    { id: "atendimento" as const, nome: "Atendimento", subtitulo: "Fale com a equipe Sra. Luck" },
+    { id: "faq" as const, nome: "Dúvidas frequentes", subtitulo: "Respostas rápidas para as perguntas mais comuns" },
+    { id: "seguranca" as const, nome: "Segurança", subtitulo: "Acesso, privacidade e proteção dos seus dados" },
   ];
 
-  return (
-    <div className="pt-[max(env(safe-area-inset-top),0.75rem)]">
-      <h1 className="font-heading text-xl font-semibold text-burgundy">Mais</h1>
-      <p className="mt-0.5 text-[0.75rem] text-clay/55">Olá, {primeiroNome(nomeCliente)}.</p>
-
-      <div className="mt-4 flex flex-col gap-2">
-        {itens.map(({ id, icone: Icone, nome, sub: subtitulo }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setSub(id)}
-            className="flex items-center gap-3 rounded-2xl border border-rose/12 bg-white/85 px-4 py-3.5 text-left shadow-card"
-          >
-            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-rose/10 text-rose">
-              <Icone className="h-4 w-4" strokeWidth={1.6} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-clay">{nome}</p>
-              <p className="text-[0.7rem] text-clay/50">{subtitulo}</p>
-            </div>
-          </button>
-        ))}
-
-        <button
-          type="button"
-          onClick={onSair}
-          className="mt-2 flex items-center gap-3 rounded-2xl border border-alert/15 bg-alert/5 px-4 py-3.5 text-left"
-        >
-          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-alert/10 text-alert">
-            <LogOut className="h-4 w-4" strokeWidth={1.6} />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-alert">Sair</p>
-            <p className="text-[0.7rem] text-alert/60">Encerrar acesso com segurança</p>
-          </div>
-        </button>
-      </div>
-
-      <div className="mt-8 flex flex-col items-center gap-1 pb-4 opacity-60">
-        <img src="/brand/sra-luck-mark.png" alt="" className="h-6 w-6 object-contain" />
-        <p className="text-[0.6rem] text-clay/40">versão 2.0</p>
-      </div>
-    </div>
-  );
+  return <div className="sl-tab pb-5"><div className="px-5 pt-[calc(max(env(safe-area-inset-top),0px)+18px)]"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="mb-[13px] w-[91px] object-contain" /><div className="font-heading text-[29px] font-semibold leading-[1.1] text-[#2E2422]">Mais</div><div className="pt-1 text-[13px] font-light text-[#8A7B77]">Tudo o que você precisa, em um só lugar.</div></div><div className="sl-more-profile"><div className="relative flex-none"><div className="sl-more-avatar">{iniciais(nomeCliente)}</div><div className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#6B1F2E]"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="#FBF7F5" strokeWidth="1.2"><rect x="2" y="4" width="10" height="7.5" rx="2"/><circle cx="7" cy="7.7" r="2.1"/></svg></div></div><div className="min-w-0"><div className="truncate font-heading text-[21px] font-semibold leading-[1.15] text-[#2E2422]">{nomeCliente}</div><div className="sl-active-pill"><span className="h-[5px] w-[5px] rounded-full bg-[#3F7D5B]"/>Plano ativo</div></div></div><div className="sl-more-menu">{itens.map((item) => <button key={item.id} type="button" onClick={() => setSub(item.id)} className="sl-more-item"><span className="flex min-w-0 items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo={item.id}/></span><span className="min-w-0"><span className="sl-more-name block">{item.nome}</span><span className="sl-more-sub block truncate">{item.subtitulo}</span></span></span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C8B9B5" strokeWidth="1.15"><path d="M5 3l4 4-4 4"/></svg></button>)}<button type="button" onClick={onSair} className="sl-more-item border-b-0"><span className="flex items-center gap-3"><span className="sl-more-icon"><IconeMenu tipo="sair"/></span><span><span className="sl-more-name block">Sair</span><span className="sl-more-sub block">Encerrar acesso com segurança</span></span></span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C8B9B5" strokeWidth="1.15"><path d="M5 3l4 4-4 4"/></svg></button></div></div>;
 }

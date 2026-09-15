@@ -5,6 +5,7 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   CLIENTE_SESSION_SECRET?: string;
   NOTIFICACOES_CRON_SECRET?: string;
+  LOG_PSEUDONYM_KEY?: string;
 
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
   // permanecem exclusivamente no backend/cofre de integrações.
