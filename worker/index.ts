@@ -22,7 +22,7 @@ import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
 import { adminCarnes } from "./admin-carnes";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
-import { applyApiSecurityHeaders, enforceClientAccountState, enforceMutationOrigin, hmacFingerprint, verifyTurnstile } from "./security";
+import { applyApiSecurityHeaders, enforceActionRateLimit, enforceClientAccountState, enforceMutationOrigin, enforceRequestSize, hmacFingerprint, verifyTurnstile } from "./security";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -201,6 +201,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const secure = url.protocol === "https:";
 
+  const tooLarge = enforceRequestSize(request);
+  if (tooLarge) return tooLarge;
   const csrf = enforceMutationOrigin(request, env);
   if (csrf) return csrf;
 
@@ -244,6 +246,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   const clientState = await enforceClientAccountState(request, env);
   if (clientState) return clientState;
+
+  const actionLimit = await enforceActionRateLimit(request, env);
+  if (actionLimit) return actionLimit;
 
   const monitor = await monitoramentoErros(request, env);
   if (monitor) return monitor;
