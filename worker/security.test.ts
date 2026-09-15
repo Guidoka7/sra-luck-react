@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { applyApiSecurityHeaders, enforceMutationOrigin, enforceRequestSize, hmacFingerprint, safePublicAppUrl, verifyTurnstile } from "./security";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyApiSecurityHeaders,
+  enforceMutationOrigin,
+  enforceRequestSize,
+  enforceStreamingRequestSize,
+  hmacFingerprint,
+  safePublicAppUrl,
+  verifyTurnstile,
+} from "./security";
 
 describe("security middleware", () => {
   const env = { PUBLIC_APP_URL: "https://app.sraluck.example" } as any;
@@ -39,6 +47,28 @@ describe("security middleware", () => {
     expect(enforceRequestSize(bad)?.status).toBe(413);
   });
 
+  it("bloqueia payload chunked/sem Content-Length que ultrapassa o teto", async () => {
+    const body = "x".repeat(520 * 1024);
+    const request = new Request("https://app.sraluck.example/api/cliente/agendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    expect(request.headers.get("content-length")).toBeNull();
+    expect((await enforceStreamingRequestSize(request))?.status).toBe(413);
+  });
+
+  it("aceita body chunked/sem Content-Length dentro do teto e preserva o body original", async () => {
+    const body = JSON.stringify({ dataId: "abc", horario: "09:00" });
+    const request = new Request("https://app.sraluck.example/api/cliente/agendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    expect(await enforceStreamingRequestSize(request)).toBeNull();
+    await expect(request.text()).resolves.toBe(body);
+  });
+
   it("aplica headers defensivos e HSTS em HTTPS", () => {
     const request = new Request("https://app.sraluck.example/api/health");
     const response = applyApiSecurityHeaders(new Response("ok"), request);
@@ -66,6 +96,28 @@ describe("security middleware", () => {
   it("permite ambiente local sem Turnstile quando não forçado", async () => {
     const request = new Request("http://localhost:5173/api/cliente/auth", { method: "POST" });
     await expect(verifyTurnstile(request, {} as any, null)).resolves.toEqual({ ok: true });
+  });
+
+  it("Turnstile rejeita token emitido para hostname diferente", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ success: true, hostname: "evil.example" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    try {
+      const request = new Request("https://app.sraluck.example/api/cliente/auth", { method: "POST" });
+      const result = await verifyTurnstile(request, { TURNSTILE_SECRET_KEY: "secret", PUBLIC_APP_URL: "https://app.sraluck.example" } as any, "token");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.status).toBe(403);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("Turnstile aceita hostname do app configurado", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ success: true, hostname: "app.sraluck.example" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    try {
+      const request = new Request("https://app.sraluck.example/api/cliente/auth", { method: "POST" });
+      await expect(verifyTurnstile(request, { TURNSTILE_SECRET_KEY: "secret", PUBLIC_APP_URL: "https://app.sraluck.example" } as any, "token")).resolves.toEqual({ ok: true });
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it("não aceita PUBLIC_APP_URL insegura fora do localhost", () => {
