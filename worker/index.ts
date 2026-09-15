@@ -22,7 +22,7 @@ import { staffApi } from "./staff-api";
 import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
 import { adminCarnes } from "./admin-carnes";
-import { getRequestId, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
+import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -382,6 +382,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env) {
+    installConsoleSanitizer();
     const requestId = getRequestId(request);
     const log = requestLogger(request, requestId);
     const inicio = Date.now();
