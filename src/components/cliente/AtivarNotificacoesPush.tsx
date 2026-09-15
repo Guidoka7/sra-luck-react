@@ -133,7 +133,7 @@ export function AtivarNotificacoesPush() {
     setAtivando(true);
 
     try {
-      let permission = Notification.permission;
+      let permission: NotificationPermission = Notification.permission;
       if (permission === "default") {
         permission = await Notification.requestPermission();
       }
