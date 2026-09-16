@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+
 export type ClientTab = "inicio" | "parcelas" | "jornada" | "notificacoes" | "mais";
 
 interface BottomNavProps {
@@ -25,13 +27,45 @@ const ITEMS: { id: ClientTab; label: string }[] = [
 export function BottomNav({ aba, onSelecionar, naoLidas = 0 }: BottomNavProps) {
   return (
     <nav className="sl-bottom-nav" aria-label="Navegação principal">
-      {ITEMS.map(({ id, label }) => (
-        <button key={id} type="button" onClick={() => onSelecionar(id)} aria-current={aba === id ? "page" : undefined} className={`sl-bottom-item ${aba === id ? "active" : ""}`}>
-          <Icone id={id} />
-          <span>{label}</span>
-          {id === "notificacoes" && naoLidas > 0 && <span className="sl-nav-badge">{naoLidas}</span>}
-        </button>
-      ))}
+      {ITEMS.map(({ id, label }) => {
+        const ativo = aba === id;
+
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelecionar(id)}
+            aria-current={ativo ? "page" : undefined}
+            className={`sl-bottom-item isolate overflow-visible ${ativo ? "active" : ""}`}
+          >
+            {ativo && (
+              <>
+                <motion.span
+                  layoutId="sl-bottom-active-glow"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-1/2 top-[-7px] z-0 h-[48px] w-[64px] -translate-x-1/2 rounded-full"
+                  style={{
+                    background: "radial-gradient(ellipse at center, rgba(182,91,103,.14) 0%, rgba(182,91,103,.065) 44%, rgba(182,91,103,0) 74%)",
+                  }}
+                  transition={{ type: "spring", stiffness: 360, damping: 32, mass: 0.7 }}
+                />
+                <motion.span
+                  layoutId="sl-bottom-active-mark"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bottom-[-4px] left-1/2 z-0 h-[2px] w-[18px] -translate-x-1/2 rounded-full bg-[#B65B67]/70"
+                  transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.62 }}
+                />
+              </>
+            )}
+
+            <span className="relative z-[1] flex items-center justify-center">
+              <Icone id={id} />
+            </span>
+            <span className="relative z-[1]">{label}</span>
+            {id === "notificacoes" && naoLidas > 0 && <span className="sl-nav-badge z-[2]">{naoLidas}</span>}
+          </button>
+        );
+      })}
     </nav>
   );
 }
