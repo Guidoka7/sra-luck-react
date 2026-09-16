@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { PagamentoProgressBar } from "@/components/cliente/parcelas/PagamentoProgressBar";
 import { ParcelasPrototype, type PagamentoConfig } from "@/components/cliente/parcelas/ParcelasPrototype";
 
 interface ParcelasTabProps {
   procedimento: string | null;
 }
 
-export function ParcelasTab({ procedimento: _procedimento }: ParcelasTabProps) {
+export function ParcelasTab({ procedimento }: ParcelasTabProps) {
   const [pagamento, setPagamento] = useState<PagamentoConfig | undefined>(undefined);
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export function ParcelasTab({ procedimento: _procedimento }: ParcelasTabProps) {
         <h1>Minhas parcelas</h1>
         <p>Seu contrato em uma única visão, do pagamento confirmado ao próximo vencimento.</p>
       </div>
+      <PagamentoProgressBar procedimento={procedimento} />
       <ParcelasPrototype pagamento={pagamento} />
     </div>
   );
