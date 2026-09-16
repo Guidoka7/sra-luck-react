@@ -11,6 +11,9 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
   const [pushAtivo, setPushAtivo] = useState(false);
   const [checando, setChecando] = useState(true);
+  const [fotoVersao, setFotoVersao] = useState(() => Date.now());
+  const [fotoDisponivel, setFotoDisponivel] = useState(true);
+  const [fotoProcessando, setFotoProcessando] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -59,6 +62,58 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
     };
   }, []);
 
+  async function alterarFoto(arquivo: File, input: HTMLInputElement) {
+    const tipos = ["image/jpeg", "image/png", "image/webp"];
+    if (!tipos.includes(arquivo.type)) {
+      toast.error("Escolha uma imagem JPG, PNG ou WEBP.");
+      input.value = "";
+      return;
+    }
+    if (arquivo.size > 5 * 1024 * 1024) {
+      toast.error("A foto deve ter no máximo 5 MB.");
+      input.value = "";
+      return;
+    }
+
+    setFotoProcessando(true);
+    try {
+      const formData = new FormData();
+      formData.append("foto", arquivo);
+      const resposta = await fetch("/api/cliente/perfil/foto", { method: "POST", body: formData });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível atualizar sua foto.");
+
+      setFotoDisponivel(true);
+      setFotoVersao(Date.now());
+      window.dispatchEvent(new Event("sra-luck-profile-photo-updated"));
+      toast.success("Foto de perfil atualizada.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar sua foto.");
+    } finally {
+      setFotoProcessando(false);
+      input.value = "";
+    }
+  }
+
+  async function removerFoto() {
+    if (fotoProcessando) return;
+    setFotoProcessando(true);
+    try {
+      const resposta = await fetch("/api/cliente/perfil/foto", { method: "DELETE" });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível remover sua foto.");
+
+      setFotoDisponivel(false);
+      setFotoVersao(Date.now());
+      window.dispatchEvent(new Event("sra-luck-profile-photo-updated"));
+      toast.success("Foto de perfil removida.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível remover sua foto.");
+    } finally {
+      setFotoProcessando(false);
+    }
+  }
+
   function instalarApp() {
     if (instalado) {
       toast.success("O aplicativo Sra. Luck já está instalado neste celular.");
@@ -100,10 +155,51 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
           Mais
         </button>
         <div className="pt-[16px] font-heading text-[29px] font-semibold leading-[1.08] text-[#2E2422]">Configurações</div>
-        <p className="pt-1 text-[12px] font-light leading-[1.45] text-[#8A7B77]">Instalação do aplicativo e permissões deste celular.</p>
+        <p className="pt-1 text-[12px] font-light leading-[1.45] text-[#8A7B77]">Perfil, aplicativo e permissões deste celular.</p>
       </div>
 
       <div className="grid gap-[10px] px-[18px] pt-5">
+        <section className="rounded-[18px] border border-[#E8D9D5] bg-white p-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-[62px] w-[62px] flex-none items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#F2E4E1] text-[#8A5C64] shadow-[0_0_0_1px_#DFC8C3,0_4px_12px_rgba(76,39,43,.08)]">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h3l1.4-2h7.2L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>
+              {fotoDisponivel && (
+                <img
+                  src={`/api/cliente/perfil/foto?v=${fotoVersao}`}
+                  alt="Sua foto de perfil"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  onLoad={() => setFotoDisponivel(true)}
+                  onError={() => setFotoDisponivel(false)}
+                />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-semibold text-[#4B3936]">Foto de perfil</div>
+              <div className="pt-[3px] text-[10.5px] font-light leading-[1.45] text-[#8D7D79]">Personalize sua área com uma foto. JPG, PNG ou WEBP de até 5 MB.</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <label className={`inline-flex cursor-pointer items-center rounded-[10px] bg-[#6B1F2E] px-3 py-[8px] text-[10px] font-semibold text-white ${fotoProcessando ? "pointer-events-none opacity-50" : ""}`}>
+                  {fotoProcessando ? "Atualizando..." : fotoDisponivel ? "Alterar foto" : "Adicionar foto"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={fotoProcessando}
+                    onChange={(event) => {
+                      const arquivo = event.currentTarget.files?.[0];
+                      if (arquivo) void alterarFoto(arquivo, event.currentTarget);
+                    }}
+                  />
+                </label>
+                {fotoDisponivel && (
+                  <button type="button" onClick={() => void removerFoto()} disabled={fotoProcessando} className="rounded-[10px] border border-[#E2D1CD] bg-[#FFF9F8] px-3 py-[8px] text-[10px] font-semibold text-[#7D2434] disabled:opacity-45">
+                    Remover
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-[18px] border border-[#ECE2DF] bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
