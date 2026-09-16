@@ -18,7 +18,6 @@ interface AgendaHomeProps {
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   quantidadeParcelas: number | null;
-  percentualPago: number;
   parcelasPagas: number;
   podeAgendar: boolean;
   agendaLiberada: boolean;
@@ -51,7 +50,6 @@ export function AgendaHome({
   agendamentoConcluido,
   datasDisponiveis,
   quantidadeParcelas,
-  percentualPago,
   parcelasPagas,
   podeAgendar,
   agendaLiberada,
@@ -104,7 +102,6 @@ export function AgendaHome({
       ) : !agendaLiberada ? (
         <AgendaBloqueadaPercentual
           percentual={percentualContrato}
-          percentualPago={percentualPago}
           parcelasPagas={parcelasPagas}
           parcelasNecessarias={parcelasNecessarias}
           datas={datasDisponiveis}
