@@ -11,79 +11,115 @@ export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: nu
 
   return (
     <div>
-      <motion.button
+      <button
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         aria-controls="regras-liberacao-agenda"
-        whileTap={{ scale: 0.995 }}
-        transition={{ duration: 0.14 }}
-        className="sl-agenda-rule group w-full !items-center text-left transition-colors duration-200 hover:bg-[#FFFCFB]"
+        className="sl-agenda-rule w-full text-left"
       >
         <span className="flex min-w-0 items-center gap-[10px]">
-          <span className="sl-agenda-rule-icon !h-[32px] !w-[32px] transition-colors duration-200 group-hover:bg-[#F4E8E6]">
-            <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4.25" y="7.25" width="9.5" height="7" rx="1.75" />
-              <path d="M6.25 7.25V5.8A2.75 2.75 0 0 1 9 3.05a2.75 2.75 0 0 1 2.75 2.75v1.45" />
-              <path d="M9 10v1.7" />
+          <span className="sl-agenda-rule-icon">
+            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 3.5h6.5a1.5 1.5 0 0 1 1.5 1.5v8.5H6.5A1.5 1.5 0 0 1 5 12V3.5Z" />
+              <path d="M7.5 6.5h3M7.5 9h3M3 5.5h2M3 8h2M3 10.5h2" />
             </svg>
           </span>
-
-          <span className="min-w-0">
-            <span className="block text-[12.2px] font-semibold leading-[1.25] text-[#6B1F2E]">Liberação da agenda</span>
-            <span className="mt-[2px] block max-w-[245px] text-[10.3px] font-light leading-[1.4] text-[#8A7B77]">
-              Veja os requisitos do seu contrato e entenda as etapas até a liberação.
-            </span>
-          </span>
+          <span className="sl-agenda-rule-label">Como funciona a liberação da sua agenda</span>
         </span>
-
-        <span className="ml-2 flex flex-none items-center gap-[6px] text-[#9A8C88]">
-          <span className="text-[8.5px] font-semibold uppercase tracking-[.08em] text-[#A76B75]">{aberto ? "Ocultar" : "Ver etapas"}</span>
-          <span className="flex h-[25px] w-[25px] items-center justify-center rounded-full bg-[#F8F0EE] transition-colors duration-200 group-hover:bg-[#F3E5E2]">
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" className={`transition-transform duration-200 ${aberto ? "rotate-180" : ""}`}>
-              <path d="M3.5 5.5 7 9l3.5-3.5" />
-            </svg>
-          </span>
-        </span>
-      </motion.button>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9A8C88" strokeWidth="1.3" className={`flex-none transition-transform duration-200 ${aberto ? "rotate-180" : ""}`}>
+          <path d="M3.5 5.5 7 9l3.5-3.5" />
+        </svg>
+      </button>
 
       <AnimatePresence initial={false}>
         {aberto && (
           <motion.div
             id="regras-liberacao-agenda"
-            initial={{ opacity: 0, height: 0, y: -3 }}
-            animate={{ opacity: 1, height: "auto", y: 0 }}
-            exit={{ opacity: 0, height: 0, y: -3 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="mt-2 rounded-[15px] border border-[#EFE4E1] bg-white p-[14px] shadow-[0_5px_16px_rgba(73,42,45,.05)]">
+            <div className="mt-2 rounded-[15px] border border-[#EFE4E1] bg-white p-[13px] shadow-[0_5px_16px_rgba(73,42,45,.05)]">
               {regraDoContrato && parcelasNecessarias ? (
-                <div className="relative overflow-hidden rounded-[14px] bg-gradient-to-br from-[#6B1F2E] to-[#4F1521] p-[15px] text-white">
-                  <div className="absolute -right-[22px] -top-[34px] h-[110px] w-[110px] rounded-full bg-[rgba(206,170,105,.14)] blur-[8px]" />
-                  <div className="relative text-[9px] font-semibold uppercase tracking-[.14em] text-[#E1C78F]">Seu contrato</div>
-                  <div className="relative mt-[10px] grid grid-cols-2 gap-[9px]">
-                    <div className="rounded-[11px] border border-white/10 bg-white/[.055] p-[10px]">
-                      <div className="font-heading text-[26px] font-semibold leading-none">{regraDoContrato.parcelas}<span className="text-[16px] opacity-60">x</span></div>
-                      <div className="pt-1 text-[9.5px] font-light opacity-70">parcelas contratadas</div>
+                <>
+                  <section className="rounded-[13px] border border-[#EADFDB] bg-[#FFFBFA] p-[12px]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[9px] font-semibold uppercase tracking-[.13em] text-[#A76B75]">Seu contrato</div>
+                        <div className="mt-[2px] text-[11px] font-medium text-[#4B3B38]">Meta para iniciar a liberação</div>
+                      </div>
+                      <span className="rounded-full bg-[#F7EDEE] px-[8px] py-[4px] text-[8.5px] font-semibold uppercase tracking-[.08em] text-[#8E3243]">Regra do plano</span>
                     </div>
-                    <div className="rounded-[11px] border border-[rgba(218,190,132,.28)] bg-[rgba(218,190,132,.08)] p-[10px]">
-                      <div className="font-heading text-[26px] font-semibold leading-none text-[#E1C78F]">{regraDoContrato.percentual}<span className="text-[16px] opacity-75">%</span></div>
-                      <div className="pt-1 text-[9.5px] font-light opacity-70">para liberar a agenda</div>
+
+                    <div className="mt-[10px] grid grid-cols-3 divide-x divide-[#EADFDB] rounded-[11px] border border-[#EEE2DF] bg-white py-[9px]">
+                      <div className="px-[8px] text-center">
+                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{regraDoContrato.parcelas}<span className="text-[13px] opacity-65">x</span></div>
+                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">parcelas do plano</div>
+                      </div>
+                      <div className="px-[8px] text-center">
+                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{regraDoContrato.percentual}<span className="text-[13px] opacity-65">%</span></div>
+                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">meta mínima</div>
+                      </div>
+                      <div className="px-[8px] text-center">
+                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{parcelasNecessarias}</div>
+                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">parcelas necessárias</div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="relative mt-[9px] flex items-center gap-[10px] rounded-[11px] border border-white/10 bg-white/[.06] p-[10px]">
-                    <span className="flex h-[27px] w-[27px] flex-none items-center justify-center rounded-full bg-[rgba(218,190,132,.18)] font-heading text-[12px] font-bold text-[#E1C78F]">{parcelasNecessarias}</span>
-                    <span className="text-[10.8px] font-light leading-[1.45]">Ao confirmar <b className="font-semibold">{parcelasNecessarias} {parcelasNecessarias === 1 ? "parcela" : "parcelas"}</b>, sua agenda poderá ser liberada.</span>
-                  </div>
-                </div>
+
+                    <div className="mt-[9px] flex items-start gap-[8px] rounded-[10px] bg-[#F8F1F0] px-[10px] py-[8px]">
+                      <span className="mt-[2px] h-[6px] w-[6px] flex-none rounded-full bg-[#B65B67]" />
+                      <p className="text-[10.2px] font-light leading-[1.45] text-[#6F5E5A]">
+                        Ao confirmar <b className="font-semibold text-[#6B1F2E]">{parcelasNecessarias} {parcelasNecessarias === 1 ? "parcela" : "parcelas"}</b>, você avança para o levantamento financeiro.
+                      </p>
+                    </div>
+                  </section>
+
+                  <section className="px-[2px] pt-[13px]">
+                    <div className="mb-[9px] text-[9px] font-semibold uppercase tracking-[.12em] text-[#A76B75]">Depois de atingir a meta</div>
+
+                    <div className="relative">
+                      <div className="absolute bottom-[18px] left-[12px] top-[12px] w-px bg-[#E8DCD9]" aria-hidden="true" />
+
+                      <div className="relative flex gap-[10px] pb-[11px]">
+                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">1</span>
+                        <div className="min-w-0 pt-[1px]">
+                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Levantamento financeiro</div>
+                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">O financeiro confere o contrato e o saldo em até <b className="font-medium text-[#6B1F2E]">5 dias úteis</b>.</p>
+                        </div>
+                      </div>
+
+                      <div className="relative flex gap-[10px] pb-[11px]">
+                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">2</span>
+                        <div className="min-w-0 pt-[1px]">
+                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Definição da quitação</div>
+                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Após a análise, você define como será utilizado o pagamento liberado pelo financeiro para quitar o saldo restante do contrato.</p>
+                        </div>
+                      </div>
+
+                      <div className="relative flex gap-[10px] pb-[11px]">
+                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">3</span>
+                        <div className="min-w-0 pt-[1px]">
+                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Assinatura dos termos</div>
+                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Com a forma definida, você agenda a data da <b className="font-medium text-[#6B1F2E]">assinatura dos termos cirúrgicos</b>.</p>
+                        </div>
+                      </div>
+
+                      <div className="relative flex gap-[10px]">
+                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#EDF5EF] text-[9px] font-semibold text-[#3F7D5B]">4</span>
+                        <div className="min-w-0 pt-[1px]">
+                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Quitação e liberação</div>
+                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Depois da assinatura e da quitação confirmada, a agenda da cirurgia poderá ser liberada antes, respeitando o prazo máximo de <b className="font-medium text-[#3F7D5B]">até 90 dias corridos</b>.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </>
               ) : (
                 <p className="text-[11px] font-light leading-[1.55] text-[#7A6B67]">As regras do seu contrato aparecerão aqui assim que as parcelas forem cadastradas.</p>
               )}
-
-              <p className="px-[2px] pt-[11px] text-[11px] font-light leading-[1.58] text-[#7A6B67]">
-                Ao atingir o percentual necessário, fazemos o levantamento financeiro em até <b className="font-medium text-[#6B1F2E]">5 dias úteis</b>. Após a aprovação, você define o custeio do saldo e agenda a <b className="font-medium text-[#6B1F2E]">assinatura dos termos cirúrgicos</b>. Depois da assinatura e da quitação confirmada, a agenda da cirurgia pode ser liberada antes, respeitando o prazo máximo de <b className="font-medium text-[#6B1F2E]">até 90 dias corridos</b>.
-              </p>
             </div>
           </motion.div>
         )}
