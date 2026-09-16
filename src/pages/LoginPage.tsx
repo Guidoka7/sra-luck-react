@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiJson } from "../lib/api";
+import { definirDonoCacheFotoPerfil } from "@/lib/profilePhotoCache";
 
 function formatCpf(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -15,7 +16,7 @@ export function LoginPage() {
 
   useEffect(()=>{let ativo=true;apiJson<ConfigPublica>("/api/cliente/config-publica").then(data=>{if(ativo)setWhatsappContato(data.whatsappContato||"")}).catch(()=>{});return()=>{ativo=false}},[]);
 
-  async function submit(event:FormEvent){event.preventDefault();if(loading)return;const iso=paraIso(nascimento);if(cpf.replace(/\D/g,"").length<11||!iso){setErro("Confira o CPF e a data de nascimento e tente novamente.");return}setErro(null);setLoading(true);try{await apiJson("/api/cliente/auth",{method:"POST",body:JSON.stringify({cpf,dataNascimento:iso})});window.history.pushState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"))}catch(error){setErro(error instanceof Error?error.message:"Não foi possível confirmar seus dados.")}finally{setLoading(false)}}
+  async function submit(event:FormEvent){event.preventDefault();if(loading)return;const iso=paraIso(nascimento);if(cpf.replace(/\D/g,"").length<11||!iso){setErro("Confira o CPF e a data de nascimento e tente novamente.");return}setErro(null);setLoading(true);try{await apiJson("/api/cliente/auth",{method:"POST",body:JSON.stringify({cpf,dataNascimento:iso})});definirDonoCacheFotoPerfil(cpf);window.history.pushState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"))}catch(error){setErro(error instanceof Error?error.message:"Não foi possível confirmar seus dados.")}finally{setLoading(false)}}
 
   const whatsappNumero=whatsappContato.replace(/\D/g,"");
   const whatsappHref=whatsappNumero?`https://wa.me/${whatsappNumero}?text=${encodeURIComponent("Olá! Preciso de ajuda para acessar minha área de cliente da Sra. Luck.")}`:"";
