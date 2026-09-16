@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
 import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
@@ -43,18 +44,6 @@ function extra(forma: FormaCusteio, taxaCartao: number | null) {
   return "conforme condições liberadas";
 }
 
-function CheckIcon() {
-  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="m4.3 9.2 3 3.1 6.4-6.6"/></svg>;
-}
-
-function WalletIcon() {
-  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><rect x="2.8" y="4.5" width="12.4" height="9.5" rx="2"/><path d="M12 7.2h3.2v4H12a2 2 0 1 1 0-4Z"/><path d="M5.2 4.5V3.2h7.2"/></svg>;
-}
-
-function CalendarIcon() {
-  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><rect x="3" y="4.5" width="12" height="10.5" rx="2"/><path d="M6 2.8v3M12 2.8v3M3 7.5h12"/></svg>;
-}
-
 export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
   const [financeiro, setFinanceiro] = useState<Financeiro>({ saldoRestante: null, taxaCartao: null, totalComTaxa: null, formasCusteio: [] });
   const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
@@ -81,7 +70,7 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
         setParcelasRestantes(typeof dados.parcelas_nao_pagas === "number" ? dados.parcelas_nao_pagas : null);
       }
     } catch {
-      // A tela principal continua funcional e pode ser recarregada pelo polling global.
+      // O polling principal da área da cliente continua responsável pela recuperação da tela.
     } finally {
       setCarregando(false);
     }
@@ -103,6 +92,12 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
   useEffect(() => {
     if (jaEscolheu) void onSelecionada?.();
   }, [jaEscolheu, onSelecionada]);
+
+  function abrirModal() {
+    setErro(null);
+    setForma(solicitacao?.forma_custeio ?? null);
+    setModal(true);
+  }
 
   async function enviar() {
     if (!forma) return;
@@ -136,13 +131,6 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
       : `Este saldo corresponde às ${parcelasRestantes} parcelas restantes do seu contrato.`;
   const totalCartao = financeiro.totalComTaxa ?? (financeiro.taxaCartao ? saldo * (1 + financeiro.taxaCartao / 100) : saldo);
 
-  const etapas = [
-    { numero: "01", titulo: "Percentual", icon: <CheckIcon />, classe: "border-[#CFE2D3] bg-[#EAF4EC] text-[#3F7D5B]" },
-    { numero: "02", titulo: "Levantamento", icon: <CheckIcon />, classe: "border-[#CFE2D3] bg-[#EAF4EC] text-[#3F7D5B]" },
-    { numero: "03", titulo: "Pagamento", icon: <WalletIcon />, classe: "border-[#E4C98E] bg-[#FBF1DD] text-[#A77A24]" },
-    { numero: "04", titulo: "Escolha da data", icon: <CalendarIcon />, classe: "border-[#E5DBD8] bg-[#F5F1EF] text-[#9A8A86]" },
-  ];
-
   return (
     <>
       <section className="relative min-h-[395px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
@@ -152,40 +140,29 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
 
         <div className="absolute inset-[14px] flex items-center justify-center">
           <div className="w-full max-w-[355px] rounded-[18px] border border-[#E7D4AE] bg-white/92 px-[14px] pb-[14px] pt-[13px] shadow-[0_18px_42px_rgba(95,54,58,.13)] backdrop-blur-[2px]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-[9px]">
-                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[11px] bg-[#F8EEDB] text-[#A77A24]"><WalletIcon /></span>
-                <div className="min-w-0">
-                  <div className="text-[8px] font-bold uppercase tracking-[.15em] text-[#A77A24]">Etapa 3 de 4</div>
-                  <div className="pt-[2px] font-heading text-[17px] font-semibold leading-tight text-[#7D2434]">Pagamento do saldo restante</div>
-                </div>
-              </div>
-              <span className="rounded-full border border-[#E8D2A9] bg-[#FFF9EF] px-[8px] py-[5px] text-[8px] font-semibold uppercase tracking-[.06em] text-[#8E6420]">Aguardando escolha</span>
-            </div>
+            <AgendaEtapasInterativas atual="pagamento" onPagamentoClick={abrirModal} />
 
-            <div className="mt-[11px] flex items-end justify-between gap-3 rounded-[13px] border border-[#EAD7AE] bg-[#FFF9EF] px-[11px] py-[10px]">
+            <div className="mt-[10px] flex items-end justify-between gap-3 rounded-[13px] border border-[#EAD7AE] bg-[#FFF9EF] px-[11px] py-[10px]">
               <div>
                 <div className="text-[7.8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Saldo restante</div>
                 <div className="pt-[2px] font-heading text-[21px] font-semibold text-[#7D2434]">{moeda(saldo)}</div>
               </div>
-              {parcelasRestantes != null && <div className="pb-[2px] text-right text-[9px] font-medium text-[#806F6A]">{parcelasRestantes} {parcelasRestantes === 1 ? "parcela restante" : "parcelas restantes"}</div>}
-            </div>
-
-            <p className="pt-[9px] text-[10px] font-light leading-[1.48] text-[#786A66]">Escolha como o saldo será pago <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>. Depois da confirmação, a escolha da data será liberada.</p>
-
-            <button type="button" onClick={() => { setErro(null); setForma(null); setModal(true); }} className="mt-[11px] w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.8px] font-semibold text-white">Escolher forma de pagamento</button>
-
-            <div className="relative mt-[13px] grid grid-cols-4 gap-[5px]">
-              <div className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[17px] h-px bg-[#E6D9D5]" />
-              <div className="pointer-events-none absolute left-[12.5%] top-[17px] h-px w-[50%] bg-[#C89D45]" />
-              {etapas.map((item, index) => (
-                <div key={item.numero} className={`relative z-[1] min-w-0 rounded-[11px] border px-[3px] pb-[7px] pt-[5px] text-center ${index === 2 ? "border-[#D8BD86] bg-[#FFF9EF]" : "border-[#EDE4E1] bg-white/90"}`}>
-                  <span className={`mx-auto flex h-[24px] w-[24px] items-center justify-center rounded-full border ${item.classe}`}>{item.icon}</span>
-                  <span className="block pt-[4px] text-[6.4px] font-bold uppercase tracking-[.1em] text-[#A99894]">{item.numero}</span>
-                  <span className={`block pt-[2px] text-[7.7px] font-semibold leading-[1.15] ${index === 2 ? "text-[#7D2434]" : "text-[#71615E]"}`}>{item.titulo}</span>
+              {parcelasRestantes != null && (
+                <div className="pb-[2px] text-right text-[9px] font-medium text-[#806F6A]">
+                  {parcelasRestantes} {parcelasRestantes === 1 ? "parcela restante" : "parcelas restantes"}
                 </div>
-              ))}
+              )}
             </div>
+
+            <motion.button
+              type="button"
+              onClick={abrirModal}
+              animate={{ scale: [1, 1.018, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+              className="mt-[10px] w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.8px] font-semibold text-white shadow-[0_6px_16px_rgba(107,31,46,.14)]"
+            >
+              Escolher forma de pagamento
+            </motion.button>
           </div>
         </div>
       </section>
@@ -193,23 +170,44 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
       <AnimatePresence>
         {modal && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !enviando && setModal(false)} className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.34)] backdrop-blur-[2px]" />
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ duration: 0.2 }} className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !enviando && setModal(false)}
+              className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.34)] backdrop-blur-[2px]"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]"
+            >
               <div className="max-h-[88dvh] overflow-y-auto rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_-16px_45px_rgba(48,26,30,.18)]">
                 <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]" />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Etapa 3 de 4</div>
                     <div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">Pagamento do saldo restante</div>
-                    <p className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">{parcelasTexto} Esse valor deverá ser quitado <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>.</p>
+                    <p className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">
+                      {parcelasTexto} Esse valor deverá ser quitado <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>.
+                    </p>
                   </div>
                   <button type="button" aria-label="Fechar" onClick={() => !enviando && setModal(false)} className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#7D2434]">×</button>
                 </div>
 
                 <div className="mt-3 rounded-[14px] border border-[#EAD7AE] bg-[#FFF9EF] px-3 py-[11px]">
                   <div className="flex items-end justify-between gap-3">
-                    <div><div className="text-[8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Valor restante</div><div className="pt-[2px] font-heading text-[24px] font-semibold text-[#7D2434]">{moeda(saldo)}</div></div>
-                    {parcelasRestantes != null && <div className="pb-1 text-right text-[9.5px] font-medium text-[#806F6A]">referente a<br/><strong>{parcelasRestantes} {parcelasRestantes === 1 ? "parcela" : "parcelas"}</strong></div>}
+                    <div>
+                      <div className="text-[8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Valor restante</div>
+                      <div className="pt-[2px] font-heading text-[24px] font-semibold text-[#7D2434]">{moeda(saldo)}</div>
+                    </div>
+                    {parcelasRestantes != null && (
+                      <div className="pb-1 text-right text-[9.5px] font-medium text-[#806F6A]">
+                        referente a<br/><strong>{parcelasRestantes} {parcelasRestantes === 1 ? "parcela" : "parcelas"}</strong>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -217,23 +215,39 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
                   <div className="mb-[7px] text-[8px] font-bold uppercase tracking-[.12em] text-[#9A7771]">Formas liberadas pelo financeiro</div>
                   <div className="flex flex-col gap-[7px]">
                     {formas.map((item) => (
-                      <button key={item} type="button" onClick={() => setForma(item)} className="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-[11px] text-left" style={forma === item ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}>
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setForma(item)}
+                        className="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-[11px] text-left"
+                        style={forma === item ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}
+                      >
                         <span className="text-[11px] font-semibold">{label(item)}</span>
                         <span className="text-right text-[9px] text-[#9A7771]">{extra(item, financeiro.taxaCartao)}</span>
                       </button>
                     ))}
-                    {formas.length === 0 && <div className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] p-3 text-[10px] text-[#8F2A25]">Nenhuma forma de pagamento foi liberada pelo financeiro para este contrato.</div>}
+                    {formas.length === 0 && (
+                      <div className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] p-3 text-[10px] text-[#8F2A25]">
+                        Nenhuma forma de pagamento foi liberada pelo financeiro para este contrato.
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {forma === "cartao" && saldo > 0 && (
-                  <div className="mt-[9px] rounded-[11px] border border-[#E8DDD9] bg-[#FCF9F8] px-3 py-[9px] text-[9.5px] leading-[1.45] text-[#7A6B67]">No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>{financeiro.taxaCartao ? `, considerando a taxa de ${financeiro.taxaCartao}%.` : "."}</div>
+                  <div className="mt-[9px] rounded-[11px] border border-[#E8DDD9] bg-[#FCF9F8] px-3 py-[9px] text-[9.5px] leading-[1.45] text-[#7A6B67]">
+                    No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>{financeiro.taxaCartao ? `, considerando a taxa de ${financeiro.taxaCartao}%.` : "."}
+                  </div>
                 )}
 
-                <div className="mt-[10px] rounded-[11px] border border-[#E2D6D2] bg-[#FAF7F6] px-3 py-[9px] text-[9.5px] font-light leading-[1.5] text-[#796965]">Ao confirmar, você registra a forma escolhida para quitar o saldo na assinatura dos termos e libera a próxima etapa: <strong className="font-semibold text-[#6B1F2E]">escolha da data</strong>.</div>
+                <div className="mt-[10px] rounded-[11px] border border-[#E2D6D2] bg-[#FAF7F6] px-3 py-[9px] text-[9.5px] font-light leading-[1.5] text-[#796965]">
+                  Ao confirmar, você registra a forma escolhida para quitar o saldo na assinatura dos termos e libera a próxima etapa: <strong className="font-semibold text-[#6B1F2E]">escolha da data</strong>.
+                </div>
 
                 {erro && <div className="mt-2 rounded-[11px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-[9.8px] text-[#8F2A25]">{erro}</div>}
-                <button type="button" disabled={!forma || enviando || formas.length === 0} onClick={() => void enviar()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-semibold text-white disabled:opacity-40">{enviando ? "Confirmando..." : "Confirmar e liberar escolha da data"}</button>
+                <button type="button" disabled={!forma || enviando || formas.length === 0} onClick={() => void enviar()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-semibold text-white disabled:opacity-40">
+                  {enviando ? "Confirmando..." : "Confirmar e liberar escolha da data"}
+                </button>
               </div>
             </motion.div>
           </>
