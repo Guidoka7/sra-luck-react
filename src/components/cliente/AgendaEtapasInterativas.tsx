@@ -142,22 +142,67 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
       </div>
 
       <div className="relative border-t border-[#F1E8E5] pt-[13px]">
-        <div className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[30px] h-[2px] rounded-full bg-[#E8DEDB]" />
-        <motion.div
-          className="pointer-events-none absolute left-[12.5%] top-[30px] h-[2px] rounded-full bg-[#B65B67]"
-          initial={false}
-          animate={{ width: `${Math.max(0, indiceAtual) * 25}%` }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
-        />
-        {indiceAtual < ETAPAS.length - 1 && (
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-[30px] h-[2px] rounded-full bg-gradient-to-r from-[#B65B67]/45 via-[#B65B67]/20 to-transparent"
-            style={{ left: `${12.5 + indiceAtual * 25}%`, width: "25%" }}
-            animate={{ opacity: [0.35, 0.8, 0.35] }}
-            transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-          />
-        )}
+        {ETAPAS.slice(0, -1).map((item, index) => {
+          const destino = ETAPAS[index + 1];
+          const concluidaLinha = index < indiceAtual;
+          const linhaAtual = index === indiceAtual && indiceAtual < ETAPAS.length - 1;
+          const relacionadaSelecionada = indiceSelecionado === index || indiceSelecionado === index + 1;
+
+          return (
+            <motion.button
+              key={`${item.id}-${destino.id}`}
+              type="button"
+              onClick={() => selecionar(destino.id)}
+              aria-label={`Ver etapa ${destino.numero}: ${destino.titulo}`}
+              whileTap={{ scaleY: 1.65 }}
+              whileHover={{ scaleY: 1.25 }}
+              className="group absolute top-[21px] z-[1] h-[18px] cursor-pointer focus-visible:outline-none"
+              style={{ left: `${12.5 + index * 25}%`, width: "25%" }}
+            >
+              <motion.span
+                className={`absolute left-[16px] right-[16px] top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full ${
+                  concluidaLinha
+                    ? "bg-[#DCECDF]"
+                    : linhaAtual
+                      ? "bg-[#F1DDE1]"
+                      : relacionadaSelecionada
+                        ? "bg-[#E9D9DC]"
+                        : "bg-[#E9E1DE]"
+                }`}
+                animate={{ opacity: relacionadaSelecionada ? 1 : 0.78 }}
+                transition={{ duration: 0.2 }}
+              >
+                {concluidaLinha && (
+                  <motion.span
+                    className="absolute inset-0 rounded-full bg-[#5D9872]"
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ duration: 0.38, ease: "easeOut" }}
+                    style={{ transformOrigin: "left" }}
+                  />
+                )}
+                {linhaAtual && (
+                  <motion.span
+                    className="absolute inset-y-0 left-0 w-[55%] rounded-full bg-gradient-to-r from-[#B65B67] via-[#D58C98] to-transparent"
+                    animate={{ x: ["-90%", "185%"] }}
+                    transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                )}
+              </motion.span>
+
+              {linhaAtual && (
+                <motion.span
+                  aria-hidden="true"
+                  className="absolute top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full bg-[#B65B67] shadow-[0_0_0_4px_rgba(182,91,103,.10)]"
+                  animate={{ left: ["18px", "calc(100% - 25px)"], opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
+                />
+              )}
+
+              <span className="pointer-events-none absolute inset-x-[16px] top-1/2 h-[11px] -translate-y-1/2 rounded-full transition-colors group-hover:bg-[#7D2434]/[0.035] group-focus-visible:bg-[#7D2434]/[0.05]" />
+            </motion.button>
+          );
+        })}
 
         <div className="grid grid-cols-4 gap-0">
           {ETAPAS.map((item, index) => {
@@ -187,7 +232,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                   aria-pressed={ativa}
                   whileTap={{ scale: 0.93 }}
                   whileHover={{ y: -1 }}
-                  className="relative z-[1] flex min-h-[100px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
+                  className="relative z-[2] flex min-h-[100px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
                 >
                   <span className="relative flex h-[34px] w-[34px] items-center justify-center">
                     {pagamentoChamando && (
