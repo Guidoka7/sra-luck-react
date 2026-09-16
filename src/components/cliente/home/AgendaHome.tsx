@@ -24,6 +24,7 @@ interface AgendaHomeProps {
   custeioAprovado: boolean;
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
+  onCusteioSelecionado?: () => void | Promise<void>;
 }
 
 function brDate(value: string | null | undefined) {
@@ -36,10 +37,10 @@ function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, age
   if (agendamentoConcluido) return { label: "Termos assinados", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (agendamentoAtivo) return { label: "Agendada", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (statusRevisaoFinanceira === "recusada") return { label: "Ajuste necessário", bg: "#FBEBEA", color: "#8F2A25", border: "#F0D3D1" };
-  if (!podeAgendar) return { label: "Bloqueada", bg: "#F7EFED", color: "#7D2434", border: "#EBD9D5" };
-  if (!agendaLiberada || statusRevisaoFinanceira === "pendente") return { label: "Em análise", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
-  if (!custeioAprovado) return { label: "Custeio", bg: "#F7EFED", color: "#7D2434", border: "#EBD9D5" };
-  return { label: "Liberada", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
+  if (!podeAgendar) return { label: "Etapa 1 de 4", bg: "#F7EFED", color: "#7D2434", border: "#EBD9D5" };
+  if (!agendaLiberada || statusRevisaoFinanceira === "pendente") return { label: "Etapa 2 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
+  if (!custeioAprovado) return { label: "Etapa 3 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
+  return { label: "Etapa 4 de 4", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
 }
 
 export function AgendaHome({
@@ -54,6 +55,7 @@ export function AgendaHome({
   custeioAprovado,
   confirmando,
   onEscolherData,
+  onCusteioSelecionado,
 }: AgendaHomeProps) {
   const percentualContrato = percentualNecessario(quantidadeParcelas);
   const parcelasNecessarias = quantidadeParcelas ? Math.ceil((quantidadeParcelas * percentualContrato) / 100) : null;
@@ -85,7 +87,7 @@ export function AgendaHome({
       ) : !agendaLiberada ? (
         <AgendaBloqueadaPercentual percentual={percentualContrato} parcelasNecessarias={parcelasNecessarias} datas={datasDisponiveis} etapa={podeAgendar ? "levantamento" : "percentual"} />
       ) : !custeioAprovado ? (
-        <EscolherFormaPagamento />
+        <EscolherFormaPagamento datas={datasDisponiveis} onSelecionada={onCusteioSelecionado} />
       ) : (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="rounded-[18px] border border-[#EFE4E1] bg-white p-[14px] shadow-[0_10px_26px_rgba(70,42,44,.07)]">
@@ -93,9 +95,10 @@ export function AgendaHome({
               <p className="p-5 text-center text-[11px] font-light leading-[1.5] text-[#8A7B77]">Ainda não há datas disponíveis no momento. Fale com a nossa equipe para saber mais.</p>
             ) : (
               <>
-                <div className="mb-3 rounded-[14px] border border-[#E9D4B2] bg-[#FFF9F1] px-3 py-2.5">
-                  <p className="text-[11px] font-semibold text-[#7D2434]">Escolha a data da assinatura dos termos cirúrgicos</p>
-                  <p className="mt-0.5 text-[9.8px] font-light leading-[1.45] text-[#7A6B67]">Selecione no calendário uma das datas disponíveis para realizar a assinatura.</p>
+                <div className="mb-3 rounded-[14px] border border-[#D5E8D9] bg-[#F3F9F4] px-3 py-2.5">
+                  <div className="text-[7.8px] font-bold uppercase tracking-[.13em] text-[#3F7D5B]">Etapa 4 de 4 · liberada</div>
+                  <p className="mt-1 text-[11px] font-semibold text-[#315F47]">Escolha a data da assinatura dos termos</p>
+                  <p className="mt-0.5 text-[9.8px] font-light leading-[1.45] text-[#698273]">Sua forma de pagamento do saldo já foi registrada. Agora selecione uma das datas disponíveis.</p>
                 </div>
                 <CalendarioAgendamento datas={datasDisponiveis} onConfirmar={onEscolherData} confirmando={confirmando} />
               </>
@@ -112,7 +115,7 @@ export function AgendaHome({
         <div>
           <div className="sl-agenda-kicker">Minha agenda</div>
           <div className="sl-agenda-title">Seu próximo grande passo</div>
-          <div className="sl-agenda-copy">A agenda acompanha seu financeiro e libera cada etapa no momento certo.</div>
+          <div className="sl-agenda-copy">Acompanhe as quatro etapas até a escolha da data.</div>
         </div>
         <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 999, background: status.bg, color: status.color, border: `1px solid ${status.border}`, fontSize: 8, fontWeight: 650, letterSpacing: ".06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{status.label}</span>
       </div>

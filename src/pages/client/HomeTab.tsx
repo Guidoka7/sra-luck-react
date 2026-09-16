@@ -23,6 +23,7 @@ interface HomeTabProps {
   custeioAprovado: boolean;
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
+  onCusteioSelecionado?: () => void | Promise<void>;
 }
 
 export function HomeTab({
@@ -42,6 +43,7 @@ export function HomeTab({
   custeioAprovado,
   confirmando,
   onEscolherData,
+  onCusteioSelecionado,
 }: HomeTabProps) {
   return (
     <div>
@@ -67,6 +69,7 @@ export function HomeTab({
         custeioAprovado={custeioAprovado}
         confirmando={confirmando}
         onEscolherData={onEscolherData}
+        onCusteioSelecionado={onCusteioSelecionado}
       />
 
       <DisciplinaCard />

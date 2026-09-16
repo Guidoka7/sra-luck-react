@@ -2,31 +2,243 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
-interface Financeiro { saldoRestante:number|null; formasCusteio:string[]; }
-interface Solicitacao { id:string; forma_custeio:FormaCusteio; status:string; observacao:string|null; }
-function moeda(v:number){return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}
-function label(forma:FormaCusteio){return forma==="cartao"?"Cartão de crédito":forma==="pix"?"PIX":forma==="cheques"?"Cheques":"100% boleto"}
-function extra(forma:FormaCusteio){return forma==="cartao"?"taxa calculada pelo sistema":forma==="pix"?"sem taxa adicional":forma==="cheques"?"sujeito à conferência":"conforme condições do contrato"}
 
-export function EscolherFormaPagamento(){
-  const[financeiro,setFinanceiro]=useState<Financeiro>({saldoRestante:null,formasCusteio:[]});const[solicitacao,setSolicitacao]=useState<Solicitacao|null>(null);const[carregando,setCarregando]=useState(true);const[modal,setModal]=useState(false);const[forma,setForma]=useState<FormaCusteio|null>(null);const[enviando,setEnviando]=useState(false);const[erro,setErro]=useState<string|null>(null);
-  async function carregar(){try{const r=await fetch("/api/cliente/agenda",{cache:"no-store"});if(!r.ok)return;const d=await r.json();setFinanceiro(d.financeiro??{saldoRestante:null,formasCusteio:[]});setSolicitacao(d.solicitacaoLiberacaoFinanceira??null)}catch{}finally{setCarregando(false)}}
-  useEffect(()=>{void carregar();const t=setInterval(()=>void carregar(),5000);return()=>clearInterval(t)},[]);
-  const formas=useMemo(()=>(["cartao","pix","cheques","boleto_100"] as FormaCusteio[]).filter(f=>financeiro.formasCusteio.includes(f)),[financeiro.formasCusteio]);
-  const status=String(solicitacao?.status??"").toLowerCase();const recusada=status.includes("recus");const emAnalise=Boolean(solicitacao)&&!recusada;
-  async function enviar(){if(!forma)return;setEnviando(true);setErro(null);try{const r=await fetch("/api/cliente/solicitacao-liberacao-financeira",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({formaCusteio:forma})});const d=await r.json();if(!r.ok)throw new Error(d.erro??"Não foi possível enviar sua solicitação.");setSolicitacao(d.solicitacao??null);setModal(false)}catch(e){setErro(e instanceof Error?e.message:"Não foi possível enviar sua solicitação.")}finally{setEnviando(false)}}
-  if(carregando)return null;
+type Financeiro = {
+  saldoRestante: number | null;
+  taxaCartao: number | null;
+  totalComTaxa: number | null;
+  formasCusteio: string[];
+};
 
-  if(emAnalise)return <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]"><div className="border-b border-[#F0E2C7] bg-[#FFF9F2] px-[13px] py-3"><div className="flex items-start gap-[10px]"><span className="flex h-[29px] w-[29px] flex-none items-center justify-center rounded-[8px] bg-[#F8EEDB] text-[#A77A24]"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#A77A24]">Custeio em análise</div><div className="pt-[2px] font-heading text-[15px] font-semibold leading-[1.25] text-[#7D2434]">Recebemos sua escolha de pagamento</div><div className="pt-[3px] text-[9.6px] font-light leading-[1.45] text-[#7E6867]">{solicitacao?.observacao??"Nossa equipe está confirmando a forma de pagamento escolhida por você."}</div></div></div></div><div className="p-[14px]"><div className="rounded-[13px] border border-[#EFD9AA] bg-[#FFF9EF] px-3 py-[11px] text-[10px] font-light leading-[1.5] text-[#7A6B67]">Assim que a confirmação for concluída, a agenda da assinatura dos termos seguirá para a próxima etapa.</div></div></section>;
+type Solicitacao = {
+  id: string;
+  forma_custeio: FormaCusteio;
+  status: string;
+  observacao: string | null;
+};
 
-  return <>
-    <section className="overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
-      <div className="border-b border-[#F0DDDD] bg-[#FFF7F7] px-[13px] py-3"><div className="flex items-start gap-[10px]"><span className="flex h-[29px] w-[29px] flex-none items-center justify-center rounded-[8px] bg-[#F7E9EA] text-[#B65B67]"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><path d="M9 2.8 14 4.6v3.7c0 3.1-2 5.3-5 6.6-3-1.3-5-3.5-5-6.6V4.6L9 2.8Z"/><path d="m6.7 8.8 1.5 1.5 3-3"/></svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#B65B67]">Minha agenda</div><div className="pt-[2px] font-heading text-[15px] font-semibold leading-[1.25] text-[#7D2434]">Levantamento financeiro concluído</div><div className="pt-[2px] text-[9.6px] font-light leading-[1.45] text-[#7E6867]">{recusada?"Sua forma de custeio anterior precisou de ajuste. Escolha novamente como será realizado o pagamento.":"Informe como será realizado o custeio do saldo restante para seguir na jornada."}</div></div></div></div>
-      <div className="p-[14px]"><div className="rounded-[14px] border border-[#EAD7AE] bg-[#FFF9EF] p-[13px] text-center"><div className="text-[8.5px] font-semibold uppercase tracking-[.12em] text-[#A77A24]">Saldo restante do contrato</div><div className="pt-[3px] font-heading text-[25px] font-semibold text-[#7D2434]">{moeda(Number(financeiro.saldoRestante??0))}</div><div className="pt-[2px] text-[9.7px] font-light text-[#8A7B77]">Valor apurado pelo financeiro para esta etapa.</div></div><button type="button" onClick={()=>{setErro(null);setForma(solicitacao?.forma_custeio??null);setModal(true)}} className="mt-[11px] w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.8px] font-semibold text-white">Escolher forma de custeio</button></div>
-    </section>
+type Props = {
+  datas: DataDisponivel[];
+  onSelecionada?: () => void | Promise<void>;
+};
 
-    <AnimatePresence>{modal&&<><motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>!enviando&&setModal(false)} className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.30)] backdrop-blur-[2px]"/><motion.div initial={{y:"100%"}} animate={{y:0}} exit={{y:"100%"}} transition={{duration:.2}} className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]"><div className="rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_-16px_45px_rgba(48,26,30,.18)]"><div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]"/><div className="flex items-start justify-between gap-3"><div><div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Custeio do saldo restante</div><div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">Como será realizado o pagamento?</div><div className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">Escolha uma das formas autorizadas pelo financeiro. As opções são carregadas conforme a configuração do seu contrato.</div></div><button type="button" onClick={()=>!enviando&&setModal(false)} className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#7D2434]">×</button></div><div className="mt-3 flex flex-col gap-[7px]">{formas.map(f=><button key={f} type="button" onClick={()=>setForma(f)} className="flex items-center justify-between rounded-[12px] border px-3 py-[11px] text-left" style={forma===f?{borderColor:"#7D2434",background:"#F7EFED",color:"#6B1F2E"}:{borderColor:"#EADFDB",background:"#FFF",color:"#5E4A46"}}><span className="text-[11px] font-medium">{label(f)}</span><span className="text-[10px] text-[#B65B67]">{extra(f)}</span></button>)}{formas.length===0&&<div className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] p-3 text-[10px] text-[#8F2A25]">Nenhuma forma de custeio está disponível no momento.</div>}</div>{erro&&<div className="mt-2 rounded-[11px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-[9.8px] text-[#8F2A25]">{erro}</div>}<button type="button" disabled={!forma||enviando||formas.length===0} onClick={()=>void enviar()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-medium text-white disabled:opacity-40">{enviando?"Confirmando...":"Confirmar forma de custeio"}</button></div></motion.div></>}</AnimatePresence>
-  </>;
+function moeda(valor: number) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function label(forma: FormaCusteio) {
+  if (forma === "cartao") return "Cartão de crédito";
+  if (forma === "pix") return "PIX";
+  if (forma === "cheques") return "Cheques";
+  return "100% boleto";
+}
+
+function extra(forma: FormaCusteio, taxaCartao: number | null) {
+  if (forma === "cartao") return taxaCartao ? `taxa de ${taxaCartao}%` : "taxa conforme contrato";
+  if (forma === "pix") return "sem taxa adicional";
+  if (forma === "cheques") return "conforme autorização do financeiro";
+  return "conforme condições liberadas";
+}
+
+function CheckIcon() {
+  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="m4.3 9.2 3 3.1 6.4-6.6"/></svg>;
+}
+
+function WalletIcon() {
+  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><rect x="2.8" y="4.5" width="12.4" height="9.5" rx="2"/><path d="M12 7.2h3.2v4H12a2 2 0 1 1 0-4Z"/><path d="M5.2 4.5V3.2h7.2"/></svg>;
+}
+
+function CalendarIcon() {
+  return <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><rect x="3" y="4.5" width="12" height="10.5" rx="2"/><path d="M6 2.8v3M12 2.8v3M3 7.5h12"/></svg>;
+}
+
+export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
+  const [financeiro, setFinanceiro] = useState<Financeiro>({ saldoRestante: null, taxaCartao: null, totalComTaxa: null, formasCusteio: [] });
+  const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
+  const [parcelasRestantes, setParcelasRestantes] = useState<number | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [forma, setForma] = useState<FormaCusteio | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function carregar() {
+    try {
+      const [agendaRes, boletosRes] = await Promise.all([
+        fetch("/api/cliente/agenda", { cache: "no-store" }),
+        fetch("/api/cliente/boletos", { cache: "no-store" }),
+      ]);
+      if (agendaRes.ok) {
+        const dados = await agendaRes.json();
+        setFinanceiro(dados.financeiro ?? { saldoRestante: null, taxaCartao: null, totalComTaxa: null, formasCusteio: [] });
+        setSolicitacao(dados.solicitacaoLiberacaoFinanceira ?? null);
+      }
+      if (boletosRes.ok) {
+        const dados = await boletosRes.json();
+        setParcelasRestantes(typeof dados.parcelas_nao_pagas === "number" ? dados.parcelas_nao_pagas : null);
+      }
+    } catch {
+      // A tela principal continua funcional e pode ser recarregada pelo polling global.
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  useEffect(() => {
+    void carregar();
+  }, []);
+
+  const formas = useMemo(
+    () => (["cartao", "pix", "cheques", "boleto_100"] as FormaCusteio[]).filter((item) => financeiro.formasCusteio.includes(item)),
+    [financeiro.formasCusteio],
+  );
+
+  const status = String(solicitacao?.status ?? "").toLowerCase();
+  const recusada = status.includes("recus");
+  const jaEscolheu = Boolean(solicitacao) && !recusada;
+
+  useEffect(() => {
+    if (jaEscolheu) void onSelecionada?.();
+  }, [jaEscolheu, onSelecionada]);
+
+  async function enviar() {
+    if (!forma) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      const resposta = await fetch("/api/cliente/solicitacao-liberacao-financeira", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formaCusteio: forma }),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok) throw new Error(dados.erro ?? "Não foi possível registrar sua escolha.");
+      setSolicitacao(dados.solicitacao ?? null);
+      setModal(false);
+      await onSelecionada?.();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não foi possível registrar sua escolha.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (carregando || jaEscolheu) return null;
+
+  const saldo = Number(financeiro.saldoRestante ?? 0);
+  const parcelasTexto = parcelasRestantes == null
+    ? "Este é o saldo que ainda resta no seu contrato."
+    : parcelasRestantes === 1
+      ? "Este saldo corresponde à 1 parcela restante do seu contrato."
+      : `Este saldo corresponde às ${parcelasRestantes} parcelas restantes do seu contrato.`;
+  const totalCartao = financeiro.totalComTaxa ?? (financeiro.taxaCartao ? saldo * (1 + financeiro.taxaCartao / 100) : saldo);
+
+  const etapas = [
+    { numero: "01", titulo: "Percentual", icon: <CheckIcon />, classe: "border-[#CFE2D3] bg-[#EAF4EC] text-[#3F7D5B]" },
+    { numero: "02", titulo: "Levantamento", icon: <CheckIcon />, classe: "border-[#CFE2D3] bg-[#EAF4EC] text-[#3F7D5B]" },
+    { numero: "03", titulo: "Pagamento", icon: <WalletIcon />, classe: "border-[#E4C98E] bg-[#FBF1DD] text-[#A77A24]" },
+    { numero: "04", titulo: "Escolha da data", icon: <CalendarIcon />, classe: "border-[#E5DBD8] bg-[#F5F1EF] text-[#9A8A86]" },
+  ];
+
+  return (
+    <>
+      <section className="relative min-h-[395px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+        <div className="pointer-events-none select-none p-[14px] opacity-[.55] blur-[1.6px]">
+          <CalendarioAgendamento datas={datas} onConfirmar={() => {}} confirmando={false} bloqueado />
+        </div>
+
+        <div className="absolute inset-[14px] flex items-center justify-center">
+          <div className="w-full max-w-[355px] rounded-[18px] border border-[#E7D4AE] bg-white/92 px-[14px] pb-[14px] pt-[13px] shadow-[0_18px_42px_rgba(95,54,58,.13)] backdrop-blur-[2px]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-[9px]">
+                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[11px] bg-[#F8EEDB] text-[#A77A24]"><WalletIcon /></span>
+                <div className="min-w-0">
+                  <div className="text-[8px] font-bold uppercase tracking-[.15em] text-[#A77A24]">Etapa 3 de 4</div>
+                  <div className="pt-[2px] font-heading text-[17px] font-semibold leading-tight text-[#7D2434]">Pagamento do saldo restante</div>
+                </div>
+              </div>
+              <span className="rounded-full border border-[#E8D2A9] bg-[#FFF9EF] px-[8px] py-[5px] text-[8px] font-semibold uppercase tracking-[.06em] text-[#8E6420]">Aguardando escolha</span>
+            </div>
+
+            <div className="mt-[11px] flex items-end justify-between gap-3 rounded-[13px] border border-[#EAD7AE] bg-[#FFF9EF] px-[11px] py-[10px]">
+              <div>
+                <div className="text-[7.8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Saldo restante</div>
+                <div className="pt-[2px] font-heading text-[21px] font-semibold text-[#7D2434]">{moeda(saldo)}</div>
+              </div>
+              {parcelasRestantes != null && <div className="pb-[2px] text-right text-[9px] font-medium text-[#806F6A]">{parcelasRestantes} {parcelasRestantes === 1 ? "parcela restante" : "parcelas restantes"}</div>}
+            </div>
+
+            <p className="pt-[9px] text-[10px] font-light leading-[1.48] text-[#786A66]">Escolha como o saldo será pago <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>. Depois da confirmação, a escolha da data será liberada.</p>
+
+            <button type="button" onClick={() => { setErro(null); setForma(null); setModal(true); }} className="mt-[11px] w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.8px] font-semibold text-white">Escolher forma de pagamento</button>
+
+            <div className="relative mt-[13px] grid grid-cols-4 gap-[5px]">
+              <div className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[17px] h-px bg-[#E6D9D5]" />
+              <div className="pointer-events-none absolute left-[12.5%] top-[17px] h-px w-[50%] bg-[#C89D45]" />
+              {etapas.map((item, index) => (
+                <div key={item.numero} className={`relative z-[1] min-w-0 rounded-[11px] border px-[3px] pb-[7px] pt-[5px] text-center ${index === 2 ? "border-[#D8BD86] bg-[#FFF9EF]" : "border-[#EDE4E1] bg-white/90"}`}>
+                  <span className={`mx-auto flex h-[24px] w-[24px] items-center justify-center rounded-full border ${item.classe}`}>{item.icon}</span>
+                  <span className="block pt-[4px] text-[6.4px] font-bold uppercase tracking-[.1em] text-[#A99894]">{item.numero}</span>
+                  <span className={`block pt-[2px] text-[7.7px] font-semibold leading-[1.15] ${index === 2 ? "text-[#7D2434]" : "text-[#71615E]"}`}>{item.titulo}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <AnimatePresence>
+        {modal && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !enviando && setModal(false)} className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.34)] backdrop-blur-[2px]" />
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ duration: 0.2 }} className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]">
+              <div className="max-h-[88dvh] overflow-y-auto rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_-16px_45px_rgba(48,26,30,.18)]">
+                <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Etapa 3 de 4</div>
+                    <div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">Pagamento do saldo restante</div>
+                    <p className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">{parcelasTexto} Esse valor deverá ser quitado <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>.</p>
+                  </div>
+                  <button type="button" aria-label="Fechar" onClick={() => !enviando && setModal(false)} className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#7D2434]">×</button>
+                </div>
+
+                <div className="mt-3 rounded-[14px] border border-[#EAD7AE] bg-[#FFF9EF] px-3 py-[11px]">
+                  <div className="flex items-end justify-between gap-3">
+                    <div><div className="text-[8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Valor restante</div><div className="pt-[2px] font-heading text-[24px] font-semibold text-[#7D2434]">{moeda(saldo)}</div></div>
+                    {parcelasRestantes != null && <div className="pb-1 text-right text-[9.5px] font-medium text-[#806F6A]">referente a<br/><strong>{parcelasRestantes} {parcelasRestantes === 1 ? "parcela" : "parcelas"}</strong></div>}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="mb-[7px] text-[8px] font-bold uppercase tracking-[.12em] text-[#9A7771]">Formas liberadas pelo financeiro</div>
+                  <div className="flex flex-col gap-[7px]">
+                    {formas.map((item) => (
+                      <button key={item} type="button" onClick={() => setForma(item)} className="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-[11px] text-left" style={forma === item ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}>
+                        <span className="text-[11px] font-semibold">{label(item)}</span>
+                        <span className="text-right text-[9px] text-[#9A7771]">{extra(item, financeiro.taxaCartao)}</span>
+                      </button>
+                    ))}
+                    {formas.length === 0 && <div className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] p-3 text-[10px] text-[#8F2A25]">Nenhuma forma de pagamento foi liberada pelo financeiro para este contrato.</div>}
+                  </div>
+                </div>
+
+                {forma === "cartao" && saldo > 0 && (
+                  <div className="mt-[9px] rounded-[11px] border border-[#E8DDD9] bg-[#FCF9F8] px-3 py-[9px] text-[9.5px] leading-[1.45] text-[#7A6B67]">No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>{financeiro.taxaCartao ? `, considerando a taxa de ${financeiro.taxaCartao}%.` : "."}</div>
+                )}
+
+                <div className="mt-[10px] rounded-[11px] border border-[#E2D6D2] bg-[#FAF7F6] px-3 py-[9px] text-[9.5px] font-light leading-[1.5] text-[#796965]">Ao confirmar, você registra a forma escolhida para quitar o saldo na assinatura dos termos e libera a próxima etapa: <strong className="font-semibold text-[#6B1F2E]">escolha da data</strong>.</div>
+
+                {erro && <div className="mt-2 rounded-[11px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-[9.8px] text-[#8F2A25]">{erro}</div>}
+                <button type="button" disabled={!forma || enviando || formas.length === 0} onClick={() => void enviar()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-semibold text-white disabled:opacity-40">{enviando ? "Confirmando..." : "Confirmar e liberar escolha da data"}</button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  );
 }
