@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 interface ClientProfileHeaderProps {
   nomeCliente: string;
   procedimento: string | null;
@@ -15,6 +17,17 @@ function iniciais(nomeCompleto: string) {
 
 export function ClientProfileHeader({ nomeCliente, procedimento, quantidadeParcelas, naoLidas, onAbrirNotificacoes }: ClientProfileHeaderProps) {
   const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : "Plano";
+  const [fotoVersao, setFotoVersao] = useState(() => Date.now());
+  const [fotoDisponivel, setFotoDisponivel] = useState(true);
+
+  useEffect(() => {
+    const atualizarFoto = () => {
+      setFotoDisponivel(true);
+      setFotoVersao(Date.now());
+    };
+    window.addEventListener("sra-luck-profile-photo-updated", atualizarFoto);
+    return () => window.removeEventListener("sra-luck-profile-photo-updated", atualizarFoto);
+  }, []);
 
   return (
     <>
@@ -35,7 +48,18 @@ export function ClientProfileHeader({ nomeCliente, procedimento, quantidadeParce
         <div className="sl-profile-card">
           <div className="sl-profile-glow" />
           <div className="relative flex-none">
-            <div className="sl-avatar">{iniciais(nomeCliente)}</div>
+            <div className="sl-avatar relative !h-[54px] !w-[54px] !text-[20px] overflow-hidden">
+              {iniciais(nomeCliente)}
+              {fotoDisponivel && (
+                <img
+                  src={`/api/cliente/perfil/foto?v=${fotoVersao}`}
+                  alt="Foto de perfil"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  onLoad={() => setFotoDisponivel(true)}
+                  onError={() => setFotoDisponivel(false)}
+                />
+              )}
+            </div>
             <span className="sl-avatar-status" />
           </div>
           <div className="relative min-w-0 flex-1">
