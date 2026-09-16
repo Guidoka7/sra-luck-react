@@ -24,26 +24,26 @@ export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) 
   const [aberta, setAberta] = useState(false);
 
   return (
-    <section className="overflow-hidden rounded-[18px] border border-[#DFC996] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+    <section className="overflow-hidden rounded-[18px] border border-[#E8D6D9] border-t-[3px] border-t-[#B65B67] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
       <button
         type="button"
         onClick={() => setAberta((valor) => !valor)}
         aria-expanded={aberta}
-        className="flex w-full items-center justify-between gap-3 border-b border-[#EBD9B8] bg-[#FFF9EF] px-[14px] py-[12px] text-left transition active:bg-[#FFF5E4]"
+        className="flex w-full items-center justify-between gap-3 border-b border-[#EEDADD] bg-[#FFF6F7] px-[14px] py-[12px] text-left transition active:bg-[#FCEDEF]"
       >
         <span className="flex min-w-0 items-center gap-[10px]">
-          <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[10px] border border-[#E6D0A5] bg-white text-[#8E6420] shadow-[0_3px_9px_rgba(109,77,29,.06)]">
+          <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[10px] border border-[#E9CDD3] bg-white text-[#A84759] shadow-[0_3px_9px_rgba(126,45,61,.06)]">
             <LockIcon />
           </span>
           <span className="min-w-0">
-            <span className="block text-[8.5px] font-bold uppercase tracking-[.14em] text-[#A77A24]">Minha agenda</span>
+            <span className="block text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Minha agenda</span>
             <span className="block pt-[1px] font-heading text-[16px] font-semibold leading-[1.15] text-[#7D2434]">Agenda bloqueada</span>
             <span className="block pt-[2px] text-[9.5px] font-light leading-[1.35] text-[#7B6B66]">{resumo}</span>
           </span>
         </span>
         <span className="flex flex-none flex-col items-end gap-[5px]">
-          <span className="rounded-full border border-[#E3CEA5] bg-white px-[8px] py-[4px] text-[7.3px] font-bold uppercase tracking-[.06em] text-[#8E6420]">Etapa {etapa} de 4</span>
-          <span className="text-[8.3px] font-semibold text-[#9A7771]">{aberta ? "Ocultar etapas" : "Ver etapas"}</span>
+          <span className="rounded-full border border-[#E8CDD2] bg-white px-[8px] py-[4px] text-[7.3px] font-bold uppercase tracking-[.06em] text-[#9E4353]">Etapa {etapa} de 4</span>
+          <span className="text-[8.3px] font-semibold text-[#A66A75]">{aberta ? "Ocultar etapas" : "Ver etapas"}</span>
         </span>
       </button>
 
@@ -64,13 +64,13 @@ export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) 
               className="absolute inset-0 flex items-center justify-center px-[18px] text-center"
               aria-label="Agenda bloqueada. Toque para acompanhar as etapas de liberação."
             >
-              <span className="w-full max-w-[300px] rounded-[16px] border border-[#E4C990] bg-white/94 px-[18px] py-[18px] shadow-[0_16px_38px_rgba(95,54,58,.13)] backdrop-blur-[2px]">
-                <span className="mx-auto flex h-[45px] w-[45px] items-center justify-center rounded-full bg-[#F8EEDB] text-[#9A6B20] shadow-[0_4px_12px_rgba(167,122,36,.08)]">
+              <span className="w-full max-w-[300px] rounded-[16px] border border-[#E8CDD2] bg-white/94 px-[18px] py-[18px] shadow-[0_16px_38px_rgba(95,54,58,.13)] backdrop-blur-[2px]">
+                <span className="mx-auto flex h-[45px] w-[45px] items-center justify-center rounded-full bg-[#F9ECEF] text-[#A84759] shadow-[0_4px_12px_rgba(166,71,89,.08)]">
                   <LockIcon size={18} />
                 </span>
                 <span className="block pt-[10px] font-heading text-[20px] font-semibold text-[#7D2434]">Agenda bloqueada</span>
                 <span className="block px-2 pt-[5px] text-[10.5px] font-light leading-[1.45] text-[#756661]">Toque no cadeado para acompanhar as etapas de liberação da sua agenda.</span>
-                <span className="mt-[10px] inline-flex items-center gap-[5px] rounded-full border border-[#E7D4AE] bg-[#FFF9EF] px-[10px] py-[6px] text-[8.8px] font-semibold text-[#8E6420]">
+                <span className="mt-[10px] inline-flex items-center gap-[5px] rounded-full border border-[#E8CDD2] bg-[#FFF6F7] px-[10px] py-[6px] text-[8.8px] font-semibold text-[#9E4353]">
                   <LockIcon size={11} />
                   Ver andamento
                 </span>
@@ -85,7 +85,7 @@ export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) 
               transition={{ duration: 0.18 }}
               className="absolute inset-x-[12px] top-[14px]"
             >
-              <div className="relative w-full rounded-[18px] border border-[#E7D4AE] bg-white/96 px-[15px] pb-[14px] pt-[14px] shadow-[0_17px_38px_rgba(95,54,58,.14)] backdrop-blur-[3px]">
+              <div className="relative w-full rounded-[18px] border border-[#E8CDD2] bg-white/96 px-[15px] pb-[14px] pt-[14px] shadow-[0_17px_38px_rgba(95,54,58,.14)] backdrop-blur-[3px]">
                 <button
                   type="button"
                   onClick={() => setAberta(false)}
