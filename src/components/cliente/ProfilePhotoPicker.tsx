@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { lerCacheFotoPerfil, salvarCacheFotoPerfil } from "@/lib/profilePhotoCache";
 
 interface ProfilePhotoPickerProps {
   fallback: string;
@@ -8,6 +9,8 @@ interface ProfilePhotoPickerProps {
   cameraClassName: string;
   imageAlt?: string;
 }
+
+type FotoAtualizada = { versao: string; preview: string };
 
 const FOTO_URL = "/api/cliente/perfil/foto";
 const EVENTO_FOTO = "sra-luck-profile-photo-updated";
@@ -33,36 +36,47 @@ function canvasParaBlob(canvas: HTMLCanvasElement, tipo: string, qualidade: numb
   });
 }
 
-async function otimizarFoto(arquivo: File) {
-  if (!arquivo.type.startsWith("image/")) throw new Error("Escolha uma imagem válida.");
+function arquivoParaDataUrl(arquivo: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Não foi possível preparar a prévia da foto."));
+    reader.readAsDataURL(arquivo);
+  });
+}
+
+async function otimizarFoto(arquivo: Blob) {
+  if (arquivo.type && !arquivo.type.startsWith("image/")) throw new Error("Escolha uma imagem válida.");
 
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(arquivo);
+    bitmap = await createImageBitmap(arquivo, { imageOrientation: "from-image" });
   } catch {
     throw new Error("Não foi possível abrir esta foto. Escolha outra imagem da galeria.");
   }
 
   try {
     const maiorLado = Math.max(bitmap.width, bitmap.height);
-    const escala = maiorLado > TAMANHO_MAXIMO_LADO ? TAMANHO_MAXIMO_LADO / maiorLado : 1;
-    const largura = Math.max(1, Math.round(bitmap.width * escala));
-    const altura = Math.max(1, Math.round(bitmap.height * escala));
-    const canvas = document.createElement("canvas");
-    canvas.width = largura;
-    canvas.height = altura;
-    const contexto = canvas.getContext("2d");
-    if (!contexto) throw new Error("Não foi possível preparar esta foto.");
-
-    contexto.drawImage(bitmap, 0, 0, largura, altura);
-
+    let escala = maiorLado > TAMANHO_MAXIMO_LADO ? TAMANHO_MAXIMO_LADO / maiorLado : 1;
     let qualidade = 0.9;
-    let blob = await canvasParaBlob(canvas, "image/webp", qualidade);
-    while (blob.size > ALVO_BYTES && qualidade > 0.56) {
-      qualidade -= 0.07;
+    let blob: Blob | null = null;
+
+    for (let tentativa = 0; tentativa < 5; tentativa += 1) {
+      const largura = Math.max(1, Math.round(bitmap.width * escala));
+      const altura = Math.max(1, Math.round(bitmap.height * escala));
+      const canvas = document.createElement("canvas");
+      canvas.width = largura;
+      canvas.height = altura;
+      const contexto = canvas.getContext("2d", { alpha: false });
+      if (!contexto) throw new Error("Não foi possível preparar esta foto.");
+      contexto.drawImage(bitmap, 0, 0, largura, altura);
       blob = await canvasParaBlob(canvas, "image/webp", qualidade);
+      if (blob.size <= ALVO_BYTES || Math.max(largura, altura) <= 900) break;
+      qualidade = Math.max(0.68, qualidade - 0.06);
+      escala *= 0.86;
     }
 
+    if (!blob) throw new Error("Não foi possível preparar esta foto.");
     const tipoSaida = blob.type === "image/png" || blob.type === "image/jpeg" || blob.type === "image/webp" ? blob.type : "image/webp";
     const extensao = tipoSaida === "image/png" ? "png" : tipoSaida === "image/jpeg" ? "jpg" : "webp";
     return new File([blob], `foto-perfil.${extensao}`, { type: tipoSaida, lastModified: Date.now() });
@@ -79,35 +93,55 @@ export function ProfilePhotoPicker({
   imageAlt = "Foto de perfil",
 }: ProfilePhotoPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const previewRef = useRef<string | null>(null);
-  const [fotoSrc, setFotoSrc] = useState(FOTO_URL);
+  const cacheInicial = useRef(lerCacheFotoPerfil()).current;
+  const [preview, setPreview] = useState<string | null>(cacheInicial?.preview ?? null);
+  const [fotoSrc, setFotoSrc] = useState(cacheInicial?.versao ? `${FOTO_URL}?v=${encodeURIComponent(cacheInicial.versao)}` : FOTO_URL);
   const [fotoDisponivel, setFotoDisponivel] = useState(true);
+  const [fotoServidorPronta, setFotoServidorPronta] = useState(false);
   const [processando, setProcessando] = useState(false);
 
   useEffect(() => {
     const atualizarFoto = (evento: Event) => {
-      const versao = (evento as CustomEvent<{ versao?: number }>).detail?.versao ?? Date.now();
+      const detalhe = (evento as CustomEvent<FotoAtualizada>).detail;
+      if (!detalhe?.preview) return;
+      setPreview(detalhe.preview);
       setFotoDisponivel(true);
-      setFotoSrc(`${FOTO_URL}?v=${versao}`);
+      setFotoServidorPronta(false);
+      setFotoSrc(`${FOTO_URL}?v=${encodeURIComponent(detalhe.versao)}`);
     };
     window.addEventListener(EVENTO_FOTO, atualizarFoto);
-    return () => {
-      window.removeEventListener(EVENTO_FOTO, atualizarFoto);
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-    };
+    return () => window.removeEventListener(EVENTO_FOTO, atualizarFoto);
   }, []);
+
+  useEffect(() => {
+    if (preview) return;
+    let ativo = true;
+
+    // Migra silenciosamente fotos já existentes para um preview local persistente.
+    // Depois disso, o avatar aparece no primeiro frame mesmo durante revalidação da rede.
+    fetch(FOTO_URL, { cache: "no-cache", credentials: "same-origin" })
+      .then((resposta) => (resposta.ok ? resposta.blob() : null))
+      .then(async (blob) => {
+        if (!ativo || !blob || !blob.type.startsWith("image/")) return;
+        const otimizada = await otimizarFoto(blob);
+        const previewLocal = await arquivoParaDataUrl(otimizada);
+        if (!ativo) return;
+        const versao = String(Date.now());
+        salvarCacheFotoPerfil({ preview: previewLocal, versao });
+        setPreview(previewLocal);
+      })
+      .catch(() => {});
+
+    return () => {
+      ativo = false;
+    };
+  }, [preview]);
 
   async function alterarFoto(arquivo: File, input: HTMLInputElement) {
     setProcessando(true);
-    const fotoAnterior = fotoSrc;
-    const disponivelAnterior = fotoDisponivel;
-
     try {
       const otimizada = await otimizarFoto(arquivo);
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-      previewRef.current = URL.createObjectURL(otimizada);
-      setFotoDisponivel(true);
-      setFotoSrc(previewRef.current);
+      const previewLocal = await arquivoParaDataUrl(otimizada);
 
       const formData = new FormData();
       formData.append("foto", otimizada);
@@ -115,16 +149,18 @@ export function ProfilePhotoPicker({
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível atualizar sua foto.");
 
-      const versao = typeof corpo.versao === "number" ? corpo.versao : Date.now();
-      window.dispatchEvent(new CustomEvent(EVENTO_FOTO, { detail: { versao } }));
+      const versao = String(corpo.versao ?? Date.now());
+      salvarCacheFotoPerfil({ preview: previewLocal, versao });
+      setPreview(previewLocal);
+      setFotoDisponivel(true);
+      setFotoServidorPronta(false);
+      setFotoSrc(`${FOTO_URL}?v=${encodeURIComponent(versao)}`);
+      window.dispatchEvent(new CustomEvent<FotoAtualizada>(EVENTO_FOTO, { detail: { versao, preview: previewLocal } }));
 
-      // Aquece a URL estável no cache privado do navegador. Assim, no próximo
-      // reload o avatar pode ser desenhado imediatamente enquanto o servidor revalida.
+      // Atualiza também a versão estável no cache HTTP para acessos futuros.
       void fetch(FOTO_URL, { cache: "reload", credentials: "same-origin" }).catch(() => {});
       toast.success("Foto de perfil atualizada.");
     } catch (error) {
-      setFotoSrc(fotoAnterior);
-      setFotoDisponivel(disponivelAnterior);
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar sua foto.");
     } finally {
       setProcessando(false);
@@ -139,20 +175,27 @@ export function ProfilePhotoPicker({
         onClick={() => inputRef.current?.click()}
         disabled={processando}
         className="relative block rounded-full disabled:cursor-wait"
-        aria-label={processando ? "Atualizando foto de perfil" : "Alterar foto de perfil"}
+        aria-label={processando ? "Preparando foto de perfil" : "Alterar foto de perfil"}
       >
         <span className={avatarClassName}>
           {fallback}
+          {preview && <img src={preview} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />}
           {fotoDisponivel && (
             <img
               src={fotoSrc}
               alt={imageAlt}
               loading="eager"
-              decoding="sync"
+              decoding="async"
               fetchPriority="high"
-              className="absolute inset-0 h-full w-full object-cover"
-              onLoad={() => setFotoDisponivel(true)}
-              onError={() => setFotoDisponivel(false)}
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${fotoServidorPronta ? "opacity-100" : "opacity-0"}`}
+              onLoad={() => {
+                setFotoDisponivel(true);
+                setFotoServidorPronta(true);
+              }}
+              onError={() => {
+                setFotoDisponivel(false);
+                setFotoServidorPronta(false);
+              }}
             />
           )}
         </span>
