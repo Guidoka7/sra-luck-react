@@ -18,6 +18,7 @@ interface AgendaHomeProps {
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   quantidadeParcelas: number | null;
+  percentualPago: number;
   podeAgendar: boolean;
   agendaLiberada: boolean;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
@@ -49,6 +50,7 @@ export function AgendaHome({
   agendamentoConcluido,
   datasDisponiveis,
   quantidadeParcelas,
+  percentualPago,
   podeAgendar,
   agendaLiberada,
   statusRevisaoFinanceira,
@@ -98,7 +100,13 @@ export function AgendaHome({
       {statusRevisaoFinanceira === "recusada" ? (
         <AvisoRevisaoFinanceira status="recusada" observacao={observacaoRevisaoFinanceira ?? null} />
       ) : !agendaLiberada ? (
-        <AgendaBloqueadaPercentual percentual={percentualContrato} parcelasNecessarias={parcelasNecessarias} datas={datasDisponiveis} etapa={podeAgendar ? "levantamento" : "percentual"} />
+        <AgendaBloqueadaPercentual
+          percentual={percentualContrato}
+          percentualPago={percentualPago}
+          parcelasNecessarias={parcelasNecessarias}
+          datas={datasDisponiveis}
+          etapa={podeAgendar ? "levantamento" : "percentual"}
+        />
       ) : !custeioAprovado ? (
         <EscolherFormaPagamento datas={datasDisponiveis} onSelecionada={onCusteioSelecionado} />
       ) : (
