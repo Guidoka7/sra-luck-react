@@ -154,52 +154,33 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
               type="button"
               onClick={() => selecionar(destino.id)}
               aria-label={`Ver etapa ${destino.numero}: ${destino.titulo}`}
-              whileTap={{ scaleY: 1.65 }}
-              whileHover={{ scaleY: 1.25 }}
-              className="group absolute top-[21px] z-[1] h-[18px] cursor-pointer focus-visible:outline-none"
+              animate={{ opacity: relacionadaSelecionada ? 1 : 0.72 }}
+              whileHover={{ opacity: 1 }}
+              whileTap={{ opacity: 0.58 }}
+              transition={{ duration: 0.24, ease: "easeOut" }}
+              className="absolute top-[21px] z-[1] h-[18px] cursor-pointer focus-visible:outline-none"
               style={{ left: `${12.5 + index * 25}%`, width: "25%" }}
             >
-              <motion.span
-                className={`absolute left-[16px] right-[16px] top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full ${
+              <span
+                className={`absolute left-[16px] right-[16px] top-1/2 h-[2px] -translate-y-1/2 overflow-hidden rounded-full transition-colors duration-300 ${
                   concluidaLinha
-                    ? "bg-[#DCECDF]"
+                    ? "bg-[#6F9F7E]"
                     : linhaAtual
-                      ? "bg-[#F1DDE1]"
+                      ? "bg-[#EBCFD5]"
                       : relacionadaSelecionada
-                        ? "bg-[#E9D9DC]"
-                        : "bg-[#E9E1DE]"
+                        ? "bg-[#DED1D3]"
+                        : "bg-[#E9E2E0]"
                 }`}
-                animate={{ opacity: relacionadaSelecionada ? 1 : 0.78 }}
-                transition={{ duration: 0.2 }}
               >
-                {concluidaLinha && (
-                  <motion.span
-                    className="absolute inset-0 rounded-full bg-[#5D9872]"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ duration: 0.38, ease: "easeOut" }}
-                    style={{ transformOrigin: "left" }}
-                  />
-                )}
                 {linhaAtual && (
                   <motion.span
-                    className="absolute inset-y-0 left-0 w-[55%] rounded-full bg-gradient-to-r from-[#B65B67] via-[#D58C98] to-transparent"
-                    animate={{ x: ["-90%", "185%"] }}
-                    transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 w-[34%] rounded-full bg-gradient-to-r from-transparent via-[#B65B67]/70 to-transparent"
+                    animate={{ x: ["-120%", "395%"] }}
+                    transition={{ duration: 2.6, repeat: Infinity, ease: "linear" }}
                   />
                 )}
-              </motion.span>
-
-              {linhaAtual && (
-                <motion.span
-                  aria-hidden="true"
-                  className="absolute top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full bg-[#B65B67] shadow-[0_0_0_4px_rgba(182,91,103,.10)]"
-                  animate={{ left: ["18px", "calc(100% - 25px)"], opacity: [0.3, 1, 0.3] }}
-                  transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
-                />
-              )}
-
-              <span className="pointer-events-none absolute inset-x-[16px] top-1/2 h-[11px] -translate-y-1/2 rounded-full transition-colors group-hover:bg-[#7D2434]/[0.035] group-focus-visible:bg-[#7D2434]/[0.05]" />
+              </span>
             </motion.button>
           );
         })}
