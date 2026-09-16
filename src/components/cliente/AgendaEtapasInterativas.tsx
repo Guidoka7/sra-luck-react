@@ -8,6 +8,7 @@ export type EtapaAgenda = "percentual" | "levantamento" | "pagamento" | "data";
 type Props = {
   atual: EtapaAgenda;
   percentual?: number;
+  percentualPago?: number;
   parcelasNecessarias?: number | null;
   onPagamentoClick?: () => void;
 };
@@ -56,12 +57,17 @@ function tituloCompleto(id: EtapaAgenda) {
   return "Agendamento da assinatura dos termos";
 }
 
-export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias, onPagamentoClick }: Props) {
+export function AgendaEtapasInterativas({ atual, percentual, percentualPago, parcelasNecessarias, onPagamentoClick }: Props) {
   const [selecionada, setSelecionada] = useState<EtapaAgenda>(atual);
 
   useEffect(() => {
     setSelecionada(atual);
   }, [atual]);
+
+  const percentualPagoNormalizado = percentualPago == null ? null : Math.min(100, Math.max(0, percentualPago));
+  const progressoMeta = percentual != null && percentual > 0 && percentualPagoNormalizado != null
+    ? Math.min(100, Math.max(0, (percentualPagoNormalizado / percentual) * 100))
+    : null;
 
   const indiceAtual = ETAPAS.findIndex((item) => item.id === atual);
   const indiceSelecionado = ETAPAS.findIndex((item) => item.id === selecionada);
@@ -84,7 +90,9 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
 
   if (selecionada === "percentual") {
     resumo = percentual != null
-      ? `Para avançar, é necessário atingir ${percentual}% do percentual mínimo de pagamento do contrato${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}. Ao atingir essa meta, o contrato segue para a análise financeira.`
+      ? percentualPagoNormalizado != null
+        ? `Você já atingiu ${Math.round(percentualPagoNormalizado)}% do contrato. Para avançar, precisa chegar ao percentual mínimo de ${percentual}%${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}. Cada pagamento confirmado aproxima esta etapa da conclusão.`
+        : `Para avançar, é necessário atingir o percentual mínimo de ${percentual}% do contrato${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}. Ao atingir essa meta, o contrato segue para a análise financeira.`
       : "Nesta etapa, é necessário atingir o percentual mínimo de pagamento previsto no contrato para que o financeiro possa iniciar a análise.";
   }
 
@@ -192,18 +200,24 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
             const ativa = item.id === selecionada;
             const pagamentoChamando = corrente && item.id === "pagamento" && Boolean(onPagamentoClick);
             const liberada = corrente && item.id === "data";
+            const progressoPercentual = item.id === "percentual" && !feita && progressoMeta != null;
+            const subtitulo = item.id === "percentual" && corrente && percentualPagoNormalizado != null && percentual != null
+              ? `${Math.round(percentualPagoNormalizado)}% de ${percentual}%`
+              : item.subtitulo;
 
-            const corBolinha = ativa
-              ? feita || liberada
-                ? "bg-[#3F7D5B] text-white"
-                : "bg-[#7D2434] text-white"
-              : feita
-                ? "bg-[#E5F2E8] text-[#3F7D5B]"
-                : corrente
-                  ? liberada
-                    ? "bg-[#DDEEE2] text-[#3F7D5B]"
-                    : "bg-[#F7E9EA] text-[#8E3243]"
-                  : "bg-[#F2ECEA] text-[#9B8B87]";
+            const corBolinha = progressoPercentual
+              ? "bg-[#F7E9EA] text-[#7D2434] overflow-hidden"
+              : ativa
+                ? feita || liberada
+                  ? "bg-[#3F7D5B] text-white"
+                  : "bg-[#7D2434] text-white"
+                : feita
+                  ? "bg-[#E5F2E8] text-[#3F7D5B]"
+                  : corrente
+                    ? liberada
+                      ? "bg-[#DDEEE2] text-[#3F7D5B]"
+                      : "bg-[#F7E9EA] text-[#8E3243]"
+                    : "bg-[#F2ECEA] text-[#9B8B87]";
 
             return (
               <div key={item.id} className="flex min-w-0 justify-center">
@@ -211,6 +225,9 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                   type="button"
                   onClick={() => selecionar(item.id)}
                   aria-pressed={ativa}
+                  aria-label={item.id === "percentual" && percentualPagoNormalizado != null && percentual != null
+                    ? `Etapa ${item.numero}: ${item.titulo}. ${Math.round(percentualPagoNormalizado)}% de ${percentual}% atingidos.`
+                    : `Etapa ${item.numero}: ${item.titulo}`}
                   whileTap={{ scale: 0.93 }}
                   whileHover={{ y: -1 }}
                   className="relative z-[2] flex min-h-[100px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
@@ -246,7 +263,34 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                       transition={{ type: "spring", stiffness: 420, damping: 27 }}
                       className={`relative flex h-[32px] w-[32px] items-center justify-center rounded-full ${corBolinha}`}
                     >
-                      {feita ? <CheckIcon /> : icon(item.id)}
+                      {progressoPercentual && (
+                        <>
+                          <motion.span
+                            aria-hidden="true"
+                            className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#B65B67] to-[#D58F9B]"
+                            initial={{ height: 0 }}
+                            animate={{ height: `${progressoMeta}%` }}
+                            transition={{ duration: 0.7, ease: "easeOut" }}
+                          />
+                          {progressoMeta > 0 && progressoMeta < 100 && (
+                            <motion.span
+                              aria-hidden="true"
+                              className="absolute inset-x-0 h-px bg-white/65"
+                              initial={{ bottom: 0 }}
+                              animate={{ bottom: `calc(${progressoMeta}% - 1px)` }}
+                              transition={{ duration: 0.7, ease: "easeOut" }}
+                            />
+                          )}
+                        </>
+                      )}
+
+                      <motion.span
+                        className="relative z-[1] flex items-center justify-center"
+                        animate={{ color: progressoPercentual && progressoMeta >= 48 ? "#FFFFFF" : undefined }}
+                        transition={{ duration: 0.22 }}
+                      >
+                        {feita ? <CheckIcon /> : icon(item.id)}
+                      </motion.span>
                     </motion.span>
                   </span>
 
@@ -260,7 +304,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                     {item.titulo}
                   </span>
                   <span className={`block max-w-[82px] pt-[3px] text-[7.2px] font-medium leading-[1.2] ${ativa ? "text-[#9A686F]" : "text-[#A99894]"}`}>
-                    {item.subtitulo}
+                    {subtitulo}
                   </span>
                   {pagamentoChamando && (
                     <motion.span
