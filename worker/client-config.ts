@@ -3,7 +3,7 @@ import { getCookie, verificarTokenSessao } from "./session";
 
 const COOKIE_NAME = "cliente_session";
 const PROFILE_BUCKET = "clientes-perfil";
-const PROFILE_MAX_UPLOAD = 5 * 1024 * 1024;
+const PROFILE_MAX_PROCESSED_UPLOAD = 4 * 1024 * 1024;
 const PROFILE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ProfileMime = (typeof PROFILE_TYPES)[number];
 
@@ -27,10 +27,20 @@ function extensaoImagem(tipo: ProfileMime) {
   return "webp";
 }
 
+function cacheFotoHeaders(etag: string, contentType?: string) {
+  const headers = new Headers({
+    "Cache-Control": "private, max-age=0, stale-while-revalidate=86400",
+    "Vary": "Cookie",
+    "ETag": etag,
+  });
+  if (contentType) headers.set("Content-Type", contentType);
+  return headers;
+}
+
 /**
  * Configuração visível pela cliente e manutenção da foto de perfil.
- * Dados sensíveis e o arquivo da foto permanecem privados; a imagem é
- * entregue apenas por URL assinada após validação da sessão da cliente.
+ * A imagem permanece privada e é entregue pelo próprio endpoint autenticado,
+ * com cache privado revalidável para evitar o avatar piscando a cada reload.
  */
 export async function clientConfigApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
@@ -44,9 +54,7 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
       .maybeSingle();
     if (error) return json({ erro: error.message }, 500);
 
-    return json({
-      whatsappContato: data?.whatsapp_contato || null,
-    });
+    return json({ whatsappContato: data?.whatsapp_contato || null });
   }
 
   if (url.pathname === "/api/cliente/perfil/foto") {
@@ -65,9 +73,17 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
       if (error) return json({ erro: "Não foi possível carregar a foto de perfil." }, 500);
       if (!cliente?.foto_perfil_path) return json({ erro: "Foto de perfil não cadastrada." }, 404);
 
-      const { data, error: signedError } = await db.storage.from(PROFILE_BUCKET).createSignedUrl(cliente.foto_perfil_path, 300);
-      if (signedError || !data?.signedUrl) return json({ erro: "Não foi possível carregar a foto de perfil." }, 500);
-      return Response.redirect(data.signedUrl, 302);
+      const etag = `"${String(cliente.foto_perfil_path).replace(/\"/g, "")}"`;
+      const headers304 = cacheFotoHeaders(etag);
+      if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: headers304 });
+
+      const { data: arquivo, error: downloadError } = await db.storage.from(PROFILE_BUCKET).download(cliente.foto_perfil_path);
+      if (downloadError || !arquivo) return json({ erro: "Não foi possível carregar a foto de perfil." }, 500);
+
+      const contentType = arquivo.type || (cliente.foto_perfil_path.endsWith(".png") ? "image/png" : cliente.foto_perfil_path.endsWith(".jpg") ? "image/jpeg" : "image/webp");
+      const headers = cacheFotoHeaders(etag, contentType);
+      headers.set("Content-Disposition", "inline");
+      return new Response(await arquivo.arrayBuffer(), { status: 200, headers });
     }
 
     if (request.method === "POST") {
@@ -80,8 +96,8 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
 
       const arquivo = formData.get("foto");
       if (!(arquivo instanceof File)) return json({ erro: "Selecione uma foto para continuar." }, 400);
-      if (!PROFILE_TYPES.includes(arquivo.type as ProfileMime)) return json({ erro: "Use uma imagem JPG, PNG ou WEBP." }, 400);
-      if (arquivo.size === 0 || arquivo.size > PROFILE_MAX_UPLOAD) return json({ erro: "A foto deve ter até 5 MB." }, 400);
+      if (!PROFILE_TYPES.includes(arquivo.type as ProfileMime)) return json({ erro: "Não foi possível processar esta imagem." }, 400);
+      if (arquivo.size === 0 || arquivo.size > PROFILE_MAX_PROCESSED_UPLOAD) return json({ erro: "Não foi possível processar esta imagem. Tente outra foto." }, 400);
 
       const bytes = new Uint8Array(await arquivo.arrayBuffer());
       const tipo = detectarTipoImagem(bytes);
@@ -113,7 +129,7 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
         await db.storage.from(PROFILE_BUCKET).remove([clienteAtual.foto_perfil_path]);
       }
 
-      return json({ sucesso: true });
+      return json({ sucesso: true, versao: Date.now() });
     }
 
     if (request.method === "DELETE") {
