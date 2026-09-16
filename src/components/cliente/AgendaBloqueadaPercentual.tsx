@@ -8,14 +8,13 @@ type Etapa = "percentual" | "levantamento";
 
 type Props = {
   percentual: number;
-  percentualPago?: number;
-  parcelasPagas: number;
+  parcelasPagas?: number;
   parcelasNecessarias: number | null;
   datas: DataDisponivel[];
   etapa?: Etapa;
 };
 
-export function AgendaBloqueadaPercentual({ percentual, parcelasPagas, parcelasNecessarias, datas, etapa = "percentual" }: Props) {
+export function AgendaBloqueadaPercentual({ percentual, parcelasPagas = 0, parcelasNecessarias, datas, etapa = "percentual" }: Props) {
   const atual = etapa === "levantamento" ? "levantamento" : "percentual";
   const pagas = Math.max(0, Math.floor(parcelasPagas));
   const meta = parcelasNecessarias ?? 0;
