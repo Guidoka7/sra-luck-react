@@ -10,6 +10,7 @@ interface HomeTabProps {
   procedimento: string | null;
   quantidadeParcelas: number | null;
   porcentagemPagamento: number;
+  parcelasPagas: number;
   naoLidas: number;
   onAbrirNotificacoes: () => void;
   agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
@@ -30,6 +31,7 @@ export function HomeTab({
   procedimento,
   quantidadeParcelas,
   porcentagemPagamento,
+  parcelasPagas,
   naoLidas,
   onAbrirNotificacoes,
   agendamentoAtivo,
@@ -61,6 +63,7 @@ export function HomeTab({
         datasDisponiveis={datasDisponiveis}
         quantidadeParcelas={quantidadeParcelas}
         percentualPago={porcentagemPagamento}
+        parcelasPagas={parcelasPagas}
         podeAgendar={podeAgendar}
         agendaLiberada={agendaLiberada}
         statusRevisaoFinanceira={statusRevisaoFinanceira}
