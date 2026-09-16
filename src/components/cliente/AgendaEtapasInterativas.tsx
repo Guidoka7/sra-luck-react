@@ -80,55 +80,24 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
             : "Etapa atual"
       : "Ainda bloqueada";
 
-  const rotuloDetalhe = concluida ? "Concluído" : atualSelecionada ? "Agora" : "Quando chegar";
-
-  let texto = "";
-  let proximo = "";
+  let resumo = "";
 
   if (selecionada === "percentual") {
-    if (concluida) {
-      texto = "Você atingiu o percentual mínimo previsto para o seu contrato e essa etapa já foi concluída.";
-    } else if (atualSelecionada) {
-      texto = percentual != null
-        ? `Mantenha os pagamentos até atingir ${percentual}% do mínimo exigido${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}.`
-        : "Mantenha os pagamentos até atingir o percentual mínimo exigido no seu contrato.";
-    } else {
-      texto = "Esta é a primeira condição do fluxo: atingir o percentual mínimo de pagamentos do contrato.";
-    }
-    proximo = "Ao atingir a meta, o financeiro inicia a conferência dos pagamentos e do saldo do contrato.";
+    resumo = percentual != null
+      ? `Para avançar, é necessário atingir ${percentual}% do percentual mínimo de pagamento do contrato${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}. Ao atingir essa meta, o contrato segue para a análise financeira.`
+      : "Nesta etapa, é necessário atingir o percentual mínimo de pagamento previsto no contrato para que o financeiro possa iniciar a análise.";
   }
 
   if (selecionada === "levantamento") {
-    if (concluida) {
-      texto = "A conferência foi concluída e o financeiro já definiu o saldo restante e as formas de pagamento disponíveis.";
-    } else if (atualSelecionada) {
-      texto = "Nossa equipe está conferindo seus pagamentos, o saldo do contrato e as condições disponíveis. O prazo desta análise é de até 5 dias úteis.";
-    } else {
-      texto = "Nesta etapa, o financeiro confere os pagamentos e calcula exatamente quanto ainda resta no contrato.";
-    }
-    proximo = "Depois da análise, você verá o saldo restante e escolherá como ele será pago na assinatura dos termos.";
+    resumo = "O financeiro confere os pagamentos realizados, calcula o saldo restante do contrato e define as formas de pagamento disponíveis. Essa análise pode levar até 5 dias úteis.";
   }
 
   if (selecionada === "pagamento") {
-    if (concluida) {
-      texto = "A forma de pagamento do saldo restante já foi escolhida e ficou registrada no seu contrato.";
-    } else if (atualSelecionada) {
-      texto = "Confira o saldo restante e escolha uma das formas liberadas pelo financeiro. Esse saldo será pago no ato da assinatura dos termos.";
-    } else {
-      texto = "Quando o levantamento terminar, você poderá escolher como quitar o saldo restante no dia da assinatura dos termos.";
-    }
-    proximo = "Ao confirmar a forma de pagamento, sua agenda é liberada para escolher a data da assinatura dos termos.";
+    resumo = "Aqui você confere o saldo restante e escolhe uma das formas de pagamento liberadas pelo financeiro. Esse valor será pago no ato da assinatura dos termos, e a confirmação da forma escolhida libera a agenda.";
   }
 
   if (selecionada === "data") {
-    if (concluida) {
-      texto = "A data da assinatura dos termos já foi escolhida e registrada.";
-    } else if (atualSelecionada) {
-      texto = "Sua agenda está liberada. Escolha no calendário o melhor dia e horário disponível para assinar os termos.";
-    } else {
-      texto = "Esta etapa fica disponível depois que você confirmar a forma de pagamento do saldo restante.";
-    }
-    proximo = "Após a assinatura dos termos, você poderá avançar para a escolha da data da sua cirurgia.";
+    resumo = "Com a agenda liberada, você escolhe o dia e o horário para a assinatura dos termos. Depois da assinatura, será possível avançar para a escolha da data da cirurgia.";
   }
 
   function selecionar(id: EtapaAgenda) {
@@ -152,16 +121,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
           <span className={`mt-[2px] flex-none rounded-full border px-[8px] py-[5px] text-[7.6px] font-semibold uppercase tracking-[.045em] ${concluida ? "border-[#D5E8D9] bg-[#F0F7F1] text-[#3F7D5B]" : atualSelecionada ? "border-[#E8D2A9] bg-[#FFF9EF] text-[#8E6420]" : "border-[#E7DEDB] bg-[#F8F4F3] text-[#8A7B77]"}`}>{status}</span>
         </div>
 
-        <div className="pt-[10px]">
-          <div className="flex items-start gap-[8px]">
-            <span className="mt-[1px] w-[58px] flex-none text-[7.4px] font-bold uppercase tracking-[.1em] text-[#A99894]">{rotuloDetalhe}</span>
-            <p className="min-w-0 text-[10.8px] font-light leading-[1.48] text-[#786A66]">{texto}</p>
-          </div>
-          <div className="mt-[7px] flex items-start gap-[8px] border-t border-[#F1E8E5] pt-[7px]">
-            <span className="mt-[1px] w-[58px] flex-none text-[7.4px] font-bold uppercase tracking-[.1em] text-[#B65B67]">Depois</span>
-            <p className="min-w-0 text-[10px] font-medium leading-[1.45] text-[#7D5D58]">{proximo}</p>
-          </div>
-        </div>
+        <p className="pt-[10px] text-[10.8px] font-light leading-[1.52] text-[#786A66]">{resumo}</p>
 
         {selecionada === "pagamento" && atual === "pagamento" && onPagamentoClick && (
           <motion.button
