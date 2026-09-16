@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { AgendaBloqueadaShell } from "@/components/cliente/AgendaBloqueadaShell";
 import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
-import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
+import { type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
 
@@ -133,39 +134,13 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
 
   return (
     <>
-      <section className="relative min-h-[395px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
-        <div className="pointer-events-none select-none p-[14px] opacity-[.55] blur-[1.6px]">
-          <CalendarioAgendamento datas={datas} onConfirmar={() => {}} confirmando={false} bloqueado />
-        </div>
-
-        <div className="absolute inset-[14px] flex items-center justify-center">
-          <div className="w-full max-w-[355px] rounded-[18px] border border-[#E7D4AE] bg-white/92 px-[14px] pb-[14px] pt-[13px] shadow-[0_18px_42px_rgba(95,54,58,.13)] backdrop-blur-[2px]">
-            <AgendaEtapasInterativas atual="pagamento" onPagamentoClick={abrirModal} />
-
-            <div className="mt-[10px] flex items-end justify-between gap-3 rounded-[13px] border border-[#EAD7AE] bg-[#FFF9EF] px-[11px] py-[10px]">
-              <div>
-                <div className="text-[7.8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Saldo restante</div>
-                <div className="pt-[2px] font-heading text-[21px] font-semibold text-[#7D2434]">{moeda(saldo)}</div>
-              </div>
-              {parcelasRestantes != null && (
-                <div className="pb-[2px] text-right text-[9px] font-medium text-[#806F6A]">
-                  {parcelasRestantes} {parcelasRestantes === 1 ? "parcela restante" : "parcelas restantes"}
-                </div>
-              )}
-            </div>
-
-            <motion.button
-              type="button"
-              onClick={abrirModal}
-              animate={{ scale: [1, 1.018, 1] }}
-              transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-              className="mt-[10px] w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.8px] font-semibold text-white shadow-[0_6px_16px_rgba(107,31,46,.14)]"
-            >
-              Escolher forma de pagamento
-            </motion.button>
-          </div>
-        </div>
-      </section>
+      <AgendaBloqueadaShell
+        datas={datas}
+        etapa={3}
+        resumo="Escolha a forma de pagamento do saldo restante para liberar a próxima etapa."
+      >
+        <AgendaEtapasInterativas atual="pagamento" onPagamentoClick={abrirModal} />
+      </AgendaBloqueadaShell>
 
       <AnimatePresence>
         {modal && (
