@@ -131,7 +131,7 @@ export function AgendaPage() {
 
   const agendaAtual = agenda.agendamentoAtivo ?? agenda.agendamentoConcluido;
   const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
-  const custeioAprovado = custeioStatus === "aprovada";
+  const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
   const termosAssinados = Boolean(agenda.agendamentoConcluido);
   const cirurgiaAgendada = Boolean(agendaAtual?.previsaoLiberacaoFinanceira);
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
@@ -172,6 +172,7 @@ export function AgendaPage() {
             custeioAprovado={custeioAprovado}
             confirmando={confirmando}
             onEscolherData={escolherData}
+            onCusteioSelecionado={() => carregar(true)}
           />
         )}
 
