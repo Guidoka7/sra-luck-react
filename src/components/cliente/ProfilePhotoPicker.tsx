@@ -63,7 +63,9 @@ async function otimizarFoto(arquivo: File) {
       blob = await canvasParaBlob(canvas, "image/webp", qualidade);
     }
 
-    return new File([blob], "foto-perfil.webp", { type: "image/webp", lastModified: Date.now() });
+    const tipoSaida = blob.type === "image/png" || blob.type === "image/jpeg" || blob.type === "image/webp" ? blob.type : "image/webp";
+    const extensao = tipoSaida === "image/png" ? "png" : tipoSaida === "image/jpeg" ? "jpg" : "webp";
+    return new File([blob], `foto-perfil.${extensao}`, { type: tipoSaida, lastModified: Date.now() });
   } finally {
     bitmap.close();
   }
@@ -113,11 +115,11 @@ export function ProfilePhotoPicker({
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível atualizar sua foto.");
 
-      const versao = Date.now();
+      const versao = typeof corpo.versao === "number" ? corpo.versao : Date.now();
       window.dispatchEvent(new CustomEvent(EVENTO_FOTO, { detail: { versao } }));
 
-      // Aquece a URL estável no cache do navegador. No próximo refresh a foto já
-      // pode ser desenhada imediatamente enquanto a versão do servidor é revalidada.
+      // Aquece a URL estável no cache privado do navegador. Assim, no próximo
+      // reload o avatar pode ser desenhado imediatamente enquanto o servidor revalida.
       void fetch(FOTO_URL, { cache: "reload", credentials: "same-origin" }).catch(() => {});
       toast.success("Foto de perfil atualizada.");
     } catch (error) {
@@ -145,6 +147,9 @@ export function ProfilePhotoPicker({
             <img
               src={fotoSrc}
               alt={imageAlt}
+              loading="eager"
+              decoding="sync"
+              fetchPriority="high"
               className="absolute inset-0 h-full w-full object-cover"
               onLoad={() => setFotoDisponivel(true)}
               onError={() => setFotoDisponivel(false)}
