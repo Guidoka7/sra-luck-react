@@ -36,31 +36,34 @@ export function BottomNav({ aba, onSelecionar, naoLidas = 0 }: BottomNavProps) {
             type="button"
             onClick={() => onSelecionar(id)}
             aria-current={ativo ? "page" : undefined}
-            className={`sl-bottom-item isolate overflow-visible ${ativo ? "active" : ""}`}
+            className={`sl-bottom-item ${ativo ? "active" : ""}`}
           >
-            {ativo && (
-              <>
-                <motion.span
-                  layoutId="sl-bottom-active-glow"
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-1/2 top-[-7px] z-0 h-[48px] w-[64px] -translate-x-1/2 rounded-full"
-                  style={{
-                    background: "radial-gradient(ellipse at center, rgba(182,91,103,.14) 0%, rgba(182,91,103,.065) 44%, rgba(182,91,103,0) 74%)",
-                  }}
-                  transition={{ type: "spring", stiffness: 360, damping: 32, mass: 0.7 }}
-                />
-                <motion.span
-                  layoutId="sl-bottom-active-mark"
-                  aria-hidden="true"
-                  className="pointer-events-none absolute bottom-[-4px] left-1/2 z-0 h-[2px] w-[18px] -translate-x-1/2 rounded-full bg-[#B65B67]/70"
-                  transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.62 }}
-                />
-              </>
-            )}
+            <span className="relative flex h-[21px] w-[21px] items-center justify-center">
+              {ativo && (
+                <>
+                  <motion.span
+                    layoutId="sl-bottom-active-glow"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -inset-[6px] z-0 rounded-full"
+                    style={{
+                      background: "radial-gradient(circle, rgba(182,91,103,.13) 0%, rgba(182,91,103,.055) 48%, rgba(182,91,103,0) 76%)",
+                    }}
+                    transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.64 }}
+                  />
+                  <motion.span
+                    layoutId="sl-bottom-active-mark"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -bottom-[4px] left-[2px] right-[2px] z-[1] h-[1.5px] rounded-full bg-[#B65B67]/65"
+                    transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.6 }}
+                  />
+                </>
+              )}
 
-            <span className="relative z-[1] flex items-center justify-center">
-              <Icone id={id} />
+              <span className="relative z-[1] flex items-center justify-center">
+                <Icone id={id} />
+              </span>
             </span>
+
             <span className="relative z-[1]">{label}</span>
             {id === "notificacoes" && naoLidas > 0 && <span className="sl-nav-badge z-[2]">{naoLidas}</span>}
           </button>
