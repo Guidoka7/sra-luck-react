@@ -22,7 +22,7 @@ type EtapaInfo = {
 const ETAPAS: EtapaInfo[] = [
   { id: "percentual", numero: "01", titulo: "Percentual mínimo", subtitulo: "Atingir a meta" },
   { id: "levantamento", numero: "02", titulo: "Análise financeira", subtitulo: "Conferir contrato" },
-  { id: "pagamento", numero: "03", titulo: "Saldo restante", subtitulo: "Escolher pagamento" },
+  { id: "pagamento", numero: "03", titulo: "Saldo restante", subtitulo: "Definir pagamento" },
   { id: "data", numero: "04", titulo: "Data dos termos", subtitulo: "Agendar assinatura" },
 ];
 
@@ -52,7 +52,7 @@ function icon(id: EtapaAgenda) {
 function tituloCompleto(id: EtapaAgenda) {
   if (id === "percentual") return "Percentual mínimo de pagamento";
   if (id === "levantamento") return "Análise e levantamento financeiro";
-  if (id === "pagamento") return "Forma de pagamento do saldo";
+  if (id === "pagamento") return "Definição da forma de pagamento do saldo";
   return "Agendamento da assinatura dos termos";
 }
 
@@ -93,7 +93,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
   }
 
   if (selecionada === "pagamento") {
-    resumo = "Aqui você confere o saldo restante e escolhe uma das formas de pagamento liberadas pelo financeiro. Esse valor será pago no ato da assinatura dos termos, e a confirmação da forma escolhida libera a agenda.";
+    resumo = "Aqui você confere o saldo restante necessário para a quitação do contrato e define qual das formas de pagamento liberadas pelo financeiro será utilizada. Esse valor deverá ser pago no ato da assinatura dos termos, e a confirmação da forma definida libera a agenda.";
   }
 
   if (selecionada === "data") {
@@ -136,7 +136,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
               <span className="absolute h-[7px] w-[7px] animate-ping rounded-full bg-[#B7862A]/30" />
               <span className="relative h-[5px] w-[5px] rounded-full bg-[#B7862A]" />
             </span>
-            Toque para ver saldo e formas de pagamento
+            Toque para ver saldo e definir a forma de pagamento
           </motion.button>
         )}
       </div>
