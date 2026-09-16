@@ -1,15 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-declare global {
-  const process: {
-    env: Record<string, string | undefined>;
-  };
-
-  type ExportedHandler<TEnv> = {
-    fetch(request: Request, env: TEnv): Response | Promise<Response>;
-  };
-}
-
 export interface Env {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
