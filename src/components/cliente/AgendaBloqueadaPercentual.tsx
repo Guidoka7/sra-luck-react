@@ -9,17 +9,22 @@ type Etapa = "percentual" | "levantamento";
 type Props = {
   percentual: number;
   percentualPago?: number;
+  parcelasPagas: number;
   parcelasNecessarias: number | null;
   datas: DataDisponivel[];
   etapa?: Etapa;
 };
 
-export function AgendaBloqueadaPercentual({ percentual, percentualPago, parcelasNecessarias, datas, etapa = "percentual" }: Props) {
+export function AgendaBloqueadaPercentual({ percentual, parcelasPagas, parcelasNecessarias, datas, etapa = "percentual" }: Props) {
   const atual = etapa === "levantamento" ? "levantamento" : "percentual";
+  const pagas = Math.max(0, Math.floor(parcelasPagas));
+  const meta = parcelasNecessarias ?? 0;
   const resumo = atual === "levantamento"
     ? "Levantamento financeiro em andamento. Toque para acompanhar."
-    : percentualPago != null
-      ? `Você já atingiu ${Math.min(100, Math.max(0, Math.round(percentualPago)))}% do contrato. A meta desta etapa é ${percentual}%.`
+    : meta > 0
+      ? pagas > 0
+        ? `Você já confirmou ${Math.min(pagas, meta)} de ${meta} parcelas necessárias para avançar.`
+        : `A etapa começa a preencher assim que a primeira das ${meta} parcelas necessárias for confirmada.`
       : `Atinga o percentual mínimo de ${percentual}% do contrato para avançar.`;
 
   return (
@@ -27,7 +32,7 @@ export function AgendaBloqueadaPercentual({ percentual, percentualPago, parcelas
       <AgendaEtapasInterativas
         atual={atual}
         percentual={percentual}
-        percentualPago={percentualPago}
+        parcelasPagas={pagas}
         parcelasNecessarias={parcelasNecessarias}
       />
     </AgendaBloqueadaShell>
