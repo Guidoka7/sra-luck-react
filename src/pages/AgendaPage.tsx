@@ -28,6 +28,7 @@ type AgendaData = {
 type BoletosData = {
   boletos: unknown[];
   porcentagem_pagamento: number;
+  parcelas_pagas: number;
   pode_agendar: boolean;
   agenda_liberada: boolean;
   status_revisao_financeira: StatusRevisaoFinanceira;
@@ -160,6 +161,7 @@ export function AgendaPage() {
             procedimento={agenda.cliente.procedimento}
             quantidadeParcelas={boletos.quantidade_parcelas}
             porcentagemPagamento={boletos.porcentagem_pagamento ?? 0}
+            parcelasPagas={boletos.parcelas_pagas ?? 0}
             naoLidas={notificacoesState.naoLidas}
             onAbrirNotificacoes={() => setAba("notificacoes")}
             agendamentoAtivo={agenda.agendamentoAtivo}

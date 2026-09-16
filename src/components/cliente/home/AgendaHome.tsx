@@ -18,7 +18,7 @@ interface AgendaHomeProps {
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   quantidadeParcelas: number | null;
-  percentualPago: number;
+  parcelasPagas: number;
   podeAgendar: boolean;
   agendaLiberada: boolean;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
@@ -50,7 +50,7 @@ export function AgendaHome({
   agendamentoConcluido,
   datasDisponiveis,
   quantidadeParcelas,
-  percentualPago,
+  parcelasPagas,
   podeAgendar,
   agendaLiberada,
   statusRevisaoFinanceira,
@@ -102,7 +102,7 @@ export function AgendaHome({
       ) : !agendaLiberada ? (
         <AgendaBloqueadaPercentual
           percentual={percentualContrato}
-          percentualPago={percentualPago}
+          parcelasPagas={parcelasPagas}
           parcelasNecessarias={parcelasNecessarias}
           datas={datasDisponiveis}
           etapa={podeAgendar ? "levantamento" : "percentual"}
@@ -112,7 +112,7 @@ export function AgendaHome({
       ) : (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="rounded-[18px] border border-[#CFE2D3] border-t-[3px] border-t-[#4F8A65] bg-[#FBFFFC] p-[14px] shadow-[0_10px_26px_rgba(63,125,91,.09)]">
-            <AgendaEtapasInterativas atual="data" percentual={percentualContrato} parcelasNecessarias={parcelasNecessarias} />
+            <AgendaEtapasInterativas atual="data" percentual={percentualContrato} parcelasPagas={parcelasPagas} parcelasNecessarias={parcelasNecessarias} />
 
             <div className="mt-[12px] border-t border-[#DDEADF] pt-[12px]">
               {datasDisponiveis.length === 0 ? (
