@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ProfilePhotoPicker } from "@/components/cliente/ProfilePhotoPicker";
 
 interface ClientProfileHeaderProps {
   nomeCliente: string;
@@ -17,17 +17,6 @@ function iniciais(nomeCompleto: string) {
 
 export function ClientProfileHeader({ nomeCliente, procedimento, quantidadeParcelas, naoLidas, onAbrirNotificacoes }: ClientProfileHeaderProps) {
   const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : "Plano";
-  const [fotoVersao, setFotoVersao] = useState(() => Date.now());
-  const [fotoDisponivel, setFotoDisponivel] = useState(true);
-
-  useEffect(() => {
-    const atualizarFoto = () => {
-      setFotoDisponivel(true);
-      setFotoVersao(Date.now());
-    };
-    window.addEventListener("sra-luck-profile-photo-updated", atualizarFoto);
-    return () => window.removeEventListener("sra-luck-profile-photo-updated", atualizarFoto);
-  }, []);
 
   return (
     <>
@@ -47,21 +36,12 @@ export function ClientProfileHeader({ nomeCliente, procedimento, quantidadeParce
 
         <div className="sl-profile-card">
           <div className="sl-profile-glow" />
-          <div className="relative flex-none">
-            <div className="sl-avatar relative !h-[54px] !w-[54px] !text-[20px] overflow-hidden">
-              {iniciais(nomeCliente)}
-              {fotoDisponivel && (
-                <img
-                  src={`/api/cliente/perfil/foto?v=${fotoVersao}`}
-                  alt="Foto de perfil"
-                  className="absolute inset-0 h-full w-full object-cover"
-                  onLoad={() => setFotoDisponivel(true)}
-                  onError={() => setFotoDisponivel(false)}
-                />
-              )}
-            </div>
-            <span className="sl-avatar-status" />
-          </div>
+          <ProfilePhotoPicker
+            fallback={iniciais(nomeCliente)}
+            avatarClassName="sl-avatar relative flex !h-[54px] !w-[54px] items-center justify-center overflow-hidden !text-[20px]"
+            cameraClassName="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#6B1F2E] text-[#FBF7F5] shadow-sm"
+            imageAlt="Foto de perfil"
+          />
           <div className="relative min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-[6px]">
               <div className="sl-profile-name">{nomeCliente}</div>
