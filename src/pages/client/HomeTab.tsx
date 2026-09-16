@@ -1,5 +1,4 @@
 import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
-import { CardMotivacional } from "@/components/cliente/CardMotivacional";
 import { AgendaHome } from "@/components/cliente/home/AgendaHome";
 import { DisciplinaCard } from "@/components/cliente/home/DisciplinaCard";
 import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
@@ -51,11 +50,10 @@ export function HomeTab({
         nomeCliente={nomeCliente}
         procedimento={procedimento}
         quantidadeParcelas={quantidadeParcelas}
+        percentualPago={porcentagemPagamento}
         naoLidas={naoLidas}
         onAbrirNotificacoes={onAbrirNotificacoes}
       />
-
-      <CardMotivacional procedimento={procedimento} quantidadeParcelas={quantidadeParcelas} percentualPago={porcentagemPagamento} />
 
       <AgendaHome
         agendamentoAtivo={agendamentoAtivo}
