@@ -24,7 +24,7 @@ export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) 
   const [aberta, setAberta] = useState(false);
 
   return (
-    <section className="overflow-hidden rounded-[18px] border border-[#E8D6D9] border-t-[3px] border-t-[#B65B67] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+    <section className="overflow-hidden rounded-[18px] border border-[#E8D6D9] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
       <button
         type="button"
         onClick={() => setAberta((valor) => !valor)}
