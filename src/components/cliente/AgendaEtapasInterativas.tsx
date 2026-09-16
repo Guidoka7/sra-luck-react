@@ -16,13 +16,14 @@ type EtapaInfo = {
   id: EtapaAgenda;
   numero: string;
   titulo: string;
+  subtitulo: string;
 };
 
 const ETAPAS: EtapaInfo[] = [
-  { id: "percentual", numero: "01", titulo: "Percentual" },
-  { id: "levantamento", numero: "02", titulo: "Levantamento" },
-  { id: "pagamento", numero: "03", titulo: "Pagamento" },
-  { id: "data", numero: "04", titulo: "Escolha da data" },
+  { id: "percentual", numero: "01", titulo: "Percentual mínimo", subtitulo: "Atingir a meta" },
+  { id: "levantamento", numero: "02", titulo: "Análise financeira", subtitulo: "Conferir contrato" },
+  { id: "pagamento", numero: "03", titulo: "Saldo restante", subtitulo: "Escolher pagamento" },
+  { id: "data", numero: "04", titulo: "Data dos termos", subtitulo: "Agendar assinatura" },
 ];
 
 function CheckIcon() {
@@ -49,10 +50,10 @@ function icon(id: EtapaAgenda) {
 }
 
 function tituloCompleto(id: EtapaAgenda) {
-  if (id === "percentual") return "Percentual de pagamento";
-  if (id === "levantamento") return "Levantamento financeiro";
-  if (id === "pagamento") return "Pagamento do saldo restante";
-  return "Escolha da data";
+  if (id === "percentual") return "Percentual mínimo de pagamento";
+  if (id === "levantamento") return "Análise e levantamento financeiro";
+  if (id === "pagamento") return "Forma de pagamento do saldo";
+  return "Agendamento da assinatura dos termos";
 }
 
 export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias, onPagamentoClick }: Props) {
@@ -73,38 +74,61 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
       ? selecionada === "levantamento"
         ? "Em análise"
         : selecionada === "pagamento"
-          ? "Aguardando escolha"
+          ? "Sua ação"
           : selecionada === "data"
-            ? "Liberada"
+            ? "Agenda liberada"
             : "Etapa atual"
-      : "Próxima etapa";
+      : "Ainda bloqueada";
+
+  const rotuloDetalhe = concluida ? "Concluído" : atualSelecionada ? "Agora" : "Quando chegar";
 
   let texto = "";
+  let proximo = "";
+
   if (selecionada === "percentual") {
-    if (concluida) texto = "Você já atingiu o percentual necessário. Esta etapa foi concluída.";
-    else if (atualSelecionada) {
+    if (concluida) {
+      texto = "Você atingiu o percentual mínimo previsto para o seu contrato e essa etapa já foi concluída.";
+    } else if (atualSelecionada) {
       texto = percentual != null
-        ? `Atingindo ${percentual}% das parcelas mínimas${parcelasNecessarias ? ` (${parcelasNecessarias} parcelas)` : ""}, seu contrato avança para o levantamento financeiro.`
-        : "Ao atingir o percentual mínimo do contrato, seu fluxo avança para o levantamento financeiro.";
-    } else texto = "O fluxo começa quando você atinge o percentual mínimo de pagamentos previsto no contrato.";
+        ? `Mantenha os pagamentos até atingir ${percentual}% do mínimo exigido${parcelasNecessarias ? `, equivalente a ${parcelasNecessarias} parcelas` : ""}.`
+        : "Mantenha os pagamentos até atingir o percentual mínimo exigido no seu contrato.";
+    } else {
+      texto = "Esta é a primeira condição do fluxo: atingir o percentual mínimo de pagamentos do contrato.";
+    }
+    proximo = "Ao atingir a meta, o financeiro inicia a conferência dos pagamentos e do saldo do contrato.";
   }
 
   if (selecionada === "levantamento") {
-    if (concluida) texto = "Levantamento concluído. O saldo restante e as formas disponíveis já foram definidos pelo financeiro.";
-    else if (atualSelecionada) texto = "Estamos conferindo seus pagamentos. O prazo desta etapa é de até 5 dias úteis.";
-    else texto = "Depois do percentual, o financeiro confere os pagamentos e calcula o saldo restante do contrato.";
+    if (concluida) {
+      texto = "A conferência foi concluída e o financeiro já definiu o saldo restante e as formas de pagamento disponíveis.";
+    } else if (atualSelecionada) {
+      texto = "Nossa equipe está conferindo seus pagamentos, o saldo do contrato e as condições disponíveis. O prazo desta análise é de até 5 dias úteis.";
+    } else {
+      texto = "Nesta etapa, o financeiro confere os pagamentos e calcula exatamente quanto ainda resta no contrato.";
+    }
+    proximo = "Depois da análise, você verá o saldo restante e escolherá como ele será pago na assinatura dos termos.";
   }
 
   if (selecionada === "pagamento") {
-    if (concluida) texto = "Sua forma de pagamento do saldo restante já foi escolhida. O pagamento será realizado no ato da assinatura dos termos.";
-    else if (atualSelecionada) texto = "Escolha como o saldo restante será pago no ato da assinatura dos termos. Toque nesta etapa para abrir as opções liberadas.";
-    else texto = "Após o levantamento, você escolherá uma das formas de pagamento liberadas pelo financeiro.";
+    if (concluida) {
+      texto = "A forma de pagamento do saldo restante já foi escolhida e ficou registrada no seu contrato.";
+    } else if (atualSelecionada) {
+      texto = "Confira o saldo restante e escolha uma das formas liberadas pelo financeiro. Esse saldo será pago no ato da assinatura dos termos.";
+    } else {
+      texto = "Quando o levantamento terminar, você poderá escolher como quitar o saldo restante no dia da assinatura dos termos.";
+    }
+    proximo = "Ao confirmar a forma de pagamento, sua agenda é liberada para escolher a data da assinatura dos termos.";
   }
 
   if (selecionada === "data") {
-    if (concluida) texto = "A data da assinatura dos termos já foi escolhida.";
-    else if (atualSelecionada) texto = "Sua forma de pagamento já foi registrada. Agora escolha no calendário a data da assinatura dos termos.";
-    else texto = "A escolha da data é liberada depois que você definir a forma de pagamento do saldo restante.";
+    if (concluida) {
+      texto = "A data da assinatura dos termos já foi escolhida e registrada.";
+    } else if (atualSelecionada) {
+      texto = "Sua agenda está liberada. Escolha no calendário o melhor dia e horário disponível para assinar os termos.";
+    } else {
+      texto = "Esta etapa fica disponível depois que você confirmar a forma de pagamento do saldo restante.";
+    }
+    proximo = "Após a assinatura dos termos, você poderá avançar para a escolha da data da sua cirurgia.";
   }
 
   function selecionar(id: EtapaAgenda) {
@@ -127,7 +151,17 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
           </div>
           <span className={`mt-[2px] flex-none rounded-full border px-[8px] py-[5px] text-[7.6px] font-semibold uppercase tracking-[.045em] ${concluida ? "border-[#D5E8D9] bg-[#F0F7F1] text-[#3F7D5B]" : atualSelecionada ? "border-[#E8D2A9] bg-[#FFF9EF] text-[#8E6420]" : "border-[#E7DEDB] bg-[#F8F4F3] text-[#8A7B77]"}`}>{status}</span>
         </div>
-        <p className="pt-[9px] text-[10.8px] font-light leading-[1.5] text-[#786A66]">{texto}</p>
+
+        <div className="pt-[10px]">
+          <div className="flex items-start gap-[8px]">
+            <span className="mt-[1px] w-[58px] flex-none text-[7.4px] font-bold uppercase tracking-[.1em] text-[#A99894]">{rotuloDetalhe}</span>
+            <p className="min-w-0 text-[10.8px] font-light leading-[1.48] text-[#786A66]">{texto}</p>
+          </div>
+          <div className="mt-[7px] flex items-start gap-[8px] border-t border-[#F1E8E5] pt-[7px]">
+            <span className="mt-[1px] w-[58px] flex-none text-[7.4px] font-bold uppercase tracking-[.1em] text-[#B65B67]">Depois</span>
+            <p className="min-w-0 text-[10px] font-medium leading-[1.45] text-[#7D5D58]">{proximo}</p>
+          </div>
+        </div>
 
         {selecionada === "pagamento" && atual === "pagamento" && onPagamentoClick && (
           <motion.button
@@ -142,7 +176,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
               <span className="absolute h-[7px] w-[7px] animate-ping rounded-full bg-[#B7862A]/30" />
               <span className="relative h-[5px] w-[5px] rounded-full bg-[#B7862A]" />
             </span>
-            Toque para escolher a forma de pagamento
+            Toque para ver saldo e formas de pagamento
           </motion.button>
         )}
       </div>
@@ -193,7 +227,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                   aria-pressed={ativa}
                   whileTap={{ scale: 0.93 }}
                   whileHover={{ y: -1 }}
-                  className="relative z-[1] flex min-h-[84px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
+                  className="relative z-[1] flex min-h-[100px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
                 >
                   <span className="relative flex h-[34px] w-[34px] items-center justify-center">
                     {pagamentoChamando && (
@@ -236,8 +270,11 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
                   >
                     {item.numero}
                   </motion.span>
-                  <span className={`block max-w-[76px] pt-[2px] text-[9px] font-semibold leading-[1.18] transition-colors ${ativa ? "text-[#7D2434]" : corrente ? "text-[#8E3243]" : "text-[#71615E]"}`}>
+                  <span className={`block max-w-[82px] pt-[2px] text-[9px] font-semibold leading-[1.16] transition-colors ${ativa ? "text-[#7D2434]" : corrente ? "text-[#8E3243]" : "text-[#71615E]"}`}>
                     {item.titulo}
+                  </span>
+                  <span className={`block max-w-[82px] pt-[3px] text-[7.2px] font-medium leading-[1.2] ${ativa ? "text-[#9A686F]" : "text-[#A99894]"}`}>
+                    {item.subtitulo}
                   </span>
                   {pagamentoChamando && (
                     <motion.span
