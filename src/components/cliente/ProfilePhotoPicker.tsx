@@ -9,6 +9,11 @@ interface ProfilePhotoPickerProps {
   imageAlt?: string;
 }
 
+const FOTO_URL = "/api/cliente/perfil/foto";
+const EVENTO_FOTO = "sra-luck-profile-photo-updated";
+const TAMANHO_MAXIMO_LADO = 1280;
+const ALVO_BYTES = 900 * 1024;
+
 function CameraIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
@@ -19,6 +24,51 @@ function CameraIcon() {
   );
 }
 
+function canvasParaBlob(canvas: HTMLCanvasElement, tipo: string, qualidade: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Não foi possível preparar esta imagem."));
+    }, tipo, qualidade);
+  });
+}
+
+async function otimizarFoto(arquivo: File) {
+  if (!arquivo.type.startsWith("image/")) throw new Error("Escolha uma imagem válida.");
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(arquivo);
+  } catch {
+    throw new Error("Não foi possível abrir esta foto. Escolha outra imagem da galeria.");
+  }
+
+  try {
+    const maiorLado = Math.max(bitmap.width, bitmap.height);
+    const escala = maiorLado > TAMANHO_MAXIMO_LADO ? TAMANHO_MAXIMO_LADO / maiorLado : 1;
+    const largura = Math.max(1, Math.round(bitmap.width * escala));
+    const altura = Math.max(1, Math.round(bitmap.height * escala));
+    const canvas = document.createElement("canvas");
+    canvas.width = largura;
+    canvas.height = altura;
+    const contexto = canvas.getContext("2d");
+    if (!contexto) throw new Error("Não foi possível preparar esta foto.");
+
+    contexto.drawImage(bitmap, 0, 0, largura, altura);
+
+    let qualidade = 0.9;
+    let blob = await canvasParaBlob(canvas, "image/webp", qualidade);
+    while (blob.size > ALVO_BYTES && qualidade > 0.56) {
+      qualidade -= 0.07;
+      blob = await canvasParaBlob(canvas, "image/webp", qualidade);
+    }
+
+    return new File([blob], "foto-perfil.webp", { type: "image/webp", lastModified: Date.now() });
+  } finally {
+    bitmap.close();
+  }
+}
+
 export function ProfilePhotoPicker({
   fallback,
   outerClassName = "relative flex-none",
@@ -27,43 +77,52 @@ export function ProfilePhotoPicker({
   imageAlt = "Foto de perfil",
 }: ProfilePhotoPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [fotoVersao, setFotoVersao] = useState(() => Date.now());
+  const previewRef = useRef<string | null>(null);
+  const [fotoSrc, setFotoSrc] = useState(FOTO_URL);
   const [fotoDisponivel, setFotoDisponivel] = useState(true);
   const [processando, setProcessando] = useState(false);
 
   useEffect(() => {
-    const atualizarFoto = () => {
+    const atualizarFoto = (evento: Event) => {
+      const versao = (evento as CustomEvent<{ versao?: number }>).detail?.versao ?? Date.now();
       setFotoDisponivel(true);
-      setFotoVersao(Date.now());
+      setFotoSrc(`${FOTO_URL}?v=${versao}`);
     };
-    window.addEventListener("sra-luck-profile-photo-updated", atualizarFoto);
-    return () => window.removeEventListener("sra-luck-profile-photo-updated", atualizarFoto);
+    window.addEventListener(EVENTO_FOTO, atualizarFoto);
+    return () => {
+      window.removeEventListener(EVENTO_FOTO, atualizarFoto);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    };
   }, []);
 
   async function alterarFoto(arquivo: File, input: HTMLInputElement) {
-    const tipos = ["image/jpeg", "image/png", "image/webp"];
-    if (!tipos.includes(arquivo.type)) {
-      toast.error("Escolha uma imagem JPG, PNG ou WEBP.");
-      input.value = "";
-      return;
-    }
-    if (arquivo.size > 5 * 1024 * 1024) {
-      toast.error("A foto deve ter no máximo 5 MB.");
-      input.value = "";
-      return;
-    }
-
     setProcessando(true);
+    const fotoAnterior = fotoSrc;
+    const disponivelAnterior = fotoDisponivel;
+
     try {
+      const otimizada = await otimizarFoto(arquivo);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      previewRef.current = URL.createObjectURL(otimizada);
+      setFotoDisponivel(true);
+      setFotoSrc(previewRef.current);
+
       const formData = new FormData();
-      formData.append("foto", arquivo);
-      const resposta = await fetch("/api/cliente/perfil/foto", { method: "POST", body: formData });
+      formData.append("foto", otimizada);
+      const resposta = await fetch(FOTO_URL, { method: "POST", body: formData });
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível atualizar sua foto.");
 
-      window.dispatchEvent(new Event("sra-luck-profile-photo-updated"));
+      const versao = Date.now();
+      window.dispatchEvent(new CustomEvent(EVENTO_FOTO, { detail: { versao } }));
+
+      // Aquece a URL estável no cache do navegador. No próximo refresh a foto já
+      // pode ser desenhada imediatamente enquanto a versão do servidor é revalidada.
+      void fetch(FOTO_URL, { cache: "reload", credentials: "same-origin" }).catch(() => {});
       toast.success("Foto de perfil atualizada.");
     } catch (error) {
+      setFotoSrc(fotoAnterior);
+      setFotoDisponivel(disponivelAnterior);
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar sua foto.");
     } finally {
       setProcessando(false);
@@ -84,7 +143,7 @@ export function ProfilePhotoPicker({
           {fallback}
           {fotoDisponivel && (
             <img
-              src={`/api/cliente/perfil/foto?v=${fotoVersao}`}
+              src={fotoSrc}
               alt={imageAlt}
               className="absolute inset-0 h-full w-full object-cover"
               onLoad={() => setFotoDisponivel(true)}
@@ -99,7 +158,7 @@ export function ProfilePhotoPicker({
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         className="hidden"
         disabled={processando}
         onChange={(event) => {
