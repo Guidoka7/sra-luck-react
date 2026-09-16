@@ -11,24 +11,52 @@ export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: nu
 
   return (
     <div>
-      <button type="button" onClick={() => setAberto((v) => !v)} className="sl-agenda-rule w-full text-left">
+      <motion.button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        aria-controls="regras-liberacao-agenda"
+        whileTap={{ scale: 0.995 }}
+        transition={{ duration: 0.14 }}
+        className="sl-agenda-rule group w-full !items-center text-left transition-colors duration-200 hover:bg-[#FFFCFB]"
+      >
         <span className="flex min-w-0 items-center gap-[10px]">
-          <span className="sl-agenda-rule-icon">
-            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 3.5h6.5a1.5 1.5 0 0 1 1.5 1.5v8.5H6.5A1.5 1.5 0 0 1 5 12V3.5Z" />
-              <path d="M7.5 6.5h3M7.5 9h3M3 5.5h2M3 8h2M3 10.5h2" />
+          <span className="sl-agenda-rule-icon !h-[32px] !w-[32px] transition-colors duration-200 group-hover:bg-[#F4E8E6]">
+            <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4.25" y="7.25" width="9.5" height="7" rx="1.75" />
+              <path d="M6.25 7.25V5.8A2.75 2.75 0 0 1 9 3.05a2.75 2.75 0 0 1 2.75 2.75v1.45" />
+              <path d="M9 10v1.7" />
             </svg>
           </span>
-          <span className="sl-agenda-rule-label">Como funciona a liberação da sua agenda</span>
+
+          <span className="min-w-0">
+            <span className="block text-[12.2px] font-semibold leading-[1.25] text-[#6B1F2E]">Liberação da agenda</span>
+            <span className="mt-[2px] block max-w-[245px] text-[10.3px] font-light leading-[1.4] text-[#8A7B77]">
+              Veja os requisitos do seu contrato e entenda as etapas até a liberação.
+            </span>
+          </span>
         </span>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9A8C88" strokeWidth="1.3" className={`flex-none transition-transform duration-200 ${aberto ? "rotate-180" : ""}`}>
-          <path d="M3.5 5.5 7 9l3.5-3.5" />
-        </svg>
-      </button>
+
+        <span className="ml-2 flex flex-none items-center gap-[6px] text-[#9A8C88]">
+          <span className="text-[8.5px] font-semibold uppercase tracking-[.08em] text-[#A76B75]">{aberto ? "Ocultar" : "Ver etapas"}</span>
+          <span className="flex h-[25px] w-[25px] items-center justify-center rounded-full bg-[#F8F0EE] transition-colors duration-200 group-hover:bg-[#F3E5E2]">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" className={`transition-transform duration-200 ${aberto ? "rotate-180" : ""}`}>
+              <path d="M3.5 5.5 7 9l3.5-3.5" />
+            </svg>
+          </span>
+        </span>
+      </motion.button>
 
       <AnimatePresence initial={false}>
         {aberto && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+          <motion.div
+            id="regras-liberacao-agenda"
+            initial={{ opacity: 0, height: 0, y: -3 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -3 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
             <div className="mt-2 rounded-[15px] border border-[#EFE4E1] bg-white p-[14px] shadow-[0_5px_16px_rgba(73,42,45,.05)]">
               {regraDoContrato && parcelasNecessarias ? (
                 <div className="relative overflow-hidden rounded-[14px] bg-gradient-to-br from-[#6B1F2E] to-[#4F1521] p-[15px] text-white">
