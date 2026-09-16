@@ -146,14 +146,14 @@ export async function agendar(request: Request, env: Env): Promise<Response> {
   if (cliente.status_revisao_financeira !== "aprovada" || cliente.financeiro_saldo_restante == null) {
     return json({ erro: "O levantamento financeiro ainda não foi concluído." }, 409);
   }
-  const { data: custeioAprovado } = await supabase.from("solicitacoes_liberacao_financeira")
+  const { data: custeioEscolhido } = await supabase.from("solicitacoes_liberacao_financeira")
     .select("id")
     .eq("cliente_id", cliente.id)
-    .eq("status", "aprovada")
+    .in("status", ["pendente", "em_analise", "aprovada"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!custeioAprovado) return json({ erro: "Escolha primeiro a forma de pagamento do saldo restante para liberar a escolha da data." }, 409);
+  if (!custeioEscolhido) return json({ erro: "Escolha primeiro a forma de pagamento do saldo restante para liberar a escolha da data." }, 409);
   const { data: agendamentoId, error } = await supabase.rpc("agendar_data", {
     p_cliente_id: cliente.id,
     p_data_id: dataId,
@@ -277,22 +277,26 @@ export async function solicitarLiberacaoFinanceira(request: Request, env: Env): 
     .limit(1)
     .maybeSingle();
 
-  if (existente) {
-    if (!existente.agendamento_id && agendamentoAtivo?.id) {
-      const { data: vinculada, error: erroVinculo } = await supabase.from("solicitacoes_liberacao_financeira")
-        .update({ agendamento_id: agendamentoAtivo.id })
-        .eq("id", existente.id)
-        .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,agendamento_id")
-        .single();
-      if (erroVinculo) return json({ erro: erroVinculo.message }, 500);
-      return json({ solicitacao: vinculada });
-    }
-    return json({ erro: "Sua escolha de custeio já foi enviada para nossa equipe." }, 409);
-  }
+  const observacao = "Forma de pagamento escolhida pela cliente. O saldo restante deverá ser quitado no ato da assinatura dos termos.";
 
-  const observacao = formaCusteio === "cheques" || formaCusteio === "boleto_100"
-    ? "Forma de custeio sujeita a análise de até 5 dias úteis."
-    : "A escolha foi registrada e retornou para o painel administrativo.";
+  if (existente) {
+    const { data: atualizada, error: erroAtualizacao } = await supabase.from("solicitacoes_liberacao_financeira")
+      .update({
+        forma_custeio: formaCusteio,
+        saldo_restante: saldoRestante,
+        taxa_cartao: taxaCartao,
+        total_com_taxa: totalComTaxa,
+        status: "aprovada",
+        observacao,
+        agendamento_id: existente.agendamento_id ?? agendamentoAtivo?.id ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existente.id)
+      .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at")
+      .single();
+    if (erroAtualizacao) return json({ erro: erroAtualizacao.message }, 500);
+    return json({ solicitacao: atualizada });
+  }
 
   const { data, error } = await supabase.from("solicitacoes_liberacao_financeira").insert({
     cliente_id: cliente.id,
@@ -301,14 +305,14 @@ export async function solicitarLiberacaoFinanceira(request: Request, env: Env): 
     saldo_restante: saldoRestante,
     taxa_cartao: taxaCartao,
     total_com_taxa: totalComTaxa,
-    status: "pendente",
+    status: "aprovada",
     observacao,
   }).select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at").single();
   if (error) return json({ erro: error.message }, 500);
 
   await supabase.from("logs_alteracoes").insert({
     usuario: `cliente:${cliente.id}`,
-    acao: "solicitou_liberacao_financeira",
+    acao: "escolheu_forma_custeio_saldo",
     entidade: "solicitacoes_liberacao_financeira",
     entidade_id: data.id,
     detalhes: { cliente: cliente.nome_completo, formaCusteio, saldoRestante, taxaCartao, totalComTaxa, agendamentoId: agendamentoAtivo?.id ?? null },
