@@ -62,7 +62,6 @@ export function HomeTab({
         agendamentoConcluido={agendamentoConcluido}
         datasDisponiveis={datasDisponiveis}
         quantidadeParcelas={quantidadeParcelas}
-        percentualPago={porcentagemPagamento}
         parcelasPagas={parcelasPagas}
         podeAgendar={podeAgendar}
         agendaLiberada={agendaLiberada}
