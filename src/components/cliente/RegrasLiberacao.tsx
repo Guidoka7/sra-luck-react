@@ -42,83 +42,99 @@ export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: nu
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="mt-2 rounded-[15px] border border-[#EFE4E1] bg-white p-[13px] shadow-[0_5px_16px_rgba(73,42,45,.05)]">
+            <div className="mt-2 overflow-hidden rounded-[16px] border border-[#EADFDB] bg-white shadow-[0_5px_16px_rgba(73,42,45,.05)]">
               {regraDoContrato && parcelasNecessarias ? (
                 <>
-                  <section className="rounded-[13px] border border-[#EADFDB] bg-[#FFFBFA] p-[12px]">
-                    <div className="flex items-center justify-between gap-3">
+                  <section className="bg-[linear-gradient(145deg,#FFFDFC_0%,#FFF8F7_100%)] px-[14px] pb-[13px] pt-[12px]">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-[9px] font-semibold uppercase tracking-[.13em] text-[#A76B75]">Seu contrato</div>
-                        <div className="mt-[2px] text-[11px] font-medium text-[#4B3B38]">Meta para iniciar a liberação</div>
+                        <div className="mt-[2px] text-[11.5px] font-semibold text-[#4B3B38]">Meta para iniciar a liberação</div>
                       </div>
-                      <span className="rounded-full bg-[#F7EDEE] px-[8px] py-[4px] text-[8.5px] font-semibold uppercase tracking-[.08em] text-[#8E3243]">Regra do plano</span>
+                      <span className="rounded-full border border-[#E8D7D9] bg-white px-[9px] py-[4px] text-[9px] font-semibold text-[#7D2A3A]">
+                        Plano {regraDoContrato.parcelas}x
+                      </span>
                     </div>
 
-                    <div className="mt-[10px] grid grid-cols-3 divide-x divide-[#EADFDB] rounded-[11px] border border-[#EEE2DF] bg-white py-[9px]">
-                      <div className="px-[8px] text-center">
-                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{regraDoContrato.parcelas}<span className="text-[13px] opacity-65">x</span></div>
-                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">parcelas do plano</div>
+                    <div className="mt-[13px] flex items-end justify-between gap-4">
+                      <div>
+                        <div className="text-[9px] font-medium uppercase tracking-[.09em] text-[#9A7C76]">Meta mínima</div>
+                        <div className="mt-[2px] font-heading text-[34px] font-semibold leading-none text-[#6B1F2E]">
+                          {regraDoContrato.percentual}<span className="text-[18px]">%</span>
+                        </div>
                       </div>
-                      <div className="px-[8px] text-center">
-                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{regraDoContrato.percentual}<span className="text-[13px] opacity-65">%</span></div>
-                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">meta mínima</div>
+
+                      <div className="text-right">
+                        <div className="text-[9px] font-medium uppercase tracking-[.09em] text-[#9A7C76]">Equivale a</div>
+                        <div className="mt-[3px] text-[18px] font-semibold leading-none text-[#4B3B38]">
+                          {parcelasNecessarias}<span className="text-[11px] font-medium text-[#9A8C88]"> de {regraDoContrato.parcelas}</span>
+                        </div>
+                        <div className="mt-[3px] text-[9.2px] font-light text-[#8A7975]">parcelas confirmadas</div>
                       </div>
-                      <div className="px-[8px] text-center">
-                        <div className="font-heading text-[21px] font-semibold leading-none text-[#6B1F2E]">{parcelasNecessarias}</div>
-                        <div className="mt-[4px] text-[8.8px] font-light leading-[1.3] text-[#8B7C78]">parcelas necessárias</div>
-                      </div>
+                    </div>
+
+                    <div className="mt-[11px] h-[5px] overflow-hidden rounded-full bg-[#EFE3E1]" aria-label={`Meta mínima de ${regraDoContrato.percentual}% do contrato`}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${regraDoContrato.percentual}%` }}
+                        transition={{ duration: 0.45, ease: "easeOut" }}
+                        className="h-full rounded-full bg-[#B65B67]"
+                      />
                     </div>
 
                     <div className="mt-[9px] flex items-start gap-[8px] rounded-[10px] bg-[#F8F1F0] px-[10px] py-[8px]">
-                      <span className="mt-[2px] h-[6px] w-[6px] flex-none rounded-full bg-[#B65B67]" />
+                      <span className="mt-[4px] h-[6px] w-[6px] flex-none rounded-full bg-[#B65B67]" />
                       <p className="text-[10.2px] font-light leading-[1.45] text-[#6F5E5A]">
-                        Ao confirmar <b className="font-semibold text-[#6B1F2E]">{parcelasNecessarias} {parcelasNecessarias === 1 ? "parcela" : "parcelas"}</b>, você avança para o levantamento financeiro.
+                        Ao confirmar <b className="font-semibold text-[#6B1F2E]">{parcelasNecessarias} de {regraDoContrato.parcelas} parcelas</b>, o contrato avança para o levantamento financeiro.
                       </p>
                     </div>
                   </section>
 
-                  <section className="px-[2px] pt-[13px]">
-                    <div className="mb-[9px] text-[9px] font-semibold uppercase tracking-[.12em] text-[#A76B75]">Depois de atingir a meta</div>
+                  <section className="border-t border-[#F0E5E2] px-[14px] pb-[13px] pt-[12px]">
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[.12em] text-[#A76B75]">Depois de atingir a meta</div>
+                      <div className="mt-[2px] text-[10.8px] font-medium text-[#4B3B38]">A liberação segue nesta ordem</div>
+                    </div>
 
-                    <div className="relative">
-                      <div className="absolute bottom-[18px] left-[12px] top-[12px] w-px bg-[#E8DCD9]" aria-hidden="true" />
+                    <div className="relative mt-[11px]">
+                      <div className="absolute bottom-[17px] left-[11px] top-[12px] w-px bg-[#E7DAD7]" aria-hidden="true" />
 
-                      <div className="relative flex gap-[10px] pb-[11px]">
-                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">1</span>
-                        <div className="min-w-0 pt-[1px]">
-                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Levantamento financeiro</div>
-                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">O financeiro confere o contrato e o saldo em até <b className="font-medium text-[#6B1F2E]">5 dias úteis</b>.</p>
+                      <div className="relative flex gap-[10px] pb-[10px]">
+                        <span className="relative z-[1] flex h-[23px] w-[23px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">1</span>
+                        <div className="min-w-0">
+                          <div className="text-[10.6px] font-semibold text-[#4B3B38]">Levantamento financeiro</div>
+                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Conferimos pagamentos e saldo restante em até <b className="font-medium text-[#6B1F2E]">5 dias úteis</b>.</p>
                         </div>
                       </div>
 
-                      <div className="relative flex gap-[10px] pb-[11px]">
-                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">2</span>
-                        <div className="min-w-0 pt-[1px]">
-                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Definição da quitação</div>
-                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Após a análise, você define qual das formas de pagamento liberadas pelo financeiro será utilizada para quitar o saldo restante do contrato.</p>
+                      <div className="relative flex gap-[10px] pb-[10px]">
+                        <span className="relative z-[1] flex h-[23px] w-[23px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">2</span>
+                        <div className="min-w-0">
+                          <div className="text-[10.6px] font-semibold text-[#4B3B38]">Definição da quitação</div>
+                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Você define qual forma liberada pelo financeiro será usada para quitar o saldo restante do contrato.</p>
                         </div>
                       </div>
 
-                      <div className="relative flex gap-[10px] pb-[11px]">
-                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">3</span>
-                        <div className="min-w-0 pt-[1px]">
-                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Assinatura dos termos</div>
-                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Com a forma definida, você agenda a data da <b className="font-medium text-[#6B1F2E]">assinatura dos termos cirúrgicos</b>.</p>
+                      <div className="relative flex gap-[10px] pb-[10px]">
+                        <span className="relative z-[1] flex h-[23px] w-[23px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">3</span>
+                        <div className="min-w-0">
+                          <div className="text-[10.6px] font-semibold text-[#4B3B38]">Assinatura dos termos</div>
+                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Com a forma definida, você agenda a <b className="font-medium text-[#6B1F2E]">assinatura dos termos cirúrgicos</b>.</p>
                         </div>
                       </div>
 
                       <div className="relative flex gap-[10px]">
-                        <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#EDF5EF] text-[9px] font-semibold text-[#3F7D5B]">4</span>
-                        <div className="min-w-0 pt-[1px]">
-                          <div className="text-[10.7px] font-semibold text-[#4B3B38]">Quitação e liberação</div>
-                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Depois da assinatura e da quitação confirmada, a agenda da cirurgia poderá ser liberada antes, respeitando o prazo máximo de <b className="font-medium text-[#3F7D5B]">até 90 dias corridos</b>.</p>
+                        <span className="relative z-[1] flex h-[23px] w-[23px] flex-none items-center justify-center rounded-full bg-[#EDF5EF] text-[9px] font-semibold text-[#3F7D5B]">4</span>
+                        <div className="min-w-0">
+                          <div className="text-[10.6px] font-semibold text-[#4B3B38]">Quitação e liberação</div>
+                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Com assinatura e quitação confirmadas, a agenda da cirurgia pode ser liberada antes, respeitando o prazo máximo de <b className="font-medium text-[#3F7D5B]">até 90 dias corridos</b>.</p>
                         </div>
                       </div>
                     </div>
                   </section>
                 </>
               ) : (
-                <p className="text-[11px] font-light leading-[1.55] text-[#7A6B67]">As regras do seu contrato aparecerão aqui assim que as parcelas forem cadastradas.</p>
+                <p className="p-[13px] text-[11px] font-light leading-[1.55] text-[#7A6B67]">As regras do seu contrato aparecerão aqui assim que as parcelas forem cadastradas.</p>
               )}
             </div>
           </motion.div>
