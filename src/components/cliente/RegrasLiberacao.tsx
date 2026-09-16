@@ -95,7 +95,7 @@ export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: nu
                         <span className="relative z-[1] flex h-[25px] w-[25px] flex-none items-center justify-center rounded-full bg-[#F6E9EA] text-[9px] font-semibold text-[#8E3243]">2</span>
                         <div className="min-w-0 pt-[1px]">
                           <div className="text-[10.7px] font-semibold text-[#4B3B38]">Definição da quitação</div>
-                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Após a análise, você define como será utilizado o pagamento liberado pelo financeiro para quitar o saldo restante do contrato.</p>
+                          <p className="mt-[1px] text-[9.8px] font-light leading-[1.45] text-[#81716D]">Após a análise, você define qual das formas de pagamento liberadas pelo financeiro será utilizada para quitar o saldo restante do contrato.</p>
                         </div>
                       </div>
 
