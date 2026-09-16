@@ -135,6 +135,7 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
             onClick={onPagamentoClick}
             animate={{ opacity: [0.84, 1, 0.84], scale: [1, 1.008, 1] }}
             transition={{ duration: 1.55, repeat: Infinity, ease: "easeInOut" }}
+            whileTap={{ scale: 0.985 }}
             className="mt-[10px] flex w-full items-center justify-center gap-[7px] rounded-[11px] border border-[#E1C48C] bg-[#FFF7E8] px-3 py-[10px] text-[10.2px] font-semibold text-[#7D5B1E]"
           >
             <span className="relative flex h-[7px] w-[7px] items-center justify-center">
@@ -146,48 +147,109 @@ export function AgendaEtapasInterativas({ atual, percentual, parcelasNecessarias
         )}
       </div>
 
-      <div className="relative border-t border-[#EFE5E1] pt-[11px]">
-        <div className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[27px] h-px bg-[#E6D9D5]" />
-        <div className="pointer-events-none absolute left-[12.5%] top-[27px] h-px bg-[#C89D45]" style={{ width: `${Math.max(0, indiceAtual) * 25}%` }} />
+      <div className="relative border-t border-[#F1E8E5] pt-[13px]">
+        <div className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[30px] h-[2px] rounded-full bg-[#E8DEDB]" />
+        <motion.div
+          className="pointer-events-none absolute left-[12.5%] top-[30px] h-[2px] rounded-full bg-[#B65B67]"
+          initial={false}
+          animate={{ width: `${Math.max(0, indiceAtual) * 25}%` }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+        />
+        {indiceAtual < ETAPAS.length - 1 && (
+          <motion.div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-[30px] h-[2px] rounded-full bg-gradient-to-r from-[#B65B67]/45 via-[#B65B67]/20 to-transparent"
+            style={{ left: `${12.5 + indiceAtual * 25}%`, width: "25%" }}
+            animate={{ opacity: [0.35, 0.8, 0.35] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+          />
+        )}
 
-        <div className="grid grid-cols-4 gap-[4px]">
+        <div className="grid grid-cols-4 gap-0">
           {ETAPAS.map((item, index) => {
             const feita = index < indiceAtual;
             const corrente = index === indiceAtual;
             const ativa = item.id === selecionada;
             const pagamentoChamando = corrente && item.id === "pagamento" && Boolean(onPagamentoClick);
+            const liberada = corrente && item.id === "data";
 
-            const botao = (
-              <button
-                type="button"
-                onClick={() => selecionar(item.id)}
-                aria-pressed={ativa}
-                className={`relative z-[1] flex min-h-[76px] min-w-0 flex-col items-center justify-start rounded-[11px] px-[3px] pb-[7px] pt-[2px] text-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C89D45]/45 ${ativa ? "bg-[#FFF8EC] shadow-[inset_0_0_0_1px_rgba(216,189,134,.52)]" : "bg-transparent"}`}
-              >
-                <span className="relative flex h-[31px] w-[31px] items-center justify-center">
+            const corBolinha = ativa
+              ? feita || liberada
+                ? "bg-[#3F7D5B] text-white"
+                : "bg-[#7D2434] text-white"
+              : feita
+                ? "bg-[#E5F2E8] text-[#3F7D5B]"
+                : corrente
+                  ? liberada
+                    ? "bg-[#DDEEE2] text-[#3F7D5B]"
+                    : "bg-[#F7E9EA] text-[#8E3243]"
+                  : "bg-[#F2ECEA] text-[#9B8B87]";
+
+            return (
+              <div key={item.id} className="flex min-w-0 justify-center">
+                <motion.button
+                  type="button"
+                  onClick={() => selecionar(item.id)}
+                  aria-pressed={ativa}
+                  whileTap={{ scale: 0.93 }}
+                  whileHover={{ y: -1 }}
+                  className="relative z-[1] flex min-h-[84px] w-full min-w-0 flex-col items-center justify-start px-[2px] pt-[1px] text-center focus-visible:outline-none"
+                >
+                  <span className="relative flex h-[34px] w-[34px] items-center justify-center">
+                    {pagamentoChamando && (
+                      <motion.span
+                        aria-hidden="true"
+                        className="absolute inset-[-5px] rounded-full bg-[#D8B86C]/18"
+                        animate={{ scale: [0.85, 1.35, 0.85], opacity: [0.15, 0.5, 0.15] }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                    )}
+                    {corrente && !ativa && (
+                      <motion.span
+                        aria-hidden="true"
+                        className={`absolute inset-[-3px] rounded-full ${liberada ? "bg-[#3F7D5B]/10" : "bg-[#B65B67]/10"}`}
+                        animate={{ scale: [0.96, 1.1, 0.96], opacity: [0.25, 0.55, 0.25] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                    )}
+                    <motion.span
+                      layout
+                      animate={{
+                        scale: ativa ? 1.16 : 1,
+                        y: ativa ? -2 : 0,
+                        boxShadow: ativa
+                          ? feita || liberada
+                            ? "0 7px 18px rgba(63,125,91,.24)"
+                            : "0 7px 18px rgba(125,36,52,.22)"
+                          : "0 2px 7px rgba(74,48,45,.07)",
+                      }}
+                      transition={{ type: "spring", stiffness: 420, damping: 27 }}
+                      className={`relative flex h-[32px] w-[32px] items-center justify-center rounded-full ${corBolinha}`}
+                    >
+                      {feita ? <CheckIcon /> : icon(item.id)}
+                    </motion.span>
+                  </span>
+
+                  <motion.span
+                    animate={{ opacity: ativa ? 1 : 0.72, y: ativa ? 0 : 1 }}
+                    className="block pt-[6px] text-[7px] font-bold uppercase tracking-[.09em] text-[#A99894]"
+                  >
+                    {item.numero}
+                  </motion.span>
+                  <span className={`block max-w-[76px] pt-[2px] text-[9px] font-semibold leading-[1.18] transition-colors ${ativa ? "text-[#7D2434]" : corrente ? "text-[#8E3243]" : "text-[#71615E]"}`}>
+                    {item.titulo}
+                  </span>
                   {pagamentoChamando && (
                     <motion.span
-                      aria-hidden="true"
-                      className="absolute inset-[-4px] rounded-full border border-[#C89D45]/60"
-                      animate={{ scale: [0.94, 1.18, 0.94], opacity: [0.28, 0.7, 0.28] }}
-                      transition={{ duration: 1.45, repeat: Infinity, ease: "easeInOut" }}
-                    />
+                      className="pt-[3px] text-[6.5px] font-bold uppercase tracking-[.07em] text-[#A77A24]"
+                      animate={{ opacity: [0.55, 1, 0.55] }}
+                      transition={{ duration: 1.3, repeat: Infinity, ease: "easeInOut" }}
+                    >
+                      toque
+                    </motion.span>
                   )}
-                  <span className={`relative flex h-[31px] w-[31px] items-center justify-center rounded-full border ${feita ? "border-[#CFE2D3] bg-[#EAF4EC] text-[#3F7D5B]" : corrente ? "border-[#E4C98E] bg-[#FBF1DD] text-[#A77A24]" : "border-[#E5DBD8] bg-[#F5F1EF] text-[#9A8A86]"}`}>
-                    {feita ? <CheckIcon /> : icon(item.id)}
-                  </span>
-                </span>
-                <span className="block pt-[4px] text-[7px] font-bold uppercase tracking-[.08em] text-[#A99894]">{item.numero}</span>
-                <span className={`block max-w-[78px] pt-[2px] text-[9px] font-semibold leading-[1.16] ${ativa ? "text-[#7D2434]" : "text-[#71615E]"}`}>{item.titulo}</span>
-                {pagamentoChamando && <span className="pt-[3px] text-[6.5px] font-bold uppercase tracking-[.07em] text-[#A77A24]">toque</span>}
-              </button>
-            );
-
-            if (!pagamentoChamando) return <div key={item.id}>{botao}</div>;
-            return (
-              <motion.div key={item.id} animate={{ scale: [1, 1.012, 1] }} transition={{ duration: 1.45, repeat: Infinity, ease: "easeInOut" }}>
-                {botao}
-              </motion.div>
+                </motion.button>
+              </div>
             );
           })}
         </div>
