@@ -107,6 +107,8 @@ export function HomeCampaignSlide({
         <button
           type="button"
           className="sl-campaign-cta"
+          disabled={suppressAction}
+          tabIndex={suppressAction ? -1 : 0}
           onClick={(event) => {
             event.stopPropagation();
             if (!suppressAction) onAction(slide);
