@@ -6,7 +6,7 @@ interface HomeCampaignSlideProps {
   indexLabel: string;
   priority?: boolean;
   onAction: (slide: ResolvedHomeCampaignSlide) => void;
-  suppressAction?: boolean;
+  suppressTabFocus?: boolean;
 }
 
 type CampaignStyle = CSSProperties & {
@@ -31,7 +31,7 @@ export function HomeCampaignSlide({
   indexLabel,
   priority = false,
   onAction,
-  suppressAction = false,
+  suppressTabFocus = false,
 }: HomeCampaignSlideProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageSrc = resolveImage(slide);
@@ -107,11 +107,10 @@ export function HomeCampaignSlide({
         <button
           type="button"
           className="sl-campaign-cta"
-          disabled={suppressAction}
-          tabIndex={suppressAction ? -1 : 0}
+          tabIndex={suppressTabFocus ? -1 : 0}
           onClick={(event) => {
             event.stopPropagation();
-            if (!suppressAction) onAction(slide);
+            onAction(slide);
           }}
           aria-label={`${slide.cta}: ${slide.title}`}
         >
