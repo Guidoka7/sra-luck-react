@@ -8,6 +8,7 @@ import {
   type PointerEvent,
   type WheelEvent,
 } from "react";
+import "@/styles/home-campaign-carousel.css";
 import { HomeCampaignSlide } from "./HomeCampaignSlide";
 import {
   HOME_CAMPAIGN_SLIDES,
@@ -29,6 +30,10 @@ function slideImage(slide: ResolvedHomeCampaignSlide) {
   return slide.mobileImage ?? slide.desktopImage ?? slide.backgroundImage ?? null;
 }
 
+function prefersReducedMotionNow() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
 export function HomeCampaignCarousel({
   slides = HOME_CAMPAIGN_SLIDES,
   autoplayMs = 6000,
@@ -45,6 +50,7 @@ export function HomeCampaignCarousel({
   const [activeIndex, setActiveIndex] = useState(0);
   const [autoplayPaused, setAutoplayPaused] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => typeof document === "undefined" || !document.hidden);
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotionNow);
 
   const loopedSlides = useMemo(() => {
     if (activeSlides.length <= 1) return activeSlides;
@@ -82,12 +88,12 @@ export function HomeCampaignCarousel({
     const target = scroller.children.item(visualIndex) as HTMLElement | null;
     if (!target) return;
 
-    if (behavior === "auto") {
+    if (behavior === "auto" || reducedMotion) {
       scroller.scrollLeft = target.offsetLeft;
       return;
     }
     scroller.scrollTo({ left: target.offsetLeft, behavior });
-  }, []);
+  }, [reducedMotion]);
 
   const normalizeLoopPosition = useCallback(() => {
     if (activeSlides.length <= 1) return;
@@ -142,19 +148,26 @@ export function HomeCampaignCarousel({
   }, []);
 
   useEffect(() => {
-    if (activeSlides.length <= 1 || autoplayPaused || !pageVisible) return;
-    const timer = window.setTimeout(() => goRelative(1, false), Math.max(5000, autoplayMs));
-    return () => window.clearTimeout(timer);
-  }, [activeIndex, activeSlides.length, autoplayMs, autoplayPaused, goRelative, pageVisible]);
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!media) return;
+    const onChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    setReducedMotion(media.matches);
+    media.addEventListener?.("change", onChange);
+    return () => media.removeEventListener?.("change", onChange);
+  }, []);
 
   useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    if (activeSlides.length <= 1 || autoplayPaused || !pageVisible || reducedMotion) return;
+    const timer = window.setTimeout(() => goRelative(1, false), Math.max(5000, autoplayMs));
+    return () => window.clearTimeout(timer);
+  }, [activeIndex, activeSlides.length, autoplayMs, autoplayPaused, goRelative, pageVisible, reducedMotion]);
+
+  useEffect(() => {
+    const onResize = () => {
       scrollToVisualIndex(activeSlides.length > 1 ? activeIndex + 1 : activeIndex, "auto");
-    });
-    observer.observe(scroller);
-    return () => observer.disconnect();
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
   }, [activeIndex, activeSlides.length, scrollToVisualIndex]);
 
   useEffect(() => {
@@ -293,7 +306,7 @@ export function HomeCampaignCarousel({
         </div>
 
         {activeSlides.length > 1 && (
-          <div className="sl-campaign-arrows" aria-hidden="false">
+          <div className="sl-campaign-arrows">
             <button type="button" className="sl-campaign-arrow sl-campaign-arrow-prev" onClick={() => goRelative(-1)} aria-label="Campanha anterior">
               <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m10 3.5-4.5 4.5 4.5 4.5" /></svg>
             </button>
@@ -322,7 +335,7 @@ export function HomeCampaignCarousel({
         </div>
       )}
 
-      <p className="sr-only" aria-live="polite">
+      <p className="sr-only" aria-live={autoplayPaused ? "polite" : "off"}>
         Destaque {activeIndex + 1} de {activeSlides.length}: {activeSlides[activeIndex]?.title}
       </p>
     </section>
