@@ -1,6 +1,8 @@
 import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
+import { HomeCampaignCarousel } from "@/components/cliente/home/HomeCampaignCarousel";
 import { AgendaHome } from "@/components/cliente/home/AgendaHome";
 import { DisciplinaCard } from "@/components/cliente/home/DisciplinaCard";
+import type { HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
 import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
@@ -13,6 +15,7 @@ interface HomeTabProps {
   parcelasPagas: number;
   naoLidas: number;
   onAbrirNotificacoes: () => void;
+  onCampaignAction: (destination: HomeCampaignDestination) => void;
   agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   datasDisponiveis: DataDisponivel[];
@@ -34,6 +37,7 @@ export function HomeTab({
   parcelasPagas,
   naoLidas,
   onAbrirNotificacoes,
+  onCampaignAction,
   agendamentoAtivo,
   agendamentoConcluido,
   datasDisponiveis,
@@ -56,6 +60,8 @@ export function HomeTab({
         naoLidas={naoLidas}
         onAbrirNotificacoes={onAbrirNotificacoes}
       />
+
+      <HomeCampaignCarousel onAction={(slide) => onCampaignAction(slide.action)} />
 
       <AgendaHome
         agendamentoAtivo={agendamentoAtivo}
