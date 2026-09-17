@@ -8,10 +8,44 @@ import { zipChip } from "@/components/admin-zip/zipUi";
 
 type Forma = "cartao" | "pix" | "cheques" | "boleto_100";
 interface Pendente { id: string; nome: string; cpf: string; valorContrato: number; quantidadeParcelas: number | null; porcentagemPagamento: number; dataAtingiuPercentual: string | null; saldoRestanteEstimado: number; }
+interface ClienteFilaRaw {
+  id: string;
+  nome_completo?: string | null;
+  cpf?: string | null;
+  valor_contrato?: number | string | null;
+  quantidade_parcelas?: number | null;
+  porcentagem_pagamento?: number | null;
+  data_atingiu_percentual?: string | null;
+  status_revisao_financeira?: "pendente" | "aprovada" | "recusada" | null;
+  financeiro_saldo_restante?: number | string | null;
+}
 const FORMAS: { value: Forma; label: string }[] = [
   { value: "cartao", label: "Cartão" }, { value: "pix", label: "PIX" }, { value: "cheques", label: "Cheques" }, { value: "boleto_100", label: "100% boleto" },
 ];
 function diasUteisDesde(iso: string | null) { if (!iso) return 0; const inicio = new Date(iso); const hoje = new Date(); inicio.setHours(0, 0, 0, 0); hoje.setHours(0, 0, 0, 0); let dias = 0; while (inicio < hoje) { inicio.setDate(inicio.getDate() + 1); const d = inicio.getDay(); if (d !== 0 && d !== 6) dias++; } return dias; }
+
+function normalizarFilaFinanceira(clientes: ClienteFilaRaw[]): Pendente[] {
+  return clientes
+    .filter((cliente) => cliente.status_revisao_financeira === "pendente")
+    .map((cliente) => {
+      const valorContrato = Number(cliente.valor_contrato ?? 0) || 0;
+      const porcentagemPagamento = Math.max(0, Math.min(100, Number(cliente.porcentagem_pagamento ?? 0) || 0));
+      const saldoPersistido = cliente.financeiro_saldo_restante == null ? null : Number(cliente.financeiro_saldo_restante);
+      const saldoRestanteEstimado = saldoPersistido != null && Number.isFinite(saldoPersistido)
+        ? Math.max(0, saldoPersistido)
+        : Math.max(0, valorContrato * (1 - porcentagemPagamento / 100));
+      return {
+        id: cliente.id,
+        nome: cliente.nome_completo?.trim() || "Cliente",
+        cpf: cliente.cpf || "",
+        valorContrato,
+        quantidadeParcelas: cliente.quantidade_parcelas ?? null,
+        porcentagemPagamento,
+        dataAtingiuPercentual: cliente.data_atingiu_percentual ?? null,
+        saldoRestanteEstimado,
+      };
+    });
+}
 
 export function RevisaoFinanceiraCard() {
   const [pendentes, setPendentes] = useState<Pendente[]>([]);
@@ -23,10 +57,14 @@ export function RevisaoFinanceiraCard() {
 
   async function carregar() {
     try {
-      const res = await fetch("/api/admin/liberacoes-financeiras", { cache: "no-store" });
-      const data = await res.json();
+      // A fila financeira é estado da própria cliente. O endpoint antigo
+      // /api/admin/liberacoes-financeiras apontava para uma tabela que não
+      // existe no schema atual. /api/admin/clientes já entrega o estado real
+      // da revisão e o percentual consolidado de pagamento.
+      const res = await fetch("/api/admin/clientes", { cache: "no-store" });
+      const data = await res.json().catch(() => ({})) as { clientes?: ClienteFilaRaw[]; erro?: string };
       if (!res.ok) throw new Error(data.erro ?? "Falha ao carregar a fila financeira.");
-      const lista = (data.pendentes ?? []) as Pendente[];
+      const lista = normalizarFilaFinanceira(Array.isArray(data.clientes) ? data.clientes : []);
       setPendentes(lista);
       setFinanceiro((atual) => Object.fromEntries(lista.map((p) => [p.id, atual[p.id] ?? { saldo: String(p.saldoRestanteEstimado ?? 0), taxa: "5.4", formas: ["cartao", "pix", "cheques", "boleto_100"] as Forma[] }])));
     } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível carregar a fila financeira."); }
