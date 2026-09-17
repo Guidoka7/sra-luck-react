@@ -21,6 +21,7 @@ const AgendaPage = lazy(() => import("./pages/AgendaPage").then((m) => ({ defaul
 const StaffPwa = lazy(() => import("./features/staff/StaffPwa").then((m) => ({ default: m.StaffPwa })));
 const StaffLoginPage = lazy(() => import("./features/staff/StaffLoginPage").then((m) => ({ default: m.StaffLoginPage })));
 const AdminWorkspace = lazy(() => import("./features/admin/AdminWorkspace").then((m) => ({ default: m.AdminWorkspace })));
+const DevBuilderPage = lazy(() => import("./features/dev-builder/DevBuilderPage").then((m) => ({ default: m.DevBuilderPage })));
 const VisaoGeralPage = lazy(() => import("./pages/AdminDashboardPage"));
 const PrevisoesPage = lazy(() => import("./app/admin/(painel)/previsoes/page"));
 const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
@@ -48,7 +49,8 @@ function AdminRoute({ path }: { path: string }) {
   if (path.startsWith("/admin/parcelas")) return <RedirectTo to="/admin/financeiro/avancado?aba=recebiveis" />;
 
   let conteudo: ReactNode;
-  if (path.startsWith("/admin/visao-geral")) conteudo = <VisaoGeralPage />;
+  if (path.startsWith("/admin/dev-builder")) conteudo = <DevBuilderPage />;
+  else if (path.startsWith("/admin/visao-geral")) conteudo = <VisaoGeralPage />;
   else if (path.startsWith("/admin/previsoes")) conteudo = <PrevisoesPage />;
   else if (path.startsWith("/admin/agenda")) conteudo = <AgendaAdminPage />;
   else if (path.startsWith("/admin/clientes")) conteudo = <ClientesPage />;

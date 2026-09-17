@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "client-home",
+  "name": "Home do aplicativo",
+  "target": "client-app",
+  "updatedAt": "2026-09-17T16:00:00.000Z",
+  "viewports": {
+    "desktop": { "width": 1200, "height": 760 },
+    "tablet": { "width": 820, "height": 900 },
+    "mobile": { "width": 390, "height": 844 }
+  },
+  "rootLayout": {
+    "mode": "free",
+    "direction": "column",
+    "gap": 12,
+    "columns": 1,
+    "align": "stretch",
+    "justify": "start",
+    "paddingX": 0,
+    "paddingY": 0
+  },
+  "nodes": [
+    {
+      "id": "home-heading",
+      "name": "Saudação",
+      "kind": "text",
+      "templateId": "text-heading-01",
+      "content": { "title": "Olá, Camila!", "subtitle": "Que bom ter você por aqui." },
+      "frames": {
+        "desktop": { "x": 52, "y": 44, "width": 360, "height": 92, "zIndex": 2 },
+        "tablet": { "x": 36, "y": 36, "width": 330, "height": 92, "zIndex": 2 },
+        "mobile": { "x": 20, "y": 24, "width": 350, "height": 84, "zIndex": 2 }
+      },
+      "layout": { "mode": "stack", "direction": "column", "gap": 4, "columns": 1, "align": "start", "justify": "center", "paddingX": 0, "paddingY": 0 },
+      "style": { "radius": 0, "shadow": "none", "surface": "default", "border": "none", "borderWidth": 0, "opacity": 1 },
+      "motion": { "enter": "fade-up", "hover": "none", "durationMs": 280, "delayMs": 0 }
+    },
+    {
+      "id": "finance-card",
+      "name": "Resumo de parcelas",
+      "kind": "card",
+      "templateId": "card-premium-02",
+      "content": { "eyebrow": "Seu plano", "title": "Próxima parcela", "value": "R$ 476,94", "subtitle": "Vence em 20/09", "status": "Em dia", "cta": "Ver parcelas" },
+      "frames": {
+        "desktop": { "x": 52, "y": 160, "width": 520, "height": 220, "zIndex": 3 },
+        "tablet": { "x": 36, "y": 150, "width": 520, "height": 220, "zIndex": 3 },
+        "mobile": { "x": 20, "y": 126, "width": 350, "height": 210, "zIndex": 3 }
+      },
+      "layout": { "mode": "stack", "direction": "column", "gap": 8, "columns": 1, "align": "start", "justify": "center", "paddingX": 20, "paddingY": 18 },
+      "style": { "radius": 22, "shadow": "medium", "surface": "brand", "border": "none", "borderWidth": 0, "opacity": 1 },
+      "motion": { "enter": "fade-up", "hover": "lift", "durationMs": 350, "delayMs": 70 },
+      "data": {
+        "value": { "source": "finance", "path": "summary.nextInstallment.amount", "transform": "currencyBRL", "fallback": 0 },
+        "status": { "source": "finance", "path": "summary.status", "fallback": "—" }
+      }
+    },
+    {
+      "id": "agenda-card",
+      "name": "Próximo compromisso",
+      "kind": "card",
+      "templateId": "card-classic-01",
+      "content": { "eyebrow": "Meus próximos", "title": "Hoje · 14:00", "value": "Limpeza de pele", "subtitle": "Com Ana Paula", "status": "Confirmado" },
+      "frames": {
+        "desktop": { "x": 596, "y": 160, "width": 430, "height": 220, "zIndex": 2 },
+        "tablet": { "x": 36, "y": 394, "width": 520, "height": 210, "zIndex": 2 },
+        "mobile": { "x": 20, "y": 354, "width": 350, "height": 184, "zIndex": 2 }
+      },
+      "layout": { "mode": "stack", "direction": "column", "gap": 7, "columns": 1, "align": "start", "justify": "center", "paddingX": 18, "paddingY": 16 },
+      "style": { "radius": 18, "shadow": "soft", "surface": "soft", "border": "subtle", "borderWidth": 1, "opacity": 1 },
+      "motion": { "enter": "fade", "hover": "lift", "durationMs": 280, "delayMs": 110 }
+    },
+    {
+      "id": "quick-actions",
+      "name": "Atalhos",
+      "kind": "list",
+      "templateId": "list-dense-01",
+      "content": { "title": "Acesso rápido", "items": "Parcelas · Jornada · Agenda · Ofertas", "cta": "Ver tudo" },
+      "frames": {
+        "desktop": { "x": 52, "y": 410, "width": 974, "height": 150, "zIndex": 1 },
+        "tablet": { "x": 36, "y": 632, "width": 748, "height": 150, "zIndex": 1 },
+        "mobile": { "x": 20, "y": 558, "width": 350, "height": 132, "zIndex": 1 }
+      },
+      "layout": { "mode": "grid", "direction": "row", "gap": 10, "columns": 4, "align": "stretch", "justify": "start", "paddingX": 14, "paddingY": 14 },
+      "style": { "radius": 16, "shadow": "none", "surface": "default", "border": "subtle", "borderWidth": 1, "opacity": 1 },
+      "motion": { "enter": "fade", "hover": "none", "durationMs": 240, "delayMs": 140 }
+    }
+  ]
+}

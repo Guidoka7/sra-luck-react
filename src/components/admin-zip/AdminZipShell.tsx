@@ -26,6 +26,8 @@ const NAV_GESTAO = [
   { href: "/admin/configuracoes", label: "Configurações", icon: "⚙" },
 ];
 
+const DEV_BUILDER_NAV = { href: "/admin/dev-builder", label: "Builder visual", icon: "✦" };
+
 const CARGO_LABEL: Record<string, string> = {
   administrativo: "Administradora",
   gestao: "Gestão",
@@ -71,6 +73,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   }
 
   const ativo = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const navGestao = perfil?.cargo === "administrativo" ? [...NAV_GESTAO, DEV_BUILDER_NAV] : NAV_GESTAO;
 
   return (
     <div className={`zip-admin${dark ? " dark" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -93,7 +96,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
 
           <div style={{ padding: "16px 8px 7px", fontSize: 8, fontWeight: 600, letterSpacing: ".22em", textTransform: "uppercase", color: "var(--rose)", opacity: .7 }}>Gestão</div>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {NAV_GESTAO.map((item) => {
+            {navGestao.map((item) => {
               const on = ativo(item.href);
               return <Link key={item.href} href={item.href} style={navItemStyle(on)}>
                 <span style={iconBadgeStyle(on)}>{item.icon}</span>{item.label}
