@@ -6,7 +6,6 @@ import { CalendarioAgendamento } from "@/components/cliente/CalendarioAgendament
 import { AgendaBloqueadaPercentual } from "@/components/cliente/AgendaBloqueadaPercentual";
 import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLiberacaoFinanceira";
 import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
-import { RegrasLiberacao } from "@/components/cliente/RegrasLiberacao";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
 import { percentualNecessario } from "@/lib/utils";
 import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
@@ -136,10 +135,6 @@ export function AgendaHome({
           <div className="sl-agenda-copy">{copyAgenda}</div>
         </div>
         <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 999, background: status.bg, color: status.color, border: `1px solid ${status.border}`, fontSize: 8, fontWeight: 650, letterSpacing: ".06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{status.label}</span>
-      </div>
-
-      <div className="sl-agenda-body">
-        <RegrasLiberacao quantidadeParcelas={quantidadeParcelas} />
       </div>
 
       <div className="px-5 pt-[15px]">
