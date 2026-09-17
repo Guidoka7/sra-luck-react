@@ -4,10 +4,11 @@ export type BuilderLayoutMode = "free" | "stack" | "grid";
 export type BuilderDirection = "row" | "column";
 export type BuilderAlign = "start" | "center" | "end" | "stretch";
 export type BuilderJustify = "start" | "center" | "end" | "between";
-export type BuilderSurface = "default" | "soft" | "brand" | "brand-soft" | "success" | "warning" | "danger";
+export type BuilderSurface = "default" | "soft" | "brand" | "brand-soft" | "success" | "warning" | "danger" | "custom";
 export type BuilderShadow = "none" | "soft" | "medium" | "strong";
-export type BuilderBorder = "none" | "subtle" | "default" | "strong";
+export type BuilderBorder = "none" | "subtle" | "default" | "strong" | "custom";
 export type BuilderMotionPreset = "none" | "fade" | "fade-up" | "scale-soft" | "lift";
+export type BuilderResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 export interface BuilderFrame {
   x: number;
@@ -16,6 +17,7 @@ export interface BuilderFrame {
   height: number;
   zIndex: number;
   hidden?: boolean;
+  aspectLocked?: boolean;
 }
 
 export interface BuilderLayoutConfig {
@@ -36,6 +38,17 @@ export interface BuilderStyleConfig {
   border: BuilderBorder;
   borderWidth: number;
   opacity: number;
+  backgroundColor?: string;
+  textColor?: string;
+  borderColor?: string;
+  backdropBlur?: number;
+}
+
+export interface BuilderTransformConfig {
+  rotation: number;
+  scale: number;
+  skewX: number;
+  skewY: number;
 }
 
 export interface BuilderMotionConfig {
@@ -62,6 +75,7 @@ export interface BuilderNode {
   frames: Record<BuilderBreakpoint, BuilderFrame>;
   layout: BuilderLayoutConfig;
   style: BuilderStyleConfig;
+  transform?: BuilderTransformConfig;
   motion: BuilderMotionConfig;
   data?: Record<string, BuilderDataBinding>;
   children?: BuilderNode[];
