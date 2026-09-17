@@ -297,7 +297,7 @@ export function HomeCampaignCarousel({
                   slide={slide}
                   indexLabel={`${String(logicalIndex + 1).padStart(2, "0")} / ${String(activeSlides.length).padStart(2, "0")}`}
                   priority={!isLeadingClone && !isTrailingClone && logicalIndex === 0}
-                  suppressAction={isLeadingClone || isTrailingClone}
+                  suppressTabFocus={isLeadingClone || isTrailingClone}
                   onAction={onAction}
                 />
               </div>
