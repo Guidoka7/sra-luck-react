@@ -60,6 +60,24 @@ function normalizarErro(value: unknown) {
   try { return { mensagem: sanitizarString(JSON.stringify(sanitizar(value)) || "Erro desconhecido") }; } catch { return { mensagem: "Erro desconhecido" }; }
 }
 
+function ambienteAtual() {
+  const host = window.location.hostname;
+  if (host === "sra-luck-react.vercel.app") return "production";
+  if (host.endsWith(".vercel.app")) return "preview";
+  return import.meta.env.MODE;
+}
+
+function pathnameDaRequisicao(url: string) {
+  try { return new URL(url, window.location.origin).pathname; } catch { return url.split("?")[0]; }
+}
+
+function respostaEsperadaDeControle(url: string, status: number) {
+  // GET /api/admin/session usa 401 como controle de fluxo para descobrir se
+  // existe sessão antes de renderizar/redirecionar. Isso não é falha da API e
+  // não deve poluir o painel de incidentes.
+  return status === 401 && pathnameDaRequisicao(url) === "/api/admin/session";
+}
+
 function enfileirar(payload: string) {
   try {
     const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
@@ -111,8 +129,11 @@ export function registrarErro(evento: EventoErro) {
     nivel: evento.nivel || "error",
     request_id: evento.request_id || requestId(),
     rota: window.location.pathname,
-    ambiente: import.meta.env.MODE,
-    detalhes: evento.detalhes || {},
+    ambiente: ambienteAtual(),
+    detalhes: {
+      host: window.location.hostname,
+      ...evento.detalhes,
+    },
   }));
   void enviar(payload).then((ok) => { if (!ok) enfileirar(payload); });
 }
@@ -146,7 +167,19 @@ export function instalarMonitoramentoGlobal() {
     const inicio = Date.now();
     try {
       const response = await fetchOriginal!(input, init);
-      if (!response.ok) registrarErro({ origem: "api", nivel: response.status >= 500 ? "error" : "warn", codigo: "API_HTTP_ERROR", action: "api.request.failed", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, request_id: response.headers.get("x-request-id") || undefined, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      if (!response.ok && !respostaEsperadaDeControle(url, response.status)) {
+        registrarErro({
+          origem: "api",
+          nivel: response.status >= 500 ? "error" : "warn",
+          codigo: "API_HTTP_ERROR",
+          action: "api.request.failed",
+          mensagem: `API retornou HTTP ${response.status}`,
+          status_http: response.status,
+          metodo,
+          request_id: response.headers.get("x-request-id") || undefined,
+          detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio },
+        });
+      }
       return response;
     } catch (error) {
       const erro = normalizarErro(error);
