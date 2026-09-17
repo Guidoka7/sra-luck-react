@@ -5,11 +5,14 @@ import { registrarErro } from "@/lib/monitoramento";
 import { ConfiguracoesApp } from "@/pages/client/ConfiguracoesApp";
 
 type SubTela = "clube" | "documentos" | "atendimento" | "faq" | "configuracoes" | "seguranca" | null;
+export type MaisSubTelaInicial = Extract<SubTela, "clube" | "atendimento">;
 
 interface MaisTabProps {
   nomeCliente: string;
   onSair: () => void;
   onIrParcelas: () => void;
+  initialSubTela?: MaisSubTelaInicial | null;
+  onInitialSubTelaConsumed?: () => void;
 }
 
 const FAQS = [
@@ -54,14 +57,20 @@ function IconeBiometria() {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round"><path d="M8.7 3.8A7.8 7.8 0 0 1 19.9 10"/><path d="M4.1 10a7.8 7.8 0 0 1 1.7-4.1"/><path d="M4 14.2c.3 2.4 1.3 4.5 3 6"/><path d="M8 11.2a4 4 0 0 1 7.9.8c0 3.9-1.1 7-3.2 9.2"/><path d="M8 15.1c.2 2.1.8 3.9 1.9 5.5"/><path d="M11.9 8a4 4 0 0 0-3.6 2.3"/></svg>;
 }
 
-export function MaisTab({ nomeCliente, onSair, onIrParcelas }: MaisTabProps) {
-  const [sub, setSub] = useState<SubTela>(null);
+export function MaisTab({ nomeCliente, onSair, onIrParcelas, initialSubTela = null, onInitialSubTelaConsumed }: MaisTabProps) {
+  const [sub, setSub] = useState<SubTela>(initialSubTela);
   const [contato, setContato] = useState<{ whatsapp: string | null; telefone: string | null }>({ whatsapp: null, telefone: null });
   const [contatoFalhou, setContatoFalhou] = useState(false);
   const [biometriaSuportada, setBiometriaSuportada] = useState<boolean | null>(null);
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [biometriaProcessando, setBiometriaProcessando] = useState(false);
   const [biometriaMensagem, setBiometriaMensagem] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!initialSubTela) return;
+    setSub(initialSubTela);
+    onInitialSubTelaConsumed?.();
+  }, [initialSubTela, onInitialSubTelaConsumed]);
 
   useEffect(() => {
     fetch("/api/cliente/config", { cache: "no-store" })

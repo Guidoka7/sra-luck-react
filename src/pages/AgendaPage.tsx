@@ -4,12 +4,13 @@ import { primeiroNome } from "../lib/utils";
 import { CelebracaoData } from "@/components/cliente/CelebracaoData";
 import { MomentoEspecialCelebracao } from "@/components/cliente/MomentoEspecialCelebracao";
 import { BottomNav, type ClientTab } from "@/components/cliente/nav/BottomNav";
+import type { HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
 import { useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNotifications";
 import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
-import { MaisTab } from "@/pages/client/MaisTab";
+import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
@@ -40,6 +41,7 @@ export function AgendaPage() {
   const [agenda, setAgenda] = useState<AgendaData | null>(null);
   const [boletos, setBoletos] = useState<BoletosData | null>(null);
   const [aba, setAba] = useState<ClientTab>("inicio");
+  const [maisInitialSubTela, setMaisInitialSubTela] = useState<MaisSubTelaInicial | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
@@ -104,6 +106,48 @@ export function AgendaPage() {
     else if (notificacao.destino === "jornada") setAba("jornada");
   }
 
+  function abrirAgendaNaHome() {
+    setAba("inicio");
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const sectionTitle = document.querySelector<HTMLElement>(".sl-agenda-section-title");
+        if (!sectionTitle) return;
+        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+        sectionTitle.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+      });
+    });
+  }
+
+  function handleCampaignAction(destination: HomeCampaignDestination) {
+    if (destination === "parcelas") {
+      setAba("parcelas");
+      return;
+    }
+    if (destination === "jornada") {
+      setAba("jornada");
+      return;
+    }
+    if (destination === "notificacoes") {
+      setAba("notificacoes");
+      return;
+    }
+    if (destination === "agenda") {
+      abrirAgendaNaHome();
+      return;
+    }
+    if (destination === "clube" || destination === "atendimento") {
+      setMaisInitialSubTela(destination);
+      setAba("mais");
+    }
+    // "campanhas" permanece sem runtime enquanto a campanha configurável não existir.
+    // Os slides que usam esse destino ficam inativos no catálogo inicial.
+  }
+
+  function selecionarAba(abaSelecionada: ClientTab) {
+    setMaisInitialSubTela(null);
+    setAba(abaSelecionada);
+  }
+
   if (loading) {
     return (
       <main className="client-app flex min-h-[100dvh] items-center justify-center">
@@ -164,6 +208,7 @@ export function AgendaPage() {
             parcelasPagas={boletos.parcelas_pagas ?? 0}
             naoLidas={notificacoesState.naoLidas}
             onAbrirNotificacoes={() => setAba("notificacoes")}
+            onCampaignAction={handleCampaignAction}
             agendamentoAtivo={agenda.agendamentoAtivo}
             agendamentoConcluido={agenda.agendamentoConcluido}
             datasDisponiveis={agenda.datasDisponiveis}
@@ -210,11 +255,17 @@ export function AgendaPage() {
         )}
 
         {aba === "mais" && (
-          <MaisTab nomeCliente={agenda.cliente.nome} onSair={() => void sair()} onIrParcelas={() => setAba("parcelas")} />
+          <MaisTab
+            nomeCliente={agenda.cliente.nome}
+            onSair={() => void sair()}
+            onIrParcelas={() => setAba("parcelas")}
+            initialSubTela={maisInitialSubTela}
+            onInitialSubTelaConsumed={() => setMaisInitialSubTela(null)}
+          />
         )}
       </div>
 
-      <BottomNav aba={aba} onSelecionar={setAba} naoLidas={notificacoesState.naoLidas} />
+      <BottomNav aba={aba} onSelecionar={selecionarAba} naoLidas={notificacoesState.naoLidas} />
     </main>
   );
 }
