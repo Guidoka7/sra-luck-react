@@ -266,7 +266,7 @@ export function HomeCampaignCarousel({
           tabIndex={0}
           role="region"
           aria-roledescription="carrossel"
-          aria-label="Destaques da sua jornada"
+          aria-label="Destaques da sua jornada. Deslize para navegar entre as campanhas."
           onScroll={handleScroll}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -304,33 +304,17 @@ export function HomeCampaignCarousel({
             );
           })}
         </div>
-
-        {activeSlides.length > 1 && (
-          <div className="sl-campaign-arrows">
-            <button type="button" className="sl-campaign-arrow sl-campaign-arrow-prev" onClick={() => goRelative(-1)} aria-label="Campanha anterior">
-              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m10 3.5-4.5 4.5 4.5 4.5" /></svg>
-            </button>
-            <button type="button" className="sl-campaign-arrow sl-campaign-arrow-next" onClick={() => goRelative(1)} aria-label="Próxima campanha">
-              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg>
-            </button>
-          </div>
-        )}
       </div>
 
       {activeSlides.length > 1 && (
-        <div className="sl-campaign-indicators" role="tablist" aria-label="Selecionar destaque">
+        <div className="sl-campaign-indicators" aria-hidden="true">
           {activeSlides.map((slide, index) => (
-            <button
+            <span
               key={slide.id}
-              type="button"
-              role="tab"
-              aria-selected={activeIndex === index}
-              aria-label={`Ir para ${slide.title}`}
               className={`sl-campaign-indicator ${activeIndex === index ? "is-active" : ""}`}
-              onClick={() => goToLogicalIndex(index)}
             >
               <span />
-            </button>
+            </span>
           ))}
         </div>
       )}
