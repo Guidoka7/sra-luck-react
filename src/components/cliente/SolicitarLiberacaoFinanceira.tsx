@@ -31,7 +31,8 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
   const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
   const [dataAssinaturaTermos, setDataAssinaturaTermos] = useState<string | null>(null);
   const [horarioTermos, setHorarioTermos] = useState<string | null>(null);
-  const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);\n  const [horarioCirurgia, setHorarioCirurgia] = useState<string | null>(null);
+  const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);
+  const [horarioCirurgia, setHorarioCirurgia] = useState<string | null>(null);
   const [datasTermos, setDatasTermos] = useState<DataDisponivel[]>([]);
   const [alteracao, setAlteracao] = useState<TipoAlteracao>(null);
   const [confirmacaoAlteracao, setConfirmacaoAlteracao] = useState<ConfirmacaoAlteracao | null>(null);
@@ -51,7 +52,8 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
       const agenda = data.agendamentoAtivo ?? data.agendamentoConcluido ?? null;
       setDataAssinaturaTermos(agenda?.data ?? null);
       setHorarioTermos(agenda?.horario ?? null);
-      setDataCirurgia(agenda?.dataCirurgia ?? agenda?.previsaoLiberacaoFinanceira ?? null);\n      setHorarioCirurgia(agenda?.horarioCirurgia ?? null);
+      setDataCirurgia(agenda?.dataCirurgia ?? agenda?.previsaoLiberacaoFinanceira ?? null);
+      setHorarioCirurgia(agenda?.horarioCirurgia ?? null);
       setDatasTermos(data.datasDisponiveis ?? []);
     } catch {}
   }
