@@ -96,7 +96,7 @@ function statusClass(cliente: Cliente) {
 }
 
 function campaignLabel(cliente: Cliente) {
-  return cliente.campanha?.trim() || cliente.origem_venda?.trim() || "—";
+  return cliente.origem_venda?.trim() || cliente.campanha?.trim() || "—";
 }
 
 function dateKey(cliente: Cliente) {
