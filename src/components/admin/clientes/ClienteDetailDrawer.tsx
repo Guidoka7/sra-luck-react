@@ -17,6 +17,7 @@ interface Props {
   cliente: Cliente | null;
   open: boolean;
   creating?: boolean;
+  initialTab?: "profile" | "finance";
   onClose: () => void;
   onUpdated: (cliente?: Cliente) => void;
   onCreated?: (cliente: Cliente) => void;
@@ -33,7 +34,7 @@ const emptyFinancial: DrawerFinancialModel = {
 };
 const emptyEditing: ProfileEditState = { personal: false, procedure: false, sale: false, notes: false };
 
-export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, onUpdated, onCreated }: Props) {
+export function ClienteDetailDrawer({ cliente, open, creating = false, initialTab = "profile", onClose, onUpdated, onCreated }: Props) {
   const [entered, setEntered] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "finance">("profile");
   const [savedClient, setSavedClient] = useState<DrawerClientModel>(emptyClient);
@@ -65,7 +66,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     setToast({ message, error });
     toastTimer.current = window.setTimeout(() => setToast(null), 2800);
-  }, []);
+  }, [creating, initialTab]);
 
   const resetFromClient = useCallback((next: Cliente | null) => {
     financeRequestRef.current += 1;
@@ -78,12 +79,12 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
     const fin = next ? initialFinancialModel(next) : emptyFinancial;
     setSavedClient(mapped); setDraftClient(mapped); setFinancial(fin);
     setInstallments([]); setHistory([]); setJourneyContract(null);
-    setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab("profile");
+    setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab(creating ? "profile" : initialTab);
     setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setAccessSaving(false); setToast(null);
     requestAnimationFrame(() => { if (contentRef.current) contentRef.current.scrollTop = 0; });
   }, []);
 
-  useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, resetFromClient]);
+  useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, initialTab, resetFromClient]);
 
   useEffect(() => {
     if (!open) return;
