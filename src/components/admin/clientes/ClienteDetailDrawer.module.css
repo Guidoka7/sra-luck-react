@@ -16,3 +16,89 @@
 .installmentInteractive:focus-visible{outline:2px solid rgba(198,138,19,.32);outline-offset:-2px}
 .installmentFocused{background:#FFF3F1!important;box-shadow:inset 3px 0 0 var(--wine)}
 @media(max-width:700px){.journeyToggle{align-items:flex-start;flex-direction:column}.journeyToggleMeta{width:100%;justify-content:space-between}.journeyCollapsedNow{max-width:70vw}}
+
+.readOnlyDash{display:inline-flex;min-width:30px;justify-content:center;color:#B6A7AA;font-weight:700}
+.agendaStateBadge{display:inline-flex;align-items:center;justify-content:center;min-height:26px;padding:5px 9px;border-radius:999px;font-size:9px;font-weight:800;letter-spacing:.25px;text-transform:uppercase}
+.agendaStateDone{background:#E5F6EC;color:#128348;border:1px solid rgba(18,131,72,.12)}
+.agendaStateCurrent{background:#FFF2D9;color:#A66A0B;border:1px solid rgba(166,106,11,.13)}
+.agendaFinancialMetrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.agendaFinancialMetrics>div{border:1px solid rgba(122,38,50,.08);border-radius:10px;background:#FFFCFC;padding:12px}
+.agendaFinancialMetrics span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#A26068;font-weight:800}
+.agendaFinancialMetrics strong{display:block;margin-top:6px;font:600 19px Georgia,"Times New Roman",serif;color:#412D31}
+.agendaFinancialMetrics small{display:block;margin-top:4px;color:#958185;font-size:9px;line-height:1.4}
+.agendaReviewGrid{display:grid;grid-template-columns:minmax(180px,.75fr) minmax(0,1.25fr);gap:12px;align-items:start}
+.agendaMethods{min-width:0}
+.agendaFieldLabel{display:block;margin-bottom:6px;color:#866D72;font-size:9px;font-weight:700}
+.agendaMethods>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.agendaMethod{min-height:38px;border:1px solid rgba(122,38,50,.11);border-radius:8px;background:#fff;padding:0 9px;display:flex;align-items:center;gap:7px;text-align:left;font-size:9.4px;color:#6E5B5F}
+.agendaMethod:hover:not(:disabled){background:#FFF7F8;border-color:rgba(122,38,50,.2)}
+.agendaMethodActive{background:#F9EDEF!important;border-color:rgba(122,38,50,.25)!important;color:#7A2632!important;font-weight:700}
+.agendaCheck{width:17px;height:17px;border:1px solid rgba(122,38,50,.18);border-radius:5px;background:#fff;display:grid;place-items:center;font-size:10px;flex:0 0 auto}
+.agendaPrimaryAction{min-height:39px;border:0;border-radius:8px;background:linear-gradient(180deg,#882A39,#751E2D);color:#fff;padding:0 14px;font-size:9.8px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;box-shadow:0 5px 14px rgba(122,38,50,.10)}
+.agendaPrimaryAction:hover:not(:disabled){background:linear-gradient(180deg,#96313F,#7A2632)}
+.agendaPrimaryAction:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.agendaSuccessNote{margin-top:12px;border:1px solid rgba(18,131,72,.12);background:#EDF9F1;color:#197444;border-radius:8px;padding:10px 11px;display:flex;align-items:center;gap:7px;font-size:9.6px;font-weight:650}
+.agendaSuccessNote svg{width:15px;height:15px}
+.plannerIntro{display:grid;grid-template-columns:1fr auto;gap:4px 12px;border-radius:10px;background:#FBF5F6;border:1px solid rgba(122,38,50,.08);padding:11px 12px;margin-bottom:10px}
+.plannerIntro span{font-size:8px;text-transform:uppercase;letter-spacing:.8px;color:#A05D65;font-weight:800}
+.plannerIntro strong{font:600 16px Georgia,"Times New Roman",serif;color:#6B2934}
+.plannerIntro small{grid-column:1/-1;color:#8C777B;font-size:9px;line-height:1.45}
+.plannerRows{display:grid;gap:7px}
+.plannerRow{width:100%;border:1px solid rgba(122,38,50,.09);border-radius:10px;background:#fff;padding:9px 10px;display:grid;grid-template-columns:128px minmax(0,1fr) 1fr 38px;gap:10px;align-items:center;text-align:left}
+.plannerRow:hover{box-shadow:0 5px 16px rgba(74,37,43,.055);transform:translateY(-1px)}
+.plannerMonth strong{display:block;font:600 12.5px Georgia,"Times New Roman",serif;color:#4B353A}
+.plannerMonth span{display:inline-flex;margin-top:4px;border-radius:999px;padding:3px 6px;font-size:7.5px;font-weight:800;text-transform:uppercase}
+.plannerNumbers{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:8px;color:#8A777B}
+.plannerNumbers b{color:#554246}
+.plannerTrack{position:relative;height:8px;border-radius:999px;background:#F4ECEE;overflow:hidden}
+.plannerCommitted,.plannerImpact{position:absolute;top:0;bottom:0}
+.plannerCommitted{left:0;background:#C9A6AC}
+.plannerImpact{background:#8A2D3A}
+.plannerPercent{text-align:right;font-size:11px;font-weight:800;color:#654D52}
+.planner_safe .plannerMonth span{background:#E7F6EC;color:#138349}
+.planner_attention .plannerMonth span{background:#FFF1D6;color:#A66A0B}
+.planner_over .plannerMonth span{background:#FBE3E6;color:#BD2232}
+.planner_attention .plannerImpact{background:#D49B28}
+.planner_over .plannerImpact{background:#CA3040}
+.forecastControl{display:grid;grid-template-columns:minmax(190px,1fr) auto;gap:10px;align-items:end;margin-top:12px;padding-top:11px;border-top:1px solid rgba(122,38,50,.07)}
+.forecastControl label span{display:block;margin-bottom:5px;font-size:8.5px;font-weight:800;color:#856B70;text-transform:uppercase;letter-spacing:.7px}
+.forecastControl .agendaPrimaryAction{margin-top:0;height:40px}
+.termsAppointment{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.termsAppointment>div{border:1px solid rgba(122,38,50,.08);border-radius:10px;background:#FFFCFC;padding:12px}
+.termsAppointment span{display:block;color:#A15E66;font-size:8px;text-transform:uppercase;letter-spacing:1px;font-weight:800}
+.termsAppointment strong{display:block;margin-top:6px;font:600 19px Georgia,"Times New Roman",serif;color:#3F2E31}
+.agendaDecisionGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.agendaDecisionCopy{font-size:9.6px;line-height:1.5;color:#7E6C70;margin:0 0 10px}
+.agendaDecision{width:100%;min-height:42px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:9.6px;font-weight:850;letter-spacing:.15px}
+.agendaDecision svg{width:15px;height:15px}
+.agendaDecisionPositive{border:0;background:#7A2632;color:#fff}
+.agendaDecisionPositive:hover:not(:disabled){background:#8C2D3A}
+.agendaDecisionNegative{margin-top:6px;border:1px solid rgba(201,39,55,.18);background:#fff;color:#B52C3A}
+.agendaDecisionNegative:hover:not(:disabled){background:#FDF0F2}
+.agendaDecision:disabled{opacity:.43;cursor:not-allowed}
+.agendaGateNote{display:block;margin-top:7px;color:#A18E92;font-size:8.6px;text-align:center}
+.settlementLine{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(122,38,50,.06);font-size:9.4px;color:#887478}
+.settlementLine strong{color:#4B383C;font-size:10.2px}
+.settlementLine+.agendaDecision{margin-top:10px}
+.releaseStateCard{display:flex;align-items:center;gap:13px;padding:14px;border-style:dashed;background:#FCF9F9}
+.releaseIcon{width:42px;height:42px;border-radius:50%;background:#F4E8EA;color:#8E4A54;display:grid;place-items:center;flex:0 0 auto}
+.releaseIcon svg{width:19px;height:19px}
+.releaseStateCard strong{display:block;margin-top:3px;font:600 15px Georgia,"Times New Roman",serif;color:#5D4147}
+.releaseStateCard p{margin:4px 0 0;color:#897579;font-size:9.3px;line-height:1.45}
+.releaseStateReleased{background:linear-gradient(135deg,#EFF9F2,#F8FCF9);border-color:rgba(19,131,73,.25);animation:agendaReleaseGlow 1.1s ease}
+.releaseStateReleased .releaseIcon{background:#DDF4E6;color:#138349}
+.releaseStateReleased strong{color:#136C3F}
+@keyframes agendaReleaseGlow{0%{box-shadow:0 0 0 0 rgba(19,131,73,.24)}55%{box-shadow:0 0 0 8px rgba(19,131,73,0)}100%{box-shadow:none}}
+.agendaReturnCard{border:1px dashed rgba(122,38,50,.18);border-radius:12px;background:#FFF8F8;padding:18px;display:grid;gap:5px}
+.agendaReturnCard strong{font:600 17px Georgia,"Times New Roman",serif;color:#6C2B36}
+.agendaReturnCard span{font-size:9.7px;color:#826F73;line-height:1.5}
+.surgeryHero{padding:18px;background:linear-gradient(135deg,#FFF8F8,#FFF);text-align:center}
+.surgeryHero h3{margin:5px 0 0;font:600 22px Georgia,"Times New Roman",serif;color:#4B3036}
+.surgeryHeroDate{margin:9px 0 10px;font-size:15px;font-weight:800;color:#7A2632}
+.surgeryHeroDate span{padding:0 5px;color:#BE9299}
+.milestoneList{display:grid;gap:7px}
+.milestone{display:flex;align-items:center;gap:10px;border:1px solid rgba(122,38,50,.07);border-radius:9px;padding:9px 10px;background:#FFFCFC}
+.milestoneCheck{width:23px;height:23px;border-radius:50%;background:#E4F5EA;color:#138349;display:grid;place-items:center;font-size:11px;font-weight:900}
+.milestone div span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.8px;color:#9A7D82;font-weight:800}
+.milestone div strong{display:block;margin-top:2px;color:#4D3A3E;font-size:9.8px}
+@media(max-width:700px){.agendaFinancialMetrics,.agendaReviewGrid,.agendaDecisionGrid{grid-template-columns:1fr}.agendaMethods>div{grid-template-columns:1fr}.plannerRow{grid-template-columns:1fr}.plannerNumbers{grid-template-columns:1fr 1fr}.plannerPercent{text-align:left}.forecastControl{grid-template-columns:1fr}}
