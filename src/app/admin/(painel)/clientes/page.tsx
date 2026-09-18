@@ -7,7 +7,7 @@ import { formatarMoeda } from "@/lib/utils";
 import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
 import type { Cliente, NovaVenda } from "@/types/database";
 import { STATUS_CONTRATO_LABEL } from "@/types/database";
-import { ClienteZipDrawer } from "@/components/admin-zip/ClienteZipDrawer";
+import { ClienteDetailDrawer } from "@/components/admin/clientes/ClienteDetailDrawer";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 
 /**
@@ -24,7 +24,7 @@ const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardan
 
 function statusKind(status: string | undefined): ZipKind {
   if (status === "ativo") return "ok";
-  if (status === "suspenso") return "warn";
+  if (status === "suspenso" || status === "inadimplente") return "warn";
   return "bad";
 }
 
@@ -69,7 +69,14 @@ export default function ClientesPage() {
   const tabs: Funil[] = ["novas", "aguardando", "cadastradas", "canceladas"];
   const tabCount: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
 
-  const fecharESalvar = () => { setModal(false); void carregar(true); };
+  function atualizarDepoisDoDrawer(atualizada?: Cliente) {
+    if (atualizada) {
+      setClientes((atuais) => atuais.map((item) => item.id === atualizada.id ? { ...item, ...atualizada } : item));
+      setModal((atual) => atual && atual.id === atualizada.id ? { ...atual, ...atualizada } : atual);
+    }
+    void carregar(true);
+  }
+
 
   return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 560px", minWidth: 0 }}>
@@ -145,6 +152,17 @@ export default function ClientesPage() {
       </div>
     </div>
 
-    {modal !== false && <ClienteZipDrawer cliente={modal} abaInicial="perfil" onClose={() => setModal(false)} onSalvo={fecharESalvar} />}
+    {modal !== false && <ClienteDetailDrawer
+      cliente={modal}
+      creating={modal === null}
+      open
+      onClose={() => setModal(false)}
+      onUpdated={atualizarDepoisDoDrawer}
+      onCreated={(criada) => {
+        setClientes((atuais) => [criada, ...atuais.filter((item) => item.id !== criada.id)]);
+        setModal(criada);
+        void carregar(true);
+      }}
+    />}
   </div>;
 }
