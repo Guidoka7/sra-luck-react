@@ -128,7 +128,78 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
   const auth=await exigirAdmin(request,env);if(auth)return auth;const supabase=createServiceSupabaseClient(env);
-  if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,percentual_minimo_agendar,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,acesso_app_liberado,acesso_app_liberado_em,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,banco,origem_venda,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const {data:carnesRows}=await supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false});const {data:vendasRows}=await supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}const bancoPorCliente=new Map<string,string>();for(const cn of (carnesRows??[]) as any[]){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}const origemPorCliente=new Map<string,string>();for(const v of (vendasRows??[]) as any[]){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:c.banco??bancoPorCliente.get(c.id)??null,origem_venda:c.origem_venda??origemPorCliente.get(c.id)??null};})});}
+  if(path==="/api/admin/clientes"&&request.method==="GET"){
+    const {data,error}=await supabase.from("clientes")
+      .select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,percentual_minimo_agendar,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,acesso_app_liberado,acesso_app_liberado_em,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,banco,origem_venda,origem_cadastro,crm_importado_em,crm_ultimo_recebido_em,created_at,updated_at")
+      .order("created_at",{ascending:false});
+    if(error)return json({erro:error.message},500);
+
+    const [boletosRes,agendamentosRes,carnesRes,vendasRes]=await Promise.all([
+      supabase.from("boletos").select("cliente_id,status"),
+      supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]),
+      supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false}),
+      supabase.from("novas_vendas").select("cliente_id,origem_venda,campanha_local,rd_station_id,sincronizado_rd_em,created_at").not("cliente_id","is",null).order("created_at",{ascending:false}),
+    ]);
+
+    const resumo=new Map<string,{total:number;pagos:number}>();
+    for(const b of boletosRes.data??[]){
+      const r=resumo.get(b.cliente_id)??{total:0,pagos:0};
+      r.total++;
+      if(b.status==="pago")r.pagos++;
+      resumo.set(b.cliente_id,r);
+    }
+
+    const agenda=new Map<string,{data:string|null;horario:string|null;termosAssinadosEm:string|null;status:string}>();
+    for(const a of (agendamentosRes.data??[]) as any[]){
+      const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;
+      const old=agenda.get(a.cliente_id);
+      if(!old||(a.status==="realizado"&&old.status==="confirmado")){
+        agenda.set(a.cliente_id,{
+          data:d??null,
+          horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,
+          termosAssinadosEm:a.termos_assinados_em??null,
+          status:a.status,
+        });
+      }
+    }
+
+    const bancoPorCliente=new Map<string,string>();
+    for(const cn of (carnesRes.data??[]) as any[]){
+      if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);
+    }
+
+    const vendaPorCliente=new Map<string,{origem:string|null;campanha:string|null;rdStationId:string|null;sincronizadoEm:string|null}>();
+    for(const v of (vendasRes.data??[]) as any[]){
+      if(!v.cliente_id||vendaPorCliente.has(v.cliente_id))continue;
+      vendaPorCliente.set(v.cliente_id,{
+        origem:v.origem_venda??null,
+        campanha:v.campanha_local??null,
+        rdStationId:v.rd_station_id??null,
+        sincronizadoEm:v.sincronizado_rd_em??v.created_at??null,
+      });
+    }
+
+    return json({clientes:(data??[]).map((clienteRow:any)=>{
+      const financeiro=resumo.get(clienteRow.id);
+      const agendaRow=agenda.get(clienteRow.id);
+      const venda=vendaPorCliente.get(clienteRow.id);
+      return {
+        ...clienteRow,
+        tem_financeiro:Boolean(financeiro?.total),
+        porcentagem_pagamento:financeiro?.total?Math.round(financeiro.pagos/financeiro.total*1000)/10:null,
+        parcelas_pagas:financeiro?.pagos??0,
+        parcelas_total:financeiro?.total??0,
+        termos_assinados_em:agendaRow?.termosAssinadosEm??null,
+        proximo_agendamento_data:agendaRow?.status==="confirmado"?agendaRow.data:null,
+        proximo_agendamento_horario:agendaRow?.status==="confirmado"?agendaRow.horario:null,
+        banco:clienteRow.banco??bancoPorCliente.get(clienteRow.id)??null,
+        origem_venda:clienteRow.origem_venda??venda?.origem??null,
+        campanha:venda?.campanha??null,
+        rd_station_id:venda?.rdStationId??null,
+        crm_ultimo_recebido_em:clienteRow.crm_ultimo_recebido_em??venda?.sincronizadoEm??null,
+      };
+    })});
+  }
   if(path==="/api/admin/clientes"&&request.method==="POST"){
     const b=await body(request);
     const normalizado=normalizarNovoCliente(b);
