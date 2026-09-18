@@ -134,13 +134,26 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
       return json({ erro: "Erro ao enviar o arquivo." }, 500);
     }
 
-    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, comprovante_enviado_em: new Date().toISOString(), data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const comprovanteEnviadoEm = new Date().toISOString();
+    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, comprovante_enviado_em: comprovanteEnviadoEm, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
       const { error: rollbackError } = await supabase.storage.from(BUCKET).remove([caminho]);
       if (rollbackError) log.error("Falha no rollback do arquivo após erro de banco", { action: "client.receipt.upload.rollback", eventCode: "RECEIPT_UPLOAD_ROLLBACK_FAILED", error: rollbackError });
       log.error("Arquivo enviado, mas comprovante não foi salvo no banco", { action: "client.receipt.upload", eventCode: "RECEIPT_DB_SAVE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Erro ao salvar o comprovante." }, 500);
     }
+    await supabase.from("logs_alteracoes").insert({
+      usuario: `cliente:${sessao.clienteId}`,
+      acao: "enviou_comprovante",
+      entidade: "boleto",
+      entidade_id: boletoId,
+      detalhes: {
+        cliente_id: sessao.clienteId,
+        numero_parcela: boleto.numero_parcela,
+        comprovante_enviado_em: comprovanteEnviadoEm,
+      },
+    });
+
     if (boleto.comprovante_url && boleto.comprovante_url !== caminho) {
       const { error: oldFileError } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
       if (oldFileError) log.warn("Novo comprovante salvo, mas arquivo anterior não foi removido", { action: "client.receipt.upload.cleanup", eventCode: "RECEIPT_OLD_FILE_DELETE_FAILED", error: oldFileError });
