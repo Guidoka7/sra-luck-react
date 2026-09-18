@@ -65,7 +65,7 @@ export function ClienteProfileTab({ client, financial, editing, journeySteps, on
       <div className={styles.cardBody}>
         {editing.procedure ? <div className={styles.formGrid}>
           <Field label="Procedimento"><input className={styles.input} value={client.procedure} onChange={(e) => onChange({ procedure: e.target.value })}/></Field>
-          <Field label="Valor da carta de crédito"><input className={styles.input} type="number" min="0" step="0.01" value={client.planValue} onChange={(e) => onChange({ planValue: Number(e.target.value || 0) })}/></Field>
+          <Field label="Valor da carta de crédito"><input className={styles.input} type="number" min="0" step="0.01" value={client.planValue ?? ""} onChange={(e) => onChange({ planValue: e.target.value === "" ? null : Number(e.target.value) })}/></Field>
           <Field label="Parcelamento"><div className={styles.modalValue}>{financial.totalInstallments || 0}x {formatNumberBR(financial.installmentValue)}</div></Field>
           <Field label="Previsão de liberação"><div className={styles.modalValue}>{formatDate(client.releaseForecast)}</div></Field>
         </div> : <div className={styles.infoGrid}>
