@@ -59,6 +59,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
   const closeTimer = useRef<number | null>(null);
   const toastTimer = useRef<number | null>(null);
   const financeRequestRef = useRef(0);
+  const accessRequestRef = useRef(0);
 
   const notify = useCallback((message: string, error = false) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -68,6 +69,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
 
   const resetFromClient = useCallback((next: Cliente | null) => {
     financeRequestRef.current += 1;
+    accessRequestRef.current += 1;
     if (toastTimer.current) {
       window.clearTimeout(toastTimer.current);
       toastTimer.current = null;
@@ -77,7 +79,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
     setSavedClient(mapped); setDraftClient(mapped); setFinancial(fin);
     setInstallments([]); setHistory([]); setJourneyContract(null);
     setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab("profile");
-    setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setToast(null);
+    setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setAccessSaving(false); setToast(null);
     requestAnimationFrame(() => { if (contentRef.current) contentRef.current.scrollTop = 0; });
   }, []);
 
@@ -223,12 +225,15 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
 
   async function releaseAppAccess() {
     if (!cliente?.id || savedClient.appAccessReleased || !appAccessRequirements.canRelease) return;
+    const clientId = cliente.id;
+    const requestId = ++accessRequestRef.current;
     setAccessSaving(true);
     try {
-      const data = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(cliente.id)}/liberar-acesso-app`, {
+      const data = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(clientId)}/liberar-acesso-app`, {
         method: "POST",
         body: JSON.stringify({}),
       });
+      if (accessRequestRef.current !== requestId) return;
       const merged = { ...cliente, ...data.cliente } as Cliente;
       const mapped = mapClienteToDrawerModel(merged);
       setSavedClient(mapped);
@@ -240,9 +245,10 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
       onUpdated(merged);
       notify("Acesso ao aplicativo liberado.");
     } catch (e) {
+      if (accessRequestRef.current !== requestId) return;
       notify(e instanceof Error ? e.message : "Não foi possível liberar o acesso ao aplicativo.", true);
     } finally {
-      setAccessSaving(false);
+      if (accessRequestRef.current === requestId) setAccessSaving(false);
     }
   }
 
