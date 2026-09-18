@@ -1,0 +1,136 @@
+.admin-reference-shell{
+  --ref-bg:#fffdfc;
+  --ref-bg-soft:#faf7f7;
+  --ref-surface:#fff;
+  --ref-wine:#7a2632;
+  --ref-wine-dark:#64202a;
+  --ref-wine-hover:#8c2d3a;
+  --ref-rose:#ad686b;
+  --ref-rose-soft:#f8edef;
+  --ref-gold:#c9a15a;
+  --ref-text:#35282a;
+  --ref-text-secondary:#796a6d;
+  --ref-text-muted:#a08f92;
+  --ref-line:rgba(122,38,50,.10);
+  --ref-line-strong:rgba(122,38,50,.14);
+  --ref-sidebar:244px;
+  --ref-topbar:68px;
+  --ref-sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,Helvetica,sans-serif;
+  --ref-serif:Georgia,"Times New Roman",serif;
+  min-height:100vh;
+  background:linear-gradient(180deg,#fffdfc 0%,#fdfafa 100%);
+  color:var(--ref-text);
+  font-family:var(--ref-sans);
+  font-size:14px;
+}
+.admin-reference-shell,.admin-reference-shell *{box-sizing:border-box}
+.admin-reference-shell button,.admin-reference-shell input,.admin-reference-shell select{font:inherit}
+.admin-reference-shell button{cursor:pointer}
+.admin-reference-shell svg{display:block}
+.admin-reference-shell .ref-sidebar{
+  position:fixed;inset:0 auto 0 0;width:var(--ref-sidebar);height:100vh;
+  display:flex;flex-direction:column;padding:27px 14px 18px;background:rgba(255,253,252,.98);
+  border-right:1px solid rgba(122,38,50,.08);z-index:50;
+}
+.admin-reference-shell .ref-brand{padding:0 14px 20px}
+.admin-reference-shell .ref-brand-name{font-family:var(--ref-serif);font-size:27px;line-height:1;color:var(--ref-wine);letter-spacing:-.3px}
+.admin-reference-shell .ref-brand-sub{margin-top:10px;font-size:8px;letter-spacing:3.1px;color:#b36e75;text-transform:uppercase;font-weight:600}
+.admin-reference-shell .ref-nav-section{margin-top:12px}
+.admin-reference-shell .ref-nav-section.management{margin-top:29px}
+.admin-reference-shell .ref-nav-title{padding:0 14px 9px;font-size:8px;font-weight:800;letter-spacing:2.1px;color:var(--ref-rose);text-transform:uppercase}
+.admin-reference-shell .ref-nav-list{display:grid;gap:2px}
+.admin-reference-shell .ref-nav-item{
+  width:100%;height:45px;border:0;background:transparent;border-radius:7px;padding:0 14px;
+  display:flex;align-items:center;gap:14px;color:#5d4b4f;text-align:left;text-decoration:none;transition:.18s ease;
+}
+.admin-reference-shell .ref-nav-item:hover{background:#fbf5f5;color:var(--ref-wine)}
+.admin-reference-shell .ref-nav-ico{width:18px;height:18px;color:#8f4b54;display:grid;place-items:center;flex:0 0 auto}
+.admin-reference-shell .ref-nav-ico svg{width:18px;height:18px}
+.admin-reference-shell .ref-nav-label{font-size:13px;font-weight:500}
+.admin-reference-shell .ref-nav-item.active{background:linear-gradient(135deg,#8c2938,#7a2632);color:#fff;box-shadow:0 7px 18px rgba(122,38,50,.18)}
+.admin-reference-shell .ref-nav-item.active .ref-nav-ico{color:#fff}
+.admin-reference-shell .ref-nav-item.active .ref-nav-label{font-weight:700}
+.admin-reference-shell .ref-sidebar-bottom{margin-top:auto;display:grid;gap:8px}
+.admin-reference-shell .ref-motivation,.admin-reference-shell .ref-side-card{
+  border:1px solid var(--ref-line);background:rgba(255,255,255,.78);border-radius:10px;
+  box-shadow:0 3px 14px rgba(91,50,57,.025)
+}
+.admin-reference-shell .ref-motivation{min-height:72px;padding:14px;display:flex;align-items:center;gap:12px}
+.admin-reference-shell .ref-diamond{width:23px;height:23px;color:#d09b4f;flex:0 0 auto}
+.admin-reference-shell .ref-motivation p{margin:0;font-size:10.5px;line-height:1.45;color:#665558}
+.admin-reference-shell .ref-side-card{height:43px;padding:0 12px;display:flex;align-items:center;gap:11px;border-radius:9px;color:#5e4c50;width:100%;text-align:left}
+.admin-reference-shell .ref-side-card .ref-icon{width:18px;height:18px;color:#cf9444;display:grid;place-items:center;flex:0 0 auto}
+.admin-reference-shell .ref-side-card .ref-arrow{margin-left:auto;color:#8d787c}
+.admin-reference-shell .ref-side-card .ref-label{font-size:11px;font-weight:500}
+.admin-reference-shell .ref-user-side{height:55px}
+.admin-reference-shell .ref-avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#f6e6e8;color:#8f2d3a;font-size:11px;font-weight:800;flex:0 0 auto}
+.admin-reference-shell .ref-user-meta{min-width:0}
+.admin-reference-shell .ref-user-name{font-size:10.8px;font-weight:700;color:#4a383b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.admin-reference-shell .ref-user-role{font-size:9.5px;color:#8f7c80;margin-top:2px;display:block}
+.admin-reference-shell .ref-logout{height:40px;border:0;background:transparent;display:flex;align-items:center;gap:14px;padding:0 14px;border-radius:8px;color:#6a5559;text-align:left}
+.admin-reference-shell .ref-logout:hover{background:#fbf5f5;color:var(--ref-wine)}
+.admin-reference-shell .ref-logout .ref-icon{width:18px;height:18px;color:#87414b}
+.admin-reference-shell .ref-logout span:last-child{font-size:11px}
+.admin-reference-shell .ref-main-shell{min-height:100vh;margin-left:var(--ref-sidebar)}
+.admin-reference-shell .ref-topbar{
+  height:var(--ref-topbar);position:sticky;top:0;z-index:40;background:rgba(255,253,252,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid rgba(122,38,50,.08);padding:0 30px;display:flex;align-items:center;justify-content:space-between;
+}
+.admin-reference-shell .ref-hello{display:flex;align-items:center;gap:11px}
+.admin-reference-shell .ref-hello-icon{width:31px;height:31px;border-radius:50%;display:grid;place-items:center;background:#fff6f3;color:#a95d63;box-shadow:0 2px 10px rgba(77,36,43,.03)}
+.admin-reference-shell .ref-hello-icon svg{width:15px;height:15px}
+.admin-reference-shell .ref-hello-title{font-size:12px;font-weight:700;color:#533f43;line-height:1.2}
+.admin-reference-shell .ref-hello-sub{margin-top:4px;font-size:9.5px;color:#8c7b7e}
+.admin-reference-shell .ref-top-actions{display:flex;align-items:center;gap:15px}
+.admin-reference-shell .ref-icon-btn{border:0;background:transparent;color:#71575d;width:38px;height:38px;border-radius:8px;display:grid;place-items:center;position:relative}
+.admin-reference-shell .ref-icon-btn:hover{background:#fbf4f5;color:var(--ref-wine)}
+.admin-reference-shell .ref-icon-btn svg{width:18px;height:18px}
+.admin-reference-shell .ref-notif-dot{position:absolute;right:8px;top:7px;width:6px;height:6px;border-radius:50%;background:var(--ref-wine);box-shadow:0 0 0 2px #fffdfc}
+.admin-reference-shell .ref-v-sep{width:1px;height:29px;background:var(--ref-line)}
+.admin-reference-shell .ref-profile-top{display:flex;align-items:center;gap:10px;border:0;background:transparent;border-radius:9px;padding:4px 4px 4px 0;min-width:168px;text-align:left}
+.admin-reference-shell .ref-profile-top:hover{background:#fbf5f5}
+.admin-reference-shell .ref-profile-top .ref-avatar{width:38px;height:38px;font-size:12px}
+.admin-reference-shell .ref-profile-top .ref-user-meta{flex:1}
+.admin-reference-shell .ref-profile-top .ref-user-name{font-size:10.5px}
+.admin-reference-shell .ref-profile-top .ref-user-role{font-size:9px;margin-top:3px}
+.admin-reference-shell .ref-profile-chev{width:13px;color:#715d61}
+.admin-reference-shell .ref-page-slot{min-width:0}
+.admin-reference-shell .ref-page-slot.legacy{padding:17px 27px 30px 29px}
+.admin-reference-shell .ref-popover{position:fixed;right:28px;top:61px;width:250px;background:#fff;border:1px solid var(--ref-line-strong);border-radius:10px;box-shadow:0 14px 40px rgba(67,31,38,.14);padding:10px;z-index:90}
+.admin-reference-shell .ref-popover h4{margin:3px 5px 9px;font-size:11px;color:#4f3d40}
+.admin-reference-shell .ref-pop-row{padding:10px;border-radius:7px;background:#fcf7f7;font-size:9.5px;line-height:1.45;color:#786368}
+.admin-reference-shell .ref-profile-pop{width:190px;right:27px;top:62px}
+.admin-reference-shell .ref-profile-pop button{width:100%;height:35px;border:0;background:transparent;border-radius:7px;text-align:left;padding:0 10px;font-size:10px;color:#5f4a4f}
+.admin-reference-shell .ref-profile-pop button:hover{background:#fbf2f3;color:var(--ref-wine)}
+.admin-reference-shell.is-dark{
+  --ref-bg:#221b1d;--ref-bg-soft:#2b2325;--ref-surface:#2d2427;--ref-text:#f1e8e9;--ref-text-secondary:#c7b6ba;--ref-text-muted:#9e8d91;
+  --ref-line:rgba(255,255,255,.08);--ref-line-strong:rgba(255,255,255,.13);
+  background:#2b2325;color:#eee4e6;
+}
+.admin-reference-shell.is-dark .ref-sidebar,.admin-reference-shell.is-dark .ref-topbar,.admin-reference-shell.is-dark .ref-motivation,.admin-reference-shell.is-dark .ref-side-card,.admin-reference-shell.is-dark .ref-popover{background:#2b2325;color:#eee4e6}
+.admin-reference-shell.is-dark .ref-user-name,.admin-reference-shell.is-dark .ref-hello-title{color:#f0e7e9}
+@media(max-width:1250px){
+  .admin-reference-shell{--ref-sidebar:218px}
+  .admin-reference-shell .ref-topbar{padding:0 22px}
+  .admin-reference-shell .ref-page-slot.legacy{padding-left:22px;padding-right:22px}
+}
+@media(max-width:1060px){
+  .admin-reference-shell{--ref-sidebar:78px}
+  .admin-reference-shell .ref-sidebar{padding-left:10px;padding-right:10px}
+  .admin-reference-shell .ref-brand{padding:1px 0 18px;text-align:center}
+  .admin-reference-shell .ref-brand-name{font-size:20px}
+  .admin-reference-shell .ref-brand-sub,.admin-reference-shell .ref-nav-title,.admin-reference-shell .ref-nav-label,.admin-reference-shell .ref-motivation p,.admin-reference-shell .ref-side-card .ref-label,.admin-reference-shell .ref-side-card .ref-arrow,.admin-reference-shell .ref-user-meta,.admin-reference-shell .ref-logout span:last-child{display:none}
+  .admin-reference-shell .ref-nav-item{justify-content:center;padding:0}
+  .admin-reference-shell .ref-nav-ico{width:20px;height:20px}
+  .admin-reference-shell .ref-motivation,.admin-reference-shell .ref-side-card,.admin-reference-shell .ref-logout{justify-content:center;padding:0}
+  .admin-reference-shell .ref-user-side{justify-content:center}
+}
+@media(max-width:760px){
+  .admin-reference-shell{--ref-sidebar:0px}
+  .admin-reference-shell .ref-sidebar{display:none}
+  .admin-reference-shell .ref-main-shell{margin-left:0}
+  .admin-reference-shell .ref-topbar{height:62px;padding:0 14px}
+  .admin-reference-shell .ref-profile-top .ref-user-meta,.admin-reference-shell .ref-v-sep{display:none}
+  .admin-reference-shell .ref-profile-top{min-width:auto}
+  .admin-reference-shell .ref-page-slot.legacy{padding:14px}
+}
