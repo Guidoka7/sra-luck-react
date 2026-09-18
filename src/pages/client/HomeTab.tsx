@@ -17,7 +17,7 @@ interface HomeTabProps {
   agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   podeAgendar: boolean;
-  agendaLiberada: boolean;
+  percentualMinimoAgenda: number;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
   observacaoRevisaoFinanceira?: string | null;
   custeioAprovado: boolean;
@@ -38,7 +38,7 @@ export function HomeTab({
   agendamentoConcluido,
   datasDisponiveis,
   podeAgendar,
-  agendaLiberada,
+  percentualMinimoAgenda,
   statusRevisaoFinanceira,
   observacaoRevisaoFinanceira,
   custeioAprovado,
@@ -64,7 +64,7 @@ export function HomeTab({
         quantidadeParcelas={quantidadeParcelas}
         parcelasPagas={parcelasPagas}
         podeAgendar={podeAgendar}
-        agendaLiberada={agendaLiberada}
+        percentualMinimoAgenda={percentualMinimoAgenda}
         statusRevisaoFinanceira={statusRevisaoFinanceira}
         observacaoRevisaoFinanceira={observacaoRevisaoFinanceira}
         custeioAprovado={custeioAprovado}
