@@ -19,6 +19,7 @@ interface Props {
   creating?: boolean;
   initialTab?: "profile" | "finance";
   financeMode?: "full" | "compact";
+  context?: "default" | "terms-flow" | "finance-release" | "surgery-final";
   focusInstallmentId?: string | null;
   onOpenProof?: (item: DrawerInstallment) => void;
   onClose: () => void;
@@ -37,7 +38,7 @@ const emptyFinancial: DrawerFinancialModel = {
 };
 const emptyEditing: ProfileEditState = { personal: false, procedure: false, sale: false, notes: false };
 
-export function ClienteDetailDrawer({ cliente, open, creating = false, initialTab = "profile", financeMode = "full", focusInstallmentId = null, onOpenProof, onClose, onUpdated, onCreated }: Props) {
+export function ClienteDetailDrawer({ cliente, open, creating = false, initialTab = "profile", financeMode = "full", context = "default", focusInstallmentId = null, onOpenProof, onClose, onUpdated, onCreated }: Props) {
   const [entered, setEntered] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "finance">("profile");
   const [savedClient, setSavedClient] = useState<DrawerClientModel>(emptyClient);
@@ -82,12 +83,13 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
     const fin = next ? initialFinancialModel(next) : emptyFinancial;
     setSavedClient(mapped); setDraftClient(mapped); setFinancial(fin);
     setInstallments([]); setHistory([]); setJourneyContract(null);
-    setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab(creating ? "profile" : initialTab);
+    const forcedFinance = context === "finance-release" || context === "surgery-final";
+    setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab(creating ? "profile" : forcedFinance ? "finance" : initialTab);
     setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setAccessSaving(false); setToast(null);
     requestAnimationFrame(() => { if (contentRef.current) contentRef.current.scrollTop = 0; });
-  }, [creating, initialTab]);
+  }, [creating, initialTab, context]);
 
-  useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, initialTab, resetFromClient]);
+  useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, initialTab, context, resetFromClient]);
 
   useEffect(() => {
     if (!open) return;
@@ -295,16 +297,16 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
       </header>
 
       <nav className={styles.tabs} aria-label="Seções da cliente"><div className={styles.tabsShell} role="tablist">
-        <button className={styles.tab} type="button" role="tab" aria-selected={activeTab === "profile"} aria-controls="client-drawer-content" onClick={() => { setActiveTab("profile"); requestAnimationFrame(() => { if(contentRef.current) contentRef.current.scrollTop=0; }); }}><DrawerIcon name="user"/>PERFIL</button>
+        {context !== "finance-release" && context !== "surgery-final" ? <button className={styles.tab} type="button" role="tab" aria-selected={activeTab === "profile"} aria-controls="client-drawer-content" onClick={() => { setActiveTab("profile"); requestAnimationFrame(() => { if(contentRef.current) contentRef.current.scrollTop=0; }); }}><DrawerIcon name="user"/>PERFIL</button> : null}
         <button className={styles.tab} type="button" role="tab" aria-selected={activeTab === "finance"} aria-controls="client-drawer-content" disabled={creating} onClick={() => { setActiveTab("finance"); requestAnimationFrame(() => { if(contentRef.current) contentRef.current.scrollTop=0; }); }}><DrawerIcon name="finance"/>FINANCEIRO</button>
       </div></nav>
 
       <section ref={contentRef} className={styles.content} id="client-drawer-content" role="tabpanel" aria-label={activeTab === "profile" ? "Perfil" : "Financeiro"} tabIndex={0}>
         {activeTab === "profile" ? <ClienteProfileTab client={draftClient} financial={financial} editing={editing} journeySteps={journeySteps} appAccessRequirements={appAccessRequirements} appAccessSaving={accessSaving} onReleaseAppAccess={() => void releaseAppAccess()} onEdit={(key) => setEditing((state) => ({...state,[key]:true}))} onCancel={cancelProfileSection} onDone={(key) => setEditing((state) => ({...state,[key]:false}))} onChange={(patch) => setDraftClient((current) => ({...current,...patch}))}/> :
-        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} compact={financeMode === "compact"} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
+        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} compact={financeMode === "compact"} agendaContext={context} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
       </section>
 
-      <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button><button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving || accessSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button></footer>
+      <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button>{context !== "finance-release" && context !== "surgery-final" ? <button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving || accessSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button> : null}</footer>
     </aside>
     {toast ? <div className={`${styles.toast} ${toast.error ? styles.error : ""}`} role="status" aria-live="polite"><DrawerIcon name={toast.error ? "alert" : "check"}/><span>{toast.message}</span></div> : null}
   </div>;
