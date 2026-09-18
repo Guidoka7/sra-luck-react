@@ -379,6 +379,8 @@ export function clienteInicialDoRd(snapshot: RdDealSnapshot, recebidoEm: string)
     procedimento: snapshot.procedimentoOriginal,
     consultora: snapshot.vendedoraOriginal,
     valor_contrato: snapshot.valorOriginal,
+    quantidade_parcelas: snapshot.quantidadeParcelasOriginal,
+    valor_parcela_plano: snapshot.valorParcelaOriginal,
     origem_venda: snapshot.origemOriginal,
     banco: snapshot.bancoOriginal,
     origem_cadastro: "rd_station" as const,
