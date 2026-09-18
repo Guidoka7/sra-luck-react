@@ -1,168 +1,462 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-import { formatarCpf } from "@/lib/cpf";
-import { formatarMoeda } from "@/lib/utils";
-import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
-import type { Cliente, NovaVenda } from "@/types/database";
-import { STATUS_CONTRATO_LABEL } from "@/types/database";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "@/components/ui/ThemeProvider";
 import { ClienteDetailDrawer } from "@/components/admin/clientes/ClienteDetailDrawer";
-import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
+import { formatarCpf } from "@/lib/cpf";
+import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
+import { separarClientesAdmin, type ClientesAdminTab } from "@/lib/clientesAdmin";
+import type { Cliente, StatusContratoCliente } from "@/types/database";
+import styles from "./ClientesPage.module.css";
 
-/**
- * Reprodução fiel de Admin Clientes.dc.html: tabs por estágio do funil de
- * cadastro, tabela densa com filtro de banco/busca, e drawer lateral
- * [PERFIL][FINANCEIRO] ao clicar numa cliente. Dados 100% reais — nenhum
- * mock. "Campanha" e "Banco" só aparecem quando há dado real (novas_vendas
- * / carnês); sem isso, mostram "—".
- */
+type ViewMode = "list" | "grid";
+type SortMode = "recent" | "old" | "az" | "za";
+type PeriodMode = "all" | "today" | "7" | "30";
+type DrawerTab = "profile" | "finance";
 
-type Funil = "novas" | "aguardando" | "cadastradas" | "canceladas";
+const TAB_LABEL: Record<ClientesAdminTab, string> = {
+  cadastradas: "Cadastradas",
+  aguardando: "Aguardando cadastro",
+  canceladas: "Canceladas",
+};
 
-const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
+const STATUS_LABEL: Record<StatusContratoCliente, string> = {
+  ativo: "Ativa",
+  inadimplente: "Inadimplente",
+  suspenso: "Suspensa",
+  negativado: "Negativada",
+  cancelado: "Cancelada",
+};
 
-function statusKind(status: string | undefined): ZipKind {
-  if (status === "ativo") return "ok";
-  if (status === "suspenso" || status === "inadimplente") return "warn";
-  return "bad";
+function SearchIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="10.8" cy="10.8" r="6.4"/><path d="m16 16 4 4"/></svg>;
+}
+function BankIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3.5 9h17M5 9v9M9 9v9M15 9v9M19 9v9M3 18h18M12 3.5 4 7h16z"/></svg>;
+}
+function FilterIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 6h16l-6 7v5l-4 2v-7z"/></svg>;
+}
+function CalendarIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16M8 13h3M13 13h3"/></svg>;
+}
+function ChevronIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m7 9 5 5 5-5"/></svg>;
+}
+function ClearIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M5 8a8 8 0 1 1-1 6M5 8V3M5 8h5"/></svg>;
+}
+function ListIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>;
+}
+function GridIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>;
+}
+function RegisteredIcon() {
+  return <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="8" r="3"/><circle cx="16.2" cy="7.2" r="2.4"/><path d="M2.8 19v-1.8C2.8 14.4 5 12.2 7.8 12.2h.4c2.8 0 5 2.2 5 5V19zM13.5 13c.7-.5 1.6-.8 2.6-.8h.3c2.7 0 4.8 2.1 4.8 4.8V19h-6.1v-1.8c0-1.7-.6-3.1-1.6-4.2Z"/></svg>;
+}
+function WaitingIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>;
+}
+function CancelledIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m6 6 12 12M18 6 6 18"/></svg>;
+}
+function PlusIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 5v14M5 12h14"/></svg>;
+}
+function EmptyIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 10.5h.01M15.5 10.5h.01M8.5 16c1.8-1.7 5.2-1.7 7 0"/></svg>;
+}
+
+function tabIcon(tab: ClientesAdminTab) {
+  if (tab === "cadastradas") return <RegisteredIcon/>;
+  if (tab === "aguardando") return <WaitingIcon/>;
+  return <CancelledIcon/>;
+}
+
+function iniciais(nome: string | null | undefined) {
+  const partes = String(nome ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "—";
+  const primeira = partes[0]?.[0] ?? "";
+  const ultima = partes.length > 1 ? partes[partes.length - 1]?.[0] ?? "" : partes[0]?.[1] ?? "";
+  return `${primeira}${ultima}`.toUpperCase();
+}
+
+function statusLabel(cliente: Cliente) {
+  return STATUS_LABEL[cliente.status_contrato ?? "ativo"];
+}
+
+function statusClass(cliente: Cliente) {
+  const status = cliente.status_contrato ?? "ativo";
+  if (status === "cancelado") return styles.statusCancelled;
+  if (status === "negativado") return styles.statusNegativada;
+  if (status === "suspenso") return styles.statusSuspensa;
+  if (status === "inadimplente") return styles.statusInadimplente;
+  return "";
+}
+
+function campaignLabel(cliente: Cliente) {
+  return cliente.campanha?.trim() || cliente.origem_venda?.trim() || "—";
+}
+
+function dateKey(cliente: Cliente) {
+  const value = cliente.created_at ? new Date(cliente.created_at).getTime() : 0;
+  return Number.isFinite(value) ? value : 0;
+}
+
+function matchesPeriod(cliente: Cliente, period: PeriodMode) {
+  if (period === "all") return true;
+  if (!cliente.created_at) return false;
+  const created = new Date(cliente.created_at);
+  if (Number.isNaN(created.getTime())) return false;
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startCreated = new Date(created.getFullYear(), created.getMonth(), created.getDate()).getTime();
+  const days = Math.floor((startToday - startCreated) / 86_400_000);
+  if (period === "today") return days === 0;
+  return days >= 0 && days <= Number(period);
+}
+
+function clientSearchText(cliente: Cliente) {
+  return [
+    cliente.nome_completo,
+    cliente.cpf,
+    cliente.telefone,
+    cliente.consultora,
+    cliente.origem_venda,
+    cliente.campanha,
+    cliente.banco,
+  ].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
 }
 
 export default function ClientesPage() {
+  const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [tab, setTab] = useState<ClientesAdminTab>("cadastradas");
   const [busca, setBusca] = useState("");
-  const [funil, setFunil] = useState<Funil>("cadastradas");
-  const [bancoFiltro, setBancoFiltro] = useState("Todos os bancos");
-  const [bancoMenuAberto, setBancoMenuAberto] = useState(false);
-  const [modal, setModal] = useState<Cliente | null | false>(false);
+  const [banco, setBanco] = useState("all");
+  const [status, setStatus] = useState<StatusContratoCliente | "all">("all");
+  const [periodo, setPeriodo] = useState<PeriodMode>("all");
+  const [ordenacao, setOrdenacao] = useState<SortMode>("recent");
+  const [view, setView] = useState<ViewMode>("list");
+  const [menuClienteId, setMenuClienteId] = useState<string | null>(null);
+  const [drawerCliente, setDrawerCliente] = useState<Cliente | null | false>(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("profile");
+  const [pageToast, setPageToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+
+  function showPageToast(message: string) {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    setPageToast(message);
+    toastTimer.current = window.setTimeout(() => setPageToast(null), 2400);
+  }
 
   async function carregar(force = false) {
     const url = "/api/admin/clientes";
     const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null;
-    if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true);
+    if (cached) {
+      setClientes(cached.clientes ?? []);
+      setCarregando(false);
+    } else {
+      setCarregando(true);
+    }
+
     try {
-      const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url);
-      setClientes(data.clientes ?? []);
-      try { const r = await fetch("/api/admin/novas-vendas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setNovasVendas(d.vendas ?? []); } catch { /* staging opcional */ }
-    } catch (e) { if (!cached) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); } finally { setCarregando(false); }
+      const data = force
+        ? await refreshInstant<{ clientes?: Cliente[] }>(url)
+        : await fetchInstant<{ clientes?: Cliente[] }>(url);
+      const next = data.clientes ?? [];
+      setClientes(next);
+      setDrawerCliente((current) => {
+        if (!current || current === false) return current;
+        return next.find((item) => item.id === current.id) ?? current;
+      });
+    } catch (error) {
+      if (!cached) showPageToast(error instanceof Error ? error.message : "Falha ao carregar clientes.");
+    } finally {
+      setCarregando(false);
+    }
   }
-  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
 
-  const novas = useMemo(() => novasVendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro"), [novasVendas]);
-  const aguardandoCadastro = useMemo(() => novasVendas.filter((v) => v.cliente_id && v.status === "aguardando_boletos"), [novasVendas]);
-  const cadastradas = useMemo(() => clientes.filter((c) => c.status_contrato !== "cancelado"), [clientes]);
-  const canceladas = useMemo(() => clientes.filter((c) => c.status_contrato === "cancelado"), [clientes]);
+  useEffect(() => {
+    void carregar();
+    const timer = window.setInterval(() => void carregar(true), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const bancos = useMemo(() => ["Todos os bancos", ...Array.from(new Set(clientes.map((c) => c.banco).filter((b): b is string => Boolean(b))))], [clientes]);
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+  }, []);
 
-  const termo = busca.trim().toLowerCase();
+  useEffect(() => {
+    if (!menuClienteId) return;
+    const close = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement).closest("[data-client-row-menu]")) setMenuClienteId(null);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuClienteId(null);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", key);
+    };
+  }, [menuClienteId]);
+
+  const grupos = useMemo(() => separarClientesAdmin(clientes), [clientes]);
+  const baseAtual = grupos[tab];
+
+  const bancos = useMemo(() => Array.from(new Set(
+    baseAtual.map((cliente) => cliente.banco?.trim()).filter((value): value is string => Boolean(value)),
+  )).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [baseAtual]);
+
+  useEffect(() => {
+    if (banco !== "all" && !bancos.includes(banco)) setBanco("all");
+  }, [banco, bancos]);
+
   const filtradas = useMemo(() => {
-    let base = funil === "canceladas" ? canceladas : cadastradas;
-    if (bancoFiltro !== "Todos os bancos") base = base.filter((c) => c.banco === bancoFiltro);
-    if (!termo) return base;
-    return base.filter((c) => [c.nome_completo, c.cpf, c.telefone, c.consultora, c.origem_venda].some((v) => v?.toLowerCase().includes(termo)));
-  }, [cadastradas, canceladas, funil, termo, bancoFiltro]);
-  const vendasFiltradas = useMemo(() => { const base = funil === "novas" ? novas : aguardandoCadastro; if (!termo) return base; return base.filter((v) => v.nome_completo.toLowerCase().includes(termo)); }, [novas, aguardandoCadastro, funil, termo]);
+    const termo = busca.trim().toLocaleLowerCase("pt-BR");
+    const result = baseAtual.filter((cliente) => {
+      if (termo && !clientSearchText(cliente).includes(termo)) return false;
+      if (banco !== "all" && cliente.banco !== banco) return false;
+      if (status !== "all" && (cliente.status_contrato ?? "ativo") !== status) return false;
+      return matchesPeriod(cliente, periodo);
+    });
 
-  const tabs: Funil[] = ["novas", "aguardando", "cadastradas", "canceladas"];
-  const tabCount: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
+    return [...result].sort((a, b) => {
+      if (ordenacao === "recent") return dateKey(b) - dateKey(a);
+      if (ordenacao === "old") return dateKey(a) - dateKey(b);
+      const nomeA = a.nome_completo ?? "";
+      const nomeB = b.nome_completo ?? "";
+      const cmp = nomeA.localeCompare(nomeB, "pt-BR", { sensitivity: "base" });
+      return ordenacao === "az" ? cmp : -cmp;
+    });
+  }, [baseAtual, busca, banco, status, periodo, ordenacao]);
+
+  function clearFilters() {
+    setBusca("");
+    setBanco("all");
+    setStatus("all");
+    setPeriodo("all");
+  }
+
+  function openDrawer(cliente: Cliente | null, initialTab: DrawerTab = "profile") {
+    setMenuClienteId(null);
+    setDrawerTab(initialTab);
+    setDrawerCliente(cliente);
+  }
 
   function atualizarDepoisDoDrawer(atualizada?: Cliente) {
     if (atualizada) {
       setClientes((atuais) => atuais.map((item) => item.id === atualizada.id ? { ...item, ...atualizada } : item));
-      setModal((atual) => atual && atual.id === atualizada.id ? { ...atual, ...atualizada } : atual);
+      setDrawerCliente((current) => current && current !== false && current.id === atualizada.id ? { ...current, ...atualizada } : current);
     }
     void carregar(true);
   }
 
+  function RowMenu({ cliente }: { cliente: Cliente }) {
+    const open = menuClienteId === cliente.id;
+    return <div className={styles.rowMenuWrap} data-client-row-menu>
+      <button
+        className={styles.rowMenuBtn}
+        type="button"
+        aria-label={`Ações de ${cliente.nome_completo || "cliente"}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setMenuClienteId((current) => current === cliente.id ? null : cliente.id);
+        }}
+      >⋮</button>
+      {open ? <div className={styles.rowMenu} role="menu">
+        <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); openDrawer(cliente, "profile"); }}>Abrir cliente</button>
+        <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); openDrawer(cliente, "profile"); }}>Editar</button>
+        <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); openDrawer(cliente, "finance"); }}>Financeiro</button>
+      </div> : null}
+    </div>;
+  }
 
-  return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-    <div style={{ flex: "1 1 560px", minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
+  function ClientRow({ cliente }: { cliente: Cliente }) {
+    return <tr onClick={() => openDrawer(cliente, "profile")}>
+      <td><div className={styles.clientCell}>
+        <div className={styles.clientAvatar}>{iniciais(cliente.nome_completo)}</div>
+        <div className={styles.clientMeta}>
+          <div className={styles.clientName}>{cliente.nome_completo || "Sem nome"}</div>
+          <div className={styles.clientCpf}>{cliente.cpf ? formatarCpf(cliente.cpf) : "CPF não informado"}</div>
+        </div>
+      </div></td>
+      <td>{cliente.consultora ? cliente.consultora : <span className={styles.dash}>—</span>}</td>
+      <td>{campaignLabel(cliente) === "—" ? <span className={styles.dash}>—</span> : campaignLabel(cliente)}</td>
+      <td>{cliente.banco ? <span className={styles.bankPill}>{cliente.banco}</span> : <span className={styles.dash}>—</span>}</td>
+      <td><span className={`${styles.statusPill} ${statusClass(cliente)}`}><span className={styles.statusDot}/>{statusLabel(cliente)}</span></td>
+      <td className={styles.center}><RowMenu cliente={cliente}/></td>
+    </tr>;
+  }
+
+  function ClientCard({ cliente }: { cliente: Cliente }) {
+    return <article className={styles.clientCard} onClick={() => openDrawer(cliente, "profile")}>
+      <RowMenu cliente={cliente}/>
+      <div className={styles.clientCardTop}>
+        <div className={styles.clientAvatar}>{iniciais(cliente.nome_completo)}</div>
+        <div className={styles.clientMeta}>
+          <div className={styles.clientName}>{cliente.nome_completo || "Sem nome"}</div>
+          <div className={styles.clientCpf}>{cliente.cpf ? formatarCpf(cliente.cpf) : "CPF não informado"}</div>
+        </div>
+      </div>
+      <div className={styles.gridDetails}>
+        <div><div className={styles.gridLabel}>Banco</div><div className={styles.gridValue}>{cliente.banco || "—"}</div></div>
+        <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{statusLabel(cliente)}</div></div>
+        <div><div className={styles.gridLabel}>Vendedora</div><div className={styles.gridValue}>{cliente.consultora || "—"}</div></div>
+        <div><div className={styles.gridLabel}>Campanha</div><div className={styles.gridValue}>{campaignLabel(cliente)}</div></div>
+      </div>
+    </article>;
+  }
+
+  const tabs: ClientesAdminTab[] = ["cadastradas", "aguardando", "canceladas"];
+  const counts: Record<ClientesAdminTab, number> = {
+    cadastradas: grupos.cadastradas.length,
+    aguardando: grupos.aguardando.length,
+    canceladas: grupos.canceladas.length,
+  };
+
+  return <div className={`${styles.page} ${theme === "dark" ? styles.dark : ""}`}>
+    <section className={styles.pageHeader}>
+      <div>
+        <div className={styles.eyebrow}>Clientes</div>
+        <div className={styles.titleRow}><h1 className={styles.pageTitle}>Clientes</h1><span className={styles.goldLine}/></div>
+        <p className={styles.pageSub}>Gerencie clientes recebidas pelo CRM e acompanhe o processo de cadastro.</p>
+      </div>
+      <div className={styles.pageHeadRight}>
+        <div className={styles.headButtons}>
+          <button className={styles.primaryBtn} type="button" onClick={() => openDrawer(null, "profile")}><PlusIcon/>Nova cliente</button>
+          <button className={styles.moreBtn} type="button" aria-label="Mais opções da página" onClick={() => showPageToast("Mais opções da página.")}>•••</button>
+        </div>
+        <div className={styles.decorative}><span className={styles.decorativeLine}/><span className={styles.decorativeText}>Organização que<br/>transforma.</span></div>
+      </div>
+    </section>
+
+    <nav className={styles.tabs} aria-label="Categorias de clientes">
+      {tabs.map((item) => <button
+        key={item}
+        className={`${styles.tab} ${tab === item ? styles.tabActive : ""}`}
+        type="button"
+        aria-selected={tab === item}
+        onClick={() => { setTab(item); setMenuClienteId(null); }}
+      >
+        <span className={styles.tabIcon}>{tabIcon(item)}</span>
+        <span className={styles.tabLabel}>{TAB_LABEL[item]}</span>
+        <span className={styles.countPill}>{counts[item]}</span>
+      </button>)}
+    </nav>
+
+    <section className={styles.filters} aria-label="Filtros de clientes">
+      <label className={styles.field}>
+        <SearchIcon/>
+        <input value={busca} onChange={(event) => setBusca(event.target.value)} placeholder="Buscar por nome, CPF, telefone ou vendedora..." aria-label="Buscar clientes"/>
+      </label>
+
+      <label className={styles.selectWrap}>
+        <span className={styles.leftIco}><BankIcon/></span>
+        <select value={banco} onChange={(event) => setBanco(event.target.value)} aria-label="Filtrar por banco">
+          <option value="all">Todos os bancos</option>
+          {bancos.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <span className={styles.chev}><ChevronIcon/></span>
+      </label>
+
+      <label className={`${styles.selectWrap} ${styles.statusSelect}`}>
+        <span className={styles.leftIco}><FilterIcon/></span>
+        <select value={status} onChange={(event) => setStatus(event.target.value as StatusContratoCliente | "all")} aria-label="Filtrar por status">
+          <option value="all">Todos os status</option>
+          <option value="ativo">Ativa</option>
+          <option value="inadimplente">Inadimplente</option>
+          <option value="suspenso">Suspensa</option>
+          <option value="negativado">Negativada</option>
+          <option value="cancelado">Cancelada</option>
+        </select>
+        <span className={styles.chev}><ChevronIcon/></span>
+      </label>
+
+      <label className={`${styles.selectWrap} ${styles.periodSelect}`}>
+        <span className={styles.leftIco}><CalendarIcon/></span>
+        <select value={periodo} onChange={(event) => setPeriodo(event.target.value as PeriodMode)} aria-label="Filtrar por período">
+          <option value="all">Qualquer período</option>
+          <option value="today">Hoje</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="30">Últimos 30 dias</option>
+        </select>
+        <span className={styles.chev}><ChevronIcon/></span>
+      </label>
+
+      <button className={styles.clearBtn} type="button" onClick={clearFilters}><ClearIcon/>Limpar filtros</button>
+    </section>
+
+    <section className={styles.listCard}>
+      <header className={styles.cardHead}>
         <div>
-          <h1 style={{ fontSize: 27 }}>Clientes</h1>
-          <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "52ch" }}>Gerencie clientes recebidas pelo CRM e acompanhe o processo de cadastro.</p>
+          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[tab]}</span><span className={styles.cardCount}>{counts[tab]} {counts[tab] === 1 ? "cliente" : "clientes"}</span></div>
+          <div className={styles.cardSub}>{filtradas.length} nesta página</div>
         </div>
-        <button onClick={() => setModal(null)} style={{ height: 34, padding: "0 15px", borderRadius: 10, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>Nova cliente
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14 }}>
-        {tabs.map((t) => {
-          const on = funil === t;
-          return <button key={t} onClick={() => setFunil(t)} style={{ height: 30, padding: "0 11px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-            {TAB_LABEL[t]}<span style={{ ...zipChip(on ? "rose" : "neutral"), height: 17, fontSize: 8 }}>{tabCount[t]}</span>
-          </button>;
-        })}
-      </div>
-
-      <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", backdropFilter: "blur(18px)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <h2 style={{ fontSize: 15 }}>{TAB_LABEL[funil]}</h2>
-            <span style={{ fontSize: 11, color: "var(--soft)" }}>{(funil === "novas" || funil === "aguardando" ? vendasFiltradas.length : filtradas.length)} nesta página</span>
+        <div className={styles.cardTools}>
+          <span className={styles.orderLabel}>Ordenar por</span>
+          <label className={styles.smallSelect}>
+            <select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as SortMode)} aria-label="Ordenar clientes">
+              <option value="recent">Mais recentes</option>
+              <option value="old">Mais antigos</option>
+              <option value="az">Nome A-Z</option>
+              <option value="za">Nome Z-A</option>
+            </select>
+            <ChevronIcon/>
+          </label>
+          <div className={styles.viewButtons}>
+            <button className={`${styles.viewBtn} ${view === "list" ? styles.viewBtnActive : ""}`} type="button" aria-label="Lista" onClick={() => setView("list")}><ListIcon/></button>
+            <button className={`${styles.viewBtn} ${view === "grid" ? styles.viewBtnActive : ""}`} type="button" aria-label="Grade" onClick={() => setView("grid")}><GridIcon/></button>
           </div>
-          {(funil === "cadastradas" || funil === "canceladas") && <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, height: 31, width: 280, maxWidth: "44vw", padding: "0 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)" }}>
-              <span style={{ color: "var(--rose)", fontSize: 11.5 }}>⌕</span>
-              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou vendedora…" style={{ flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", fontSize: 11.5, color: "var(--ink)" }} />
-            </div>
-            <div style={{ position: "relative" }}>
-              <button onClick={() => setBancoMenuAberto((v) => !v)} style={{ height: 31, padding: "0 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{bancoFiltro}<span style={{ fontSize: 9 }}>▾</span></button>
-              {bancoMenuAberto && <div className="zip-animate-pop-in" style={{ position: "absolute", top: 35, right: 0, zIndex: 9, width: 206, border: "1px solid var(--line)", background: "var(--s0)", borderRadius: 10, boxShadow: "var(--sh)", overflow: "hidden" }}>
-                {bancos.map((b) => <div key={b} className="zip-row-hover" onClick={() => { setBancoFiltro(b); setBancoMenuAberto(false); }} style={{ padding: "9px 12px", fontSize: 12, borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>{b}</div>)}
-              </div>}
-            </div>
-          </div>}
         </div>
+      </header>
 
-        <div style={{ overflowX: "auto" }}>
-          {(funil === "novas" || funil === "aguardando") ? (
-            vendasFiltradas.length === 0 ? <div style={{ padding: "52px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma venda encontrada</div><div style={{ marginTop: 5, fontSize: 12, color: "var(--soft)" }}>{funil === "novas" ? "Nenhuma venda nova aguardando conferência." : "Nenhuma cliente aguardando geração de parcelas."}</div></div>
-              : <div style={{ minWidth: 640 }}>{vendasFiltradas.map((v) => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 160px", gap: 12, padding: "12px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center", fontSize: 12.5 }}>
-                <div><div style={{ fontWeight: 600 }}>{v.nome_completo}</div><div style={{ fontSize: 11, color: "var(--soft)" }}>{v.origem_venda || "Origem não informada"}</div></div>
-                <span className="zip-mono">{formatarMoeda(Number(v.valor_contrato ?? 0))}</span>
-                {funil === "novas" ? <button onClick={() => { const cpf = window.prompt("CPF da cliente (11 dígitos):", v.cpf ?? ""); const nascimento = cpf ? window.prompt("Data de nascimento (AAAA-MM-DD):") : null; if (!cpf || !nascimento) return; void fetch(`/api/admin/novas-vendas/${v.id}/cadastrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cpf, dataNascimento: nascimento }) }).then(() => carregar(true)); }} style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>Conferir e cadastrar</button>
-                  : <span style={zipChip("warn")}>Falta gerar parcelas</span>}
-              </div>)}</div>
-          ) : (
-            <div style={{ minWidth: 860 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 132px 144px 40px", gap: 12, padding: "0 14px", height: 34, alignItems: "center", background: "var(--s1)", borderBottom: "1px solid var(--line)", fontSize: 9, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>
-                <div>Cliente</div><div>Vendedora</div><div>Campanha</div><div>Banco</div><div>Status</div><div style={{ textAlign: "right" }}>Ações</div>
-              </div>
-              {carregando ? <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</div> : filtradas.length === 0 ? <div style={{ padding: "52px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma cliente encontrada</div><div style={{ marginTop: 5, fontSize: 12, color: "var(--soft)" }}>Ajuste a busca ou os filtros desta lista.</div></div>
-                : filtradas.map((c) => <div key={c.id} onClick={() => setModal(c)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 132px 144px 40px", gap: 12, padding: "10px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center", cursor: "pointer" }}>
-                  <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.nome_completo || "Sem nome"}</div><div style={{ fontSize: 10.5, color: "var(--soft)" }}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div>
-                  <div style={{ fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.consultora || "—"}</div>
-                  <div style={{ fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.origem_venda || "—"}</div>
-                  <div style={{ minWidth: 0 }}>{c.banco ? <span style={zipChip("rose")}>{c.banco}</span> : <span style={{ color: "var(--soft)", fontSize: 12 }}>—</span>}</div>
-                  <div><span style={zipChip(statusKind(c.status_contrato))}>{STATUS_CONTRATO_LABEL[c.status_contrato ?? "ativo"]}</span></div>
-                  <div style={{ textAlign: "right", color: "var(--soft)", fontSize: 13 }}>⋯</div>
-                </div>)}
-            </div>
-          )}
+      {carregando && clientes.length === 0 ? <div className={styles.loadingState}>Carregando clientes...</div> : filtradas.length === 0 ? (
+        <div className={styles.emptyState}><EmptyIcon/><strong>Nenhuma cliente encontrada.</strong><span>Ajuste a busca ou os filtros desta lista.</span></div>
+      ) : view === "list" ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <colgroup>
+              <col className={styles.clientCol}/><col className={styles.sellerCol}/><col className={styles.campaignCol}/><col className={styles.bankCol}/><col className={styles.statusCol}/><col className={styles.actionsCol}/>
+            </colgroup>
+            <thead><tr>
+              <th><span className={styles.thSort}>Cliente</span></th>
+              <th>Vendedora</th>
+              <th>Campanha</th>
+              <th>Banco</th>
+              <th>Status</th>
+              <th className={styles.center}>Ações</th>
+            </tr></thead>
+            <tbody>{filtradas.map((cliente) => <ClientRow key={cliente.id} cliente={cliente}/>)}</tbody>
+          </table>
         </div>
+      ) : (
+        <div className={styles.gridView}>{filtradas.map((cliente) => <ClientCard key={cliente.id} cliente={cliente}/>)}</div>
+      )}
+    </section>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderTop: "1px solid var(--line)", fontSize: 11, color: "var(--soft)" }}>
-          <span>{funil === "novas" || funil === "aguardando" ? vendasFiltradas.length : filtradas.length} clientes · lista contínua</span>
-        </div>
-      </div>
-    </div>
-
-    {modal !== false && <ClienteDetailDrawer
-      cliente={modal}
-      creating={modal === null}
+    {drawerCliente !== false ? <ClienteDetailDrawer
+      cliente={drawerCliente}
+      creating={drawerCliente === null}
+      initialTab={drawerTab}
       open
-      onClose={() => setModal(false)}
+      onClose={() => setDrawerCliente(false)}
       onUpdated={atualizarDepoisDoDrawer}
       onCreated={(criada) => {
         setClientes((atuais) => [criada, ...atuais.filter((item) => item.id !== criada.id)]);
-        setModal(criada);
+        setDrawerCliente(criada);
+        setDrawerTab("profile");
+        setTab("aguardando");
         void carregar(true);
       }}
-    />}
+    /> : null}
+
+    <div className={`${styles.pageToast} ${pageToast ? styles.pageToastVisible : ""}`} role="status" aria-live="polite">{pageToast}</div>
   </div>;
 }
