@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
+import { getAppAccessRequirements } from "../src/lib/appAccess";
 
 type Json = Record<string, any>;
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
@@ -127,7 +128,7 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
   const auth=await exigirAdmin(request,env);if(auth)return auth;const supabase=createServiceSupabaseClient(env);
-  if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,percentual_minimo_agendar,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,banco,origem_venda,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const {data:carnesRows}=await supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false});const {data:vendasRows}=await supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}const bancoPorCliente=new Map<string,string>();for(const cn of (carnesRows??[]) as any[]){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}const origemPorCliente=new Map<string,string>();for(const v of (vendasRows??[]) as any[]){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:c.banco??bancoPorCliente.get(c.id)??null,origem_venda:c.origem_venda??origemPorCliente.get(c.id)??null};})});}
+  if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,percentual_minimo_agendar,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,acesso_app_liberado,acesso_app_liberado_em,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,banco,origem_venda,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const {data:carnesRows}=await supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false});const {data:vendasRows}=await supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}const bancoPorCliente=new Map<string,string>();for(const cn of (carnesRows??[]) as any[]){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}const origemPorCliente=new Map<string,string>();for(const v of (vendasRows??[]) as any[]){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:c.banco??bancoPorCliente.get(c.id)??null,origem_venda:c.origem_venda??origemPorCliente.get(c.id)??null};})});}
   if(path==="/api/admin/clientes"&&request.method==="POST"){
     const b=await body(request);
     const normalizado=normalizarNovoCliente(b);
@@ -272,6 +273,57 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     });
 
     return json({cliente:data});
+  }
+
+  const liberarAcessoApp=path.match(/^\/api\/admin\/clientes\/([^/]+)\/liberar-acesso-app$/);
+  if(liberarAcessoApp&&request.method==="POST"){
+    const id=decodeURIComponent(liberarAcessoApp[1]);
+    const [{data:clienteAcesso,error:erroClienteAcesso},{count:parcelasCount,error:erroParcelas}]=await Promise.all([
+      supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,acesso_app_liberado,acesso_app_liberado_em").eq("id",id).maybeSingle(),
+      supabase.from("boletos").select("id",{count:"exact",head:true}).eq("cliente_id",id),
+    ]);
+    if(erroClienteAcesso)return json({erro:erroClienteAcesso.message},500);
+    if(erroParcelas)return json({erro:erroParcelas.message},500);
+    if(!clienteAcesso)return json({erro:"Cliente não encontrada."},404);
+
+    const requisitos=getAppAccessRequirements({
+      name:clienteAcesso.nome_completo,
+      cpf:clienteAcesso.cpf,
+      birthDate:clienteAcesso.data_nascimento,
+      installmentCount:parcelasCount??0,
+    });
+
+    if(!requisitos.canRelease){
+      return json({
+        erro:"A cliente ainda não possui todos os requisitos para acesso ao app.",
+        faltando:requisitos.missing,
+      },409);
+    }
+
+    if(clienteAcesso.acesso_app_liberado){
+      return json({cliente:clienteAcesso,requisitos});
+    }
+
+    const liberadoEm=new Date().toISOString();
+    const {data:clienteLiberada,error:erroLiberar}=await supabase.from("clientes")
+      .update({acesso_app_liberado:true,acesso_app_liberado_em:liberadoEm})
+      .eq("id",id)
+      .select("*")
+      .single();
+    if(erroLiberar)return json({erro:erroLiberar.message},400);
+
+    const tokenAcesso=getCookie(request,"admin_session");
+    const sessaoAcesso=await verificarTokenAdmin(tokenAcesso,env.CLIENTE_SESSION_SECRET!);
+    const colaboradorAcesso=sessaoAcesso?await buscarColaboradorAdminAtivo(sessaoAcesso.adminId,env):null;
+    await supabase.from("logs_alteracoes").insert({
+      usuario:colaboradorAcesso?.id??"admin",
+      acao:"liberou_acesso_app",
+      entidade:"clientes",
+      entidade_id:id,
+      detalhes:{requisitos:["nome","cpf","data_nascimento","financeiro"],parcelas:parcelasCount??0,liberadoEm},
+    });
+
+    return json({cliente:clienteLiberada,requisitos});
   }
 
   const jornadaCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/jornada$/);
