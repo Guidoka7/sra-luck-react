@@ -43,12 +43,14 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
   const [agendaLoading, setAgendaLoading] = useState(false);
 
   async function loadAgendaFlow() {
-    if (agendaContext === "default") { setAgendaFlow(null); return; }
     setAgendaLoading(true);
     try {
       setAgendaFlow(await agendaApi.clientFlow(clienteId));
     } catch (e) {
-      notify(e instanceof Error ? e.message : "Falha ao carregar o fluxo da Agenda.", true);
+      setAgendaFlow(null);
+      if (agendaContext !== "default") {
+        notify(e instanceof Error ? e.message : "Falha ao carregar o fluxo da Agenda.", true);
+      }
     } finally {
       setAgendaLoading(false);
     }
@@ -63,6 +65,9 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
     totalInstallments: installments.length || financial.totalInstallments,
   }), [agendaContext, financial, installments]);
   const summary = useMemo(() => calculateFinancialSummary(displayFinancial, installments), [displayFinancial, installments]);
+  const installmentsInteractive = Boolean(
+    agendaFlow && !["formacao_saldo", "levantamento"].includes(agendaFlow.client.stage),
+  );
   const moneyPercent = displayFinancial.totalPlan > 0 ? Math.min(100, summary.totalPaid / displayFinancial.totalPlan * 100) : 0;
   const openPercent = displayFinancial.totalPlan > 0 ? Math.max(0, 100 - moneyPercent) : 0;
 
@@ -188,7 +193,7 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
 
     </> : null}
 
-    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={displayFinancial} installments={installments} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} allowInteraction={agendaContext !== "terms-flow" || Boolean(agendaFlow?.client.reviewConfirmedAt)} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
+    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={displayFinancial} installments={installments} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} allowInteraction={installmentsInteractive} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
 
     <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="history"/>Histórico financeiro</h3><button className={styles.linkBtn} type="button" onClick={() => setHistoryExpanded((v)=>!v)}>{historyExpanded?"Mostrar menos":"Ver todos"}</button></div>
