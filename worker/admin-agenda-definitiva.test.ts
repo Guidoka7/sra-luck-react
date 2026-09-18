@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const migration060 = readFileSync(new URL("../supabase/migration_060_agenda_operacional_definitiva.sql", import.meta.url), "utf8");
 const migration061 = readFileSync(new URL("../supabase/migration_061_agenda_percentual_parcelas_reais.sql", import.meta.url), "utf8");
+const migration062 = readFileSync(new URL("../supabase/migration_062_agenda_quitacao_valor_editado.sql", import.meta.url), "utf8");
 const adminAgenda = readFileSync(new URL("./admin-agenda.ts", import.meta.url), "utf8");
 const clientAgenda = readFileSync(new URL("./client-agenda.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../src/app/admin/(painel)/agenda/page.tsx", import.meta.url), "utf8");
@@ -39,6 +40,35 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(migration060).toContain("('cartao','pix','boleto_100','cheques')");
     expect(clientAgenda).toContain("formasPermitidas.includes(formaCusteio)");
     expect(clientAgenda).toContain('status: "aprovada"');
+  });
+
+
+  it("persiste saldo final editado sem violar a escrituração financeira", () => {
+    expect(migration062).toContain("financeiro_saldo_restante");
+    expect(migration062).toContain("v_desconto := round(v_boleto.valor - v_valor,2)");
+    expect(migration062).toContain("v_juros := round(v_valor - v_boleto.valor,2)");
+    expect(migration062).toContain("valor_original,juros,multa,desconto,valor_recebido");
+    expect(migration062).toContain("round(v_alocado,2) <> round(v_total_final,2)");
+    expect(migration062).toContain("'valor_recebido',v_total_final");
+  });
+
+  it("mantém filtros mensais determinísticos e datas civis em America/Sao_Paulo", () => {
+    expect(adminAgenda).toContain('timeZone: "America/Sao_Paulo"');
+    expect(adminAgenda).toContain("const returnedMonth = returnToStage4");
+    expect(adminAgenda).toContain("const operationalMonth = returnToStage4 ? returnedMonth");
+    expect(adminAgenda).toContain("if (operationalMonth === month)");
+    expect(adminAgenda).toContain("appointment.horario_termos");
+    expect(adminAgenda).toContain("date?.slice(0,7) === month");
+    expect(adminAgenda).toContain("appointment.data_cirurgia.slice(0,7) !== month");
+    expect(page).toContain('timeZone: "America/Sao_Paulo"');
+    expect(panels).toContain('timeZone: "America/Sao_Paulo"');
+  });
+
+  it("fila de liberação financeira exige fatos explícitos antes de listar a cliente", () => {
+    expect(adminAgenda).toContain('client.status_revisao_financeira !== "aprovada"');
+    expect(adminAgenda).toContain("!client.financeiro_confirmado_em");
+    expect(adminAgenda).toContain('choice.status === "recusada"');
+    expect(adminAgenda).toContain("!date || !appointment.horario_termos");
   });
 
   it("gateia a Agenda de Termos pela Etapa 4 e reserva com lock de banco", () => {
