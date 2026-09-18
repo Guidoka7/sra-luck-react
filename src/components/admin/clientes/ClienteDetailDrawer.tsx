@@ -180,8 +180,9 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
       };
       if (creating || !cliente?.id) {
         const data = await apiJson<{ cliente: Cliente }>("/api/admin/clientes", { method: "POST", body: JSON.stringify(payload) });
+        const enriched = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(data.cliente.id)}`, { method: "PATCH", body: JSON.stringify(payload) });
         setEditing(emptyEditing); notify("Cliente cadastrada com sucesso.");
-        onCreated?.(data.cliente); onUpdated(data.cliente);
+        onCreated?.(enriched.cliente); onUpdated(enriched.cliente);
         return;
       }
       const data = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(cliente.id)}`, { method: "PATCH", body: JSON.stringify(payload) });
