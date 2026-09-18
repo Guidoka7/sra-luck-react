@@ -90,32 +90,65 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     if (venda.cliente_id) return json({ erro: "Esta venda já está vinculada a uma cliente." }, 409);
 
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const cpf = String(body.cpf ?? venda.cpf ?? "").replace(/\D/g, "");
-    const dataNascimento = String(body.dataNascimento ?? "");
-    if (cpf.length !== 11 || !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
-      return json({ erro: "Informe CPF (11 dígitos) e data de nascimento para concluir o cadastro." }, 400);
+    const cpfInformado = String(body.cpf ?? venda.cpf ?? "").replace(/\D/g, "");
+    const cpf = cpfInformado || null;
+    if (cpf && cpf.length !== 11) return json({ erro: "CPF deve conter 11 dígitos quando informado." }, 400);
+
+    const dataNascimentoTexto = String(body.dataNascimento ?? "").trim();
+    const dataNascimento = dataNascimentoTexto || null;
+    if (dataNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
+      return json({ erro: "Data de nascimento inválida." }, 400);
     }
 
-    const { data: cliente, error: erroCliente } = await db.from("clientes").insert({
-      nome_completo: venda.nome_completo,
-      cpf,
-      data_nascimento: dataNascimento,
-      telefone: venda.telefone,
-      email: venda.email,
-      valor_contrato: Number(venda.valor_contrato ?? 0),
-      taxa_administrativa_percentual: Number(venda.taxa_administrativa ?? 0),
-      quantidade_parcelas: venda.quantidade_parcelas ?? null,
-      vendedora_id: venda.vendedora_id ?? null,
-      ativo: true,
-      status_cirurgia: "nao_agendada",
-      status_financeiro: "a_pagar",
-    }).select("*").single();
-    if (erroCliente) {
-      return json({ erro: erroCliente.code === "23505" ? "Já existe uma cliente cadastrada com esse CPF." : erroCliente.message }, 400);
+    let clienteExistente: any = null;
+    if (cpf) {
+      const formatado = `${cpf.slice(0,3)}.${cpf.slice(3,6)}.${cpf.slice(6,9)}-${cpf.slice(9)}`;
+      const { data } = await db.from("clientes")
+        .select("id,crm_importado_em")
+        .in("cpf", [cpf, formatado])
+        .limit(1)
+        .maybeSingle();
+      clienteExistente = data ?? null;
+    }
+
+    const agora = new Date().toISOString();
+    let cliente: any = clienteExistente;
+    if (!cliente) {
+      const { data, error: erroCliente } = await db.from("clientes").insert({
+        nome_completo: venda.nome_completo ?? null,
+        cpf,
+        data_nascimento: dataNascimento,
+        telefone: venda.telefone ?? null,
+        email: venda.email ?? null,
+        procedimento: venda.procedimento_local ?? null,
+        consultora: venda.vendedora_responsavel ?? null,
+        valor_contrato: venda.valor_contrato == null ? null : Number(venda.valor_contrato),
+        quantidade_parcelas: venda.quantidade_parcelas ?? null,
+        origem_venda: venda.origem_venda ?? null,
+        banco: venda.banco_local ?? null,
+        origem_cadastro: "rd_station",
+        crm_importado_em: agora,
+        crm_ultimo_recebido_em: venda.sincronizado_rd_em ?? agora,
+        vendedora_id: venda.vendedora_id ?? null,
+        ativo: true,
+        status_cirurgia: "nao_agendada",
+        status_financeiro: "a_pagar",
+      }).select("*").single();
+      if (erroCliente) {
+        return json({ erro: erroCliente.code === "23505" ? "Já existe uma cliente cadastrada com esse CPF." : erroCliente.message }, 400);
+      }
+      cliente = data;
+    } else {
+      await db.from("clientes").update({
+        crm_importado_em: cliente.crm_importado_em ?? agora,
+        crm_ultimo_recebido_em: venda.sincronizado_rd_em ?? agora,
+      }).eq("id", cliente.id);
+      const { data } = await db.from("clientes").select("*").eq("id", cliente.id).single();
+      cliente = data;
     }
 
     const { error: erroUpdate } = await db.from("novas_vendas")
-      .update({ cliente_id: cliente.id, status: "aguardando_boletos", updated_at: new Date().toISOString() })
+      .update({ cliente_id: cliente.id, status: "aguardando_boletos", updated_at: agora })
       .eq("id", id);
     if (erroUpdate) return json({ erro: erroUpdate.message }, 500);
 
@@ -127,7 +160,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
       detalhes: { novaVendaId: id, rdStationId: venda.rd_station_id, nomeCliente: cliente.nome_completo, escritaNoRd: false },
     });
 
-    return json({ cliente, venda: { ...venda, cliente_id: cliente.id, status: "aguardando_boletos" } });
+    return json({ cliente, venda: { ...venda, cliente_id: cliente.id, status: "aguardando_boletos" }, escritaNoRd: false });
   }
 
   return json({ erro: "Rota de novas vendas não encontrada." }, 404);
