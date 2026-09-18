@@ -12,7 +12,7 @@ export interface DrawerClientModel {
   phone: string;
   email: string;
   procedure: string;
-  planValue: number;
+  planValue: number | null;
   seller: string;
   campaign: string;
   bank: string;
@@ -53,6 +53,21 @@ export interface FinancialHistoryItem {
   type: "payment" | "receipt" | "plan" | "status" | "other";
   description: string;
   author: string;
+}
+
+export interface DrawerPlanResponse {
+  cliente?: Record<string, unknown> | null;
+  boletos?: Record<string, unknown>[];
+  parcelas?: Record<string, unknown>[];
+}
+
+export interface DrawerHistoryResponse {
+  historico?: unknown[];
+  logs?: unknown[];
+}
+
+export interface DrawerJourneyResponse {
+  contrato?: JourneyContract | null;
 }
 
 export interface JourneyContract {
@@ -130,7 +145,7 @@ export function mapClienteToDrawerModel(cliente: Cliente): DrawerClientModel {
     phone: cliente.telefone ?? "",
     email: cliente.email ?? "",
     procedure: cliente.procedimento ?? "",
-    planValue: Number(cliente.valor_contrato ?? 0),
+    planValue: cliente.valor_contrato == null ? null : Number(cliente.valor_contrato),
     seller: cliente.consultora ?? "",
     campaign: cliente.origem_venda ?? "",
     bank: cliente.banco ?? "",
