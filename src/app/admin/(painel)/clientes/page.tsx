@@ -169,7 +169,7 @@ export default function ClientesPage() {
       const next = data.clientes ?? [];
       setClientes(next);
       setDrawerCliente((current) => {
-        if (!current || current === false) return current;
+        if (current === false || current === null) return current;
         return next.find((item) => item.id === current.id) ?? current;
       });
     } catch (error) {
@@ -251,7 +251,7 @@ export default function ClientesPage() {
   function atualizarDepoisDoDrawer(atualizada?: Cliente) {
     if (atualizada) {
       setClientes((atuais) => atuais.map((item) => item.id === atualizada.id ? { ...item, ...atualizada } : item));
-      setDrawerCliente((current) => current && current !== false && current.id === atualizada.id ? { ...current, ...atualizada } : current);
+      setDrawerCliente((current) => current !== false && current !== null && current.id === atualizada.id ? { ...current, ...atualizada } : current);
     }
     void carregar(true);
   }
