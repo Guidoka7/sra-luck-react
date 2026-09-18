@@ -82,6 +82,9 @@ export interface JourneyContract {
   quitado_em?: string | null;
   agenda_cirurgica_liberar_em?: string | null;
   cirurgia_em?: string | null;
+  custeio_status?: "pendente" | "em_analise" | "aprovada" | "recusada" | null;
+  agendada?: boolean;
+  agenda_cirurgica_liberada?: boolean;
 }
 
 export interface FinancialSummary {
@@ -305,12 +308,13 @@ export function buildJourneyFlags(cliente: Cliente, contrato: JourneyContract | 
   const surgeryReleased = ["agenda_cirurgica_liberada","cirurgia_agendada","concluido"].includes(stage);
   const surgeryScheduled = ["cirurgia_agendada","concluido"].includes(stage) || ["agendada","realizada"].includes(String(cliente.status_cirurgia));
   const surgeryDone = stage === "concluido" || cliente.status_cirurgia === "realizada";
+  const explicitCusteio = contrato?.custeio_status ?? null;
   return {
     statusRevisao: afterReview ? "aprovada" as const : cliente.status_revisao_financeira ?? null,
-    custeioStatus: afterPaymentChoice || cliente.custeio_confirmado_em ? "aprovada" as const : null,
-    agendada: stage === "termos_agendados" || Boolean(cliente.proximo_agendamento_data),
+    custeioStatus: explicitCusteio ?? (afterPaymentChoice || cliente.custeio_confirmado_em ? "aprovada" as const : null),
+    agendada: Boolean(contrato?.agendada) || stage === "termos_agendados" || Boolean(cliente.proximo_agendamento_data),
     termosAssinados: termsSigned,
-    agendaCirurgicaLiberada: surgeryReleased,
+    agendaCirurgicaLiberada: Boolean(contrato?.agenda_cirurgica_liberada) || surgeryReleased,
     cirurgiaAgendada: surgeryScheduled,
     cirurgiaRealizada: surgeryDone,
     previsaoLiberacaoFinanceira: contrato?.cirurgia_em ?? null,
