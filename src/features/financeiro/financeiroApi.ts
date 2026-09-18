@@ -35,6 +35,7 @@ export const financeiroApi = {
     form.append("arquivo", arquivo);
     return request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/comprovante`, { method: "POST", body: form });
   },
+  comprovanteUrl: (id: string) => request<{ url: string }>(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/comprovante`),
   validar: (id: string, acao: "confirmar" | "rejeitar", observacao: string, idempotencyKey?: string) => request(`/api/admin/financeiro/validacoes/${encodeURIComponent(id)}/${acao}`, {
     method: "POST", body: JSON.stringify({ observacao, idempotencyKey: idempotencyKey ?? crypto.randomUUID() }),
   }),
