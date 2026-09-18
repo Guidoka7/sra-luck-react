@@ -89,9 +89,11 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const nome = perfil?.nome ?? "Sra. Luck";
   const cargo = CARGO_LABEL[perfil?.cargo ?? ""] ?? "Administradora";
   const clientesExact = pathname === "/admin/clientes" || pathname.startsWith("/admin/clientes/");
+  const financeiroExact = pathname === "/admin/financeiro" || pathname.startsWith("/admin/financeiro/");
+  const referenceExact = clientesExact || financeiroExact;
 
   return (
-    <div className={`admin-reference-shell${clientesExact ? "" : " zip-admin"}${dark ? " is-dark dark" : ""}`}>
+    <div className={`admin-reference-shell${referenceExact ? "" : " zip-admin"}${dark ? " is-dark dark" : ""}`}>
       <aside className="ref-sidebar">
         <div className="ref-brand">
           <div className="ref-brand-name">Sra. Luck</div>
@@ -165,7 +167,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className={`ref-page-slot${clientesExact ? "" : " legacy"}`}>{children}</main>
+        <main className={`ref-page-slot${referenceExact ? "" : " legacy"}`}>{children}</main>
       </div>
 
       {notificacoesAbertas ? <div className="ref-popover" data-admin-ref-popover><h4>Notificações</h4><div className="ref-pop-row">Nenhuma notificação nova no momento.</div></div> : null}
