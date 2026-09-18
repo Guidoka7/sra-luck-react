@@ -5,8 +5,8 @@ interface ClientProfileHeaderProps {
   procedimento: string | null;
   quantidadeParcelas: number | null;
   percentualPago: number;
-  naoLidas: number;
-  onAbrirNotificacoes: () => void;
+  naoLidas?: number;
+  onAbrirNotificacoes?: () => void;
 }
 
 function iniciais(nomeCompleto: string) {
@@ -21,7 +21,7 @@ export function ClientProfileHeader({
   procedimento,
   quantidadeParcelas,
   percentualPago,
-  naoLidas,
+  naoLidas = 0,
   onAbrirNotificacoes,
 }: ClientProfileHeaderProps) {
   const planoLabel = quantidadeParcelas ? `Plano ${quantidadeParcelas}x` : "Plano";
@@ -34,13 +34,13 @@ export function ClientProfileHeader({
           <div className="flex min-h-[34px] items-center">
             <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="sl-home-logo" />
           </div>
-          <button type="button" onClick={onAbrirNotificacoes} aria-label="Notificações" className="sl-home-bell">
+          {onAbrirNotificacoes ? <button type="button" onClick={onAbrirNotificacoes} aria-label="Notificações" className="sl-home-bell">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.2">
               <path d="M5.5 8.5a4.5 4.5 0 0 1 9 0v3.2l1.3 2.3H4.2l1.3-2.3z" />
               <path d="M8.4 16.2a1.8 1.8 0 0 0 3.2 0" />
             </svg>
             {naoLidas > 0 && <span className="sl-home-bell-dot" />}
-          </button>
+          </button> : <span className="h-[34px] w-[34px]" aria-hidden="true" />}
         </div>
 
         <div className="sl-profile-card">
