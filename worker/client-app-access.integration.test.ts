@@ -28,7 +28,7 @@ describe("integração do acesso ao app e procedimento", () => {
     expect(workerIndexSource).toContain('.eq("data_nascimento", nascimento)');
     expect(workerIndexSource).toContain('.select("id,ativo,acesso_app_liberado")');
     expect(workerIndexSource).toContain("if (!cliente.acesso_app_liberado)");
-    expect(workerIndexSource).not.toContain("nome_completo", nascimento");
+    expect(workerIndexSource).not.toContain('nome_completo", nascimento');
   });
 
   it("editar procedimento persiste somente em clientes.procedimento e não altera parcelas", () => {
