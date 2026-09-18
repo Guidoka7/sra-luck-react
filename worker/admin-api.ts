@@ -66,6 +66,7 @@ export function normalizarNovoCliente(input: Record<string, unknown>) {
       hospital: textoOpcional(input.hospital),
       consultora: textoOpcional(input.consultora),
       valor_contrato: valorContrato.valor,
+      quantidade_parcelas: null,
       origem_venda: textoOpcional(input.origemVenda),
       banco: textoOpcional(input.banco),
       observacoes_internas: textoOpcional(input.observacoes),
