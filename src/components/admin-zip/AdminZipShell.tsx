@@ -90,7 +90,8 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const cargo = CARGO_LABEL[perfil?.cargo ?? ""] ?? "Administradora";
   const clientesExact = pathname === "/admin/clientes" || pathname.startsWith("/admin/clientes/");
   const financeiroExact = pathname === "/admin/financeiro" || pathname.startsWith("/admin/financeiro/");
-  const referenceExact = clientesExact || financeiroExact;
+  const agendaExact = pathname === "/admin/agenda" || pathname.startsWith("/admin/agenda/");
+  const referenceExact = clientesExact || financeiroExact || agendaExact;
 
   return (
     <div className={`admin-reference-shell${referenceExact ? "" : " zip-admin"}${dark ? " is-dark dark" : ""}`}>
