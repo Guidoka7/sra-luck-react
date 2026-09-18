@@ -125,7 +125,7 @@ async function loginCliente(request: Request, env: Env) {
     const cpfFormatado = formatarCpf(cpfLimpo);
     const { data: cliente, error: clienteError } = await supabase
       .from("clientes")
-      .select("id,ativo")
+      .select("id,ativo,acesso_app_liberado")
       .in("cpf", cpfFormatado ? [cpfLimpo, cpfFormatado] : [cpfLimpo])
       .eq("data_nascimento", nascimento)
       .maybeSingle();
@@ -146,6 +146,10 @@ async function loginCliente(request: Request, env: Env) {
       if (rateWriteError) clientLog.warn("Acesso inativo e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: rateWriteError });
       clientLog.warn("Login recusado para cliente inativa", { eventCode: "CLIENT_LOGIN_INACTIVE", statusCode: 403 });
       return json({ erro: "Seu acesso está temporariamente indisponível. Fale com a Sra. Luck." }, 403);
+    }
+    if (!cliente.acesso_app_liberado) {
+      clientLog.warn("Login recusado porque o acesso ao app ainda não foi liberado", { eventCode: "CLIENT_LOGIN_APP_ACCESS_NOT_RELEASED", statusCode: 403 });
+      return json({ erro: "Seu acesso ao aplicativo ainda não foi liberado. Fale com a Sra. Luck." }, 403);
     }
 
     const { error: clearRateError } = await supabase.rpc("login_limpar_rate_limit", { p_chave: key });
