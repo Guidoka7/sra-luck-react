@@ -1,5 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { DrawerIcon } from "./ClienteDrawerIcons";
 import {
   INSTITUTIONS, PAYMENT_METHODS, apiJson, calculateFinancialSummary, formatCurrency, formatDate,
@@ -14,7 +13,6 @@ interface Props {
   clienteId: string;
   clientName: string;
   financial: DrawerFinancialModel;
-  setFinancial: Dispatch<SetStateAction<DrawerFinancialModel>>;
   installments: DrawerInstallment[];
   history: FinancialHistoryItem[];
   loading: boolean;
@@ -27,7 +25,7 @@ interface Props {
 type EditState = { plan: boolean; payment: boolean };
 
 export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(function ClienteFinanceTab({
-  clienteId, clientName, financial, setFinancial, installments, history, loading, error, onReload, onUpdated, notify,
+  clienteId, clientName, financial, installments, history, loading, error, onReload, onUpdated, notify,
 }, ref) {
   const [editing, setEditing] = useState<EditState>({ plan: false, payment: false });
   const [draft, setDraft] = useState<DrawerFinancialModel>(financial);
@@ -105,7 +103,7 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="wallet"/>Progresso por parcelas</h3></div>
       <div className={styles.cardBody}><div className={styles.progressLayout}>
         <div style={{display:"grid",placeItems:"center"}}>
-          <div className={`${styles.ring} ${summary.eligible ? styles.eligible : ""}`} style={{ "--progress": Math.max(0, Math.min(100, summary.installmentProgress)).toFixed(2) } as React.CSSProperties}>
+          <div className={`${styles.ring} ${summary.eligible ? styles.eligible : ""}`} style={{ "--progress": Math.max(0, Math.min(100, summary.installmentProgress)).toFixed(2) } as CSSProperties}>
             <span className={styles.ringValue}>{Math.round(summary.installmentProgress)}%</span>
           </div>
         </div>
@@ -166,4 +164,4 @@ function CardHeader({title,icon,editing,onEdit,onCancel}:{title:string;icon:"doc
 }
 function Kpi({label,value,sub,valueClass}:{label:string;value:string;sub?:string;valueClass?:string}) { return <div className={styles.kpi}><span className={styles.kpiLabel}>{label}</span><strong className={`${styles.kpiValue} ${valueClass??""}`}>{value}</strong>{sub?<span className={styles.kpiSub}>{sub}</span>:null}</div>; }
 function Info({label,value,wide}:{label:string;value:string;wide?:boolean}) { return <div className={wide?styles.span2:undefined}><span className={styles.label}>{label}</span><div className={styles.value}>{value||"—"}</div></div>; }
-function Field({label,children}:{label:string;children:React.ReactNode}) { return <div className={styles.field}><label>{label}</label>{children}</div>; }
+function Field({label,children}:{label:string;children:ReactNode}) { return <div className={styles.field}><label>{label}</label>{children}</div>; }
