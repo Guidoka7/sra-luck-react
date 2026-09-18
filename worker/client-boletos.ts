@@ -100,7 +100,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     if (!boleto || boleto.cliente_id !== sessao.clienteId) return json({ erro: "Boleto não encontrado." }, 404);
     if (!boleto.comprovante_url) return json({ erro: "Esta parcela não possui comprovante." }, 404);
     if (boleto.status === "pago") return json({ erro: "Comprovante de parcela paga não pode ser removido." }, 409);
-    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, comprovante_enviado_em: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
       log.error("Falha ao remover referência do comprovante", { action: "client.receipt.delete", eventCode: "RECEIPT_DB_DELETE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Não foi possível remover o comprovante." }, 500);
@@ -134,7 +134,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
       return json({ erro: "Erro ao enviar o arquivo." }, 500);
     }
 
-    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, comprovante_enviado_em: new Date().toISOString(), data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
       const { error: rollbackError } = await supabase.storage.from(BUCKET).remove([caminho]);
       if (rollbackError) log.error("Falha no rollback do arquivo após erro de banco", { action: "client.receipt.upload.rollback", eventCode: "RECEIPT_UPLOAD_ROLLBACK_FAILED", error: rollbackError });
