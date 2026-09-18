@@ -18,6 +18,8 @@ export interface DrawerClientModel {
   bank: string;
   notes: string;
   releaseForecast: string;
+  appAccessReleased: boolean;
+  appAccessReleasedAt: string;
 }
 
 export interface DrawerFinancialModel {
@@ -127,6 +129,16 @@ export function formatDate(value: string | null | undefined) {
   return year && month && day ? `${day}/${month}/${year}` : "—";
 }
 
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
 export function statusLabel(status?: StatusContratoCliente | null): DrawerStatusLabel {
   return CLIENT_STATUS_OPTIONS.find((item) => item.db === status)?.label ?? "Ativa";
 }
@@ -151,6 +163,8 @@ export function mapClienteToDrawerModel(cliente: Cliente): DrawerClientModel {
     bank: cliente.banco ?? "",
     notes: cliente.observacoes_internas ?? "",
     releaseForecast: "",
+    appAccessReleased: Boolean(cliente.acesso_app_liberado),
+    appAccessReleasedAt: cliente.acesso_app_liberado_em ?? "",
   };
 }
 
