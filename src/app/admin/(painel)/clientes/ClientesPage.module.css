@@ -92,7 +92,7 @@
 .center{text-align:center!important}
 .thSort{display:inline-flex;align-items:center;gap:6px}
 .thSort svg{width:9px;height:9px}
-.table tbody tr{height:45px;border-bottom:1px solid rgba(122,38,50,.07);transition:background .13s}
+.table tbody tr{height:45px;border-bottom:1px solid rgba(122,38,50,.07);transition:background .13s;cursor:pointer}
 .table tbody tr:last-child{border-bottom:0}
 .table tbody tr:hover{background:#fffbfb}
 .table td{padding:0 16px;vertical-align:middle;color:#6c595d;font-size:10px}
