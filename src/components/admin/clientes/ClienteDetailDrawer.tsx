@@ -66,7 +66,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     setToast({ message, error });
     toastTimer.current = window.setTimeout(() => setToast(null), 2800);
-  }, [creating, initialTab]);
+  }, []);
 
   const resetFromClient = useCallback((next: Cliente | null) => {
     financeRequestRef.current += 1;
@@ -82,7 +82,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
     setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab(creating ? "profile" : initialTab);
     setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setAccessSaving(false); setToast(null);
     requestAnimationFrame(() => { if (contentRef.current) contentRef.current.scrollTop = 0; });
-  }, []);
+  }, [creating, initialTab]);
 
   useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, initialTab, resetFromClient]);
 
