@@ -1,7 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
-import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
+import { agenda, agendaTermos, agendaCirurgias, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
 import { clientPushApi } from "./client-push";
@@ -333,6 +333,23 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const clientConfig = await clientConfigApi(request, env);
   if (clientConfig) return clientConfig;
 
+  if (url.pathname === "/api/cliente/agenda/termos" && request.method === "GET") return agendaTermos(request, env);
+  if (url.pathname === "/api/cliente/agenda/cirurgias" && request.method === "GET") return agendaCirurgias(request, env);
+  if (url.pathname === "/api/cliente/agenda/termos/selecionar" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return agendar(request, env);
+  }
+  if (url.pathname === "/api/cliente/agenda/cirurgias/selecionar" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return agendarCirurgia(request, env);
+  }
+  if (url.pathname === "/api/cliente/forma-quitacao" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return solicitarLiberacaoFinanceira(request, env);
+  }
   if (url.pathname === "/api/cliente/agenda" && request.method === "GET") return agenda(request, env);
   if (url.pathname === "/api/cliente/agendar" && request.method === "POST") {
     const bad = bloquearCrossSite(request);
