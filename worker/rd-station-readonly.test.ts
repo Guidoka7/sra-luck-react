@@ -71,7 +71,7 @@ describe("RD Station CRM — normalização e separação snapshot/local", () =>
       procedimento: "Mamoplastia",
       consultora: "Vendedora RD",
       valor_contrato: 25000,
-      origem_venda: "Instagram",
+      origem_venda: "Campanha RD",
       banco: "BRB",
       origem_cadastro: "rd_station",
       crm_importado_em: "2026-09-18T15:00:00.000Z",
