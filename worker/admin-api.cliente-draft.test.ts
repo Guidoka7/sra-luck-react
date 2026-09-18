@@ -62,6 +62,18 @@ describe("ClienteDetailDrawer - criação administrativa opcional", () => {
     expect(createRoute).not.toContain("gerarParcelas");
   });
 
+  it("invalida carregamentos financeiros antigos ao trocar a cliente selecionada", () => {
+    expect(drawerSource).toContain("useLayoutEffect");
+    expect(drawerSource).toContain("financeRequestRef.current += 1");
+    expect(drawerSource).toContain("const requestId = ++financeRequestRef.current");
+    expect(drawerSource).toContain("if (financeRequestRef.current !== requestId) return");
+    expect(drawerSource).toContain('setActiveTab("profile")');
+    expect(drawerSource).toContain("setInstallments([])");
+    expect(drawerSource).toContain("setHistory([])");
+    expect(drawerSource).toContain("setEditing(emptyEditing)");
+    expect(drawerSource).toContain("setStatusOpen(false)");
+  });
+
   it("o mesmo ClienteDetailDrawer atende lista e modo criação sem required nativo", () => {
     expect(clientesPageSource).toContain('import { ClienteDetailDrawer }');
     expect(clientesPageSource).toContain("creating={modal === null}");
