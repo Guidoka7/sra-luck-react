@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { AppAccessRequirements } from "@/lib/appAccess";
 import type { DrawerClientModel, DrawerFinancialModel } from "./clienteDrawerModel";
 import { formatCurrency, formatDate, formatDateTime, formatNumberBR } from "./clienteDrawerModel";
@@ -44,6 +44,8 @@ function SectionHeader({
 
 export function ClienteProfileTab({ client, financial, editing, journeySteps, appAccessRequirements, appAccessSaving, onReleaseAppAccess, onEdit, onCancel, onDone, onChange }: Props) {
   const current = journeySteps.find((step) => step.status === "current") ?? journeySteps[journeySteps.length - 1];
+  const [journeyExpanded, setJourneyExpanded] = useState(false);
+  useEffect(() => { setJourneyExpanded(false); }, [client.id]);
   return <div className={styles.stack}>
     <article className={styles.card}>
       <SectionHeader title="Dados principais" icon="usercard" editKey="personal" editing={editing.personal} onEdit={() => onEdit("personal")} onCancel={() => onCancel("personal")} onDone={() => onDone("personal")}/>
@@ -147,8 +149,20 @@ export function ClienteProfileTab({ client, financial, editing, journeySteps, ap
     </article>
 
     <article className={styles.card}>
-      <SectionHeader title="Jornada da cliente" icon="clock"/>
-      <div className={styles.journeyBody}>
+      <button
+        className={styles.journeyToggle}
+        type="button"
+        aria-expanded={journeyExpanded}
+        aria-controls="client-journey-details"
+        onClick={() => setJourneyExpanded((value) => !value)}
+      >
+        <span className={styles.journeyToggleTitle}><DrawerIcon name="clock"/><span>Jornada da cliente</span></span>
+        <span className={styles.journeyToggleMeta}>
+          <span className={styles.journeyCollapsedNow}>{current ? `Agora · ${current.title}` : "Jornada ainda sem etapa disponível"}</span>
+          <span className={styles.journeyExpandLabel}>{journeyExpanded ? "Recolher" : "Expandir"} <span className={`${styles.journeyChevron} ${journeyExpanded ? styles.journeyChevronOpen : ""}`}>⌄</span></span>
+        </span>
+      </button>
+      {journeyExpanded ? <div className={styles.journeyBody} id="client-journey-details">
         {current ? <div className={styles.journeyCurrent}>
           <div>
             <span className={styles.journeyKicker}>Etapa atual no app</span>
@@ -176,7 +190,7 @@ export function ClienteProfileTab({ client, financial, editing, journeySteps, ap
             </div>;
           })}
         </div>
-      </div>
+      </div> : null}
     </article>
   </div>;
 }
