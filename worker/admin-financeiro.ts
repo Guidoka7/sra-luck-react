@@ -356,7 +356,6 @@ async function painelFinanceiro(db: Db) {
   }
 
   const porBoleto = indiceRecebimentos(recebimentos);
-  const hoje = hojeIso();
   const rows = (boletos as any[]).map((boleto) => {
     const cliente = clientePorId.get(String(boleto.cliente_id)) ?? clienteDo(boleto);
     const recebimento = porBoleto.get(boleto.id);
@@ -417,7 +416,6 @@ async function painelFinanceiro(db: Db) {
       isOverdue: status === "vencido",
       isPendingProof: boleto.status === "pendente_confirmacao" && Boolean(comprovante),
       isReceived: boleto.status === "pago",
-      today,
     };
   });
 
