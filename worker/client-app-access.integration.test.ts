@@ -6,6 +6,8 @@ const workerIndexSource = readFileSync(new URL("./index.ts", import.meta.url), "
 const clientAgendaSource = readFileSync(new URL("./client-agenda.ts", import.meta.url), "utf8");
 const agendaPageSource = readFileSync(new URL("../src/pages/AgendaPage.tsx", import.meta.url), "utf8");
 const drawerSource = readFileSync(new URL("../src/components/admin/clientes/ClienteDetailDrawer.tsx", import.meta.url), "utf8");
+const profileHeaderSource = readFileSync(new URL("../src/components/cliente/home/ClientProfileHeader.tsx", import.meta.url), "utf8");
+const paymentProgressSource = readFileSync(new URL("../src/components/cliente/parcelas/PagamentoProgressBar.tsx", import.meta.url), "utf8");
 
 describe("integração do acesso ao app e procedimento", () => {
   it("endpoint de liberação revalida requisitos no servidor usando parcelas persistidas", () => {
@@ -44,6 +46,11 @@ describe("integração do acesso ao app e procedimento", () => {
     expect(clientAgendaSource).toContain("procedimento: cliente.procedimento");
     expect(agendaPageSource).toContain("procedimento={agenda.cliente.procedimento}");
     expect(agendaPageSource).toContain('<ParcelasTab procedimento={agenda.cliente.procedimento} />');
+  });
+
+  it("procedimento vazio permanece seguro na Home e no progresso de parcelas", () => {
+    expect(profileHeaderSource).toContain('procedimento ?? "Procedimento a definir"');
+    expect(paymentProgressSource).toContain('procedimento ? `Cada parcela aproxima você do seu grande sonho: ${procedimento}.` : "Cada parcela aproxima você do seu tão sonhado procedimento."');
   });
 
   it("drawer usa a mesma regra central para habilitar a liberação", () => {
