@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Cliente } from "@/types/database";
 import { deriveJourneySteps } from "@/lib/journeySteps";
 import { ClienteFinanceTab, type ClienteFinanceTabHandle } from "./ClienteFinanceTab";
@@ -55,6 +55,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const closeTimer = useRef<number | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const financeRequestRef = useRef(0);
 
   const notify = useCallback((message: string, error = false) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -63,16 +64,21 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
   }, []);
 
   const resetFromClient = useCallback((next: Cliente | null) => {
+    financeRequestRef.current += 1;
+    if (toastTimer.current) {
+      window.clearTimeout(toastTimer.current);
+      toastTimer.current = null;
+    }
     const mapped = next ? mapClienteToDrawerModel(next) : emptyClient;
     const fin = next ? initialFinancialModel(next) : emptyFinancial;
     setSavedClient(mapped); setDraftClient(mapped); setFinancial(fin);
     setInstallments([]); setHistory([]); setJourneyContract(null);
     setEditing(emptyEditing); setFavorite(false); setStatusOpen(false); setActiveTab("profile");
-    setFinanceError(null); setFinanceLoading(Boolean(next?.id));
+    setFinanceError(null); setFinanceLoading(Boolean(next?.id)); setToast(null);
     requestAnimationFrame(() => { if (contentRef.current) contentRef.current.scrollTop = 0; });
   }, []);
 
-  useEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, resetFromClient]);
+  useLayoutEffect(() => { resetFromClient(cliente); }, [cliente?.id, creating, resetFromClient]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,14 +125,17 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
 
   const loadFinancial = useCallback(async () => {
     if (!cliente?.id) return;
+    const clientId = cliente.id;
+    const requestId = ++financeRequestRef.current;
     setFinanceLoading(true); setFinanceError(null);
     try {
-      const id = encodeURIComponent(cliente.id);
+      const id = encodeURIComponent(clientId);
       const [planData, historyData, journeyData] = await Promise.all([
         apiJson<DrawerPlanResponse>(`/api/admin/clientes/${id}/boletos`),
         apiJson<DrawerHistoryResponse>(`/api/admin/clientes/${id}/historico`),
         apiJson<DrawerJourneyResponse>(`/api/admin/clientes/${id}/jornada`),
       ]);
+      if (financeRequestRef.current !== requestId) return;
       const sourceRows: Record<string, unknown>[] = planData.boletos ?? planData.parcelas ?? [];
       const rows: DrawerInstallment[] = sourceRows.map(mapBoletoToDrawerInstallment);
       let nextFinancial = mergePlanClient(initialFinancialModel(cliente), planData.cliente);
@@ -138,8 +147,11 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
       setHistory(mapHistory(historyData.historico ?? historyData.logs ?? []));
       setJourneyContract(journeyData.contrato ?? null);
     } catch (e) {
+      if (financeRequestRef.current !== requestId) return;
       setFinanceError(e instanceof Error ? e.message : "Falha ao carregar dados financeiros.");
-    } finally { setFinanceLoading(false); }
+    } finally {
+      if (financeRequestRef.current === requestId) setFinanceLoading(false);
+    }
   }, [cliente]);
 
   useEffect(() => { if (cliente?.id) void loadFinancial(); }, [cliente?.id, loadFinancial]);
