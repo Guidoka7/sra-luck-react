@@ -22,14 +22,16 @@ export interface RdDealSnapshot {
   rdStageId: string | null;
   rdStatus: string | null;
   rdUpdatedAt: string | null;
-  nomeOriginal: string;
+  nomeOriginal: string | null;
   cpfOriginal: string | null;
   telefoneOriginal: string | null;
   emailOriginal: string | null;
   campanhaOriginal: string | null;
   origemOriginal: string | null;
   vendedoraOriginal: string | null;
-  valorOriginal: number;
+  procedimentoOriginal: string | null;
+  bancoOriginal: string | null;
+  valorOriginal: number | null;
   quantidadeParcelasOriginal: number | null;
   valorParcelaOriginal: number | null;
   taxaAdministrativaOriginal: number | null;
@@ -310,14 +312,16 @@ export function normalizarDealRd(deal: Json, refs: {
   const ownerInline = objectValue(deal.owner);
   const campaignInline = objectValue(deal.campaign);
   const sourceInline = objectValue(deal.source);
-  const nomeOriginal = stringValue(contato?.name) || firstString(deal, ["contact_name", "nome_cliente", "customer_name"]) || stringValue(deal.name) || "Cliente RD Station";
+  const nomeOriginal = stringValue(contato?.name) || firstString(deal, ["contact_name", "nome_cliente", "customer_name"]) || stringValue(deal.name) || null;
   const cpfOriginal = (stringValue(customFieldValue(contato, ["cpf", "documento", "cpf cliente"])) || firstString(contato, ["cpf", "document", "documento"]) || stringValue(customFieldValue(deal, ["cpf", "documento", "cpf cliente"])) || firstString(deal, ["cpf", "document", "documento"])).replace(/\D/g, "") || null;
   const telefoneOriginal = firstString(contato, ["phone", "telefone", "mobile_phone", "celular"]) || firstString(deal, ["phone", "telefone", "celular"]) || null;
   const emailOriginal = firstString(contato, ["email"]) || firstString(deal, ["email"]) || null;
   const campanhaOriginal = stringValue(campanha?.name) || stringValue(campaignInline.name) || firstString(deal, ["campaign_name", "campanha"]) || null;
   const origemOriginal = stringValue(fonte?.name) || stringValue(sourceInline.name) || firstString(deal, ["source_name", "origem"]) || null;
   const vendedoraOriginal = stringValue(usuario?.name) || stringValue(ownerInline.name) || firstString(deal, ["owner_name", "user_name", "vendedor", "responsavel"]) || null;
-  const valorOriginal = firstNumber(deal, ["total_price", "amount", "value", "valor_contrato"]) ?? numberValue(customFieldValue(deal, ["valor da carta", "carta de credito", "valor contrato"])) ?? 0;
+  const procedimentoOriginal = stringValue(customFieldValue(deal, ["procedimento", "procedimento interesse", "cirurgia", "interesse"])) || firstString(deal, ["procedimento", "procedimento_interesse", "cirurgia", "interesse"]) || null;
+  const bancoOriginal = stringValue(customFieldValue(deal, ["banco", "instituicao financeira", "instituição financeira"])) || firstString(deal, ["banco", "instituicao_financeira", "instituição_financeira"]) || null;
+  const valorOriginal = firstNumber(deal, ["total_price", "amount", "value", "valor_contrato"]) ?? numberValue(customFieldValue(deal, ["valor da carta", "carta de credito", "valor contrato"]));
   const quantidadeParcelasOriginal = numberValue(customFieldValue(deal, ["quantidade parcelas", "numero parcelas", "parcelas"])) ?? firstNumber(deal, ["quantidade_parcelas", "numero_parcelas"]);
   const valorParcelaOriginal = numberValue(customFieldValue(deal, ["valor parcela", "parcela valor"])) ?? firstNumber(deal, ["valor_parcela", "parcela_valor"]);
   const taxaAdministrativaOriginal = numberValue(customFieldValue(deal, ["taxa administrativa", "taxa adm"])) ?? firstNumber(deal, ["taxa_administrativa", "taxa_adm"]);
@@ -328,7 +332,7 @@ export function normalizarDealRd(deal: Json, refs: {
     rdStatus: stringValue(deal.status).toLowerCase() || null,
     rdUpdatedAt: stringValue(deal.updated_at) || null,
     nomeOriginal, cpfOriginal, telefoneOriginal, emailOriginal, campanhaOriginal, origemOriginal, vendedoraOriginal,
-    valorOriginal,
+    procedimentoOriginal, bancoOriginal, valorOriginal,
     quantidadeParcelasOriginal: quantidadeParcelasOriginal == null ? null : Math.max(1, Math.round(quantidadeParcelasOriginal)),
     valorParcelaOriginal, taxaAdministrativaOriginal, tipoVendaOriginal, dataVenda, raw: deal,
   };
@@ -352,6 +356,8 @@ export function snapshotUpdatePreservandoLocal(snapshot: RdDealSnapshot) {
     rd_campanha_original: snapshot.campanhaOriginal,
     rd_origem_original: snapshot.origemOriginal,
     rd_vendedora_original: snapshot.vendedoraOriginal,
+    rd_procedimento_original: snapshot.procedimentoOriginal,
+    rd_banco_original: snapshot.bancoOriginal,
     rd_valor_original: snapshot.valorOriginal,
     rd_updated_at: snapshot.rdUpdatedAt,
     sincronizado_rd_em: new Date().toISOString(),
@@ -360,15 +366,124 @@ export function snapshotUpdatePreservandoLocal(snapshot: RdDealSnapshot) {
   };
 }
 
+function cpfFormatado(cpf: string) {
+  return cpf.length === 11 ? `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}` : cpf;
+}
+
+export function clienteInicialDoRd(snapshot: RdDealSnapshot, recebidoEm: string) {
+  return {
+    nome_completo: snapshot.nomeOriginal,
+    cpf: snapshot.cpfOriginal,
+    telefone: snapshot.telefoneOriginal,
+    email: snapshot.emailOriginal,
+    procedimento: snapshot.procedimentoOriginal,
+    consultora: snapshot.vendedoraOriginal,
+    valor_contrato: snapshot.valorOriginal,
+    origem_venda: snapshot.origemOriginal,
+    banco: snapshot.bancoOriginal,
+    origem_cadastro: "rd_station" as const,
+    crm_importado_em: recebidoEm,
+    crm_ultimo_recebido_em: recebidoEm,
+    ativo: true,
+    status_cirurgia: "nao_agendada" as const,
+    status_financeiro: "a_pagar" as const,
+  };
+}
+
+async function garantirClienteLocalDoRd(
+  db: Db,
+  vendaId: string,
+  snapshot: RdDealSnapshot,
+  clienteIdExistente?: string | null,
+) {
+  const recebidoEm = new Date().toISOString();
+
+  if (clienteIdExistente) {
+    const { data: clienteAtual } = await db.from("clientes")
+      .select("id,crm_importado_em")
+      .eq("id", clienteIdExistente)
+      .maybeSingle();
+    if (clienteAtual) {
+      await db.from("clientes").update({
+        crm_importado_em: clienteAtual.crm_importado_em ?? recebidoEm,
+        crm_ultimo_recebido_em: recebidoEm,
+      }).eq("id", clienteIdExistente);
+      return clienteIdExistente;
+    }
+  }
+
+  let clienteVinculada: any = null;
+  if (snapshot.cpfOriginal) {
+    const opcoesCpf = [snapshot.cpfOriginal, cpfFormatado(snapshot.cpfOriginal)];
+    const { data } = await db.from("clientes")
+      .select("id,crm_importado_em")
+      .in("cpf", opcoesCpf)
+      .limit(1)
+      .maybeSingle();
+    clienteVinculada = data ?? null;
+  }
+
+  if (!clienteVinculada) {
+    const { data, error } = await db.from("clientes")
+      .insert(clienteInicialDoRd(snapshot, recebidoEm))
+      .select("id,crm_importado_em")
+      .single();
+    if (error) {
+      if (error.code === "23505" && snapshot.cpfOriginal) {
+        const { data: concorrente } = await db.from("clientes")
+          .select("id,crm_importado_em")
+          .in("cpf", [snapshot.cpfOriginal, cpfFormatado(snapshot.cpfOriginal)])
+          .limit(1)
+          .maybeSingle();
+        if (concorrente) clienteVinculada = concorrente;
+        else throw error;
+      } else {
+        throw error;
+      }
+    } else {
+      clienteVinculada = data;
+    }
+  }
+
+  if (!clienteVinculada) throw new Error("RD_CLIENT_LINK_FAILED");
+
+  await db.from("clientes").update({
+    crm_importado_em: clienteVinculada.crm_importado_em ?? recebidoEm,
+    crm_ultimo_recebido_em: recebidoEm,
+  }).eq("id", clienteVinculada.id);
+
+  const { error: linkError } = await db.from("novas_vendas").update({
+    cliente_id: clienteVinculada.id,
+    status: "aguardando_boletos",
+    updated_at: recebidoEm,
+  }).eq("id", vendaId);
+  if (linkError) throw linkError;
+
+  return String(clienteVinculada.id);
+}
+
 async function persistirNovaVenda(db: Db, snapshot: RdDealSnapshot) {
-  const { data: existente, error: erroBusca } = await db.from("novas_vendas").select("id,cliente_id,status").eq("rd_station_id", snapshot.rdStationId).maybeSingle();
+  const { data: existente, error: erroBusca } = await db.from("novas_vendas")
+    .select("id,cliente_id,status")
+    .eq("rd_station_id", snapshot.rdStationId)
+    .maybeSingle();
   if (erroBusca) throw erroBusca;
+
   if (existente) {
     const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshot)).eq("id", existente.id);
     if (error) throw error;
-    return { criada: false, atualizada: true, ignorada: false, id: existente.id };
+
+    let clienteId = existente.cliente_id ? String(existente.cliente_id) : null;
+    if (clienteId || !snapshot.rdStatus || snapshot.rdStatus === "won") {
+      clienteId = await garantirClienteLocalDoRd(db, existente.id, snapshot, clienteId);
+    }
+    return { criada: false, atualizada: true, ignorada: false, id: existente.id, clienteId };
   }
-  if (snapshot.rdStatus && snapshot.rdStatus !== "won") return { criada: false, atualizada: false, ignorada: true, id: null };
+
+  if (snapshot.rdStatus && snapshot.rdStatus !== "won") {
+    return { criada: false, atualizada: false, ignorada: true, id: null, clienteId: null };
+  }
+
   const insert = {
     rd_station_id: snapshot.rdStationId,
     nome_completo: snapshot.nomeOriginal,
@@ -384,12 +499,16 @@ async function persistirNovaVenda(db: Db, snapshot: RdDealSnapshot) {
     tipo_venda: snapshot.tipoVendaOriginal,
     origem_venda: snapshot.origemOriginal,
     campanha_local: snapshot.campanhaOriginal,
+    procedimento_local: snapshot.procedimentoOriginal,
+    banco_local: snapshot.bancoOriginal,
     status: "aguardando_cadastro",
     ...snapshotUpdatePreservandoLocal(snapshot),
   };
   const { data, error } = await db.from("novas_vendas").insert(insert).select("id").single();
   if (error) throw error;
-  return { criada: true, atualizada: false, ignorada: false, id: data.id };
+
+  const clienteId = await garantirClienteLocalDoRd(db, data.id, snapshot, null);
+  return { criada: true, atualizada: false, ignorada: false, id: data.id, clienteId };
 }
 
 async function registrarEvento(db: Db, input: { eventId?: string | null; eventType: string; referencia?: string | null; payload?: unknown; status?: string; erro?: string | null }) {
