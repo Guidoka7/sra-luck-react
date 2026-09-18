@@ -13,6 +13,7 @@ import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
 import { adminSurgeryFlow } from "./admin-surgery-flow";
+import { adminAgenda } from "./admin-agenda";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
@@ -353,6 +354,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (bad) return bad;
     return remarcarAgendamento(request, env);
   }
+
+  const agendaAdmin = await adminAgenda(request, env);
+  if (agendaAdmin) return agendaAdmin;
 
   const clienteAgendamento = await clienteAgendamentoAcao(request, env);
   if (clienteAgendamento) return clienteAgendamento;
