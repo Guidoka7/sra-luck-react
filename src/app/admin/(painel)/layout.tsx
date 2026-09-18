@@ -8,7 +8,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const clientes = pathname === "/admin/clientes" || pathname.startsWith("/admin/clientes/");
   const financeiro = pathname === "/admin/financeiro" || pathname.startsWith("/admin/financeiro/");
-  const referenceExact = clientes || financeiro;
+  const agenda = pathname === "/admin/agenda" || pathname.startsWith("/admin/agenda/");
+  const referenceExact = clientes || financeiro || agenda;
 
   return (
     <AdminZipShell>
