@@ -28,6 +28,24 @@ describe("ClienteDetailDrawer - criação administrativa opcional", () => {
     });
   });
 
+  it("permite salvar draft sem nome", () => {
+    const result = normalizarNovoCliente({ cpf: "52998224725", dataNascimento: "1992-04-18" });
+    if ("erro" in result) throw new Error(result.erro);
+    expect(result.dados.nome_completo).toBeNull();
+  });
+
+  it("permite salvar draft sem CPF", () => {
+    const result = normalizarNovoCliente({ nomeCompleto: "Maria", dataNascimento: "1992-04-18" });
+    if ("erro" in result) throw new Error(result.erro);
+    expect(result.dados.cpf).toBeNull();
+  });
+
+  it("permite salvar draft sem data de nascimento", () => {
+    const result = normalizarNovoCliente({ nomeCompleto: "Maria", cpf: "52998224725" });
+    if ("erro" in result) throw new Error(result.erro);
+    expect(result.dados.data_nascimento).toBeNull();
+  });
+
   it("normaliza strings vazias para null e nunca fabrica identidade", () => {
     const result = normalizarNovoCliente({
       nomeCompleto: "   ",
