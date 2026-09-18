@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import type { AppAccessRequirements } from "@/lib/appAccess";
 import type { DrawerClientModel, DrawerFinancialModel } from "./clienteDrawerModel";
-import { formatCurrency, formatDate, formatNumberBR } from "./clienteDrawerModel";
+import { formatCurrency, formatDate, formatDateTime, formatNumberBR } from "./clienteDrawerModel";
 import { DrawerIcon } from "./ClienteDrawerIcons";
 import styles from "./ClienteDetailDrawer.module.css";
 
@@ -12,6 +13,9 @@ interface Props {
   financial: DrawerFinancialModel;
   editing: ProfileEditState;
   journeySteps: JourneyViewStep[];
+  appAccessRequirements: AppAccessRequirements;
+  appAccessSaving: boolean;
+  onReleaseAppAccess: () => void;
   onEdit: (key: keyof ProfileEditState) => void;
   onCancel: (key: keyof ProfileEditState) => void;
   onDone: (key: keyof ProfileEditState) => void;
@@ -38,7 +42,7 @@ function SectionHeader({
   </div>;
 }
 
-export function ClienteProfileTab({ client, financial, editing, journeySteps, onEdit, onCancel, onDone, onChange }: Props) {
+export function ClienteProfileTab({ client, financial, editing, journeySteps, appAccessRequirements, appAccessSaving, onReleaseAppAccess, onEdit, onCancel, onDone, onChange }: Props) {
   const current = journeySteps.find((step) => step.status === "current") ?? journeySteps[journeySteps.length - 1];
   return <div className={styles.stack}>
     <article className={styles.card}>
@@ -57,6 +61,47 @@ export function ClienteProfileTab({ client, financial, editing, journeySteps, on
           <div><span className={styles.label}>Telefone</span><div className={`${styles.value} ${styles.inline}`}>{client.phone || "—"}<DrawerIcon name="whatsapp" className={styles.wa}/></div></div>
           <Info label="E-mail" value={client.email}/>
         </div>}
+      </div>
+    </article>
+
+    <article className={styles.card}>
+      <SectionHeader title="Acesso ao aplicativo" icon="usercard"/>
+      <div className={styles.cardBody}>
+        <div className={styles.appAccessHeader}>
+          <div>
+            <span className={styles.appAccessKicker}>Status</span>
+            <strong className={client.appAccessReleased ? styles.appAccessReleased : appAccessRequirements.canRelease ? styles.appAccessReady : styles.appAccessWaiting}>
+              {client.appAccessReleased ? "● Acesso liberado" : appAccessRequirements.canRelease ? "Pronta para acesso" : "Aguardando requisitos"}
+            </strong>
+          </div>
+          {client.appAccessReleased ? <span className={styles.appAccessBadge}>Liberado</span> : null}
+        </div>
+
+        <div className={styles.appAccessChecklist} aria-label="Requisitos para liberação do aplicativo">
+          <AccessRequirement ok={appAccessRequirements.hasName} complete="Nome cadastrado" incomplete="Nome ainda não cadastrado"/>
+          <AccessRequirement ok={appAccessRequirements.hasCpf} complete="CPF válido" incomplete="CPF válido ainda não cadastrado"/>
+          <AccessRequirement ok={appAccessRequirements.hasBirthDate} complete="Data de nascimento cadastrada" incomplete="Data de nascimento ainda não cadastrada"/>
+          <AccessRequirement ok={appAccessRequirements.hasFinancial} complete="Financeiro criado" incomplete="Financeiro ainda não criado"/>
+        </div>
+
+        {client.appAccessReleased ? (
+          <div className={styles.appAccessReleasedInfo}>
+            <span>Data da liberação</span>
+            <strong>{client.appAccessReleasedAt ? formatDateTime(client.appAccessReleasedAt) : "Acesso legado — data não registrada"}</strong>
+          </div>
+        ) : (
+          <>
+            <button
+              className={styles.appAccessButton}
+              type="button"
+              disabled={!appAccessRequirements.canRelease || appAccessSaving}
+              onClick={onReleaseAppAccess}
+            >
+              {appAccessSaving ? "Liberando..." : "Liberar acesso ao app"}
+            </button>
+            {!appAccessRequirements.canRelease ? <p className={styles.appAccessHint}>Conclua os requisitos acima para liberar o acesso.</p> : null}
+          </>
+        )}
       </div>
     </article>
 
@@ -133,6 +178,13 @@ export function ClienteProfileTab({ client, financial, editing, journeySteps, on
         </div>
       </div>
     </article>
+  </div>;
+}
+
+function AccessRequirement({ ok, complete, incomplete }: { ok: boolean; complete: string; incomplete: string }) {
+  return <div className={`${styles.appAccessRequirement} ${ok ? styles.appAccessRequirementDone : ""}`}>
+    <span className={styles.appAccessRequirementIcon} aria-hidden="true">{ok ? <DrawerIcon name="check"/> : "○"}</span>
+    <span>{ok ? complete : incomplete}</span>
   </div>;
 }
 
