@@ -55,6 +55,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
 
     const { data: porcentagem } = await supabase.rpc("porcentagem_pagamento", { p_cliente_id: cliente.id });
     const { data: podeAgendar } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
+    const { data: percentualMinimo } = await supabase.rpc("percentual_minimo_fluxo_agenda");
     const { data: agendaLiberada } = await supabase.rpc("agenda_liberada", { p_cliente_id: cliente.id });
     const parcelasPagas = (boletos ?? []).filter((b: { status: string }) => b.status === "pago").length;
 
@@ -62,6 +63,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
       cliente_id: cliente.id,
       quantidade_parcelas: cliente.quantidade_parcelas ?? (boletos?.[0]?.total_parcelas ?? null),
       porcentagem_pagamento: Number(porcentagem ?? 0),
+      percentual_minimo_agenda: Number(percentualMinimo ?? 70),
       pode_agendar: Boolean(podeAgendar), agenda_liberada: Boolean(agendaLiberada),
       status_revisao_financeira: cliente.status_revisao_financeira ?? null,
       data_atingiu_percentual: cliente.data_atingiu_percentual ?? null,
