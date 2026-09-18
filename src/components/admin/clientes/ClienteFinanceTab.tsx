@@ -1,4 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { agendaApi } from "@/features/agenda/agendaApi";
+import type { AgendaFlowPayload } from "@/features/agenda/types";
+import { AgendaOperationalFinance, AgendaReviewPanel } from "./ClienteAgendaFinancePanels";
 import { DrawerIcon } from "./ClienteDrawerIcons";
 import {
   INSTITUTIONS, PAYMENT_METHODS, apiJson, calculateFinancialSummary, formatCurrency, formatDate,
@@ -20,6 +23,7 @@ interface Props {
   compact?: boolean;
   focusInstallmentId?: string | null;
   onOpenProof?: (item: DrawerInstallment) => void;
+  agendaContext?: "default" | "terms-flow" | "finance-release" | "surgery-final";
   onReload: () => Promise<void>;
   onUpdated: () => void;
   notify: (message: string, error?: boolean) => void;
@@ -28,19 +32,39 @@ interface Props {
 type EditState = { plan: boolean; payment: boolean };
 
 export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(function ClienteFinanceTab({
-  clienteId, clientName, financial, installments, history, loading, error, compact = false, focusInstallmentId = null, onOpenProof, onReload, onUpdated, notify,
+  clienteId, clientName, financial, installments, history, loading, error, compact = false, focusInstallmentId = null, onOpenProof, agendaContext = "default", onReload, onUpdated, notify,
 }, ref) {
   const [editing, setEditing] = useState<EditState>({ plan: false, payment: false });
   const [draft, setDraft] = useState<DrawerFinancialModel>(financial);
   const [saving, setSaving] = useState(false);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [agendaFlow, setAgendaFlow] = useState<AgendaFlowPayload | null>(null);
+  const [agendaLoading, setAgendaLoading] = useState(false);
+
+  async function loadAgendaFlow() {
+    if (agendaContext === "default") { setAgendaFlow(null); return; }
+    setAgendaLoading(true);
+    try {
+      setAgendaFlow(await agendaApi.clientFlow(clienteId));
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Falha ao carregar o fluxo da Agenda.", true);
+    } finally {
+      setAgendaLoading(false);
+    }
+  }
 
   useEffect(() => { setDraft(financial); }, [financial]);
+  useEffect(() => { void loadAgendaFlow(); }, [clienteId, agendaContext]);
 
-  const summary = useMemo(() => calculateFinancialSummary(financial, installments), [financial, installments]);
-  const moneyPercent = financial.totalPlan > 0 ? Math.min(100, summary.totalPaid / financial.totalPlan * 100) : 0;
-  const openPercent = financial.totalPlan > 0 ? Math.max(0, 100 - moneyPercent) : 0;
+  const displayFinancial = useMemo(() => agendaContext === "default" ? financial : ({
+    ...financial,
+    totalPlan: installments.reduce((sum, item) => sum + Number(item.value || 0), 0),
+    totalInstallments: installments.length || financial.totalInstallments,
+  }), [agendaContext, financial, installments]);
+  const summary = useMemo(() => calculateFinancialSummary(displayFinancial, installments), [displayFinancial, installments]);
+  const moneyPercent = displayFinancial.totalPlan > 0 ? Math.min(100, summary.totalPaid / displayFinancial.totalPlan * 100) : 0;
+  const openPercent = displayFinancial.totalPlan > 0 ? Math.max(0, 100 - moneyPercent) : 0;
 
   async function persist() {
     if (!draft.totalInstallments || draft.totalInstallments < 1) return notify("Informe a quantidade de parcelas.", true);
@@ -91,12 +115,24 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
   if (loading) return <div className={styles.stack}><div className={styles.loading}><div className={styles.skeleton}/><div className={styles.skeleton}/><div className={styles.skeleton}/></div><div className={styles.loading}><div className={styles.skeleton}/><div className={styles.skeleton}/></div></div>;
   if (error) return <div className={styles.errorBox}><strong>Não foi possível carregar o Financeiro.</strong><div>{error}</div><button className={styles.edit} type="button" onClick={() => void onReload()}>Tentar novamente</button></div>;
 
+  if (agendaContext === "finance-release" || agendaContext === "surgery-final") {
+    return <AgendaOperationalFinance
+      mode={agendaContext}
+      clientName={clientName}
+      flow={agendaFlow}
+      loading={agendaLoading}
+      onRefresh={async () => { await loadAgendaFlow(); await onReload(); onUpdated(); }}
+      notify={notify}
+    />;
+  }
+
   return <div className={`${styles.stack} ${styles.financeStack}`}>
+    {agendaContext === "terms-flow" ? <AgendaReviewPanel flow={agendaFlow} loading={agendaLoading} onRefresh={async () => { await loadAgendaFlow(); await onReload(); onUpdated(); }} notify={notify}/> : null}
     {!compact ? <>
     <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="finance"/>Resumo financeiro</h3></div>
       <div className={styles.cardBody}><div className={styles.summary}>
-        <Kpi label="Valor total do plano" value={formatCurrency(financial.totalPlan)}/>
+        <Kpi label="Valor total do plano" value={formatCurrency(displayFinancial.totalPlan)}/>
         <Kpi label="Total pago" value={formatCurrency(summary.totalPaid)} sub={`${Math.round(moneyPercent)}% do plano`} valueClass={styles.paid}/>
         <Kpi label="Saldo em aberto" value={formatCurrency(summary.openBalance)} sub={`${Math.round(openPercent)}% do plano`} valueClass={styles.openValue}/>
         <Kpi label="Parcelas pagas" value={`${summary.paidCount} de ${financial.totalInstallments}`} sub={`${Math.round(summary.installmentProgress)}% concluído`}/>
@@ -130,7 +166,7 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
           <Field label="Início do plano"><input className={styles.input} type="date" value={draft.planStart} onChange={(e) => setDraft((d) => ({...d,planStart:e.target.value}))}/></Field>
         </div> : <div className={styles.finInfo}>
           <Info wide label="Procedimento" value={financial.procedure}/>
-          <Info label="Valor total" value={formatCurrency(financial.totalPlan)}/><Info label="Nº de parcelas" value={`${financial.totalInstallments} parcelas`}/>
+          <Info label="Valor total" value={formatCurrency(displayFinancial.totalPlan)}/><Info label="Nº de parcelas" value={`${financial.totalInstallments} parcelas`}/>
           <Info label="Valor da parcela" value={formatCurrency(financial.installmentValue)}/><Info label="Início do plano" value={formatDate(financial.planStart)}/>
         </div>}</div>
       </article>
@@ -152,7 +188,7 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
 
     </> : null}
 
-    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={financial} installments={installments} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
+    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={displayFinancial} installments={installments} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} allowInteraction={agendaContext !== "terms-flow" || Boolean(agendaFlow?.client.reviewConfirmedAt)} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
 
     <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="history"/>Histórico financeiro</h3><button className={styles.linkBtn} type="button" onClick={() => setHistoryExpanded((v)=>!v)}>{historyExpanded?"Mostrar menos":"Ver todos"}</button></div>
