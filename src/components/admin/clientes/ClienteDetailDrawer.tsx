@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Cliente } from "@/types/database";
 import { deriveJourneySteps } from "@/lib/journeySteps";
+import { getAppAccessRequirements } from "@/lib/appAccess";
 import { ClienteFinanceTab, type ClienteFinanceTabHandle } from "./ClienteFinanceTab";
 import { ClienteProfileTab, type ProfileEditState } from "./ClienteProfileTab";
 import { DrawerIcon } from "./ClienteDrawerIcons";
@@ -24,6 +25,7 @@ interface Props {
 const emptyClient: DrawerClientModel = {
   id: "", status: "Ativa", name: "", birthDate: "", cpf: "", phone: "", email: "", procedure: "",
   planValue: null, seller: "", campaign: "", bank: "", notes: "", releaseForecast: "",
+  appAccessReleased: false, appAccessReleasedAt: "",
 };
 const emptyFinancial: DrawerFinancialModel = {
   procedure: "", totalPlan: 0, totalInstallments: 0, installmentValue: 0, eligibilityPercentage: 70,
@@ -47,6 +49,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
 
   const drawerRef = useRef<HTMLElement>(null);
@@ -169,6 +172,13 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
     }).map((step) => ({ title: step.title, description: step.description, status: step.status }));
   }, [cliente, journeyContract, installments, financial.totalInstallments, financial.eligibilityPercentage]);
 
+  const appAccessRequirements = useMemo(() => getAppAccessRequirements({
+    name: savedClient.name,
+    cpf: savedClient.cpf,
+    birthDate: savedClient.birthDate,
+    installmentCount: installments.length,
+  }), [savedClient.name, savedClient.cpf, savedClient.birthDate, installments.length]);
+
   function cancelProfileSection(key: keyof ProfileEditState) {
     const patch: Partial<DrawerClientModel> = {};
     if (key === "personal") Object.assign(patch, { name: savedClient.name, cpf: savedClient.cpf, birthDate: savedClient.birthDate, phone: savedClient.phone, email: savedClient.email });
@@ -209,6 +219,31 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
       onUpdated(merged); notify("Alterações salvas com sucesso.");
     } catch (e) { notify(e instanceof Error ? e.message : "Falha ao salvar alterações.", true); }
     finally { setProfileSaving(false); }
+  }
+
+  async function releaseAppAccess() {
+    if (!cliente?.id || savedClient.appAccessReleased || !appAccessRequirements.canRelease) return;
+    setAccessSaving(true);
+    try {
+      const data = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(cliente.id)}/liberar-acesso-app`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const merged = { ...cliente, ...data.cliente } as Cliente;
+      const mapped = mapClienteToDrawerModel(merged);
+      setSavedClient(mapped);
+      setDraftClient((current) => ({
+        ...current,
+        appAccessReleased: mapped.appAccessReleased,
+        appAccessReleasedAt: mapped.appAccessReleasedAt,
+      }));
+      onUpdated(merged);
+      notify("Acesso ao aplicativo liberado.");
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Não foi possível liberar o acesso ao aplicativo.", true);
+    } finally {
+      setAccessSaving(false);
+    }
   }
 
   async function changeStatus(label: DrawerClientModel["status"]) {
@@ -255,11 +290,11 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
       </div></nav>
 
       <section ref={contentRef} className={styles.content} id="client-drawer-content" role="tabpanel" aria-label={activeTab === "profile" ? "Perfil" : "Financeiro"} tabIndex={0}>
-        {activeTab === "profile" ? <ClienteProfileTab client={draftClient} financial={financial} editing={editing} journeySteps={journeySteps} onEdit={(key) => setEditing((state) => ({...state,[key]:true}))} onCancel={cancelProfileSection} onDone={(key) => setEditing((state) => ({...state,[key]:false}))} onChange={(patch) => setDraftClient((current) => ({...current,...patch}))}/> :
+        {activeTab === "profile" ? <ClienteProfileTab client={draftClient} financial={financial} editing={editing} journeySteps={journeySteps} appAccessRequirements={appAccessRequirements} appAccessSaving={accessSaving} onReleaseAppAccess={() => void releaseAppAccess()} onEdit={(key) => setEditing((state) => ({...state,[key]:true}))} onCancel={cancelProfileSection} onDone={(key) => setEditing((state) => ({...state,[key]:false}))} onChange={(patch) => setDraftClient((current) => ({...current,...patch}))}/> :
         cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
       </section>
 
-      <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button><button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button></footer>
+      <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button><button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving || accessSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button></footer>
     </aside>
     {toast ? <div className={`${styles.toast} ${toast.error ? styles.error : ""}`} role="status" aria-live="polite"><DrawerIcon name={toast.error ? "alert" : "check"}/><span>{toast.message}</span></div> : null}
   </div>;
