@@ -7,6 +7,7 @@ const adminFinance = readFileSync(new URL("./admin-financeiro.ts", import.meta.u
 const clientBoletos = readFileSync(new URL("./client-boletos.ts", import.meta.url), "utf8");
 const rpcMigration = readFileSync(new URL("../supabase/migration_033_financeiro_unificado.sql", import.meta.url), "utf8");
 const uploadMigration = readFileSync(new URL("../supabase/migration_058_comprovante_enviado_em.sql", import.meta.url), "utf8");
+const eligibilityMigration = readFileSync(new URL("../supabase/migration_059_pode_agendar_percentual_cliente.sql", import.meta.url), "utf8");
 const profile = readFileSync(new URL("../src/components/admin/clientes/ClienteProfileTab.tsx", import.meta.url), "utf8");
 const financeTab = readFileSync(new URL("../src/components/admin/clientes/ClienteFinanceTab.tsx", import.meta.url), "utf8");
 
@@ -53,6 +54,14 @@ describe("Financeiro definitivo — handoff aprovado", () => {
     expect(rpcMigration).toContain("set status = 'pago'");
     expect(rpcMigration).toContain("insert into public.logs_alteracoes");
     expect(adminFinance).toContain('db.rpc("financeiro_validar_comprovante"');
+  });
+
+  it("usa o percentual mínimo real da cliente na elegibilidade compartilhada com o app", () => {
+    expect(eligibilityMigration).toContain("c.percentual_minimo_agendar");
+    expect(eligibilityMigration).toContain("public.porcentagem_pagamento(p_cliente_id)");
+    expect(eligibilityMigration).toContain("when c.quantidade_parcelas in (12, 18, 24) then 60");
+    expect(eligibilityMigration).toContain("when c.quantidade_parcelas = 36 then 70");
+    expect(eligibilityMigration).toContain("else 80");
   });
 
   it("mantém Jornada recolhida no Perfil e Financeiro compacto sem os blocos removidos", () => {
