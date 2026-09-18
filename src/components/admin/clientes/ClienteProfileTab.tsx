@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { DrawerClientModel, DrawerFinancialModel } from "./clienteDrawerModel";
 import { formatCurrency, formatDate, formatNumberBR } from "./clienteDrawerModel";
 import { DrawerIcon } from "./ClienteDrawerIcons";
@@ -139,6 +140,6 @@ function Info({ label, value }: { label: string; value: string }) {
   return <div><span className={styles.label}>{label}</span><div className={styles.value}>{value || "—"}</div></div>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className={styles.field}><label>{label}</label>{children}</div>;
 }
