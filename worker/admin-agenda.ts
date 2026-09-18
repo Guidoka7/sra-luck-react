@@ -30,9 +30,24 @@ function isoDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function saoPauloDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
+  return get("year") + "-" + get("month") + "-" + get("day");
+}
+
+function saoPauloMonth(now = new Date()) {
+  return saoPauloDate(now).slice(0, 7);
+}
+
 function monthKey(value: unknown) {
   const text = typeof value === "string" ? value : "";
-  return /^\d{4}-\d{2}$/.test(text) ? text : new Date().toISOString().slice(0, 7);
+  return /^\d{4}-\d{2}$/.test(text) ? text : saoPauloMonth();
 }
 
 function monthBounds(month: string) {
@@ -261,7 +276,7 @@ async function calendarSurgery(db: Db, month: string) {
 }
 
 async function monthPlanner(db: Db, excludeClientId: string | null) {
-  const current = new Date().toISOString().slice(0, 7);
+  const current = saoPauloMonth();
   const months = [];
   for (let index = 0; index < 6; index += 1) {
     const month = addMonths(current, index);
@@ -307,7 +322,9 @@ async function termsPayload(db: Db, month: string) {
       const qualifiedMonth = String(client.data_atingiu_percentual ?? "").slice(0, 7);
       const canceled = latestCanceledAppointment(appointments);
       const returnToStage4 = Boolean(choice && canceled);
-      if (qualifiedMonth === month || returnToStage4 || (!qualifiedMonth && month === new Date().toISOString().slice(0,7))) {
+      const returnedMonth = returnToStage4 ? String(canceled?.updated_at ?? "").slice(0, 7) : "";
+      const operationalMonth = returnToStage4 ? returnedMonth : qualifiedMonth || saoPauloMonth();
+      if (operationalMonth === month) {
         eligible.push({
           ...publicClient(client, summary, choice, null),
           becameEligibleAt: client.data_atingiu_percentual,
@@ -316,14 +333,20 @@ async function termsPayload(db: Db, month: string) {
       }
     }
 
-    if (appointment && appointment.status === "confirmado" && choice && choice.status !== "recusada") {
+    if (
+      appointment
+      && appointment.status === "confirmado"
+      && appointment.horario_termos
+      && choice
+      && choice.status !== "recusada"
+    ) {
       const date = termsDate(appointment);
       if (date?.slice(0,7) === month) {
         confirmed.push({
           ...publicClient(client, summary, choice, appointment),
           appointmentId: appointment.id,
           date,
-          time: appointment.horario_termos ? String(appointment.horario_termos).slice(0,5) : null,
+          time: String(appointment.horario_termos).slice(0,5),
           attendanceStatus: appointment.comparecimento_status,
         });
       }
@@ -347,7 +370,14 @@ async function releaseQueue(db: Db) {
     const summary = financialSummary(client.id, all.billsByClient);
     const choice = all.choiceByClient.get(client.id) ?? null;
     const appointment = latestCurrentAppointment(all.appointmentsByClient.get(client.id) ?? []);
-    if (!choice || choice.status === "recusada" || !appointment || appointment.data_cirurgia) continue;
+    if (
+      client.status_revisao_financeira !== "aprovada"
+      || !client.financeiro_confirmado_em
+      || !choice
+      || choice.status === "recusada"
+      || !appointment
+      || appointment.data_cirurgia
+    ) continue;
     const date = termsDate(appointment);
     if (!date || !appointment.horario_termos) continue;
 
