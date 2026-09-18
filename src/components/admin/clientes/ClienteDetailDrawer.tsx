@@ -18,6 +18,9 @@ interface Props {
   open: boolean;
   creating?: boolean;
   initialTab?: "profile" | "finance";
+  financeMode?: "full" | "compact";
+  focusInstallmentId?: string | null;
+  onOpenProof?: (item: DrawerInstallment) => void;
   onClose: () => void;
   onUpdated: (cliente?: Cliente) => void;
   onCreated?: (cliente: Cliente) => void;
@@ -34,7 +37,7 @@ const emptyFinancial: DrawerFinancialModel = {
 };
 const emptyEditing: ProfileEditState = { personal: false, procedure: false, sale: false, notes: false };
 
-export function ClienteDetailDrawer({ cliente, open, creating = false, initialTab = "profile", onClose, onUpdated, onCreated }: Props) {
+export function ClienteDetailDrawer({ cliente, open, creating = false, initialTab = "profile", financeMode = "full", focusInstallmentId = null, onOpenProof, onClose, onUpdated, onCreated }: Props) {
   const [entered, setEntered] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "finance">("profile");
   const [savedClient, setSavedClient] = useState<DrawerClientModel>(emptyClient);
@@ -298,7 +301,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
 
       <section ref={contentRef} className={styles.content} id="client-drawer-content" role="tabpanel" aria-label={activeTab === "profile" ? "Perfil" : "Financeiro"} tabIndex={0}>
         {activeTab === "profile" ? <ClienteProfileTab client={draftClient} financial={financial} editing={editing} journeySteps={journeySteps} appAccessRequirements={appAccessRequirements} appAccessSaving={accessSaving} onReleaseAppAccess={() => void releaseAppAccess()} onEdit={(key) => setEditing((state) => ({...state,[key]:true}))} onCancel={cancelProfileSection} onDone={(key) => setEditing((state) => ({...state,[key]:false}))} onChange={(patch) => setDraftClient((current) => ({...current,...patch}))}/> :
-        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
+        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} compact={financeMode === "compact"} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
       </section>
 
       <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button><button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving || accessSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button></footer>
