@@ -299,7 +299,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/cliente/session" && request.method === "GET") {
     if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503);
     const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
-    return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
+    if (!payload) return json({ autenticado: false }, 200, { "Cache-Control": "no-store" });
+    const db = createServiceSupabaseClient(env);
+    const { data: clienteSessao, error: clienteSessaoError } = await db
+      .from("clientes")
+      .select("ativo,acesso_app_liberado")
+      .eq("id", payload.clienteId)
+      .maybeSingle();
+    if (clienteSessaoError) return json({ autenticado: false }, 503, { "Cache-Control": "no-store" });
+    const autenticado = Boolean(clienteSessao?.ativo && clienteSessao?.acesso_app_liberado);
+    return json(autenticado ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
   }
 
   if (url.pathname === "/api/cliente/logout" && request.method === "POST") {
