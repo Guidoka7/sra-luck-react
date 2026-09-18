@@ -39,7 +39,8 @@ describe("Financeiro definitivo — handoff aprovado", () => {
     expect(adminFinance).toContain("comprovante_enviado_em");
     expect(adminFinance).toContain('path === "/api/admin/financeiro/painel"');
     expect(clientBoletos).toContain('status: "pendente_confirmacao"');
-    expect(clientBoletos).toContain("comprovante_enviado_em: new Date().toISOString()");
+    expect(clientBoletos).toContain("comprovante_enviado_em: comprovanteEnviadoEm");
+    expect(clientBoletos).toContain('acao: "enviou_comprovante"');
     expect(adminFinance).toContain('db.from("boletos")');
     expect(clientBoletos).toContain('supabase.from("boletos")');
   });
