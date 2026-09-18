@@ -36,7 +36,7 @@ describe("Clientes — referência visual e estrutural aprovada", () => {
 
   it("não deixa o calendário de teste sobrepor a tela definitiva de Clientes", () => {
     expect(adminLayout).toContain('pathname.startsWith("/admin/clientes/")');
-    expect(adminLayout).toContain('!clientes ? <CalendarioTesteTempo /> : null');
+    expect(adminLayout).toContain('!referenceExact ? <CalendarioTesteTempo /> : null');
   });
 
   it("mantém a mesma tabela e filtros em todas as abas", () => {
