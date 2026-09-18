@@ -2,6 +2,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { getAppAccessRequirements } from "../src/lib/appAccess";
+import { calcularLiberacaoCirurgica } from "./surgery-release";
 
 type Json = Record<string, any>;
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
@@ -400,15 +401,61 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   const jornadaCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/jornada$/);
   if(jornadaCliente&&request.method==="GET"){
     const id=decodeURIComponent(jornadaCliente[1]);
-    const {data:contrato,error}=await supabase.from("contratos_credito")
-      .select("id,cliente_id,etapa,percentual_minimo,data_atingiu_percentual,levantamento_aprovado_em,forma_quitacao,escolha_forma_em,termos_assinados_em,quitado_em,agenda_cirurgica_liberar_em,cirurgia_em,created_at,updated_at")
-      .eq("cliente_id",id)
-      .neq("etapa","cancelado")
-      .order("created_at",{ascending:false})
-      .limit(1)
-      .maybeSingle();
-    if(error)return json({erro:error.message},500);
-    return json({contrato:contrato??null});
+    const [{data:clienteJornada,error:erroClienteJornada},{data:agendamentosJornada,error:erroAgendamentosJornada}]=await Promise.all([
+      supabase.from("clientes")
+        .select("id,status_contrato,status_cirurgia,status_financeiro,status_revisao_financeira,data_atingiu_percentual,financeiro_confirmado_em,custeio_confirmado_em,percentual_minimo_agendar,quantidade_parcelas")
+        .eq("id",id)
+        .maybeSingle(),
+      supabase.from("agendamentos")
+        .select("id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,created_at,datas(data)")
+        .eq("cliente_id",id)
+        .order("created_at",{ascending:false}),
+    ]);
+    if(erroClienteJornada)return json({erro:erroClienteJornada.message},500);
+    if(erroAgendamentosJornada)return json({erro:erroAgendamentosJornada.message},500);
+    if(!clienteJornada)return json({erro:"Cliente não encontrada."},404);
+
+    const agendas=(agendamentosJornada??[]) as any[];
+    const comTermos=agendas.find((item)=>Boolean(item.termos_assinados_em))??null;
+    const comCirurgia=agendas.find((item)=>Boolean(item.data_cirurgia))??null;
+    const agendaAtiva=agendas.find((item)=>item.status==="confirmado")??agendas[0]??null;
+    const termosAssinadosEm=comTermos?.termos_assinados_em??null;
+    const cirurgiaEm=comCirurgia?.data_cirurgia??null;
+    const agendaCirurgicaLiberarEm=calcularLiberacaoCirurgica(
+      termosAssinadosEm,
+      clienteJornada.custeio_confirmado_em??null,
+    );
+
+    let etapa="formacao_saldo";
+    if(clienteJornada.status_contrato==="cancelado")etapa="cancelado";
+    else if(clienteJornada.status_cirurgia==="realizada")etapa="concluido";
+    else if(clienteJornada.status_cirurgia==="agendada"||cirurgiaEm)etapa="cirurgia_agendada";
+    else if(termosAssinadosEm&&clienteJornada.custeio_confirmado_em)etapa="quitado";
+    else if(termosAssinadosEm)etapa="aguardando_quitacao";
+    else if(clienteJornada.custeio_confirmado_em)etapa=agendaAtiva?"termos_agendados":"forma_pagamento_liberada";
+    else if(clienteJornada.status_revisao_financeira==="aprovada")etapa="forma_pagamento_liberada";
+    else if(clienteJornada.status_revisao_financeira==="pendente")etapa="levantamento_financeiro";
+    else if(clienteJornada.data_atingiu_percentual)etapa="meta_atingida";
+
+    return json({
+      contrato:{
+        id:`cliente:${clienteJornada.id}`,
+        cliente_id:clienteJornada.id,
+        etapa,
+        percentual_minimo:clienteJornada.percentual_minimo_agendar??null,
+        data_atingiu_percentual:clienteJornada.data_atingiu_percentual??null,
+        levantamento_aprovado_em:clienteJornada.financeiro_confirmado_em??null,
+        forma_quitacao:null,
+        escolha_forma_em:clienteJornada.custeio_confirmado_em??null,
+        termos_assinados_em:termosAssinadosEm,
+        quitado_em:clienteJornada.custeio_confirmado_em&&termosAssinadosEm
+          ? (String(clienteJornada.custeio_confirmado_em)>String(termosAssinadosEm)?clienteJornada.custeio_confirmado_em:termosAssinadosEm)
+          : null,
+        agenda_cirurgica_liberar_em:agendaCirurgicaLiberarEm,
+        cirurgia_em:cirurgiaEm,
+      },
+      fonte:"modelo_real_clientes_agendamentos",
+    });
   }
 
   const historicoCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/historico$/);
