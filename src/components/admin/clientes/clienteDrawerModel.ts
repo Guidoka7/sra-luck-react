@@ -154,6 +154,12 @@ export function mapClienteToDrawerModel(cliente: Cliente): DrawerClientModel {
   };
 }
 
+function eligibilityForInstallments(quantity: number) {
+  if ([12, 18, 24].includes(quantity)) return 60;
+  if (quantity === 36) return 70;
+  return quantity > 0 ? 80 : 70;
+}
+
 export function initialFinancialModel(cliente: Cliente): DrawerFinancialModel {
   const quantity = Number(cliente.quantidade_parcelas ?? cliente.parcelas_total ?? 0);
   return {
@@ -161,7 +167,7 @@ export function initialFinancialModel(cliente: Cliente): DrawerFinancialModel {
     totalPlan: Number(cliente.valor_total_plano ?? cliente.custo_total ?? 0),
     totalInstallments: Number.isFinite(quantity) ? quantity : 0,
     installmentValue: Number(cliente.valor_parcela_plano ?? 0),
-    eligibilityPercentage: Number(cliente.percentual_minimo_agendar ?? 70),
+    eligibilityPercentage: Number(cliente.percentual_minimo_agendar ?? eligibilityForInstallments(quantity)),
     planStart: cliente.inicio_plano ?? "",
     paymentMethod: cliente.forma_pagamento_plano ?? "",
     institution: cliente.instituicao_pagamento ?? cliente.banco ?? "",
@@ -177,7 +183,7 @@ export function mergePlanClient(financial: DrawerFinancialModel, raw: Record<str
     totalPlan: Number(raw.valor_total_plano ?? raw.custo_total ?? financial.totalPlan),
     totalInstallments: Number(raw.quantidade_parcelas ?? financial.totalInstallments),
     installmentValue: Number(raw.valor_parcela_plano ?? financial.installmentValue),
-    eligibilityPercentage: Number(raw.percentual_minimo_agendar ?? financial.eligibilityPercentage),
+    eligibilityPercentage: Number(raw.percentual_minimo_agendar ?? eligibilityForInstallments(Number(raw.quantidade_parcelas ?? financial.totalInstallments))),
     planStart: String(raw.inicio_plano ?? financial.planStart ?? ""),
     paymentMethod: String(raw.forma_pagamento_plano ?? financial.paymentMethod ?? ""),
     institution: String(raw.instituicao_pagamento ?? financial.institution ?? ""),
