@@ -374,18 +374,60 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
 
     const { data: atual } = await db.from("boletos").select("*").eq("id", boletoId).eq("cliente_id", clienteId).maybeSingle();
     if (!atual) return json({ erro: "Parcela não encontrada." }, 404);
-    if (atual.status === "pago") return json({ erro: "Parcelas pagas não podem ser alteradas." }, 400);
+    if (["pago", "pendente_confirmacao"].includes(String(atual.status))) {
+      return json({ erro: "Parcelas pagas ou em conferência não podem ser alteradas por esta ação." }, 409);
+    }
 
     if (acao === "excluir") {
-      const { data: todas } = await db.from("boletos").select("id").eq("cliente_id", clienteId);
-      const novoTotal = Math.max(0, (todas ?? []).length - 1);
+      const { data: todasAntes, error: erroTodas } = await db
+        .from("boletos")
+        .select("id,numero_parcela,valor,status")
+        .eq("cliente_id", clienteId)
+        .order("numero_parcela", { ascending: true });
+      if (erroTodas) return json({ erro: erroTodas.message }, 500);
+      if ((todasAntes ?? []).length <= 1) return json({ erro: "O plano precisa manter ao menos uma parcela." }, 409);
+
       const { error } = await db.from("boletos").delete().eq("id", boletoId).eq("cliente_id", clienteId);
       if (error) return json({ erro: error.message }, 500);
-      if (novoTotal > 0) await db.from("boletos").update({ total_parcelas: novoTotal }).eq("cliente_id", clienteId);
-      await db.from("clientes").update({ quantidade_parcelas: novoTotal > 0 ? novoTotal : null }).eq("id", clienteId);
-      await db.from("logs_alteracoes").insert({ usuario, acao: "excluiu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, valor: atual.valor, vencimento: atual.data_vencimento, novo_total: novoTotal } });
+
+      const restantes = (todasAntes ?? []).filter((item: any) => item.id !== boletoId);
+      const novoTotal = restantes.length;
+      for (let indice = 0; indice < restantes.length; indice += 1) {
+        const parcela = restantes[indice] as any;
+        const novoNumero = indice + 1;
+        const { error: erroRenumerar } = await db
+          .from("boletos")
+          .update({ numero_parcela: novoNumero, total_parcelas: novoTotal })
+          .eq("id", parcela.id)
+          .eq("cliente_id", clienteId);
+        if (erroRenumerar) return json({ erro: erroRenumerar.message }, 500);
+      }
+
+      const valorTotalPlano = Math.round(restantes.reduce((soma: number, item: any) => soma + Number(item.valor ?? 0), 0) * 100) / 100;
+      const aberta = restantes.find((item: any) => item.status !== "pago") ?? restantes[0] ?? null;
+      const { error: erroCliente } = await db.from("clientes").update({
+        quantidade_parcelas: novoTotal,
+        valor_total_plano: valorTotalPlano,
+        valor_parcela_plano: aberta ? Number(aberta.valor ?? 0) : null,
+      }).eq("id", clienteId);
+      if (erroCliente) return json({ erro: erroCliente.message }, 500);
+
+      await db.from("logs_alteracoes").insert({
+        usuario,
+        acao: "excluiu_parcela",
+        entidade: "clientes",
+        entidade_id: clienteId,
+        detalhes: {
+          parcela: atual.numero_parcela,
+          valor: Number(atual.valor ?? 0),
+          vencimento: atual.data_vencimento,
+          novo_total: novoTotal,
+          valor_total_plano: valorTotalPlano,
+          renumerou_parcelas: true,
+        },
+      });
       await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", quantidadeParcelas: novoTotal });
-      return json({ sucesso: true, totalParcelas: novoTotal });
+      return json({ sucesso: true, totalParcelas: novoTotal, valorTotalPlano });
     }
 
     if (acao === "reabrir") {
