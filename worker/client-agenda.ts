@@ -3,7 +3,9 @@ import { getCookie, verificarTokenSessao } from "./session";
 import { agoraSaoPaulo, calcularLiberacaoCirurgica } from "./surgery-release";
 
 const COOKIE_NAME = "cliente_session";
-const HORARIOS_VALIDOS = new Set(["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]);
+const TERM_TIMES = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"];
+const SURGERY_TIMES = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"];
+const HORARIOS_VALIDOS = new Set(TERM_TIMES);
 
 export function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
