@@ -44,7 +44,7 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
       .order("numero_parcela", { ascending: true }),
     db
       .from("clientes")
-      .select("id,nome_completo,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,ativo,status_financeiro,updated_at")
+      .select("id,nome_completo,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,quantidade_parcelas,percentual_minimo_agendar,ativo,status_financeiro,updated_at")
       .eq("id", clienteId)
       .maybeSingle(),
   ]);
@@ -87,36 +87,36 @@ async function salvarPlanoDoDrawer(
     return json({ erro: "Informe uma quantidade de parcelas entre 1 e 240." }, 400);
   }
 
-  const taxaBruta = body.taxaPercentual ?? body.taxaAdministrativaPercentual;
-  const taxa = taxaBruta === undefined || taxaBruta === null || taxaBruta === "" ? null : Number(taxaBruta);
-  if (taxa !== null && (!Number.isFinite(taxa) || taxa < 0 || taxa > 999.99)) {
-    return json({ erro: "Taxa administrativa inválida." }, 400);
-  }
-
   const valorContrato = numeroPositivo(body.valorContrato ?? body.cartaCredito);
   if (body.valorContrato !== undefined && valorContrato === null) {
     return json({ erro: "Informe uma carta de crédito válida." }, 400);
   }
 
   const valorParcela = numeroPositivo(body.valorParcela ?? body.valor);
-  const primeiroVencimento = String(body.primeiroVencimento ?? body.dataVencimento ?? "").trim() || null;
+  if (valorParcela === null) return json({ erro: "Informe um valor de parcela válido." }, 400);
+
+  const primeiroVencimento = String(body.primeiroVencimento ?? body.inicioPlano ?? body.dataVencimento ?? "").trim() || null;
   if (primeiroVencimento && !dataValida(primeiroVencimento)) {
-    return json({ erro: "Primeiro vencimento inválido." }, 400);
+    return json({ erro: "Início do plano inválido." }, 400);
   }
+
+  const novoModelo = body.valorTotalPlano !== undefined
+    || body.formaPagamento !== undefined
+    || body.instituicao !== undefined
+    || body.diaCobranca !== undefined
+    || body.statusPlano !== undefined;
 
   const [{ data: existentes, error: erroExistentes }, { data: clienteAtual, error: erroCliente }] = await Promise.all([
     db.from("boletos").select("id").eq("cliente_id", clienteId).limit(1),
-    db.from("clientes").select("id,valor_contrato").eq("id", clienteId).maybeSingle(),
+    db.from("clientes").select("id,valor_contrato,custo_total,valor_total_plano").eq("id", clienteId).maybeSingle(),
   ]);
   if (erroExistentes) return json({ erro: erroExistentes.message }, 500);
   if (erroCliente) return json({ erro: erroCliente.message }, 500);
   if (!clienteAtual) return json({ erro: "Cliente não encontrada." }, 404);
 
   const jaTinhaPlano = Boolean(existentes?.length);
-  const cartaEfetiva = valorContrato ?? numeroPositivo(clienteAtual.valor_contrato);
-  if (!cartaEfetiva) return json({ erro: "Informe a carta de crédito antes de criar o financeiro." }, 400);
   if (!jaTinhaPlano && !primeiroVencimento) {
-    return json({ erro: "Informe o 1º vencimento para gerar o financeiro." }, 400);
+    return json({ erro: "Informe o início do plano para gerar as parcelas." }, 400);
   }
 
   if (valorContrato !== null && Math.abs(Number(clienteAtual.valor_contrato ?? 0) - valorContrato) > 0.009) {
@@ -124,15 +124,54 @@ async function salvarPlanoDoDrawer(
     if (erroCarta) return json({ erro: erroCarta.message }, 500);
   }
 
-  const { data, error } = await db.rpc("salvar_plano_financeiro_cliente", {
-    p_cliente_id: clienteId,
-    p_quantidade: quantidade,
-    p_valor_parcela: valorParcela,
-    p_primeiro_vencimento: primeiroVencimento,
-    p_taxa_percentual: taxa,
-    p_recalcular_abertas: body.recalcularAbertas !== false,
-  });
+  let rpcName = "salvar_plano_financeiro_cliente";
+  let rpcArgs: Record<string, unknown>;
 
+  if (novoModelo) {
+    const totalPlano = numeroPositivo(body.valorTotalPlano);
+    if (body.valorTotalPlano === 0) {
+      rpcArgs = {};
+    }
+    if (totalPlano === null && Number(body.valorTotalPlano) !== 0) {
+      return json({ erro: "Informe um valor total do plano válido." }, 400);
+    }
+    const diaCobranca = inteiro(body.diaCobranca);
+    if (body.diaCobranca !== undefined && (diaCobranca === null || diaCobranca < 1 || diaCobranca > 31)) {
+      return json({ erro: "Dia de cobrança inválido." }, 400);
+    }
+    const statusPlano = String(body.statusPlano ?? "Ativa");
+    if (!["Ativa", "Suspensa"].includes(statusPlano)) return json({ erro: "Status do plano inválido." }, 400);
+
+    rpcName = "salvar_plano_financeiro_drawer";
+    rpcArgs = {
+      p_cliente_id: clienteId,
+      p_quantidade: quantidade,
+      p_valor_parcela: valorParcela,
+      p_primeiro_vencimento: primeiroVencimento,
+      p_valor_total_plano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      p_forma_pagamento: body.formaPagamento == null ? null : String(body.formaPagamento),
+      p_instituicao: body.instituicao == null ? null : String(body.instituicao),
+      p_dia_cobranca: diaCobranca,
+      p_status_plano: statusPlano,
+      p_recalcular_abertas: body.recalcularAbertas !== false,
+    };
+  } else {
+    const taxaBruta = body.taxaPercentual ?? body.taxaAdministrativaPercentual;
+    const taxa = taxaBruta === undefined || taxaBruta === null || taxaBruta === "" ? null : Number(taxaBruta);
+    if (taxa !== null && (!Number.isFinite(taxa) || taxa < 0 || taxa > 999.99)) {
+      return json({ erro: "Taxa administrativa inválida." }, 400);
+    }
+    rpcArgs = {
+      p_cliente_id: clienteId,
+      p_quantidade: quantidade,
+      p_valor_parcela: valorParcela,
+      p_primeiro_vencimento: primeiroVencimento,
+      p_taxa_percentual: taxa,
+      p_recalcular_abertas: body.recalcularAbertas !== false,
+    };
+  }
+
+  const { data, error } = await db.rpc(rpcName, rpcArgs);
   if (error) {
     const mensagem = String(error.message || "Não foi possível salvar o plano financeiro.")
       .replace(/^P0001:\s*/i, "")
@@ -146,22 +185,56 @@ async function salvarPlanoDoDrawer(
     acao: jaTinhaPlano || modo === "ajustar" ? "ajustou_plano_financeiro" : "criou_plano_financeiro",
     entidade: "clientes",
     entidade_id: clienteId,
-    detalhes: {
-      carta_credito: cartaEfetiva,
+    detalhes: novoModelo ? {
+      modelo: "drawer_v2",
+      carta_credito: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      valor_total_plano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      quantidade_parcelas: quantidade,
+      valor_parcela: valorParcela,
+      inicio_plano: primeiroVencimento,
+      forma_pagamento: body.formaPagamento ?? null,
+      instituicao: body.instituicao ?? null,
+      dia_cobranca: body.diaCobranca ?? null,
+      status_plano: body.statusPlano ?? "Ativa",
+      preservou_parcelas_pagas: true,
+    } : {
+      modelo: "legado",
+      carta_credito: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
       quantidade_parcelas: quantidade,
       valor_parcela: valorParcela,
       primeiro_vencimento: primeiroVencimento,
-      taxa_percentual: taxa,
       preservou_parcelas_pagas: true,
     },
   });
   await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", quantidadeParcelas: quantidade });
 
+  const { data: clienteAtualizado } = await db
+    .from("clientes")
+    .select("id,valor_contrato,custo_total,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,quantidade_parcelas,percentual_minimo_agendar")
+    .eq("id", clienteId)
+    .maybeSingle();
+
   return json({
     sucesso: true,
     boletos,
     parcelas: boletos,
-    plano: { valorContrato: cartaEfetiva, quantidadeParcelas: quantidade, valorParcela, primeiroVencimento, taxaPercentual: taxa },
+    cliente: clienteAtualizado,
+    plano: novoModelo ? {
+      valorContrato: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      valorTotalPlano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      quantidadeParcelas: quantidade,
+      valorParcela,
+      inicioPlano: primeiroVencimento,
+      formaPagamento: body.formaPagamento ?? null,
+      instituicao: body.instituicao ?? null,
+      diaCobranca: body.diaCobranca ?? null,
+      statusPlano: body.statusPlano ?? "Ativa",
+    } : {
+      valorContrato: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      quantidadeParcelas: quantidade,
+      valorParcela,
+      primeiroVencimento,
+    },
   });
 }
 
