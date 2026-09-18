@@ -105,7 +105,7 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
     setEnviando(true);
     setErro(null);
     try {
-      const resposta = await fetch("/api/cliente/solicitacao-liberacao-financeira", {
+      const resposta = await fetch("/api/cliente/forma-quitacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ formaCusteio: forma }),
