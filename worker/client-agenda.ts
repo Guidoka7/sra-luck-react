@@ -109,7 +109,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   } : null;
 
   return json({
-    cliente: { id: cliente.id, nome: cliente.nome_completo, procedimento: cliente.procedimento },
+    cliente: { id: cliente.id, nome: cliente.nome_completo ?? "Cliente", procedimento: cliente.procedimento ?? null },
     financeiro: {
       statusRevisao: cliente.status_revisao_financeira ?? null,
       saldoRestante: cliente.financeiro_saldo_restante ?? null,
