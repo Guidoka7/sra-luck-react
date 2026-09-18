@@ -7,8 +7,8 @@ import { DrawerIcon } from "./ClienteDrawerIcons";
 import {
   CLIENT_STATUS_OPTIONS, apiJson, buildJourneyFlags, initialFinancialModel, mapBoletoToDrawerInstallment,
   mapClienteToDrawerModel, mapHistory, mergePlanClient, statusDb,
-  type DrawerClientModel, type DrawerFinancialModel, type DrawerInstallment,
-  type FinancialHistoryItem, type JourneyContract,
+  type DrawerClientModel, type DrawerFinancialModel, type DrawerHistoryResponse, type DrawerInstallment,
+  type DrawerJourneyResponse, type DrawerPlanResponse, type FinancialHistoryItem, type JourneyContract,
 } from "./clienteDrawerModel";
 import styles from "./ClienteDetailDrawer.module.css";
 
@@ -23,7 +23,7 @@ interface Props {
 
 const emptyClient: DrawerClientModel = {
   id: "", status: "Ativa", name: "", birthDate: "", cpf: "", phone: "", email: "", procedure: "",
-  planValue: 0, seller: "", campaign: "", bank: "", notes: "", releaseForecast: "",
+  planValue: null, seller: "", campaign: "", bank: "", notes: "", releaseForecast: "",
 };
 const emptyFinancial: DrawerFinancialModel = {
   procedure: "", totalPlan: 0, totalInstallments: 0, installmentValue: 0, eligibilityPercentage: 70,
@@ -123,11 +123,12 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
     try {
       const id = encodeURIComponent(cliente.id);
       const [planData, historyData, journeyData] = await Promise.all([
-        apiJson<any>(`/api/admin/clientes/${id}/boletos`),
-        apiJson<any>(`/api/admin/clientes/${id}/historico`),
-        apiJson<any>(`/api/admin/clientes/${id}/jornada`),
+        apiJson<DrawerPlanResponse>(`/api/admin/clientes/${id}/boletos`),
+        apiJson<DrawerHistoryResponse>(`/api/admin/clientes/${id}/historico`),
+        apiJson<DrawerJourneyResponse>(`/api/admin/clientes/${id}/jornada`),
       ]);
-      const rows = (planData.boletos ?? planData.parcelas ?? []).map((row: Record<string, unknown>) => mapBoletoToDrawerInstallment(row));
+      const sourceRows: Record<string, unknown>[] = planData.boletos ?? planData.parcelas ?? [];
+      const rows: DrawerInstallment[] = sourceRows.map(mapBoletoToDrawerInstallment);
       let nextFinancial = mergePlanClient(initialFinancialModel(cliente), planData.cliente);
       if (!nextFinancial.totalInstallments && rows.length) nextFinancial = { ...nextFinancial, totalInstallments: rows.length };
       if (!nextFinancial.installmentValue && rows.length) nextFinancial = { ...nextFinancial, installmentValue: rows.find((x) => x.status !== "paid")?.value ?? rows[0].value };
@@ -167,22 +168,25 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
   }
 
   async function saveProfile() {
-    if (!draftClient.name.trim() || !draftClient.cpf.trim() || !draftClient.birthDate) {
-      return notify("Nome, CPF e data de nascimento são obrigatórios.", true);
-    }
     setProfileSaving(true);
     try {
       const payload = {
-        nomeCompleto: draftClient.name.trim(), cpf: draftClient.cpf, dataNascimento: draftClient.birthDate,
-        telefone: draftClient.phone || null, email: draftClient.email || null, procedimento: draftClient.procedure || null,
-        consultora: draftClient.seller || null, valorContrato: Number(draftClient.planValue || 0),
-        origemVenda: draftClient.campaign || null, banco: draftClient.bank || null, observacoes: draftClient.notes || null,
+        nomeCompleto: draftClient.name.trim() || null,
+        cpf: draftClient.cpf.trim() || null,
+        dataNascimento: draftClient.birthDate || null,
+        telefone: draftClient.phone.trim() || null,
+        email: draftClient.email.trim() || null,
+        procedimento: draftClient.procedure.trim() || null,
+        consultora: draftClient.seller.trim() || null,
+        valorContrato: draftClient.planValue,
+        origemVenda: draftClient.campaign.trim() || null,
+        banco: draftClient.bank.trim() || null,
+        observacoes: draftClient.notes.trim() || null,
       };
       if (creating || !cliente?.id) {
         const data = await apiJson<{ cliente: Cliente }>("/api/admin/clientes", { method: "POST", body: JSON.stringify(payload) });
-        const enriched = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(data.cliente.id)}`, { method: "PATCH", body: JSON.stringify(payload) });
         setEditing(emptyEditing); notify("Cliente cadastrada com sucesso.");
-        onCreated?.(enriched.cliente); onUpdated(enriched.cliente);
+        onCreated?.(data.cliente);
         return;
       }
       const data = await apiJson<{ cliente: Cliente }>(`/api/admin/clientes/${encodeURIComponent(cliente.id)}`, { method: "PATCH", body: JSON.stringify(payload) });
