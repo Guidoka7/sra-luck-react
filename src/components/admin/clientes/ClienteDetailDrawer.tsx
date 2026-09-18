@@ -139,7 +139,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, initialTa
       const [planData, historyData, journeyData] = await Promise.all([
         apiJson<DrawerPlanResponse>(`/api/admin/clientes/${id}/boletos`),
         apiJson<DrawerHistoryResponse>(`/api/admin/clientes/${id}/historico`),
-        apiJson<DrawerJourneyResponse>(`/api/admin/clientes/${id}/jornada`),
+        apiJson<DrawerJourneyResponse>(`/api/admin/clientes/${id}/jornada`).catch(() => ({ contrato: null })),
       ]);
       if (financeRequestRef.current !== requestId) return;
       const sourceRows: Record<string, unknown>[] = planData.boletos ?? planData.parcelas ?? [];
