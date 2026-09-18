@@ -239,7 +239,7 @@ export function ClienteDetailDrawer({ cliente, open, creating = false, onClose, 
 
       <section ref={contentRef} className={styles.content} id="client-drawer-content" role="tabpanel" aria-label={activeTab === "profile" ? "Perfil" : "Financeiro"} tabIndex={0}>
         {activeTab === "profile" ? <ClienteProfileTab client={draftClient} financial={financial} editing={editing} journeySteps={journeySteps} onEdit={(key) => setEditing((state) => ({...state,[key]:true}))} onCancel={cancelProfileSection} onDone={(key) => setEditing((state) => ({...state,[key]:false}))} onChange={(patch) => setDraftClient((current) => ({...current,...patch}))}/> :
-        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} setFinancial={setFinancial} installments={installments} history={history} loading={financeLoading} error={financeError} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
+        cliente ? <ClienteFinanceTab ref={financeRef} clienteId={cliente.id} clientName={draftClient.name} financial={financial} installments={installments} history={history} loading={financeLoading} error={financeError} onReload={loadFinancial} onUpdated={() => onUpdated()} notify={notify}/> : null}
       </section>
 
       <footer className={styles.footer}><button className={`${styles.footerBtn} ${styles.closeBtn}`} type="button" onClick={requestClose}>Fechar</button><button className={`${styles.footerBtn} ${styles.saveBtn}`} type="button" disabled={profileSaving || statusSaving} onClick={() => void saveCurrentTab()}><DrawerIcon name="save"/> {profileSaving ? "Salvando..." : "Salvar alterações"}</button></footer>
