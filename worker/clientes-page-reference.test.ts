@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const page = readFileSync(new URL("../src/app/admin/(painel)/clientes/page.tsx", import.meta.url), "utf8");
 const pageCss = readFileSync(new URL("../src/app/admin/(painel)/clientes/ClientesPage.module.css", import.meta.url), "utf8");
 const shellCss = readFileSync(new URL("../src/styles/admin-reference-shell.css", import.meta.url), "utf8");
+const adminLayout = readFileSync(new URL("../src/app/admin/(painel)/layout.tsx", import.meta.url), "utf8");
 
 describe("Clientes — referência visual e estrutural aprovada", () => {
   it("mantém somente Cadastradas, Aguardando cadastro e Canceladas", () => {
@@ -31,6 +32,11 @@ describe("Clientes — referência visual e estrutural aprovada", () => {
     expect(pageCss).toContain("grid-template-columns:1.05fr 1.2fr .9fr");
     expect(shellCss).toContain("--ref-sidebar:244px");
     expect(shellCss).toContain("--ref-topbar:68px");
+  });
+
+  it("não deixa o calendário de teste sobrepor a tela definitiva de Clientes", () => {
+    expect(adminLayout).toContain('pathname.startsWith("/admin/clientes/")');
+    expect(adminLayout).toContain('!clientes ? <CalendarioTesteTempo /> : null');
   });
 
   it("mantém a mesma tabela e filtros em todas as abas", () => {
