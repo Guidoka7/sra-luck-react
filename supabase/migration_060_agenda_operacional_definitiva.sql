@@ -337,15 +337,21 @@ declare
   v_projecao numeric;
   v_hoje date := (timezone('America/Sao_Paulo',now()))::date;
 begin
-  select a.*, d.data
-  into v_agendamento, v_data_termos
+  select a.*
+  into v_agendamento
   from public.agendamentos a
-  join public.datas d on d.id = a.data_id
   where a.id = p_agendamento_id
     and a.status in ('confirmado','realizado')
-  for update of a;
+  for update;
 
   if not found then raise exception 'AGENDAMENTO_NAO_ENCONTRADO'; end if;
+
+  select d.data
+  into v_data_termos
+  from public.datas d
+  where d.id = v_agendamento.data_id;
+
+  if v_data_termos is null then raise exception 'DATA_TERMOS_NAO_ENCONTRADA'; end if;
   if p_previsao is null or p_previsao < v_data_termos or p_previsao < v_hoje then
     raise exception 'PREVISAO_INVALIDA';
   end if;
