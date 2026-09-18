@@ -11,6 +11,8 @@ interface Props {
   clientName: string;
   financial: DrawerFinancialModel;
   installments: DrawerInstallment[];
+  focusInstallmentId?: string | null;
+  onOpenProof?: (item: DrawerInstallment) => void;
   onReload: () => Promise<void>;
   onUpdated: () => void;
   notify: (message: string, error?: boolean) => void;
@@ -21,12 +23,13 @@ type Modal =
   | { type: "contract" }
   | { type: "reject" | "confirm"; item: DrawerInstallment };
 
-export function ClienteInstallments({ clienteId, clientName, financial, installments, onReload, onUpdated, notify }: Props) {
+export function ClienteInstallments({ clienteId, clientName, financial, installments, focusInstallmentId = null, onOpenProof, onReload, onUpdated, notify }: Props) {
   const [menu, setMenu] = useState<{ item: DrawerInstallment; left: number; top: number } | null>(null);
   const [modal, setModal] = useState<Modal | null>(null);
   const [busy, setBusy] = useState(false);
   const [receiptTarget, setReceiptTarget] = useState<DrawerInstallment | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   useEffect(() => {
     if (!menu && !modal) return;
@@ -43,6 +46,14 @@ export function ClienteInstallments({ clienteId, clientName, financial, installm
     document.addEventListener("pointerdown", onPointer);
     return () => { document.removeEventListener("keydown", onKey, true); document.removeEventListener("pointerdown", onPointer); };
   }, [menu, modal]);
+
+  useEffect(() => {
+    if (!focusInstallmentId) return;
+    const row = rowRefs.current[focusInstallmentId];
+    if (!row) return;
+    const timer = window.setTimeout(() => row.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
+    return () => window.clearTimeout(timer);
+  }, [focusInstallmentId, installments]);
 
   function openMenu(event: MouseEvent<HTMLButtonElement>, item: DrawerInstallment) {
     event.stopPropagation();
@@ -180,10 +191,26 @@ export function ClienteInstallments({ clienteId, clientName, financial, installm
       <div className={styles.cardBody} style={{paddingTop:3}}>
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pagamento</th><th>Comprovante</th><th>Ações</th></tr></thead>
-          <tbody>{installments.length ? installments.map((item)=><tr key={item.id}>
+          <tbody>{installments.length ? installments.map((item)=><tr
+            key={item.id}
+            ref={(node) => { rowRefs.current[item.id] = node; }}
+            className={`${focusInstallmentId === item.id ? styles.installmentFocused : ""} ${item.status === "review" && onOpenProof ? styles.installmentInteractive : ""}`}
+            tabIndex={item.status === "review" && onOpenProof ? 0 : undefined}
+            aria-label={item.status === "review" && onOpenProof ? `Analisar comprovante da parcela ${item.number}` : undefined}
+            onClick={(event) => {
+              if (item.status !== "review" || !onOpenProof) return;
+              if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+              onOpenProof(item);
+            }}
+            onKeyDown={(event) => {
+              if (item.status !== "review" || !onOpenProof || !["Enter", " "].includes(event.key)) return;
+              event.preventDefault();
+              onOpenProof(item);
+            }}
+          >
             <td>{item.number}/{financial.totalInstallments}</td><td>{formatDate(item.dueDate)}</td><td>{formatCurrency(item.value)}</td>
             <td><span className={`${styles.pill} ${pillClass(item.status)}`}>{INSTALLMENT_LABELS[item.status]}</span></td><td>{formatDate(item.paymentDate)}</td>
-            <td>{item.receipt ? <button className={styles.rowBtn} type="button" aria-label={`Ver comprovante da parcela ${item.number}`} onClick={() => setModal({type:"receipt",item})}><DrawerIcon name="document"/></button> : <button className={styles.rowBtn} type="button" disabled aria-label="Sem comprovante"><DrawerIcon name="document"/></button>}</td>
+            <td>{item.receipt ? <button className={styles.rowBtn} type="button" aria-label={`Ver comprovante da parcela ${item.number}`} onClick={(event) => { event.stopPropagation(); setModal({type:"receipt",item}); }}><DrawerIcon name="document"/></button> : <button className={styles.rowBtn} type="button" disabled aria-label="Sem comprovante"><DrawerIcon name="document"/></button>}</td>
             <td><button className={styles.rowBtn} data-client-installment-menu type="button" aria-haspopup="menu" aria-label={`Ações da parcela ${item.number}`} onClick={(e)=>openMenu(e,item)}><DrawerIcon name="dots"/></button></td>
           </tr>) : <tr><td colSpan={7}><div className={styles.empty}>Nenhuma parcela cadastrada.</div></td></tr>}</tbody>
         </table></div>
