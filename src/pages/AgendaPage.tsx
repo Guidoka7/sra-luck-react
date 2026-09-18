@@ -20,16 +20,19 @@ type AgendaData = {
   cliente: { id: string; nome: string; procedimento: string | null };
   financeiro: { statusCirurgia: string | null };
   solicitacaoLiberacaoFinanceira: { id: string; status: StatusCusteio } | null;
-  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
+  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; previsaoCirurgia?: string | null; dataCirurgia?: string | null; horarioCirurgia?: string | null; status?: string } | null;
+  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; previsaoCirurgia?: string | null; dataCirurgia?: string | null; horarioCirurgia?: string | null; status?: string } | null;
   datasDisponiveis: { id: string; data: string; vagasRestantes: number }[];
   agendaCirurgicaLiberada: boolean;
   agendaCirurgicaLiberarEm: string | null;
+  previsaoCirurgia?: string | null;
+  etapa4?: boolean;
 };
 
 type BoletosData = {
   boletos: unknown[];
   porcentagem_pagamento: number;
+  percentual_minimo_agenda: number;
   parcelas_pagas: number;
   pode_agendar: boolean;
   agenda_liberada: boolean;
@@ -87,7 +90,7 @@ export function AgendaPage() {
     setConfirmando(true);
     setErro(null);
     try {
-      const resultado = await apiJson<{ data: string }>("/api/cliente/agendar", {
+      const resultado = await apiJson<{ data: string }>("/api/cliente/agenda/termos/selecionar", {
         method: "POST",
         body: JSON.stringify({ dataId, horario }),
       });
@@ -157,7 +160,7 @@ export function AgendaPage() {
   const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
   const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
   const termosAssinados = Boolean(agenda.agendamentoConcluido);
-  const cirurgiaAgendada = Boolean(agendaAtual?.previsaoLiberacaoFinanceira);
+  const cirurgiaAgendada = Boolean(agendaAtual?.dataCirurgia ?? agendaAtual?.previsaoLiberacaoFinanceira);
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   return (
@@ -191,7 +194,7 @@ export function AgendaPage() {
             agendamentoConcluido={agenda.agendamentoConcluido}
             datasDisponiveis={agenda.datasDisponiveis}
             podeAgendar={boletos.pode_agendar}
-            agendaLiberada={boletos.agenda_liberada}
+            percentualMinimoAgenda={boletos.percentual_minimo_agenda ?? 70}
             statusRevisaoFinanceira={boletos.status_revisao_financeira}
             observacaoRevisaoFinanceira={boletos.observacao_revisao_financeira}
             custeioAprovado={custeioAprovado}
@@ -214,7 +217,7 @@ export function AgendaPage() {
             agendaCirurgicaLiberada={agenda.agendaCirurgicaLiberada}
             cirurgiaAgendada={cirurgiaAgendada}
             cirurgiaRealizada={cirurgiaRealizada}
-            previsaoLiberacaoFinanceira={agendaAtual?.previsaoLiberacaoFinanceira ?? null}
+            previsaoLiberacaoFinanceira={agendaAtual?.dataCirurgia ?? agendaAtual?.previsaoLiberacaoFinanceira ?? null}
             agendaCirurgicaLiberarEm={agenda.agendaCirurgicaLiberarEm}
             notificacoesCompactas={notificacoesState.notificacoes}
             onVerNotificacoes={() => setAba("notificacoes")}
