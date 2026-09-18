@@ -369,14 +369,31 @@ async function releaseQueue(db: Db) {
   return { rows };
 }
 
-function rowsForAllSurgeryMonth(clients: ClientRow[], appointmentsByClient: Map<string,Appointment[]>, month: string) {
+function rowsForAllSurgeryMonth(
+  clients: ClientRow[],
+  appointmentsByClient: Map<string,Appointment[]>,
+  choiceByClient: Map<string,Choice>,
+  month: string,
+) {
   const clientById = new Map(clients.map((item) => [item.id,item]));
   let sum = 0;
   for (const [clientId, appointments] of appointmentsByClient) {
+    const client = clientById.get(clientId);
+    const choice = choiceByClient.get(clientId) ?? null;
     const appointment = latestCurrentAppointment(appointments);
+    if (!client || client.status_revisao_financeira !== "aprovada") continue;
+    if (!choice || choice.status === "recusada") continue;
     if (!appointment?.data_cirurgia || appointment.data_cirurgia.slice(0,7) !== month) continue;
-    if (!appointment.horario_cirurgia || !appointment.agenda_cirurgica_liberada_em || appointment.quitacao_status !== "paga" || appointment.comparecimento_status !== "compareceu") continue;
-    sum += number(clientById.get(clientId)?.valor_contrato);
+    if (
+      !appointment.horario_cirurgia
+      || !appointment.cirurgia_escolhida_em
+      || !appointment.termos_assinados_em
+      || !appointment.previsao_cirurgia_confirmada_em
+      || !appointment.agenda_cirurgica_liberada_em
+      || appointment.quitacao_status !== "paga"
+      || appointment.comparecimento_status !== "compareceu"
+    ) continue;
+    sum += number(client.valor_contrato);
   }
   return Math.round(sum * 100) / 100;
 }
@@ -393,10 +410,12 @@ async function surgeriesPayload(db: Db, month: string) {
     if (!choice || choice.status === "recusada") continue;
     if (
       client.status_revisao_financeira !== "aprovada"
+      || !appointment.termos_assinados_em
       || appointment.comparecimento_status !== "compareceu"
       || appointment.quitacao_status !== "paga"
       || !appointment.previsao_cirurgia_confirmada_em
       || !appointment.agenda_cirurgica_liberada_em
+      || !appointment.cirurgia_escolhida_em
       || !appointment.horario_cirurgia
     ) continue;
 
@@ -414,7 +433,7 @@ async function surgeriesPayload(db: Db, month: string) {
   const chart = [];
   for (let m = 1; m <= 12; m += 1) {
     const key = String(year) + "-" + String(m).padStart(2,"0");
-    const value = rowsForAllSurgeryMonth(all.clients, all.appointmentsByClient, key);
+    const value = rowsForAllSurgeryMonth(all.clients, all.appointmentsByClient, all.choiceByClient, key);
     chart.push({ month: key, value, cap: MONTHLY_CAP, percent: Math.round((value / MONTHLY_CAP) * 1000) / 10 });
   }
 
