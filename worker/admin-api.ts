@@ -191,6 +191,20 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     return json({cliente:data});
   }
 
+  const jornadaCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/jornada$/);
+  if(jornadaCliente&&request.method==="GET"){
+    const id=decodeURIComponent(jornadaCliente[1]);
+    const {data:contrato,error}=await supabase.from("contratos_credito")
+      .select("id,cliente_id,etapa,percentual_minimo,data_atingiu_percentual,levantamento_aprovado_em,forma_quitacao,escolha_forma_em,termos_assinados_em,quitado_em,agenda_cirurgica_liberar_em,cirurgia_em,created_at,updated_at")
+      .eq("cliente_id",id)
+      .neq("etapa","cancelado")
+      .order("created_at",{ascending:false})
+      .limit(1)
+      .maybeSingle();
+    if(error)return json({erro:error.message},500);
+    return json({contrato:contrato??null});
+  }
+
   const historicoCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/historico$/);
   if(historicoCliente&&request.method==="GET"){
     const id=decodeURIComponent(historicoCliente[1]);
