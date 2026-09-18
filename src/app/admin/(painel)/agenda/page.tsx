@@ -2,7 +2,7 @@
 
 import {
   CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Search, Stethoscope,
-  UsersRound, XCircle,
+  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { ClienteDetailDrawer } from "@/components/admin/clientes/ClienteDetailDrawer";
@@ -27,18 +27,25 @@ function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-function monthIso(date: Date) {
-  return String(date.getFullYear()) + "-" + String(date.getMonth() + 1).padStart(2,"0");
+function todayIso() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
+  return get("year") + "-" + get("month") + "-" + get("day");
 }
 
-function todayIso() {
-  const d = new Date();
-  return String(d.getFullYear()) + "-" + String(d.getMonth() + 1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+function currentMonthIso() {
+  return todayIso().slice(0, 7);
 }
 
 function shiftMonth(month: string, delta: number) {
   const parts = month.split("-").map(Number);
-  return monthIso(new Date(parts[0], parts[1] - 1 + delta, 1));
+  const date = new Date(Date.UTC(parts[0], parts[1] - 1 + delta, 1));
+  return String(date.getUTCFullYear()) + "-" + String(date.getUTCMonth() + 1).padStart(2,"0");
 }
 
 function monthLabel(month: string) {
@@ -93,7 +100,7 @@ type DrawerContext = "default" | "terms-flow" | "finance-release" | "surgery-fin
 export default function AgendaPage() {
   const [tab,setTab] = useState<AgendaPrimaryTab>("terms");
   const [termsView,setTermsView] = useState<AgendaTermsView>("eligible");
-  const [month,setMonth] = useState(monthIso(new Date()));
+  const [month,setMonth] = useState(currentMonthIso());
   const [terms,setTerms] = useState<AgendaTermsPayload | null>(null);
   const [release,setRelease] = useState<AgendaReleaseRow[]>([]);
   const [surgeries,setSurgeries] = useState<AgendaSurgeriesPayload | null>(null);
