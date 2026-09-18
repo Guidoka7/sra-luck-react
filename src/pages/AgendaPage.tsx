@@ -10,6 +10,8 @@ import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
 import { MaisTab } from "@/pages/client/MaisTab";
+import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
+import { shouldShowPlanningFallback } from "@/lib/appAccess";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
@@ -124,6 +126,27 @@ export function AgendaPage() {
             <button className="mt-5 rounded-[14px] bg-[#6B1F2E] px-5 py-3 text-[12px] font-medium text-[#FBF7F5]" onClick={() => void carregar()}>
               Tentar novamente
             </button>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (shouldShowPlanningFallback(boletos.boletos.length)) {
+    return (
+      <main className="client-app min-h-[100dvh]">
+        <div className="mobile-app-frame">
+          <ClientProfileHeader
+            nomeCliente={agenda.cliente.nome || "Cliente"}
+            procedimento={agenda.cliente.procedimento}
+            quantidadeParcelas={null}
+            percentualPago={0}
+          />
+          <section className="mx-5 mt-4 rounded-[20px] border border-[#EFE2DE] bg-white px-5 py-7 text-center shadow-[0_5px_18px_rgba(46,36,34,.055)]">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#F8EDEF] text-[#7A2632]" aria-hidden="true">◷</div>
+            <h1 className="mt-4 font-heading text-[20px] font-semibold text-[#6B1F2E]">Estamos preparando seu planejamento</h1>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-[#7F6E6A]">Estamos gerando o seu planejamento. Por favor, aguarde.</p>
+            <p className="mx-auto mt-2 max-w-[310px] text-[11px] leading-relaxed text-[#9A8985]">Assim que estiver pronto, suas parcelas e próximas etapas aparecerão por aqui.</p>
           </section>
         </div>
       </main>
