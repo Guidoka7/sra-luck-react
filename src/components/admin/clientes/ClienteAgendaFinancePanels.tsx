@@ -5,6 +5,17 @@ import { DrawerIcon } from "./ClienteDrawerIcons";
 import { formatCurrency, formatDate } from "./clienteDrawerModel";
 import styles from "./ClienteDetailDrawer.module.css";
 
+function saoPauloToday() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
+  return get("year") + "-" + get("month") + "-" + get("day");
+}
+
 const QUITATION_OPTIONS = [
   { code: "cartao", label: "Cartão de crédito" },
   { code: "pix", label: "PIX 100%" },
@@ -105,12 +116,12 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
   const released = Boolean(appointment.surgeryAgendaReleasedAt);
 
   function selectMonth(row: AgendaPlannerRow) {
-    const base = appointmentSuggestedDate ?? appointmentTermsDate ?? new Date().toISOString().slice(0,10);
+    const base = appointmentSuggestedDate ?? appointmentTermsDate ?? saoPauloToday();
     const day = Number(base.slice(8,10)) || 1;
     const parts = row.month.split("-").map(Number);
     const last = new Date(Date.UTC(parts[0],parts[1],0)).getUTCDate();
     let candidate = row.month + "-" + String(Math.min(day,last)).padStart(2,"0");
-    const today = new Date().toISOString().slice(0,10);
+    const today = saoPauloToday();
     const minimum = [today, appointmentTermsDate ?? today].sort().pop() ?? today;
     if (candidate < minimum) candidate = minimum;
     setForecast(candidate);
@@ -151,7 +162,7 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
           <div className={styles.plannerPercent}>{Math.round(row.percent)}%</div>
         </button>)}</div>
         <div className={styles.forecastControl}>
-          <label><span>Próxima data prevista</span><input className={styles.input} type="date" value={forecast} min={maxIso(appointment.termsDate,new Date().toISOString().slice(0,10))} onChange={(event) => setForecast(event.target.value)}/></label>
+          <label><span>Próxima data prevista</span><input className={styles.input} type="date" value={forecast} min={maxIso(appointment.termsDate,saoPauloToday())} onChange={(event) => setForecast(event.target.value)}/></label>
           <button className={styles.agendaPrimaryAction} type="button" disabled={!forecast || busy === "forecast"} onClick={() => void run("forecast",() => agendaApi.confirmForecast(flow.client.clientId,forecast),"Previsão de cirurgia confirmada.")}>{busy === "forecast" ? "Confirmando..." : forecastConfirmed ? "Atualizar previsão" : "Confirmar previsão"}</button>
         </div>
       </div>
