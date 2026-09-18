@@ -149,3 +149,63 @@ export interface ClienteFinanceiro {
   nome_completo: string;
   cpf?: string | null;
 }
+
+
+export type FinancePanelTab = "proofs" | "received" | "late" | "all";
+export type FinancePanelStatus =
+  | "Aguardando análise"
+  | "Comprovante confirmado"
+  | "Recebido"
+  | "Atrasado"
+  | "Recusado"
+  | "Suspensa"
+  | "Pendente";
+
+export interface FinancePanelProof {
+  id: string;
+  fileName: string;
+  path: string;
+  uploadedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+}
+
+export interface FinancePanelRow {
+  clientId: string;
+  contractId: string;
+  installmentId: string;
+  proofId: string | null;
+  name: string;
+  cpf: string | null;
+  seller: string | null;
+  campaign: string | null;
+  procedure: string | null;
+  bank: string | null;
+  statusContrato: string;
+  installmentNumber: number;
+  installmentTotal: number;
+  dueDate: string | null;
+  amount: number;
+  status: FinancePanelStatus;
+  contractCode: string;
+  uploadedAt: string | null;
+  paymentDate: string | null;
+  proof: FinancePanelProof | null;
+  createdAt: string;
+  updatedAt: string;
+  isOverdue: boolean;
+  isPendingProof: boolean;
+  isReceived: boolean;
+}
+
+export interface FinancePanelData {
+  proofs: FinancePanelRow[];
+  received: FinancePanelRow[];
+  late: FinancePanelRow[];
+  all: FinancePanelRow[];
+  proofDates: Array<{ date: string; count: number }>;
+  counts: Record<FinancePanelTab, number>;
+  banks: string[];
+  truncado: boolean;
+  generatedAt: string;
+}
