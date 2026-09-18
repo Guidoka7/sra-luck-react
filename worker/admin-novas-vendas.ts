@@ -127,7 +127,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
         valor_contrato: venda.valor_contrato == null ? null : Number(venda.valor_contrato),
         quantidade_parcelas: venda.quantidade_parcelas ?? null,
         valor_parcela_plano: venda.valor_parcela == null ? null : Number(venda.valor_parcela),
-        origem_venda: venda.origem_venda ?? null,
+        origem_venda: venda.campanha_local ?? venda.origem_venda ?? null,
         banco: venda.banco_local ?? null,
         origem_cadastro: "rd_station",
         crm_importado_em: agora,
