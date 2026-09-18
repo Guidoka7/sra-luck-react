@@ -97,6 +97,8 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(page).toContain('?"surgery-final":"terms-flow"');
     expect(page).toContain('context={drawer?.context ?? "default"}');
     expect(finance).toContain('agendaContext === "finance-release" || agendaContext === "surgery-final"');
+    expect(finance).toContain('!["formacao_saldo", "levantamento"].includes(agendaFlow.client.stage)');
+    expect(finance).toContain("allowInteraction={installmentsInteractive}");
   });
 
   it("mantém etapas 1–3 expandidas e deixa apenas a Etapa 4 recolhível", () => {
@@ -119,7 +121,10 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(adminAgenda).toContain("if (!appointment?.data_cirurgia || appointment.data_cirurgia.slice(0,7) !== month) continue");
     expect(adminAgenda).toContain("appointment.quitacao_status !== \"paga\"");
     expect(adminAgenda).toContain("appointment.comparecimento_status !== \"compareceu\"");
-    expect(adminAgenda).toContain("sum += number(clientById.get(clientId)?.valor_contrato)");
+    expect(adminAgenda).toContain("sum += number(client.valor_contrato)");
+    expect(adminAgenda).toContain("!appointment.termos_assinados_em");
+    expect(adminAgenda).toContain("!appointment.cirurgia_escolhida_em");
+    expect(adminAgenda).toContain('choice.status === "recusada"');
     expect(page).toContain("Soma das cartas de crédito das clientes com cirurgia confirmada no último estágio.");
   });
 });
