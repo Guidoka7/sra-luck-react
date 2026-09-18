@@ -52,15 +52,43 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
   if (clienteError) return { resposta: json({ erro: clienteError.message }, 500), cliente: null, boletos: [] as any[] };
   if (!cliente) return { resposta: json({ erro: "Cliente não encontrada." }, 404), cliente: null, boletos: [] as any[] };
 
+  const boletoIds = (boletos ?? []).map((boleto: any) => String(boleto.id));
+  const recebimentosPorBoleto = new Map<string, any>();
+  if (boletoIds.length) {
+    const { data: recebimentos, error: recebimentosError } = await db
+      .from("financeiro_recebimentos")
+      .select("boleto_id,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,instituicao_financeira,status_validacao,created_at")
+      .in("boleto_id", boletoIds)
+      .eq("status_validacao", "validado")
+      .order("created_at", { ascending: false });
+    if (recebimentosError) return { resposta: json({ erro: recebimentosError.message }, 500), cliente: null, boletos: [] as any[] };
+    for (const recebimento of recebimentos ?? []) {
+      const boletoId = String((recebimento as any).boleto_id);
+      if (!recebimentosPorBoleto.has(boletoId)) recebimentosPorBoleto.set(boletoId, recebimento);
+    }
+  }
+
   return {
     resposta: null,
     cliente: {
       ...cliente,
       valor_contrato: cliente.valor_contrato == null ? null : Number(cliente.valor_contrato),
       custo_total: cliente.custo_total == null ? null : Number(cliente.custo_total),
+      valor_total_plano: cliente.valor_total_plano == null ? null : Number(cliente.valor_total_plano),
+      valor_parcela_plano: cliente.valor_parcela_plano == null ? null : Number(cliente.valor_parcela_plano),
       taxa_administrativa_percentual: cliente.taxa_administrativa_percentual == null ? null : Number(cliente.taxa_administrativa_percentual),
     },
-    boletos: (boletos ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) })),
+    boletos: (boletos ?? []).map((boleto: any) => {
+      const recebimento = recebimentosPorBoleto.get(String(boleto.id));
+      return {
+        ...boleto,
+        valor: Number(boleto.valor),
+        valor_recebido: recebimento?.valor_recebido == null ? null : Number(recebimento.valor_recebido),
+        recebimento_data: recebimento?.data_pagamento ?? null,
+        recebimento_forma: recebimento?.forma_pagamento ?? null,
+        recebimento_instituicao: recebimento?.instituicao_financeira ?? recebimento?.instituicao_conta ?? null,
+      };
+    }),
   };
 }
 
