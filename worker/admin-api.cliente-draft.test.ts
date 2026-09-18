@@ -94,7 +94,7 @@ describe("ClienteDetailDrawer - criação administrativa opcional", () => {
 
   it("o mesmo ClienteDetailDrawer atende lista e modo criação sem required nativo", () => {
     expect(clientesPageSource).toContain('import { ClienteDetailDrawer }');
-    expect(clientesPageSource).toContain("creating={modal === null}");
+    expect(clientesPageSource).toContain("creating={drawerCliente === null}");
     expect(clientesPageSource).not.toContain("ClienteZipDrawer");
     expect(drawerSource).not.toContain(" required");
     expect(installmentsSource).not.toContain(" required");
