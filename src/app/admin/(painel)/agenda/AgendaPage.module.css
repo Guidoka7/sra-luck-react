@@ -1,0 +1,177 @@
+.page{
+  --wine:#7A2632;
+  --wine-dark:#68202B;
+  --rose:#AD686B;
+  --gold:#C9A15A;
+  --green:#2F8F58;
+  --amber:#E6A01A;
+  --red:#D95E68;
+  --text:#35282A;
+  --text-secondary:#756568;
+  --muted:#9C898C;
+  --surface:#FFF;
+  --bg:#FFFDFC;
+  --line:rgba(122,38,50,.09);
+  --line-strong:rgba(122,38,50,.14);
+  --shadow:0 9px 28px rgba(73,37,43,.055);
+  padding:18px 22px 32px;
+  max-width:1570px;
+  margin:0 auto;
+  color:var(--text);
+  font-family:Inter,Arial,Helvetica,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.page *{box-sizing:border-box}
+.page button,.page input{font:inherit;color:inherit}
+.page button{cursor:pointer}
+.pageHeader{margin-bottom:12px}
+.pageTitle{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:39px;font-weight:400;color:#302225;letter-spacing:-1px}
+.pageSubtitle{margin-top:4px;max-width:690px;font-size:13px;line-height:1.38;color:#756568}
+.agendaTabs{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.segmented{display:inline-flex;align-items:center;width:fit-content;padding:4px;border:1px solid var(--line-strong);background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,237,239,.6));border-radius:11px;box-shadow:0 8px 22px rgba(73,37,43,.028);position:relative}
+.segmented button{border:0;background:transparent;height:35px;padding:0 17px;border-radius:8px;color:#865A61;font-size:11px;font-weight:700;letter-spacing:.01em;transition:.18s ease;position:relative;white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
+.segmented button:hover{color:#6E2B35;background:rgba(255,255,255,.55)}
+.primaryTabs{padding:5px;border-color:rgba(122,38,50,.16);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(245,232,234,.92))}
+.primaryTabs button{height:38px;padding:0 18px;color:#855D63;font-size:11.5px}
+.primaryTabs button.active,.secondary button.active{background:linear-gradient(135deg,#7A2632,#982B3A);color:#fff;box-shadow:0 8px 18px rgba(122,38,50,.20),inset 0 0 0 1px rgba(255,255,255,.1)}
+.primaryTabs button.active::after,.secondary button.active::after{content:"";position:absolute;left:12px;right:12px;bottom:5px;height:1px;background:rgba(255,255,255,.30);border-radius:999px}
+.secondary{padding:4px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(248,237,239,.82));border-color:rgba(122,38,50,.14)}
+.secondary button{height:34px;padding:0 15px;font-size:10.7px}
+.agendaWorkspace{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(430px,1fr);gap:16px;align-items:stretch}
+.financeOnly{display:block}
+.financeOnly .agendaListCard{min-height:490px}
+.calendarCompositeCard,.agendaListCard{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;min-height:434px}
+.calendarCompositeCard{display:grid;grid-template-columns:minmax(0,1fr) 205px}
+.calendarArea{padding:15px 15px 17px;min-width:0;position:relative}
+.calendarHead{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:7px}
+.calendarTitleRow{display:flex;align-items:baseline;gap:10px;min-width:0}
+.calendarTitle{font-family:Georgia,"Times New Roman",serif;font-size:18px;color:#382B2E;white-space:nowrap}
+.calendarMonthLabel{font-size:10px;color:#9C777D}
+.monthControl{height:34px;display:inline-flex;align-items:center;gap:9px;padding:0 9px;border:1px solid var(--line-strong);border-radius:8px;color:#5E4D50;background:#fff;font-size:10px;font-weight:700;white-space:nowrap}
+.monthControl button{border:0;background:transparent;color:#988487;padding:0;width:18px;height:22px;display:grid;place-items:center}
+.legend{display:flex;align-items:center;gap:16px;margin-bottom:12px;padding-left:2px;font-size:9px;color:#7C6B6E}
+.legendItem{display:inline-flex;align-items:center;gap:6px}
+.legendDot{width:7px;height:7px;border-radius:50%}
+.legendDot.available{background:var(--green);box-shadow:0 0 0 4px #E8F8ED}
+.legendDot.pending{background:#F2A317;box-shadow:0 0 0 4px #FFF5E2}
+.legendDot.unavailable{background:#D95E68;box-shadow:0 0 0 4px #FCEDEF}
+.dowGrid,.calendarGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.dowGrid{margin-bottom:6px}
+.dow{text-align:center;font-size:9px;font-weight:700;color:var(--rose);line-height:22px}
+.dayCell{position:relative;min-width:0;height:57px;border-radius:8px;border:1px solid rgba(122,38,50,.07);background:#fff;color:var(--text-secondary);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;font-size:11px;transition:transform .12s ease,border-color .12s ease,box-shadow .12s ease}
+.dayCell.valid:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 12px rgba(73,37,43,.05)}
+.dayCell.blank{visibility:hidden}
+.dayCell:disabled{cursor:default}
+.dayNumber{line-height:1}
+.dayIndicator{width:6px;height:6px;border-radius:50%;background:#C8BFC1}
+.capacityMini{font-size:7.7px;color:inherit;opacity:.75}
+.state_available{background:#EAF7EF;border-color:#D0ECDD;color:#3C5F48}
+.state_available .dayIndicator{background:var(--green)}
+.state_neutral{background:#FFF6E6;border-color:#F1DFC0;color:#A76709}
+.state_neutral .dayIndicator{background:#E6A01A}
+.state_full,.state_closed{background:#FBEDEF;border-color:#F2D9DD;color:#9F555E}
+.state_full .dayIndicator,.state_closed .dayIndicator{background:#D95E68}
+.state_past{opacity:.34;background:#FAF7F7;color:#B7A9AC}
+.state_past .dayIndicator{background:#BDB1B4}
+.dayCell.selected{outline:2px solid rgba(122,38,50,.25);outline-offset:1px;box-shadow:0 5px 15px rgba(122,38,50,.08)}
+.calendarLoading{position:absolute;right:16px;bottom:8px;font-size:8px;color:#A18E92}
+.selectedDayPanel{border-left:1px solid var(--line);background:linear-gradient(180deg,#FFFBFB,#FCF7F7);padding:15px 13px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.selectedTitle{text-transform:uppercase;letter-spacing:.14em;font-size:8px;font-weight:800;color:#A15E66}
+.selectedDate{font-family:Georgia,"Times New Roman",serif;font-size:22px;color:#3B292D}
+.statusPill{width:fit-content;display:inline-flex;align-items:center;gap:6px;min-height:25px;padding:0 9px;border-radius:999px;font-size:8.5px;font-weight:800}
+.pill_available{background:#E7F6EC;color:#167A46}
+.pill_full,.pill_closed{background:#FBE3E6;color:#B72C3B}
+.pill_neutral{background:#FFF1D7;color:#A56C12}
+.pill_past{background:#EFECEE;color:#837477}
+.selectedMetrics{display:grid;gap:7px;padding-top:3px}
+.metric{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid rgba(122,38,50,.07)}
+.metric span{font-size:8.6px;color:#8E7A7E}
+.metric strong{font-size:9.5px;color:#503E42}
+.selectedPeople{display:grid;gap:5px;padding-top:2px}
+.selectedPeople>span{font-size:8px;text-transform:uppercase;letter-spacing:.11em;font-weight:800;color:#A05F67}
+.selectedPeople>div{font-size:8.8px;color:#99868A;line-height:1.4}
+.selectedPeople button{width:100%;border:1px solid rgba(122,38,50,.07);border-radius:8px;background:#fff;padding:6px;display:flex;align-items:center;gap:7px;text-align:left}
+.selectedPeople button:hover{border-color:rgba(122,38,50,.17);background:#FFF8F8}
+.selectedPeople button>i,.clientCell>i{width:26px;height:26px;border-radius:50%;background:#F8E8EA;color:#862D39;font-style:normal;display:grid;place-items:center;font-size:7.8px;font-weight:800;flex:0 0 auto}
+.selectedPeople button>span{min-width:0;font-size:8.5px;font-weight:700;color:#4B393D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.selectedPeople button small{display:block;margin-top:2px;font-size:7.5px;color:#988489}
+.capacityControl{margin-top:auto;display:grid;gap:6px}
+.capacityControl label span{display:block;margin-bottom:4px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#A05E66}
+.capacityControl input{width:100%;height:32px;border:1px solid rgba(122,38,50,.12);border-radius:7px;background:#fff;padding:0 9px;outline:none;font-size:10px}
+.capacityControl button{height:31px;border-radius:8px;font-size:8.8px;font-weight:800}
+.openDate{border:0;background:#7A2632;color:#fff}
+.closeDate{border:1px solid rgba(190,45,59,.16);background:#fff;color:#BA2D3B}
+.reopenDate{border:1px solid rgba(47,143,88,.16);background:#EFF9F2;color:#287D4C}
+.pastNotice{margin-top:auto;border-radius:8px;background:#F3EFEF;padding:9px;text-align:center;font-size:8.5px;color:#8B7A7D}
+.agendaListCard{display:flex;flex-direction:column}
+.listHead{min-height:72px;padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.listTitle{font-family:Georgia,"Times New Roman",serif;font-size:20px;color:#382B2E}
+.listSub{margin-top:4px;max-width:385px;font-size:9px;line-height:1.35;color:#8B777B}
+.countPill{height:24px;padding:0 9px;border-radius:999px;background:#F8EDEF;color:#8F3340;display:inline-flex;align-items:center;font-size:8.5px;font-weight:800;white-space:nowrap}
+.financeReleaseSummary{margin:10px 13px 0;border:1px solid rgba(122,38,50,.08);border-radius:9px;background:#FFF8F8;padding:9px 10px;display:grid;gap:3px}
+.financeReleaseSummary strong{font-size:9px;color:#7A2632}
+.financeReleaseSummary span{font-size:8px;line-height:1.35;color:#8C787C}
+.searchWrap{margin:10px 13px 9px;height:35px;border:1px solid rgba(122,38,50,.10);border-radius:8px;background:#fff;display:flex;align-items:center;gap:8px;padding:0 10px;color:#8E747A}
+.search{width:100%;border:0;outline:none;background:transparent;font-size:9.5px}
+.search::placeholder{color:#B19FA2}
+.tableWrap{min-height:0;overflow:auto;flex:1}
+.tableHead,.tableRow{display:grid;align-items:center;gap:9px;padding-left:13px;padding-right:13px}
+.tableHead{height:31px;background:#FCF8F8;border-top:1px solid rgba(122,38,50,.05);border-bottom:1px solid var(--line);font-size:7px;text-transform:uppercase;letter-spacing:1px;color:#A15E66;font-weight:800}
+.tableRow{min-height:55px;border-bottom:1px solid rgba(122,38,50,.065);font-size:8.8px;cursor:pointer;outline:none;transition:background .13s ease}
+.tableRow:hover,.tableRow:focus-visible{background:#FFFAFA}
+.colsTerms{grid-template-columns:minmax(150px,1.45fr) minmax(90px,.8fr) minmax(115px,1fr) minmax(92px,.8fr)}
+.colsFinance{grid-template-columns:minmax(150px,1.35fr) minmax(90px,.75fr) minmax(110px,.9fr) minmax(105px,.9fr)}
+.colsSurgeries{grid-template-columns:minmax(150px,1.35fr) minmax(105px,.85fr) minmax(105px,.85fr) minmax(105px,.9fr)}
+.clientCell{display:flex;align-items:center;gap:8px;min-width:0}
+.clientCell>span{min-width:0}
+.clientCell strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:9.5px;color:#433438}
+.clientCell small,.cellStrong small{display:block;margin-top:2px;font-size:7.5px;color:#9A878A;font-weight:500}
+.cellStrong{font-size:9px;font-weight:750;color:#584549;min-width:0}
+.rowStatus{width:fit-content;display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 7px;font-size:7.7px;font-weight:800;white-space:nowrap}
+.rowStatus>i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.status_green{background:#E7F6EC;color:#167A46}
+.status_amber{background:#FFF1D7;color:#A56C12}
+.status_red{background:#FBE3E6;color:#B72C3B}
+.rowActionText{font-size:8px;color:#7A2632;font-weight:750}
+.confirmationDots{display:flex;gap:4px}
+.confirmationDots span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:7px;font-weight:900}
+.confirmationDots .ok{background:#E5F6EC;color:#14814A}
+.confirmationDots .wait{background:#F5EFF0;color:#9D888C}
+.empty{padding:45px 16px;text-align:center;color:#97858A;font-size:9.5px}
+.monthlyReleaseCard{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.monthlyReleaseHead{min-height:65px;padding:11px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px}
+.monthlyReleaseTitle{font-family:Georgia,"Times New Roman",serif;font-size:17px;color:#382B2E}
+.monthlyReleaseSub{margin-top:3px;font-size:8.5px;color:#8B777B}
+.monthlyReleaseSummary{text-align:right}
+.monthlyReleaseSummary strong{display:block;font-size:12px;color:#6B2934}
+.monthlyReleaseSummary span{display:block;margin-top:3px;font-size:7.8px;color:#9D888C}
+.monthlyPlot{height:132px;padding:12px 15px 9px;display:grid;grid-template-columns:repeat(12,1fr);gap:8px;align-items:end}
+.monthBarWrap{height:100%;display:grid;grid-template-rows:1fr 18px;gap:3px;min-width:0}
+.monthBarTrack{position:relative;height:92px;border-radius:6px;background:linear-gradient(180deg,#FBF5F6,#F6EEEE);display:flex;align-items:flex-end;overflow:visible}
+.monthBar{position:relative;width:100%;min-height:2px;background:linear-gradient(180deg,#9B3B49,#722431);border-radius:5px 5px 2px 2px}
+.monthBar span{position:absolute;left:50%;top:-15px;transform:translateX(-50%);font-size:6.8px;color:#806D71;white-space:nowrap}
+.monthBarLabel{text-align:center;font-size:7px;color:#9A8589;text-transform:capitalize}
+.errorBox{margin-bottom:12px;border:1px solid rgba(190,45,59,.15);border-radius:10px;background:#FFF5F6;padding:12px;color:#9E2E3C;display:flex;align-items:center;gap:9px;font-size:9.5px}
+.errorBox span{flex:1;color:#8D767A}
+.errorBox button{height:30px;border:1px solid rgba(122,38,50,.14);border-radius:7px;background:#fff;color:#7A2632;padding:0 10px;font-size:8.5px;font-weight:800}
+.toast{position:fixed;right:22px;bottom:22px;z-index:1600;background:#4B373A;color:#fff;border-radius:9px;padding:12px 15px;box-shadow:0 12px 30px rgba(45,24,28,.18);font-size:10px}
+@media(max-width:1380px){
+  .agendaWorkspace{grid-template-columns:minmax(0,1.25fr) minmax(390px,1fr)}
+  .calendarCompositeCard{grid-template-columns:minmax(0,1fr) 190px}
+}
+@media(max-width:1180px){
+  .agendaWorkspace{grid-template-columns:1fr}
+  .calendarCompositeCard,.agendaListCard{min-height:auto}
+  .agendaListCard{min-height:380px}
+}
+@media(max-width:860px){
+  .page{padding:16px 12px 28px}
+  .pageTitle{font-size:34px}
+  .segmented{max-width:100%;overflow-x:auto}
+  .calendarCompositeCard{grid-template-columns:1fr}
+  .selectedDayPanel{border-left:0;border-top:1px solid var(--line)}
+  .calendarArea{padding:13px 10px}
+  .dayCell{height:48px}
+  .colsTerms,.colsFinance,.colsSurgeries{min-width:650px}
+  .monthlyPlot{overflow-x:auto;grid-template-columns:repeat(12,58px)}
+}
