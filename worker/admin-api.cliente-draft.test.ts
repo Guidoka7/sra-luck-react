@@ -21,6 +21,7 @@ describe("ClienteDetailDrawer - criação administrativa opcional", () => {
       procedimento: null,
       consultora: null,
       valor_contrato: null,
+      quantidade_parcelas: null,
       origem_venda: null,
       banco: null,
       observacoes_internas: null,
