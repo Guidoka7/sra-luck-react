@@ -138,7 +138,7 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
     </article>
 
     <article className={styles.card + " " + styles.financeCard}>
-      <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="calendar"/>Planejamento inteligente da cirurgia</h3><span className={styles.agendaStateBadge + " " + (forecastConfirmed ? styles.agendaStateDone : styles.agendaStateCurrent)}>{forecastConfirmed ? "Previsão confirmada" : "Definir previsão"}</span></div>
+      <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="clock"/>Planejamento inteligente da cirurgia</h3><span className={styles.agendaStateBadge + " " + (forecastConfirmed ? styles.agendaStateDone : styles.agendaStateCurrent)}>{forecastConfirmed ? "Previsão confirmada" : "Definir previsão"}</span></div>
       <div className={styles.cardBody}>
         <div className={styles.plannerIntro}><span>Referência automática · assinatura + 90 dias</span><strong>{formatDate(appointment.forecastSuggestedDate)}</strong><small>A referência é uma sugestão. A previsão pode ser antecipada ou postergada, respeitando a data dos termos e o presente.</small></div>
         <div className={styles.plannerRows}>{flow.planner.map((row) => <button key={row.month} type="button" className={styles.plannerRow + " " + plannerClass(row.classification)} onClick={() => selectMonth(row)}>
@@ -155,7 +155,7 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
     </article>
 
     <article className={styles.card + " " + styles.financeCard}>
-      <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="calendar"/>Atendimento presencial · assinatura dos termos</h3></div>
+      <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="clock"/>Atendimento presencial · assinatura dos termos</h3></div>
       <div className={styles.cardBody}><div className={styles.termsAppointment}><div><span>Data</span><strong>{formatDate(appointment.termsDate)}</strong></div><div><span>Horário</span><strong>{appointment.termsTime || "—"}</strong></div></div></div>
     </article>
 
@@ -183,7 +183,7 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
     </div>
 
     <article className={styles.card + " " + styles.releaseStateCard + " " + (released ? styles.releaseStateReleased : "")}>
-      <div className={styles.releaseIcon}><DrawerIcon name={released ? "check" : "lock"}/></div>
+      <div className={styles.releaseIcon}><DrawerIcon name={released ? "check" : "alert"}/></div>
       <div><span className={styles.journeyKicker}>Estado de liberação</span><strong>{released ? "AGENDA CIRÚRGICA LIBERADA NO APP" : "Agenda cirúrgica bloqueada"}</strong><p>{released ? "Previsão confirmada, presença confirmada e saldo quitado. A cliente já pode escolher data e horário da cirurgia no app." : "A liberação exige previsão confirmada + presença confirmada + saldo quitado."}</p></div>
     </article>
   </div>;
