@@ -91,7 +91,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const clientesExact = pathname === "/admin/clientes" || pathname.startsWith("/admin/clientes/");
 
   return (
-    <div className={`admin-reference-shell zip-admin${dark ? " is-dark dark" : ""}`}>
+    <div className={`admin-reference-shell${clientesExact ? "" : " zip-admin"}${dark ? " is-dark dark" : ""}`}>
       <aside className="ref-sidebar">
         <div className="ref-brand">
           <div className="ref-brand-name">Sra. Luck</div>
