@@ -17,6 +17,9 @@ interface Props {
   history: FinancialHistoryItem[];
   loading: boolean;
   error: string | null;
+  compact?: boolean;
+  focusInstallmentId?: string | null;
+  onOpenProof?: (item: DrawerInstallment) => void;
   onReload: () => Promise<void>;
   onUpdated: () => void;
   notify: (message: string, error?: boolean) => void;
@@ -25,7 +28,7 @@ interface Props {
 type EditState = { plan: boolean; payment: boolean };
 
 export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(function ClienteFinanceTab({
-  clienteId, clientName, financial, installments, history, loading, error, onReload, onUpdated, notify,
+  clienteId, clientName, financial, installments, history, loading, error, compact = false, focusInstallmentId = null, onOpenProof, onReload, onUpdated, notify,
 }, ref) {
   const [editing, setEditing] = useState<EditState>({ plan: false, payment: false });
   const [draft, setDraft] = useState<DrawerFinancialModel>(financial);
@@ -89,6 +92,7 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
   if (error) return <div className={styles.errorBox}><strong>Não foi possível carregar o Financeiro.</strong><div>{error}</div><button className={styles.edit} type="button" onClick={() => void onReload()}>Tentar novamente</button></div>;
 
   return <div className={`${styles.stack} ${styles.financeStack}`}>
+    {!compact ? <>
     <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="finance"/>Resumo financeiro</h3></div>
       <div className={styles.cardBody}><div className={styles.summary}>
@@ -146,7 +150,9 @@ export const ClienteFinanceTab = forwardRef<ClienteFinanceTabHandle, Props>(func
       </article>
     </div>
 
-    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={financial} installments={installments} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
+    </> : null}
+
+    <ClienteInstallments clienteId={clienteId} clientName={clientName} financial={financial} installments={installments} focusInstallmentId={focusInstallmentId} onOpenProof={onOpenProof} onReload={onReload} onUpdated={onUpdated} notify={notify}/>
 
     <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="history"/>Histórico financeiro</h3><button className={styles.linkBtn} type="button" onClick={() => setHistoryExpanded((v)=>!v)}>{historyExpanded?"Mostrar menos":"Ver todos"}</button></div>
