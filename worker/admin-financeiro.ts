@@ -393,6 +393,15 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
     }
 
     const comprovanteMatch = path.match(/^\/api\/admin\/financeiro\/recebiveis\/([^/]+)\/comprovante$/);
+    if (comprovanteMatch && request.method === "GET") {
+      const id = decodeURIComponent(comprovanteMatch[1]);
+      const { data: boleto, error: boletoError } = await db.from("boletos").select("comprovante_url").eq("id", id).maybeSingle();
+      if (boletoError) return json({ erro: boletoError.message }, 500);
+      if (!boleto?.comprovante_url) return json({ erro: "Comprovante não encontrado." }, 404);
+      const { data, error } = await db.storage.from("boletos-clientes").createSignedUrl(boleto.comprovante_url, 300);
+      if (error || !data?.signedUrl) return json({ erro: "Não foi possível gerar o link do comprovante." }, 500);
+      return json({ url: data.signedUrl });
+    }
     if (comprovanteMatch && request.method === "POST") {
       const id = decodeURIComponent(comprovanteMatch[1]);
       const form = await request.formData();
