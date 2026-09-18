@@ -60,7 +60,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
 
     return json({
       cliente_id: cliente.id,
-      quantidade_parcelas: cliente.quantidade_parcelas ?? (boletos?.[0]?.total_parcelas ?? 12),
+      quantidade_parcelas: cliente.quantidade_parcelas ?? (boletos?.[0]?.total_parcelas ?? null),
       porcentagem_pagamento: Number(porcentagem ?? 0),
       pode_agendar: Boolean(podeAgendar), agenda_liberada: Boolean(agendaLiberada),
       status_revisao_financeira: cliente.status_revisao_financeira ?? null,
