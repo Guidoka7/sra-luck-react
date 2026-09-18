@@ -31,6 +31,7 @@ export function AgendaReviewPanel({ flow, loading, onRefresh, notify }: {
   if (loading && !flow) return <article className={styles.card}><div className={styles.cardBody}><div className={styles.skeleton}/></div></article>;
   if (!flow) return null;
 
+  const clientId = flow.client.clientId;
   const confirmed = Boolean(flow.client.reviewConfirmedAt);
   const toggle = (code: string) => setForms((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code]);
 
@@ -40,7 +41,7 @@ export function AgendaReviewPanel({ flow, loading, onRefresh, notify }: {
     if (!forms.length) return notify("Selecione ao menos uma forma de quitação.", true);
     setSaving(true);
     try {
-      await agendaApi.confirmReview(flow.client.clientId, { saldoFinal: value, formasQuitacao: forms });
+      await agendaApi.confirmReview(clientId, { saldoFinal: value, formasQuitacao: forms });
       notify("Levantamento financeiro confirmado e publicado no app.");
       await onRefresh();
     } catch (error) {
@@ -96,19 +97,21 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
   const appointment = flow.appointment;
   if (!appointment) return <div className={styles.agendaReturnCard}><strong>Cliente retornou à Etapa 4.</strong><span>O atendimento anterior foi preservado no histórico e a vaga foi devolvida à Agenda de Termos.</span></div>;
 
+  const appointmentTermsDate = appointment.termsDate;
+  const appointmentSuggestedDate = appointment.forecastSuggestedDate;
   const forecastConfirmed = Boolean(appointment.forecastConfirmedAt);
   const attended = appointment.attendanceStatus === "compareceu";
   const paid = appointment.settlementStatus === "paga";
   const released = Boolean(appointment.surgeryAgendaReleasedAt);
 
   function selectMonth(row: AgendaPlannerRow) {
-    const base = appointment.forecastSuggestedDate ?? appointment.termsDate ?? new Date().toISOString().slice(0,10);
+    const base = appointmentSuggestedDate ?? appointmentTermsDate ?? new Date().toISOString().slice(0,10);
     const day = Number(base.slice(8,10)) || 1;
     const parts = row.month.split("-").map(Number);
     const last = new Date(Date.UTC(parts[0],parts[1],0)).getUTCDate();
     let candidate = row.month + "-" + String(Math.min(day,last)).padStart(2,"0");
     const today = new Date().toISOString().slice(0,10);
-    const minimum = [today, appointment.termsDate ?? today].sort().pop() ?? today;
+    const minimum = [today, appointmentTermsDate ?? today].sort().pop() ?? today;
     if (candidate < minimum) candidate = minimum;
     setForecast(candidate);
   }
