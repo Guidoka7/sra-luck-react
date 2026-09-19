@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const migration060 = readFileSync(new URL("../supabase/migration_060_agenda_operacional_definitiva.sql", import.meta.url), "utf8");
 const migration061 = readFileSync(new URL("../supabase/migration_061_agenda_percentual_parcelas_reais.sql", import.meta.url), "utf8");
 const migration062 = readFileSync(new URL("../supabase/migration_062_agenda_quitacao_valor_editado.sql", import.meta.url), "utf8");
+const migration063 = readFileSync(new URL("../supabase/migration_063_agenda_liberada_etapa_4.sql", import.meta.url), "utf8");
 const adminAgenda = readFileSync(new URL("./admin-agenda.ts", import.meta.url), "utf8");
 const clientAgenda = readFileSync(new URL("./client-agenda.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../src/app/admin/(painel)/agenda/page.tsx", import.meta.url), "utf8");
@@ -40,6 +41,14 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(paymentProgress).not.toContain("Sua agenda já está liberada");
     expect(boletoTab).toContain("segue para o levantamento financeiro");
     expect(paymentProgress).toContain("segue para o levantamento financeiro");
+  });
+
+  it("mantém o helper legado de agenda alinhado à Etapa 4", () => {
+    expect(migration063).toContain("public.pode_agendar(p_cliente_id)");
+    expect(migration063).toContain("c.status_revisao_financeira = 'aprovada'");
+    expect(migration063).toContain("c.financeiro_confirmado_em is not null");
+    expect(migration063).toContain("solicitacoes_liberacao_financeira");
+    expect(migration063).toContain("s.status in ('pendente','em_analise','aprovada')");
   });
 
   it("deriva valor total e saldo das parcelas reais, incluindo valores individuais diferentes", () => {
