@@ -114,8 +114,14 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
   const attended = appointment.attendanceStatus === "compareceu";
   const paid = appointment.settlementStatus === "paga";
   const released = Boolean(appointment.surgeryAgendaReleasedAt);
+  const selectedPlanner = forecast ? flow.planner.find((row) => row.month === forecast.slice(0,7)) ?? null : null;
+  const forecastOverCap = selectedPlanner?.classification === "over";
 
   function selectMonth(row: AgendaPlannerRow) {
+    if (row.classification === "over") {
+      notify("Este mês ultrapassa o teto de R$ 100.000,00 e não pode ser confirmado.", true);
+      return;
+    }
     const base = appointmentSuggestedDate ?? appointmentTermsDate ?? saoPauloToday();
     const day = Number(base.slice(8,10)) || 1;
     const parts = row.month.split("-").map(Number);
@@ -155,7 +161,7 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
       <div className={styles.cardHead}><h3 className={styles.cardTitle}><DrawerIcon name="clock"/>Planejamento inteligente da cirurgia</h3><span className={styles.agendaStateBadge + " " + (forecastConfirmed ? styles.agendaStateDone : styles.agendaStateCurrent)}>{forecastConfirmed ? "Previsão confirmada" : "Definir previsão"}</span></div>
       <div className={styles.cardBody}>
         <div className={styles.plannerIntro}><span>Referência automática · assinatura + 90 dias</span><strong>{formatDate(appointment.forecastSuggestedDate)}</strong><small>A referência é uma sugestão. A previsão pode ser antecipada ou postergada, respeitando a data dos termos e o presente.</small></div>
-        <div className={styles.plannerRows}>{flow.planner.map((row) => <button key={row.month} type="button" className={styles.plannerRow + " " + plannerClass(row.classification)} onClick={() => selectMonth(row)}>
+        <div className={styles.plannerRows}>{flow.planner.map((row) => <button key={row.month} type="button" disabled={row.classification === "over"} aria-disabled={row.classification === "over"} className={styles.plannerRow + " " + plannerClass(row.classification)} onClick={() => selectMonth(row)}>
           <div className={styles.plannerMonth}><strong>{formatMonth(row.month)}</strong><span>{row.classification === "safe" ? "Seguro" : row.classification === "attention" ? "Atenção" : "Ultrapassa"}</span></div>
           <div className={styles.plannerNumbers}><span>Atual <b>{formatCurrency(row.current)}</b></span><span>+ carta <b>{formatCurrency(row.creditLetter)}</b></span><span>Projeção <b>{formatCurrency(row.projected)}</b></span><span>Folga <b>{formatCurrency(row.remaining)}</b></span></div>
           <div className={styles.plannerTrack}><span className={styles.plannerCommitted} style={{width: Math.min(100,(row.current/row.cap)*100) + "%"}}/><span className={styles.plannerImpact} style={{left: Math.min(100,(row.current/row.cap)*100) + "%",width: Math.max(0,Math.min(100,row.percent)-Math.min(100,(row.current/row.cap)*100)) + "%"}}/></div>
@@ -163,7 +169,8 @@ export function AgendaOperationalFinance({ mode, clientName, flow, loading, onRe
         </button>)}</div>
         <div className={styles.forecastControl}>
           <label><span>Próxima data prevista</span><input className={styles.input} type="date" value={forecast} min={maxIso(appointment.termsDate,saoPauloToday())} onChange={(event) => setForecast(event.target.value)}/></label>
-          <button className={styles.agendaPrimaryAction} type="button" disabled={!forecast || busy === "forecast"} onClick={() => void run("forecast",() => agendaApi.confirmForecast(flow.client.clientId,forecast),"Previsão de cirurgia confirmada.")}>{busy === "forecast" ? "Confirmando..." : forecastConfirmed ? "Atualizar previsão" : "Confirmar previsão"}</button>
+          <button className={styles.agendaPrimaryAction} type="button" disabled={!forecast || forecastOverCap || busy === "forecast"} onClick={() => void run("forecast",() => agendaApi.confirmForecast(flow.client.clientId,forecast),"Previsão de cirurgia confirmada.")}>{busy === "forecast" ? "Confirmando..." : forecastConfirmed ? "Atualizar previsão" : "Confirmar previsão"}</button>
+          {forecastOverCap ? <small className={styles.agendaGateNote}>Este mês ultrapassa o teto de R$ 100.000,00. Escolha outro mês.</small> : null}
         </div>
       </div>
     </article>
