@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, Heart } from "lucide-react";
-import { percentualNecessario } from "@/lib/utils";
 
 type ProgressoPagamento = {
   quantidade_parcelas: number;
   porcentagem_pagamento: number;
   parcelas_pagas: number;
+  percentual_minimo_agenda: number;
 };
 
 function getProgressoCorClass(porcentagem: number, necessario: number) {
@@ -55,7 +55,7 @@ export function PagamentoProgressBar({ procedimento }: { procedimento?: string |
   const total = progresso.quantidade_parcelas || 0;
   const pagas = progresso.parcelas_pagas || 0;
   const porcentagem = Math.max(0, Math.min(100, Math.round(progresso.porcentagem_pagamento || 0)));
-  const necessario = percentualNecessario(total);
+  const necessario = Number(progresso.percentual_minimo_agenda || 70);
 
   return (
     <div className="px-5 pt-[12px]">
