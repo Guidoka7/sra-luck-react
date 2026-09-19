@@ -334,7 +334,9 @@ async function termsPayload(db: Db, month: string) {
     }
 
     if (
-      appointment
+      client.status_revisao_financeira === "aprovada"
+      && client.financeiro_confirmado_em
+      && appointment
       && appointment.status === "confirmado"
       && appointment.horario_termos
       && choice
