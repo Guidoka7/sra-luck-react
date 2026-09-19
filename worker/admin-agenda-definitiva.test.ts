@@ -83,6 +83,8 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(adminAgenda).toContain("const operationalMonth = returnToStage4 ? returnedMonth");
     expect(adminAgenda).toContain("if (operationalMonth === month)");
     expect(adminAgenda).toContain("appointment.horario_termos");
+    expect(adminAgenda).toContain('client.status_revisao_financeira === "aprovada"');
+    expect(adminAgenda).toContain("client.financeiro_confirmado_em");
     expect(adminAgenda).toContain("date?.slice(0,7) === month");
     expect(adminAgenda).toContain("appointment.data_cirurgia.slice(0,7) !== month");
     expect(page).toContain('timeZone: "America/Sao_Paulo"');
