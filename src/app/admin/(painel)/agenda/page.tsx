@@ -194,14 +194,10 @@ export default function AgendaPage() {
 
     <section className={styles.agendaTabs}>
       <div className={cx(styles.segmented,styles.primaryTabs)} role="tablist" aria-label="Áreas da Agenda">
-        <button className={tab==="terms"?styles.active:""} type="button" onClick={() => setTab("terms")}><CalendarDays size={15}/>Termos cirúrgicos</button>
-        <button className={tab==="finance"?styles.active:""} type="button" onClick={() => setTab("finance")}><CircleDollarSign size={15}/>Liberação financeira</button>
-        <button className={tab==="surgeries"?styles.active:""} type="button" onClick={() => setTab("surgeries")}><Stethoscope size={15}/>Cirurgias</button>
+        <button className={tab==="terms"?styles.active:""} type="button" onClick={() => setTab("terms")}>Termos cirúrgicos</button>
+        <button className={tab==="finance"?styles.active:""} type="button" onClick={() => setTab("finance")}>Liberação financeira</button>
+        <button className={tab==="surgeries"?styles.active:""} type="button" onClick={() => setTab("surgeries")}>Cirurgias</button>
       </div>
-      {tab==="terms" ? <div className={cx(styles.segmented,styles.secondary)} role="tablist" aria-label="Filtrar termos">
-        <button className={termsView==="eligible"?styles.active:""} type="button" onClick={() => setTermsView("eligible")}>Levantamentos</button>
-        <button className={termsView==="confirmed"?styles.active:""} type="button" onClick={() => setTermsView("confirmed")}>Termos confirmados</button>
-      </div> : null}
     </section>
 
     {error ? <div className={styles.errorBox}><strong>Não foi possível carregar a Agenda.</strong><span>{error}</span><button type="button" onClick={() => void load()}>Tentar novamente</button></div> : null}
@@ -227,6 +223,7 @@ export default function AgendaPage() {
         search={search}
         loading={loading}
         onSearch={setSearch}
+        onTermsView={setTermsView}
         onOpen={(row) => openClient(row,tab==="surgeries"?"surgery-final":"terms-flow")}
       />
     </section> :
@@ -238,6 +235,7 @@ export default function AgendaPage() {
         search={search}
         loading={loading}
         onSearch={setSearch}
+        onTermsView={setTermsView}
         onOpen={(row) => openClient(row,"finance-release")}
       />
     </section>}
@@ -302,12 +300,13 @@ function CalendarCard({
           return <button
             key={cell.date}
             type="button"
-            className={cx(styles.dayCell,styles.valid,styles["state_"+dayState],selected&&styles.selected)}
+            className={cx(styles.dayCell,styles.valid,styles["state_"+dayState],selected&&styles.selected,selected&&tab==="surgeries"&&styles.surgerySelected,cell.record&&cell.record.used>0&&styles.hasScheduled)}
             disabled={dayState==="past"}
             onClick={() => onDate(cell.date)}
           >
             <span className={styles.dayNumber}>{cell.day}</span>
             <i className={styles.dayIndicator}/>
+            {cell.record && cell.record.used>0 ? <span className={styles.scheduledCount}>{cell.record.used}</span> : null}
             {cell.record && cell.record.total>0 ? <span className={styles.capacityMini}>{cell.record.used}/{cell.record.total}</span> : null}
           </button>;
         })}
@@ -348,7 +347,7 @@ function Metric({label,value}:{label:string;value:string}) {
 }
 
 function ListCard({
-  tab,termsView,rows,search,loading,onSearch,onOpen,
+  tab,termsView,rows,search,loading,onSearch,onTermsView,onOpen,
 }:{
   tab:AgendaPrimaryTab;
   termsView:AgendaTermsView;
@@ -356,6 +355,7 @@ function ListCard({
   search:string;
   loading:boolean;
   onSearch:(value:string)=>void;
+  onTermsView:(value:AgendaTermsView)=>void;
   onOpen:(row:AgendaClientRow)=>void;
 }) {
   const title=tab==="finance"?"Liberação financeira":tab==="surgeries"?"Cirurgias":termsView==="eligible"?"Levantamentos":"Termos confirmados";
@@ -368,7 +368,13 @@ function ListCard({
         :"Clientes da Etapa 4 com data e horário dos termos efetivamente escolhidos no app.";
 
   return <div className={styles.agendaListCard}>
-    <div className={styles.listHead}><div><div className={styles.listTitle}>{title}</div><div className={styles.listSub}>{subtitle}</div></div><div className={styles.countPill}>{rows.length} {rows.length===1?"cliente":"clientes"}</div></div>
+    <div className={styles.listHead}>
+      <div><div className={styles.listTitle}>{title}</div><div className={styles.listSub}>{subtitle}</div></div>
+      <div className={styles.listHeadTools}>
+        {tab==="terms" ? <label className={styles.listFilter}><span className={styles.listFilterLabel}>Exibir</span><select aria-label="Exibir registros dos termos" value={termsView} onChange={(event)=>onTermsView(event.target.value as AgendaTermsView)}><option value="eligible">Levantamentos</option><option value="confirmed">Termos confirmados</option></select></label> : null}
+        <div className={styles.countPill}>{rows.length} {rows.length===1?"cliente":"clientes"}</div>
+      </div>
+    </div>
     {tab==="finance" ? <div className={styles.financeReleaseSummary}><strong>Fila operacional</strong><span>Sem calendário. A cliente permanece aqui até escolher efetivamente a cirurgia no app.</span></div> : null}
     <label className={styles.searchWrap}><Search size={16}/><input className={styles.search} type="search" placeholder="Buscar por cliente..." value={search} onChange={(event)=>onSearch(event.target.value)}/></label>
     <div className={styles.tableWrap}>
