@@ -55,13 +55,15 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
 
     const { data: porcentagem } = await supabase.rpc("porcentagem_pagamento", { p_cliente_id: cliente.id });
     const { data: podeAgendar } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
+    const { data: percentualMinimo } = await supabase.rpc("percentual_minimo_fluxo_agenda");
     const { data: agendaLiberada } = await supabase.rpc("agenda_liberada", { p_cliente_id: cliente.id });
     const parcelasPagas = (boletos ?? []).filter((b: { status: string }) => b.status === "pago").length;
 
     return json({
       cliente_id: cliente.id,
-      quantidade_parcelas: cliente.quantidade_parcelas ?? (boletos?.[0]?.total_parcelas ?? 12),
+      quantidade_parcelas: cliente.quantidade_parcelas ?? (boletos?.[0]?.total_parcelas ?? null),
       porcentagem_pagamento: Number(porcentagem ?? 0),
+      percentual_minimo_agenda: Number(percentualMinimo ?? 70),
       pode_agendar: Boolean(podeAgendar), agenda_liberada: Boolean(agendaLiberada),
       status_revisao_financeira: cliente.status_revisao_financeira ?? null,
       data_atingiu_percentual: cliente.data_atingiu_percentual ?? null,
@@ -100,7 +102,7 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     if (!boleto || boleto.cliente_id !== sessao.clienteId) return json({ erro: "Boleto não encontrado." }, 404);
     if (!boleto.comprovante_url) return json({ erro: "Esta parcela não possui comprovante." }, 404);
     if (boleto.status === "pago") return json({ erro: "Comprovante de parcela paga não pode ser removido." }, 409);
-    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, comprovante_enviado_em: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
       log.error("Falha ao remover referência do comprovante", { action: "client.receipt.delete", eventCode: "RECEIPT_DB_DELETE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Não foi possível remover o comprovante." }, 500);
@@ -134,13 +136,26 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
       return json({ erro: "Erro ao enviar o arquivo." }, 500);
     }
 
-    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const comprovanteEnviadoEm = new Date().toISOString();
+    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, comprovante_enviado_em: comprovanteEnviadoEm, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
     if (updateError) {
       const { error: rollbackError } = await supabase.storage.from(BUCKET).remove([caminho]);
       if (rollbackError) log.error("Falha no rollback do arquivo após erro de banco", { action: "client.receipt.upload.rollback", eventCode: "RECEIPT_UPLOAD_ROLLBACK_FAILED", error: rollbackError });
       log.error("Arquivo enviado, mas comprovante não foi salvo no banco", { action: "client.receipt.upload", eventCode: "RECEIPT_DB_SAVE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Erro ao salvar o comprovante." }, 500);
     }
+    await supabase.from("logs_alteracoes").insert({
+      usuario: `cliente:${sessao.clienteId}`,
+      acao: "enviou_comprovante",
+      entidade: "boleto",
+      entidade_id: boletoId,
+      detalhes: {
+        cliente_id: sessao.clienteId,
+        numero_parcela: boleto.numero_parcela,
+        comprovante_enviado_em: comprovanteEnviadoEm,
+      },
+    });
+
     if (boleto.comprovante_url && boleto.comprovante_url !== caminho) {
       const { error: oldFileError } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
       if (oldFileError) log.warn("Novo comprovante salvo, mas arquivo anterior não foi removido", { action: "client.receipt.upload.cleanup", eventCode: "RECEIPT_OLD_FILE_DELETE_FAILED", error: oldFileError });

@@ -1,4 +1,4 @@
-import type { ClienteFinanceiro, DetalheRecebivel, FunilFinanceiro, ListaRecebiveis, PeriodoFinanceiro, ResumoFinanceiro } from "./types";
+import type { ClienteFinanceiro, DetalheRecebivel, FinancePanelData, FunilFinanceiro, ListaRecebiveis, PeriodoFinanceiro, ResumoFinanceiro } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -21,6 +21,7 @@ function query(params: object) {
 }
 
 export const financeiroApi = {
+  painel: () => request<FinancePanelData>("/api/admin/financeiro/painel"),
   resumo: (periodo: PeriodoFinanceiro) => request<ResumoFinanceiro>(`/api/admin/financeiro/resumo?${query(periodo)}`),
   recebiveis: (params: PeriodoFinanceiro & { busca?: string; status?: string; pagina?: number; limite?: number }) =>
     request<ListaRecebiveis>(`/api/admin/financeiro/recebiveis?${query(params)}`),
@@ -34,6 +35,7 @@ export const financeiroApi = {
     form.append("arquivo", arquivo);
     return request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/comprovante`, { method: "POST", body: form });
   },
+  comprovanteUrl: (id: string) => request<{ url: string }>(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/comprovante`),
   validar: (id: string, acao: "confirmar" | "rejeitar", observacao: string, idempotencyKey?: string) => request(`/api/admin/financeiro/validacoes/${encodeURIComponent(id)}/${acao}`, {
     method: "POST", body: JSON.stringify({ observacao, idempotencyKey: idempotencyKey ?? crypto.randomUUID() }),
   }),

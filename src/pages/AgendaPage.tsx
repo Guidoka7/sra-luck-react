@@ -10,6 +10,8 @@ import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
 import { MaisTab } from "@/pages/client/MaisTab";
+import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
+import { shouldShowPlanningFallback } from "@/lib/appAccess";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
@@ -18,16 +20,19 @@ type AgendaData = {
   cliente: { id: string; nome: string; procedimento: string | null };
   financeiro: { statusCirurgia: string | null };
   solicitacaoLiberacaoFinanceira: { id: string; status: StatusCusteio } | null;
-  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
+  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; previsaoCirurgia?: string | null; dataCirurgia?: string | null; horarioCirurgia?: string | null; status?: string } | null;
+  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; previsaoCirurgia?: string | null; dataCirurgia?: string | null; horarioCirurgia?: string | null; status?: string } | null;
   datasDisponiveis: { id: string; data: string; vagasRestantes: number }[];
   agendaCirurgicaLiberada: boolean;
   agendaCirurgicaLiberarEm: string | null;
+  previsaoCirurgia?: string | null;
+  etapa4?: boolean;
 };
 
 type BoletosData = {
   boletos: unknown[];
   porcentagem_pagamento: number;
+  percentual_minimo_agenda: number;
   parcelas_pagas: number;
   pode_agendar: boolean;
   agenda_liberada: boolean;
@@ -85,7 +90,7 @@ export function AgendaPage() {
     setConfirmando(true);
     setErro(null);
     try {
-      const resultado = await apiJson<{ data: string }>("/api/cliente/agendar", {
+      const resultado = await apiJson<{ data: string }>("/api/cliente/agenda/termos/selecionar", {
         method: "POST",
         body: JSON.stringify({ dataId, horario }),
       });
@@ -130,11 +135,32 @@ export function AgendaPage() {
     );
   }
 
+  if (shouldShowPlanningFallback(boletos.boletos.length)) {
+    return (
+      <main className="client-app min-h-[100dvh]">
+        <div className="mobile-app-frame">
+          <ClientProfileHeader
+            nomeCliente={agenda.cliente.nome || "Cliente"}
+            procedimento={agenda.cliente.procedimento}
+            quantidadeParcelas={null}
+            percentualPago={0}
+          />
+          <section className="mx-5 mt-4 rounded-[20px] border border-[#EFE2DE] bg-white px-5 py-7 text-center shadow-[0_5px_18px_rgba(46,36,34,.055)]">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#F8EDEF] text-[#7A2632]" aria-hidden="true">◷</div>
+            <h1 className="mt-4 font-heading text-[20px] font-semibold text-[#6B1F2E]">Estamos preparando seu planejamento</h1>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-[#7F6E6A]">Estamos gerando o seu planejamento. Por favor, aguarde.</p>
+            <p className="mx-auto mt-2 max-w-[310px] text-[11px] leading-relaxed text-[#9A8985]">Assim que estiver pronto, suas parcelas e próximas etapas aparecerão por aqui.</p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   const agendaAtual = agenda.agendamentoAtivo ?? agenda.agendamentoConcluido;
   const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
   const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
   const termosAssinados = Boolean(agenda.agendamentoConcluido);
-  const cirurgiaAgendada = Boolean(agendaAtual?.previsaoLiberacaoFinanceira);
+  const cirurgiaAgendada = Boolean(agendaAtual?.dataCirurgia ?? agendaAtual?.previsaoLiberacaoFinanceira);
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   return (
@@ -168,7 +194,7 @@ export function AgendaPage() {
             agendamentoConcluido={agenda.agendamentoConcluido}
             datasDisponiveis={agenda.datasDisponiveis}
             podeAgendar={boletos.pode_agendar}
-            agendaLiberada={boletos.agenda_liberada}
+            percentualMinimoAgenda={boletos.percentual_minimo_agenda ?? 70}
             statusRevisaoFinanceira={boletos.status_revisao_financeira}
             observacaoRevisaoFinanceira={boletos.observacao_revisao_financeira}
             custeioAprovado={custeioAprovado}
@@ -191,7 +217,7 @@ export function AgendaPage() {
             agendaCirurgicaLiberada={agenda.agendaCirurgicaLiberada}
             cirurgiaAgendada={cirurgiaAgendada}
             cirurgiaRealizada={cirurgiaRealizada}
-            previsaoLiberacaoFinanceira={agendaAtual?.previsaoLiberacaoFinanceira ?? null}
+            previsaoLiberacaoFinanceira={agendaAtual?.dataCirurgia ?? agendaAtual?.previsaoLiberacaoFinanceira ?? null}
             agendaCirurgicaLiberarEm={agenda.agendaCirurgicaLiberarEm}
             notificacoesCompactas={notificacoesState.notificacoes}
             onVerNotificacoes={() => setAba("notificacoes")}

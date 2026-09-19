@@ -1,13 +1,15 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
+import { getAppAccessRequirements } from "../src/lib/appAccess";
+import { agoraSaoPaulo, calcularLiberacaoCirurgica } from "./surgery-release";
 
 type Json = Record<string, any>;
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
 async function body(request: Request): Promise<Json> { try { return await request.json(); } catch { return {}; } }
 async function exigirAdmin(request: Request, env: Env) { if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503); const token=getCookie(request,"admin_session"); return (await verificarTokenAdmin(token,env.CLIENTE_SESSION_SECRET))?null:json({erro:"Sessão administrativa expirada."},401); }
 
-export const STATUS_CONTRATO_VALIDOS = ["ativo", "suspenso", "negativado", "cancelado"] as const;
+export const STATUS_CONTRATO_VALIDOS = ["ativo", "inadimplente", "suspenso", "negativado", "cancelado"] as const;
 export type StatusContratoInput = (typeof STATUS_CONTRATO_VALIDOS)[number];
 
 export interface PatchStatusContrato {
@@ -18,6 +20,64 @@ export interface PatchStatusContrato {
 }
 
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+function textoOpcional(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function cpfOpcional(value: unknown): { valor: string | null; erro?: string } {
+  const text = textoOpcional(value);
+  if (!text) return { valor: null };
+  const cpf = text.replace(/\D/g, "");
+  return cpf.length === 11 ? { valor: cpf } : { valor: null, erro: "CPF deve conter 11 dígitos quando informado." };
+}
+
+function dataOpcional(value: unknown): { valor: string | null; erro?: string } {
+  const text = textoOpcional(value);
+  if (!text) return { valor: null };
+  return DATA_ISO.test(text) ? { valor: text } : { valor: null, erro: "Data de nascimento inválida." };
+}
+
+function numeroNaoNegativoOpcional(value: unknown, label: string): { valor: number | null; erro?: string } {
+  if (value === null || value === undefined || value === "") return { valor: null };
+  const numero = Number(value);
+  return Number.isFinite(numero) && numero >= 0
+    ? { valor: Math.round(numero * 100) / 100 }
+    : { valor: null, erro: `${label} inválido.` };
+}
+
+export function normalizarNovoCliente(input: Record<string, unknown>) {
+  const cpf = cpfOpcional(input.cpf);
+  if (cpf.erro) return { erro: cpf.erro } as const;
+  const dataNascimento = dataOpcional(input.dataNascimento);
+  if (dataNascimento.erro) return { erro: dataNascimento.erro } as const;
+  const valorContrato = numeroNaoNegativoOpcional(input.valorContrato, "Valor da carta de crédito");
+  if (valorContrato.erro) return { erro: valorContrato.erro } as const;
+
+  return {
+    dados: {
+      nome_completo: textoOpcional(input.nomeCompleto),
+      cpf: cpf.valor,
+      data_nascimento: dataNascimento.valor,
+      telefone: textoOpcional(input.telefone),
+      email: textoOpcional(input.email),
+      procedimento: textoOpcional(input.procedimento),
+      medico: textoOpcional(input.medico),
+      hospital: textoOpcional(input.hospital),
+      consultora: textoOpcional(input.consultora),
+      valor_contrato: valorContrato.valor,
+      quantidade_parcelas: null,
+      origem_venda: textoOpcional(input.origemVenda),
+      banco: textoOpcional(input.banco),
+      observacoes_internas: textoOpcional(input.observacoes),
+      ativo: input.ativo !== false,
+      status_cirurgia: "nao_agendada" as const,
+      status_financeiro: "a_pagar" as const,
+    },
+  } as const;
+}
 
 /**
  * Regra pura da Fase 1: valida e normaliza uma transição de status de
@@ -69,9 +129,105 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
   const auth=await exigirAdmin(request,env);if(auth)return auth;const supabase=createServiceSupabaseClient(env);
-  if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,taxa_administrativa_percentual,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:error.message},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const {data:carnesRows}=await supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false});const {data:vendasRows}=await supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}const bancoPorCliente=new Map<string,string>();for(const cn of (carnesRows??[]) as any[]){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}const origemPorCliente=new Map<string,string>();for(const v of (vendasRows??[]) as any[]){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:bancoPorCliente.get(c.id)??null,origem_venda:origemPorCliente.get(c.id)??null};})});}
-  if(path==="/api/admin/clientes"&&request.method==="POST"){const b=await body(request),cpf=String(b.cpf??"").replace(/\D/g,"");if(!b.nomeCompleto||cpf.length!==11||!b.dataNascimento)return json({erro:"Nome, CPF e data de nascimento são obrigatórios."},400);const {data,error}=await supabase.from("clientes").insert({nome_completo:b.nomeCompleto,cpf,data_nascimento:b.dataNascimento,telefone:b.telefone||null,email:b.email||null,procedimento:b.procedimento||null,medico:b.medico||null,hospital:b.hospital||null,consultora:b.consultora||null,valor_contrato:Number(b.valorContrato)||0,taxa_administrativa_percentual:Number(b.taxaAdministrativaPercentual)||0,observacoes_internas:b.observacoes||null,ativo:b.ativo!==false,status_cirurgia:"nao_agendada",status_financeiro:"a_pagar"}).select("*").single();if(error)return json({erro:error.code==="23505"?"Já existe uma cliente cadastrada com esse CPF.":error.message},400);return json({cliente:data});}
-  const cliente=path.match(/^\/api\/admin\/clientes\/([^/]+)$/);if(cliente&&request.method==="PATCH"){const b=await body(request),id=decodeURIComponent(cliente[1]),patch:any={};const map:any={nomeCompleto:"nome_completo",cpf:"cpf",dataNascimento:"data_nascimento",telefone:"telefone",email:"email",procedimento:"procedimento",medico:"medico",hospital:"hospital",consultora:"consultora",valorContrato:"valor_contrato",taxaAdministrativaPercentual:"taxa_administrativa_percentual",observacoes:"observacoes_internas",ativo:"ativo"};for(const [a,k]of Object.entries(map))if(b[a]!==undefined)patch[k]=a==="cpf"?String(b[a]).replace(/\D/g,""):b[a];const {data,error}=await supabase.from("clientes").update(patch).eq("id",id).select("*").single();if(error)return json({erro:error.message},400);return json({cliente:data});}
+  if(path==="/api/admin/clientes"&&request.method==="GET"){
+    const {data,error}=await supabase.from("clientes")
+      .select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,percentual_minimo_agendar,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,acesso_app_liberado,acesso_app_liberado_em,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,banco,origem_venda,origem_cadastro,crm_importado_em,crm_ultimo_recebido_em,created_at,updated_at")
+      .order("created_at",{ascending:false});
+    if(error)return json({erro:error.message},500);
+
+    const [boletosRes,agendamentosRes,carnesRes,vendasRes]=await Promise.all([
+      supabase.from("boletos").select("cliente_id,status"),
+      supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]),
+      supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false}),
+      supabase.from("novas_vendas").select("cliente_id,origem_venda,campanha_local,rd_station_id,sincronizado_rd_em,created_at").not("cliente_id","is",null).order("created_at",{ascending:false}),
+    ]);
+
+    const resumo=new Map<string,{total:number;pagos:number}>();
+    for(const b of boletosRes.data??[]){
+      const r=resumo.get(b.cliente_id)??{total:0,pagos:0};
+      r.total++;
+      if(b.status==="pago")r.pagos++;
+      resumo.set(b.cliente_id,r);
+    }
+
+    const agenda=new Map<string,{data:string|null;horario:string|null;termosAssinadosEm:string|null;status:string}>();
+    for(const a of (agendamentosRes.data??[]) as any[]){
+      const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;
+      const old=agenda.get(a.cliente_id);
+      if(!old||(a.status==="realizado"&&old.status==="confirmado")){
+        agenda.set(a.cliente_id,{
+          data:d??null,
+          horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,
+          termosAssinadosEm:a.termos_assinados_em??null,
+          status:a.status,
+        });
+      }
+    }
+
+    const bancoPorCliente=new Map<string,string>();
+    for(const cn of (carnesRes.data??[]) as any[]){
+      if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);
+    }
+
+    const vendaPorCliente=new Map<string,{origem:string|null;campanha:string|null;rdStationId:string|null;sincronizadoEm:string|null}>();
+    for(const v of (vendasRes.data??[]) as any[]){
+      if(!v.cliente_id||vendaPorCliente.has(v.cliente_id))continue;
+      vendaPorCliente.set(v.cliente_id,{
+        origem:v.origem_venda??null,
+        campanha:v.campanha_local??null,
+        rdStationId:v.rd_station_id??null,
+        sincronizadoEm:v.sincronizado_rd_em??v.created_at??null,
+      });
+    }
+
+    return json({clientes:(data??[]).map((clienteRow:any)=>{
+      const financeiro=resumo.get(clienteRow.id);
+      const agendaRow=agenda.get(clienteRow.id);
+      const venda=vendaPorCliente.get(clienteRow.id);
+      return {
+        ...clienteRow,
+        tem_financeiro:Boolean(financeiro?.total),
+        porcentagem_pagamento:financeiro?.total?Math.round(financeiro.pagos/financeiro.total*1000)/10:null,
+        parcelas_pagas:financeiro?.pagos??0,
+        parcelas_total:financeiro?.total??0,
+        termos_assinados_em:agendaRow?.termosAssinadosEm??null,
+        proximo_agendamento_data:agendaRow?.status==="confirmado"?agendaRow.data:null,
+        proximo_agendamento_horario:agendaRow?.status==="confirmado"?agendaRow.horario:null,
+        banco:clienteRow.banco??bancoPorCliente.get(clienteRow.id)??null,
+        origem_venda:clienteRow.origem_venda??venda?.origem??null,
+        campanha:venda?.campanha??null,
+        rd_station_id:venda?.rdStationId??null,
+        crm_ultimo_recebido_em:clienteRow.crm_ultimo_recebido_em??venda?.sincronizadoEm??null,
+      };
+    })});
+  }
+  if(path==="/api/admin/clientes"&&request.method==="POST"){
+    const b=await body(request);
+    const normalizado=normalizarNovoCliente(b);
+    if("erro" in normalizado)return json({erro:normalizado.erro},400);
+    const {data,error}=await supabase.from("clientes").insert(normalizado.dados).select("*").single();
+    if(error)return json({erro:error.code==="23505"?"Já existe uma cliente cadastrada com esse CPF.":error.message},400);
+    return json({cliente:data});
+  }
+  const cliente=path.match(/^\/api\/admin\/clientes\/([^/]+)$/);
+  if(cliente&&request.method==="PATCH"){
+    const b=await body(request),id=decodeURIComponent(cliente[1]),patch:Record<string,unknown>={};
+    const textMap:Record<string,string>={nomeCompleto:"nome_completo",telefone:"telefone",email:"email",procedimento:"procedimento",medico:"medico",hospital:"hospital",consultora:"consultora",inicioPlano:"inicio_plano",formaPagamentoPlano:"forma_pagamento_plano",instituicaoPagamento:"instituicao_pagamento",statusPlano:"status_plano",origemVenda:"origem_venda",banco:"banco",observacoes:"observacoes_internas"};
+    for(const [inputKey,column] of Object.entries(textMap))if(b[inputKey]!==undefined)patch[column]=textoOpcional(b[inputKey]);
+
+    if(b.cpf!==undefined){const normalized=cpfOpcional(b.cpf);if(normalized.erro)return json({erro:normalized.erro},400);patch.cpf=normalized.valor;}
+    if(b.dataNascimento!==undefined){const normalized=dataOpcional(b.dataNascimento);if(normalized.erro)return json({erro:normalized.erro},400);patch.data_nascimento=normalized.valor;}
+    if(b.valorContrato!==undefined){const normalized=numeroNaoNegativoOpcional(b.valorContrato,"Valor da carta de crédito");if(normalized.erro)return json({erro:normalized.erro},400);patch.valor_contrato=normalized.valor;}
+    if(b.valorTotalPlano!==undefined){const normalized=numeroNaoNegativoOpcional(b.valorTotalPlano,"Valor total do plano");if(normalized.erro)return json({erro:normalized.erro},400);patch.valor_total_plano=normalized.valor;}
+    if(b.valorParcelaPlano!==undefined){const normalized=numeroNaoNegativoOpcional(b.valorParcelaPlano,"Valor da parcela");if(normalized.erro)return json({erro:normalized.erro},400);patch.valor_parcela_plano=normalized.valor;}
+    if(b.taxaAdministrativaPercentual!==undefined){const normalized=numeroNaoNegativoOpcional(b.taxaAdministrativaPercentual,"Taxa administrativa");if(normalized.erro)return json({erro:normalized.erro},400);patch.taxa_administrativa_percentual=normalized.valor??0;}
+    if(b.diaCobranca!==undefined){if(b.diaCobranca===null||b.diaCobranca==="")patch.dia_cobranca=null;else{const dia=Number(b.diaCobranca);if(!Number.isInteger(dia)||dia<1||dia>31)return json({erro:"Dia de cobrança inválido."},400);patch.dia_cobranca=dia;}}
+    if(b.ativo!==undefined)patch.ativo=Boolean(b.ativo);
+
+    const {data,error}=await supabase.from("clientes").update(patch).eq("id",id).select("*").single();
+    if(error)return json({erro:error.code==="23505"?"Já existe uma cliente cadastrada com esse CPF.":error.message},400);
+    return json({cliente:data});
+  }
   if(cliente&&request.method==="DELETE"){
     const id=decodeURIComponent(cliente[1]);
     const token1=getCookie(request,"admin_session");
@@ -189,6 +345,139 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     });
 
     return json({cliente:data});
+  }
+
+  const liberarAcessoApp=path.match(/^\/api\/admin\/clientes\/([^/]+)\/liberar-acesso-app$/);
+  if(liberarAcessoApp&&request.method==="POST"){
+    const id=decodeURIComponent(liberarAcessoApp[1]);
+    const [{data:clienteAcesso,error:erroClienteAcesso},{count:parcelasCount,error:erroParcelas}]=await Promise.all([
+      supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,acesso_app_liberado,acesso_app_liberado_em").eq("id",id).maybeSingle(),
+      supabase.from("boletos").select("id",{count:"exact",head:true}).eq("cliente_id",id),
+    ]);
+    if(erroClienteAcesso)return json({erro:erroClienteAcesso.message},500);
+    if(erroParcelas)return json({erro:erroParcelas.message},500);
+    if(!clienteAcesso)return json({erro:"Cliente não encontrada."},404);
+
+    const requisitos=getAppAccessRequirements({
+      name:clienteAcesso.nome_completo,
+      cpf:clienteAcesso.cpf,
+      birthDate:clienteAcesso.data_nascimento,
+      installmentCount:parcelasCount??0,
+    });
+
+    if(!requisitos.canRelease){
+      return json({
+        erro:"A cliente ainda não possui todos os requisitos para acesso ao app.",
+        faltando:requisitos.missing,
+      },409);
+    }
+
+    if(clienteAcesso.acesso_app_liberado){
+      return json({cliente:clienteAcesso,requisitos});
+    }
+
+    const liberadoEm=new Date().toISOString();
+    const {data:clienteLiberada,error:erroLiberar}=await supabase.from("clientes")
+      .update({acesso_app_liberado:true,acesso_app_liberado_em:liberadoEm})
+      .eq("id",id)
+      .select("*")
+      .single();
+    if(erroLiberar)return json({erro:erroLiberar.message},400);
+
+    const tokenAcesso=getCookie(request,"admin_session");
+    const sessaoAcesso=await verificarTokenAdmin(tokenAcesso,env.CLIENTE_SESSION_SECRET!);
+    const colaboradorAcesso=sessaoAcesso?await buscarColaboradorAdminAtivo(sessaoAcesso.adminId,env):null;
+    await supabase.from("logs_alteracoes").insert({
+      usuario:colaboradorAcesso?.id??"admin",
+      acao:"liberou_acesso_app",
+      entidade:"clientes",
+      entidade_id:id,
+      detalhes:{requisitos:["nome","cpf","data_nascimento","financeiro"],parcelas:parcelasCount??0,liberadoEm},
+    });
+
+    return json({cliente:clienteLiberada,requisitos});
+  }
+
+  const jornadaCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/jornada$/);
+  if(jornadaCliente&&request.method==="GET"){
+    const id=decodeURIComponent(jornadaCliente[1]);
+    const [
+      {data:clienteJornada,error:erroClienteJornada},
+      {data:agendamentosJornada,error:erroAgendamentosJornada},
+      {data:custeioJornada,error:erroCusteioJornada},
+    ]=await Promise.all([
+      supabase.from("clientes")
+        .select("id,status_contrato,status_cirurgia,status_financeiro,status_revisao_financeira,data_atingiu_percentual,financeiro_confirmado_em,custeio_confirmado_em,percentual_minimo_agendar,quantidade_parcelas")
+        .eq("id",id)
+        .maybeSingle(),
+      supabase.from("agendamentos")
+        .select("id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,created_at,datas(data)")
+        .eq("cliente_id",id)
+        .in("status",["confirmado","realizado"])
+        .order("created_at",{ascending:false}),
+      supabase.from("solicitacoes_liberacao_financeira")
+        .select("id,status,created_at")
+        .eq("cliente_id",id)
+        .order("created_at",{ascending:false})
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if(erroClienteJornada)return json({erro:erroClienteJornada.message},500);
+    if(erroAgendamentosJornada)return json({erro:erroAgendamentosJornada.message},500);
+    if(erroCusteioJornada)return json({erro:erroCusteioJornada.message},500);
+    if(!clienteJornada)return json({erro:"Cliente não encontrada."},404);
+
+    const agendas=(agendamentosJornada??[]) as any[];
+    const ativo=agendas.find((item)=>item.status==="confirmado")??null;
+    const concluido=agendas.find((item)=>item.status==="realizado")??null;
+    const agendaAtual=ativo??concluido;
+    const termosAssinadosEm=concluido?.termos_assinados_em??null;
+    const cirurgiaEm=agendaAtual?.previsao_liberacao_financeira??agendaAtual?.data_cirurgia??null;
+    const agendaCirurgicaLiberarEm=calcularLiberacaoCirurgica(
+      termosAssinadosEm,
+      clienteJornada.custeio_confirmado_em??null,
+    );
+    const agendaCirurgicaLiberada=Boolean(
+      agendaCirurgicaLiberarEm
+      && agendaCirurgicaLiberarEm<=agoraSaoPaulo().data
+    );
+    const custeioStatus=(custeioJornada?.status??null) as "pendente"|"em_analise"|"aprovada"|"recusada"|null;
+
+    let etapa="formacao_saldo";
+    if(clienteJornada.status_contrato==="cancelado")etapa="cancelado";
+    else if(clienteJornada.status_cirurgia==="realizada")etapa="concluido";
+    else if(cirurgiaEm)etapa="cirurgia_agendada";
+    else if(agendaCirurgicaLiberada)etapa="agenda_cirurgica_liberada";
+    else if(termosAssinadosEm&&clienteJornada.custeio_confirmado_em)etapa="quitado";
+    else if(termosAssinadosEm)etapa="aguardando_quitacao";
+    else if(agendaAtual&&custeioStatus&&custeioStatus!=="recusada")etapa="termos_agendados";
+    else if(custeioStatus&&custeioStatus!=="recusada")etapa="forma_pagamento_liberada";
+    else if(clienteJornada.status_revisao_financeira==="aprovada")etapa="forma_pagamento_liberada";
+    else if(clienteJornada.status_revisao_financeira==="pendente")etapa="levantamento_financeiro";
+    else if(clienteJornada.data_atingiu_percentual)etapa="meta_atingida";
+
+    return json({
+      contrato:{
+        id:`cliente:${clienteJornada.id}`,
+        cliente_id:clienteJornada.id,
+        etapa,
+        percentual_minimo:clienteJornada.percentual_minimo_agendar??null,
+        data_atingiu_percentual:clienteJornada.data_atingiu_percentual??null,
+        levantamento_aprovado_em:clienteJornada.financeiro_confirmado_em??null,
+        forma_quitacao:null,
+        escolha_forma_em:clienteJornada.custeio_confirmado_em??null,
+        termos_assinados_em:termosAssinadosEm,
+        quitado_em:clienteJornada.custeio_confirmado_em&&termosAssinadosEm
+          ? (String(clienteJornada.custeio_confirmado_em)>String(termosAssinadosEm)?clienteJornada.custeio_confirmado_em:termosAssinadosEm)
+          : null,
+        agenda_cirurgica_liberar_em:agendaCirurgicaLiberarEm,
+        agenda_cirurgica_liberada:agendaCirurgicaLiberada,
+        agendada:Boolean(agendaAtual),
+        custeio_status:custeioStatus,
+        cirurgia_em:cirurgiaEm,
+      },
+      fonte:"modelo_real_clientes_agendamentos",
+    });
   }
 
   const historicoCliente=path.match(/^\/api\/admin\/clientes\/([^/]+)\/historico$/);

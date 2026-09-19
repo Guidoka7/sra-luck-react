@@ -86,7 +86,6 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const [
       clientesRes,
       boletosRes,
-      novasVendasRes,
       termosMesRes,
       cirurgiasMesRes,
       termosProximosRes,
@@ -103,7 +102,6 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
         .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,comprovante_url,suspensa,clientes(id,nome_completo,cpf)")
         .order("data_vencimento", { ascending: true })
         .limit(5000),
-      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro"),
       supabase.from("agendamentos")
         .select("id,cliente_id,status,horario_termos,termos_assinados_em,clientes(id,nome_completo,status_financeiro,status_cirurgia),datas!inner(data)")
         .in("status", ["confirmado", "realizado"])
@@ -140,6 +138,11 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
 
     const clientes = (clientesRes.data ?? []) as any[];
     const boletos = (boletosRes.data ?? []) as any[];
+    const clientesComFinanceiro = new Set(boletos.map((boleto) => String(boleto.cliente_id)));
+    const aguardandoCadastro = clientes.filter((cliente) =>
+      statusContrato(cliente.status_contrato) !== "cancelado"
+      && !clientesComFinanceiro.has(String(cliente.id))
+    ).length;
     const termosMes = (termosMesRes.data ?? []) as any[];
     const cirurgiasMes = (cirurgiasMesRes.data ?? []) as any[];
     const termosProximos = (termosProximosRes.data ?? []) as any[];
@@ -292,7 +295,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       periodo: { ano, mes, inicio, fimExclusivo, hoje: agoraBrasil },
       kpis: {
         novasClientesHoje,
-        aguardandoCadastro: novasVendasRes.count ?? 0,
+        aguardandoCadastro,
         aguardandoConferencia: aguardandoConferencia.length,
         clientesAtivas: clientStats.ativas,
         termosHoje: termosHojeLista.length,

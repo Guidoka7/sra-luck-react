@@ -1,261 +1,440 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { toast } from "sonner";
-import { RevisaoFinanceiraCard } from "@/components/admin/RevisaoFinanceiraCard";
-import { PrevisaoLiberacaoFinanceiraInteligente } from "@/components/admin/PrevisaoLiberacaoFinanceiraInteligente";
-import { createClientSupabaseClient } from "@/lib/supabase/client";
-import { nomeMes } from "@/lib/utils";
-import { zipChip } from "@/components/admin-zip/zipUi";
-import type { DataAgenda } from "@/types/database";
+import {
+  CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Search, XCircle,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { ClienteDetailDrawer } from "@/components/admin/clientes/ClienteDetailDrawer";
+import { agendaApi } from "@/features/agenda/agendaApi";
+import type {
+  AgendaCalendarDay,
+  AgendaClientRow,
+  AgendaPrimaryTab,
+  AgendaReleaseRow,
+  AgendaSurgeriesPayload,
+  AgendaSurgeryRow,
+  AgendaTermsConfirmedRow,
+  AgendaTermsPayload,
+  AgendaTermsView,
+} from "@/features/agenda/types";
+import type { Cliente } from "@/types/database";
+import styles from "./AgendaPage.module.css";
 
-/**
- * Reprodução fiel de Admin Agenda.dc.html: 3 fluxos reais (Termos
- * cirúrgicos, Liberação financeira, Cirurgias confirmadas), calendário de
- * vagas, pendências de meses anteriores e listas reais. "Liberação
- * financeira" e "Solicitações" reaproveitam os paineis reais já existentes
- * (PrevisaoLiberacaoFinanceiraInteligenteV2 / RevisaoFinanceiraCard) — a
- * lógica de negócio (orçamento, custeio, janela de 90 dias) não foi
- * reescrita, apenas encapsulada no novo shell do ZIP.
- */
+const WEEK = ["D","S","T","Q","Q","S","S"];
 
-type AbaAgenda = "termos" | "liberacao" | "cirurgias";
-type SubTermos = "sol" | "conf";
-const DIAS_SEMANA = ["D", "S", "T", "Q", "Q", "S", "S"];
+function cx(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
+}
 
-function formatarDataCurta(iso: string) { return iso.split("-").reverse().join("/"); }
-function diasAte(iso: string, hoje: string) { const [ay, am, ad] = iso.split("-").map(Number); const [hy, hm, hd] = hoje.split("-").map(Number); return Math.round((Date.UTC(ay, am - 1, ad) - Date.UTC(hy, hm - 1, hd)) / 86400000); }
-function textoContagem(dias: number) { if (dias < 0) return "Realizado"; if (dias === 0) return "Hoje"; if (dias === 1) return "1 dia"; return `${dias} dias`; }
+function todayIso() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
+  return get("year") + "-" + get("month") + "-" + get("day");
+}
 
-export default function AgendaAdminPage() { return <Suspense fallback={null}><AgendaAdminConteudo /></Suspense>; }
+function currentMonthIso() {
+  return todayIso().slice(0, 7);
+}
 
-function AgendaAdminConteudo() {
-  const searchParams = useSearchParams();
-  const abaParam = searchParams.get("aba");
-  const abaInicial: AbaAgenda = abaParam === "liberacao" ? "liberacao" : abaParam === "cirurgias" ? "cirurgias" : "termos";
-  const hoje = new Date();
-  const isoHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+function shiftMonth(month: string, delta: number) {
+  const parts = month.split("-").map(Number);
+  const date = new Date(Date.UTC(parts[0], parts[1] - 1 + delta, 1));
+  return String(date.getUTCFullYear()) + "-" + String(date.getUTCMonth() + 1).padStart(2,"0");
+}
 
-  const [aba, setAba] = useState<AbaAgenda>(abaInicial);
-  const [sub, setSub] = useState<SubTermos>("sol");
+function monthLabel(month: string) {
+  const parts = month.split("-").map(Number);
+  const text = new Intl.DateTimeFormat("pt-BR",{month:"long",year:"numeric"}).format(new Date(parts[0],parts[1]-1,1));
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
-  const subtitulo = aba === "liberacao"
-    ? "Acompanhe clientes com termos concluídos e organize a liberação da agenda cirúrgica dentro da janela operacional."
-    : aba === "cirurgias"
-      ? "Cirurgias com data escolhida, contagem regressiva e confirmação no dia do procedimento."
+function dateLabel(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const parts = iso.slice(0,10).split("-");
+  return parts.length === 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : iso;
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(value || 0));
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? parts[0]?.[1] ?? "")).toUpperCase() || "SL";
+}
+
+function cpf(value: string | null) {
+  const digits = String(value ?? "").replace(/\D/g,"");
+  if (digits.length !== 11) return value || "CPF não informado";
+  return digits.slice(0,3) + "." + digits.slice(3,6) + "." + digits.slice(6,9) + "-" + digits.slice(9);
+}
+
+function calendarCells(month: string, days: AgendaCalendarDay[]) {
+  const parts = month.split("-").map(Number);
+  const first = new Date(parts[0],parts[1]-1,1);
+  const count = new Date(parts[0],parts[1],0).getDate();
+  const map = new Map(days.map((day) => [day.date,day]));
+  const cells: Array<{date:string;day:number;record:AgendaCalendarDay|null}|null> = [];
+  for (let index=0; index<first.getDay(); index+=1) cells.push(null);
+  for (let day=1; day<=count; day+=1) {
+    const date = month + "-" + String(day).padStart(2,"0");
+    cells.push({date,day,record:map.get(date) ?? null});
+  }
+  while(cells.length%7) cells.push(null);
+  return cells;
+}
+
+function effectiveState(record: AgendaCalendarDay | null, date: string) {
+  if (date < todayIso()) return "past";
+  return record?.state ?? "neutral";
+}
+
+type DrawerContext = "default" | "terms-flow" | "finance-release" | "surgery-final";
+
+export default function AgendaPage() {
+  const [tab,setTab] = useState<AgendaPrimaryTab>("terms");
+  const [termsView,setTermsView] = useState<AgendaTermsView>("eligible");
+  const [month,setMonth] = useState(currentMonthIso());
+  const [terms,setTerms] = useState<AgendaTermsPayload | null>(null);
+  const [release,setRelease] = useState<AgendaReleaseRow[]>([]);
+  const [surgeries,setSurgeries] = useState<AgendaSurgeriesPayload | null>(null);
+  const [clients,setClients] = useState<Cliente[]>([]);
+  const [selectedDate,setSelectedDate] = useState(todayIso());
+  const [search,setSearch] = useState("");
+  const [loading,setLoading] = useState(true);
+  const [error,setError] = useState<string | null>(null);
+  const [drawer,setDrawer] = useState<{client:Cliente;context:DrawerContext;tab:"profile"|"finance"}|null>(null);
+  const [notice,setNotice] = useState<string | null>(null);
+
+  const load = useCallback(async (silent=false) => {
+    if(!silent) setLoading(true);
+    try {
+      const [clientList,termsData,releaseData,surgeryData] = await Promise.all([
+        agendaApi.clients(),
+        agendaApi.terms(month),
+        agendaApi.release(),
+        agendaApi.surgeries(month),
+      ]);
+      setClients(clientList);
+      setTerms(termsData);
+      setRelease(releaseData.rows);
+      setSurgeries(surgeryData);
+      setError(null);
+      const monthPrefix = selectedDate.slice(0,7);
+      if(monthPrefix !== month) setSelectedDate(month + "-01");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Não foi possível carregar a Agenda.");
+    } finally {
+      if(!silent) setLoading(false);
+    }
+  },[month]);
+
+  useEffect(() => { void load(); },[load]);
+
+  const openClient = useCallback((row: AgendaClientRow,context:DrawerContext,initialTab:"profile"|"finance"="finance") => {
+    const client = clients.find((item) => item.id === row.clientId);
+    if(!client) {
+      setNotice("Não foi possível localizar o perfil completo desta cliente.");
+      window.setTimeout(() => setNotice(null),2600);
+      return;
+    }
+    setDrawer({client,context,tab:initialTab});
+  },[clients]);
+
+  const subtitle = tab === "finance"
+    ? "Fila operacional entre a assinatura dos termos, presença, quitação e liberação da agenda de cirurgia."
+    : tab === "surgeries"
+      ? "Capacidade cirúrgica, confirmações finais e cartas de crédito comprometidas por mês."
       : "Solicitações, levantamento financeiro e assinatura dos termos cirúrgicos em um único espaço.";
 
-  const tabs: { id: AbaAgenda; label: string }[] = [
-    { id: "termos", label: "Termos cirúrgicos" },
-    { id: "liberacao", label: "Liberação financeira" },
-    { id: "cirurgias", label: "Cirurgias confirmadas" },
-  ];
+  const currentCalendar = tab === "surgeries" ? surgeries?.calendar ?? [] : terms?.calendar ?? [];
+  const cells = useMemo(() => calendarCells(month,currentCalendar),[month,currentCalendar]);
+  const selectedRecord = currentCalendar.find((item) => item.date === selectedDate) ?? null;
 
-  return <div className="zip-admin">
-    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
-      <div><h1 style={{ fontSize: 27 }}>Agenda</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "60ch" }}>{subtitulo}</p></div>
-    </div>
+  const selectedClients = useMemo(() => {
+    if(tab === "surgeries") return (surgeries?.rows ?? []).filter((item) => item.date === selectedDate);
+    return (terms?.confirmed ?? []).filter((item) => item.date === selectedDate);
+  },[tab,surgeries?.rows,terms?.confirmed,selectedDate]);
 
-    <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 12 }}>
-      {tabs.map((t) => {
-        const on = aba === t.id;
-        return <button key={t.id} onClick={() => setAba(t.id)} style={{ display: "flex", alignItems: "center", gap: 7, height: 31, padding: "0 13px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>;
-      })}
-    </div>
+  const tableRows = useMemo(() => {
+    const query=search.trim().toLocaleLowerCase("pt-BR");
+    const filter=<T extends AgendaClientRow>(rows:T[]) => rows.filter((row) =>
+      !query || (row.name+" "+(row.cpf ?? "")).toLocaleLowerCase("pt-BR").includes(query)
+    );
+    if(tab==="finance") return filter(release);
+    if(tab==="surgeries") return filter(surgeries?.rows ?? []);
+    return termsView==="eligible" ? filter(terms?.eligible ?? []) : filter(terms?.confirmed ?? []);
+  },[tab,termsView,terms?.eligible,terms?.confirmed,release,surgeries?.rows,search]);
 
-    <PendenciasBanner />
+  async function saveCapacity(action:"open"|"close"|"reopen",total:number) {
+    if(!selectedDate || selectedDate<todayIso()) return;
+    try {
+      if(tab==="surgeries") await agendaApi.setSurgeryCapacity(selectedDate,{action,total});
+      else await agendaApi.setTermsCapacity(selectedDate,{action,total});
+      setNotice(action==="close" ? "Data fechada." : "Capacidade atualizada.");
+      await load(true);
+    } catch(e) {
+      setNotice(e instanceof Error ? e.message : "Não foi possível atualizar a data.");
+    } finally {
+      window.setTimeout(() => setNotice(null),2600);
+    }
+  }
 
-    {aba === "termos" && <>
-      <div style={{ display: "flex", gap: 4, padding: 3, borderRadius: 11, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", marginBottom: 12 }}>
-        <button onClick={() => setSub("sol")} style={{ display: "flex", alignItems: "center", gap: 7, height: 28, padding: "0 12px", borderRadius: 8, border: sub === "sol" ? "1px solid var(--line)" : "1px solid transparent", background: sub === "sol" ? "var(--s0)" : "transparent", color: sub === "sol" ? "var(--ink)" : "var(--soft)", fontSize: 11.5, fontWeight: 600 }}>Solicitações</button>
-        <button onClick={() => setSub("conf")} style={{ display: "flex", alignItems: "center", gap: 7, height: 28, padding: "0 12px", borderRadius: 8, border: sub === "conf" ? "1px solid var(--line)" : "1px solid transparent", background: sub === "conf" ? "var(--s0)" : "transparent", color: sub === "conf" ? "var(--ink)" : "var(--soft)", fontSize: 11.5, fontWeight: 600 }}>Agendamentos confirmados</button>
+  return <main className={styles.page}>
+    <section className={styles.pageHeader}>
+      <h1 className={styles.pageTitle}>Agenda</h1>
+      <div className={styles.pageSubtitle}>{subtitle}</div>
+    </section>
+
+    <section className={styles.agendaTabs}>
+      <div className={cx(styles.segmented,styles.primaryTabs)} role="tablist" aria-label="Áreas da Agenda">
+        <button className={tab==="terms"?styles.active:""} type="button" onClick={() => setTab("terms")}>Termos cirúrgicos</button>
+        <button className={tab==="finance"?styles.active:""} type="button" onClick={() => setTab("finance")}>Liberação financeira</button>
+        <button className={tab==="surgeries"?styles.active:""} type="button" onClick={() => setTab("surgeries")}>Cirurgias</button>
       </div>
-      <CalendarioTermos />
-      <div style={{ marginTop: 14 }}>{sub === "sol" ? <RevisaoFinanceiraCard /> : <AgendamentosConfirmados />}</div>
-    </>}
+    </section>
 
-    {aba === "liberacao" && <div style={{ marginTop: 2 }}><PrevisaoLiberacaoFinanceiraInteligente /></div>}
+    {error ? <div className={styles.errorBox}><strong>Não foi possível carregar a Agenda.</strong><span>{error}</span><button type="button" onClick={() => void load()}>Tentar novamente</button></div> : null}
 
-    {aba === "cirurgias" && <CirurgiasConfirmadas />}
+    {tab!=="finance" ? <section className={styles.agendaWorkspace}>
+      <CalendarCard
+        tab={tab}
+        month={month}
+        loading={loading}
+        cells={cells}
+        selectedDate={selectedDate}
+        selectedRecord={selectedRecord}
+        selectedClients={selectedClients as Array<AgendaTermsConfirmedRow|AgendaSurgeryRow>}
+        onMonth={(delta) => { const next=shiftMonth(month,delta); setMonth(next); setSelectedDate(next+"-01"); }}
+        onDate={setSelectedDate}
+        onCapacity={saveCapacity}
+        onClient={(row) => openClient(row,tab==="surgeries"?"surgery-final":"terms-flow")}
+      />
+      <ListCard
+        tab={tab}
+        termsView={termsView}
+        rows={tableRows as AgendaClientRow[]}
+        search={search}
+        loading={loading}
+        onSearch={setSearch}
+        onTermsView={setTermsView}
+        onOpen={(row) => openClient(row,tab==="surgeries"?"surgery-final":"terms-flow")}
+      />
+    </section> :
+    <section className={styles.financeOnly}>
+      <ListCard
+        tab="finance"
+        termsView={termsView}
+        rows={tableRows as AgendaClientRow[]}
+        search={search}
+        loading={loading}
+        onSearch={setSearch}
+        onTermsView={setTermsView}
+        onOpen={(row) => openClient(row,"finance-release")}
+      />
+    </section>}
+
+    {tab==="surgeries" && surgeries ? <MonthlyChart data={surgeries}/> : null}
+
+    <ClienteDetailDrawer
+      cliente={drawer?.client ?? null}
+      open={Boolean(drawer)}
+      initialTab={drawer?.tab ?? "finance"}
+      context={drawer?.context ?? "default"}
+      financeMode="full"
+      onClose={() => setDrawer(null)}
+      onUpdated={(updated) => {
+        if(updated) setClients((current) => current.map((item) => item.id===updated.id?updated:item));
+        void load(true);
+      }}
+    />
+
+    {notice ? <div className={styles.toast} role="status">{notice}</div> : null}
+  </main>;
+}
+
+function CalendarCard({
+  tab,month,loading,cells,selectedDate,selectedRecord,selectedClients,onMonth,onDate,onCapacity,onClient,
+}:{
+  tab:"terms"|"surgeries";
+  month:string;
+  loading:boolean;
+  cells:Array<{date:string;day:number;record:AgendaCalendarDay|null}|null>;
+  selectedDate:string;
+  selectedRecord:AgendaCalendarDay|null;
+  selectedClients:Array<AgendaTermsConfirmedRow|AgendaSurgeryRow>;
+  onMonth:(delta:number)=>void;
+  onDate:(date:string)=>void;
+  onCapacity:(action:"open"|"close"|"reopen",total:number)=>Promise<void>;
+  onClient:(row:AgendaClientRow)=>void;
+}) {
+  const [total,setTotal]=useState(1);
+  useEffect(() => { setTotal(selectedRecord?.total || 1); },[selectedDate,selectedRecord?.total]);
+  const state=effectiveState(selectedRecord,selectedDate);
+  const canEdit=selectedDate>=todayIso();
+  const title=tab==="surgeries"?"Calendário de cirurgias":"Calendário dos termos";
+
+  return <div className={styles.calendarCompositeCard}>
+    <div className={styles.calendarArea}>
+      <div className={styles.calendarHead}>
+        <div className={styles.calendarTitleRow}><div className={styles.calendarTitle}>{title}</div><div className={styles.calendarMonthLabel}>{monthLabel(month)}</div></div>
+        <div className={styles.monthControl}><button type="button" aria-label="Mês anterior" onClick={() => onMonth(-1)}><ChevronLeft size={15}/></button><span>{monthLabel(month)}</span><button type="button" aria-label="Próximo mês" onClick={() => onMonth(1)}><ChevronRight size={15}/></button></div>
+      </div>
+      <div className={styles.legend}>
+        <span className={styles.legendItem}><i className={cx(styles.legendDot,styles.available)}/>Disponível</span>
+        <span className={styles.legendItem}><i className={cx(styles.legendDot,styles.pending)}/>Sem definição</span>
+        <span className={styles.legendItem}><i className={cx(styles.legendDot,styles.unavailable)}/>Fechada / lotada</span>
+      </div>
+      <div className={styles.dowGrid}>{WEEK.map((item,index)=><div key={item+index} className={styles.dow}>{item}</div>)}</div>
+      <div className={styles.calendarGrid}>
+        {cells.map((cell,index) => {
+          if(!cell) return <div key={"blank-"+index} className={cx(styles.dayCell,styles.blank)}/>;
+          const dayState=effectiveState(cell.record,cell.date);
+          const selected=cell.date===selectedDate;
+          return <button
+            key={cell.date}
+            type="button"
+            className={cx(styles.dayCell,styles.valid,styles["state_"+dayState],selected&&styles.selected,selected&&tab==="surgeries"&&styles.surgerySelected,cell.record&&cell.record.used>0&&styles.hasScheduled)}
+            disabled={dayState==="past"}
+            onClick={() => onDate(cell.date)}
+          >
+            <span className={styles.dayNumber}>{cell.day}</span>
+            <i className={styles.dayIndicator}/>
+            {cell.record && cell.record.used>0 ? <span className={styles.scheduledCount}>{cell.record.used}</span> : null}
+            {cell.record && cell.record.total>0 ? <span className={styles.capacityMini}>{cell.record.used}/{cell.record.total}</span> : null}
+          </button>;
+        })}
+      </div>
+      {loading ? <div className={styles.calendarLoading}>Atualizando...</div> : null}
+    </div>
+    <aside className={styles.selectedDayPanel}>
+      <div className={styles.selectedTitle}>Dia selecionado</div>
+      <div className={styles.selectedDate}>{dateLabel(selectedDate)}</div>
+      <StatusPill state={state}/>
+      <div className={styles.selectedMetrics}>
+        <Metric label="Vagas ocupadas" value={String(selectedRecord?.used ?? 0)}/>
+        <Metric label="Capacidade" value={selectedRecord?.total ? String(selectedRecord.total) : "Não definida"}/>
+        <Metric label="Vagas restantes" value={selectedRecord?.total ? String(selectedRecord.remaining) : "—"}/>
+      </div>
+      <div className={styles.selectedPeople}>
+        <span>{tab==="surgeries"?"Cirurgias do dia":"Termos do dia"}</span>
+        {selectedClients.length ? selectedClients.map((row)=><button key={row.clientId} type="button" onClick={() => onClient(row)}><i>{initials(row.name)}</i><span>{row.name}<small>{"time" in row && row.time ? row.time : ""}</small></span></button>) : <div>Nenhuma cliente agendada neste dia.</div>}
+      </div>
+      {canEdit ? <div className={styles.capacityControl}>
+        <label><span>Vagas liberadas</span><input type="number" min={0} max={99} value={total} onChange={(event)=>setTotal(Math.max(0,Number(event.target.value||0)))}/></label>
+        <button className={styles.openDate} type="button" onClick={() => void onCapacity(selectedRecord?.manualClosed?"reopen":"open",total)}>{selectedRecord ? "Salvar vagas" : "Liberar data"}</button>
+        {selectedRecord && state!=="closed" ? <button className={styles.closeDate} type="button" onClick={() => void onCapacity("close",Math.max(total,selectedRecord.used))}>Fechar data</button> : null}
+        {selectedRecord && state==="closed" ? <button className={styles.reopenDate} type="button" onClick={() => void onCapacity("reopen",Math.max(total,selectedRecord.used,1))}>Reabrir data</button> : null}
+      </div> : <div className={styles.pastNotice}>Data passada · somente consulta</div>}
+    </aside>
   </div>;
 }
 
-function PendenciasBanner() {
-  const [itens, setItens] = useState<{ id: string; nome: string; motivo: string; quando: string }[]>([]);
-  const [aberto, setAberto] = useState(false);
-  useEffect(() => {
-    let ativo = true;
-    fetch("/api/admin/remarcacoes", { cache: "no-store" }).then((r) => r.json()).then((d) => {
-      if (!ativo) return;
-      const lista = (d.solicitacoes ?? []).map((s: any) => ({ id: s.id, nome: s.clientes?.nome_completo ?? "Cliente", motivo: s.tipo === "termos" ? "Remarcação de termos solicitada" : "Remarcação de cirurgia solicitada", quando: s.data_solicitada ? formatarDataCurta(s.data_solicitada) : "—" }));
-      setItens(lista);
-    }).catch(() => {});
-    return () => { ativo = false; };
-  }, []);
-  if (itens.length === 0) return null;
-  return <div style={{ marginBottom: 12 }}>
-    <button onClick={() => setAberto((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 8, height: 31, padding: "0 12px", borderRadius: 9, border: "1px solid var(--gobg)", background: "var(--gobg)", color: "var(--ink)", fontSize: 11.5, fontWeight: 600 }}>
-      <span style={{ color: "var(--gold)" }}>⚠</span>{itens.length} pendência(s) em análise<span style={{ fontSize: 9, color: "var(--soft)" }}>▾</span>
-    </button>
-    {aberto && <div className="zip-animate-pop-in" style={{ marginTop: 8, border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 12, overflow: "hidden" }}>
-      <div style={{ padding: "9px 13px", borderBottom: "1px solid var(--line)", fontSize: 10.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>Pendências de remarcação</div>
-      {itens.map((p) => <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 13px", borderBottom: "1px solid var(--line2)" }}>
-        <div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{p.nome}</div><div style={{ fontSize: 11, color: "var(--soft)" }}>{p.motivo}</div></div>
-        <span style={{ fontSize: 11, color: "var(--soft)", whiteSpace: "nowrap" }} className="zip-mono">{p.quando}</span>
-      </div>)}
-    </div>}
-  </div>;
+function StatusPill({state}:{state:string}) {
+  const label=state==="available"?"Disponível":state==="full"?"Lotada":state==="closed"?"Fechada":state==="past"?"Data passada":"Sem definição";
+  const Icon=state==="available"?CheckCircle2:state==="full"||state==="closed"?XCircle:CalendarDays;
+  return <div className={cx(styles.statusPill,styles["pill_"+state])}><Icon size={12}/><span>{label}</span></div>;
 }
 
-function CalendarioTermos() {
-  type DataComOcupacao = DataAgenda & { vagasOcupadas: number };
-  const hoje = new Date();
-  const isoHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-  const [ano, setAno] = useState(hoje.getFullYear());
-  const [mes, setMes] = useState(hoje.getMonth() + 1);
-  const [datas, setDatas] = useState<DataComOcupacao[]>([]);
-  const [diaSel, setDiaSel] = useState<number | null>(hoje.getDate());
-  const [vagasInput, setVagasInput] = useState(1);
-  const [salvando, setSalvando] = useState(false);
+function Metric({label,value}:{label:string;value:string}) {
+  return <div className={styles.metric}><span>{label}</span><strong>{value}</strong></div>;
+}
 
-  async function carregar() { const r = await fetch(`/api/admin/datas?ano=${ano}&mes=${mes}`, { cache: "no-store" }); const d = await r.json(); setDatas(d.datas ?? []); }
-  useEffect(() => { void carregar(); }, [ano, mes]);
-  useEffect(() => { const supabase = createClientSupabaseClient(); const canal = supabase.channel("agenda-clientes-admin-zip").on("broadcast", { event: "datas_atualizadas" }, () => void carregar()).subscribe(); return () => { supabase.removeChannel(canal); }; }, [ano, mes]);
+function ListCard({
+  tab,termsView,rows,search,loading,onSearch,onTermsView,onOpen,
+}:{
+  tab:AgendaPrimaryTab;
+  termsView:AgendaTermsView;
+  rows:AgendaClientRow[];
+  search:string;
+  loading:boolean;
+  onSearch:(value:string)=>void;
+  onTermsView:(value:AgendaTermsView)=>void;
+  onOpen:(row:AgendaClientRow)=>void;
+}) {
+  const title=tab==="finance"?"Liberação financeira":tab==="surgeries"?"Cirurgias":termsView==="eligible"?"Levantamentos":"Termos confirmados";
+  const subtitle=tab==="finance"
+    ?"Clientes com termos escolhidos que aguardam ou concluíram presença, quitação e liberação da agenda cirúrgica."
+    : tab==="surgeries"
+      ?"Último estágio: clientes que escolheram data e horário da cirurgia no app."
+      : termsView==="eligible"
+        ?"Clientes com pelo menos 70% das parcelas reais pagas e aguardando o fluxo financeiro."
+        :"Clientes da Etapa 4 com data e horário dos termos efetivamente escolhidos no app.";
 
-  const datasPorDia = useMemo(() => new Map(datas.map((d) => [Number(d.data.slice(8, 10)), d])), [datas]);
-  const totalDias = new Date(ano, mes, 0).getDate();
-  const primeiroDia = new Date(ano, mes - 1, 1).getDay();
-  const isoDoDia = (d: number) => `${ano}-${String(mes).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-
-  function mudarMes(delta: number) { let m = mes + delta, a = ano; if (m > 12) { m = 1; a++; } if (m < 1) { m = 12; a--; } setMes(m); setAno(a); setDiaSel(null); }
-
-  const infoSel = diaSel ? datasPorDia.get(diaSel) : undefined;
-  const isoSel = diaSel ? isoDoDia(diaSel) : null;
-  const passado = isoSel ? isoSel < isoHoje : false;
-  const statusSel = !infoSel ? "unset" : infoSel.status === "bloqueado" ? "off" : infoSel.vagasOcupadas >= infoSel.vagas_totais ? "full" : "open";
-
-  async function liberarDia() {
-    if (!isoSel) return;
-    setSalvando(true);
-    try {
-      const r = await fetch("/api/admin/datas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: isoSel, vagasTotais: vagasInput || 1 }) });
-      const d = await r.json();
-      if (!r.ok) return toast.error(d.erro ?? "Não foi possível liberar essa data.");
-      toast.success("Data liberada."); await carregar();
-    } finally { setSalvando(false); }
-  }
-  async function fecharDia() {
-    if (!infoSel) return;
-    setSalvando(true);
-    try {
-      const r = await fetch(`/api/admin/datas/${infoSel.id}`, { method: "DELETE" });
-      if (!r.ok) return toast.error("Não foi possível remover a liberação.");
-      toast.success("Liberação removida."); await carregar();
-    } finally { setSalvando(false); }
-  }
-
-  return <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", backdropFilter: "blur(18px)", overflow: "hidden", marginBottom: 14 }}>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><h2 style={{ fontSize: 15 }}>Calendário dos termos</h2><span style={{ fontSize: 11, color: "var(--soft)" }}>{nomeMes(mes)} {ano}</span></div>
-      <div style={{ display: "flex", alignItems: "center", gap: 2, height: 34, padding: "0 4px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--panel)" }}>
-        <button onClick={() => mudarMes(-1)} style={{ height: 26, width: 26, borderRadius: 8, border: 0, background: "transparent", color: "var(--soft)" }}>‹</button>
-        <div style={{ minWidth: 90, textAlign: "center", fontSize: 12.5, fontWeight: 600 }}>{nomeMes(mes)} {ano}</div>
-        <button onClick={() => mudarMes(1)} style={{ height: 26, width: 26, borderRadius: 8, border: 0, background: "transparent", color: "var(--soft)" }}>›</button>
+  return <div className={styles.agendaListCard}>
+    <div className={styles.listHead}>
+      <div><div className={styles.listTitle}>{title}</div><div className={styles.listSub}>{subtitle}</div></div>
+      <div className={styles.listHeadTools}>
+        {tab==="terms" ? <label className={styles.listFilter}><span className={styles.listFilterLabel}>Exibir</span><select aria-label="Exibir registros dos termos" value={termsView} onChange={(event)=>onTermsView(event.target.value as AgendaTermsView)}><option value="eligible">Levantamentos</option><option value="confirmed">Termos confirmados</option></select></label> : null}
+        <div className={styles.countPill}>{rows.length} {rows.length===1?"cliente":"clientes"}</div>
       </div>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 240px" }}>
-      <div style={{ padding: "13px 14px", borderRight: "1px solid var(--line)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 5, marginBottom: 6 }}>{DIAS_SEMANA.map((w, i) => <div key={i} style={{ textAlign: "center", fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{w}</div>)}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 5 }}>
-          {Array.from({ length: primeiroDia }, (_, i) => <div key={`e${i}`} />)}
-          {Array.from({ length: totalDias }, (_, i) => i + 1).map((d) => {
-            const info = datasPorDia.get(d);
-            const iso = isoDoDia(d);
-            const isPast = iso < isoHoje;
-            const status = isPast ? "past" : !info ? "unset" : info.status === "bloqueado" ? "off" : info.vagasOcupadas >= info.vagas_totais ? "full" : "open";
-            const dot = status === "open" ? "var(--ok)" : status === "full" ? "var(--bad)" : "var(--soft)";
-            const sel = d === diaSel;
-            return <button key={d} disabled={isPast} onClick={() => { setDiaSel(d); setVagasInput(info?.vagas_totais ?? 1); }} style={{ height: 48, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, borderRadius: 10, border: `1px solid ${sel ? "var(--bg)" : "var(--line2)"}`, background: sel ? "var(--robg)" : "var(--s0)", opacity: isPast ? 0.35 : 1, cursor: isPast ? "default" : "pointer" }}>
-              <span style={{ fontSize: 12.5, fontWeight: sel ? 700 : 500 }} className="zip-mono">{d}</span>
-              <span style={{ width: 5, height: 5, borderRadius: 999, background: dot, opacity: status === "off" || status === "unset" ? 0.4 : 1 }} />
-              {info && info.vagasOcupadas > 0 && <span style={{ fontSize: 9, color: "var(--soft)" }}>{info.vagasOcupadas}/{info.vagas_totais}</span>}
-            </button>;
-          })}
-        </div>
-      </div>
-      <div style={{ padding: "13px 14px", display: "flex", flexDirection: "column", gap: 11, background: "var(--s1)" }}>
-        <div>
-          <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--rose)" }}>Dia selecionado</div>
-          <div style={{ marginTop: 5, fontSize: 15, fontFamily: "Fraunces,Georgia,serif" }}>{diaSel ? isoDoDia(diaSel).split("-").reverse().join("/") : "—"}</div>
-          <div style={{ marginTop: 6 }}><span style={zipChip(statusSel === "open" ? "ok" : statusSel === "full" ? "bad" : "neutral")}>● {statusSel === "open" ? "Disponível" : statusSel === "full" ? "Lotada" : statusSel === "off" ? "Bloqueada" : "Sem liberação"}</span></div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>Vagas</span><span style={{ fontWeight: 600 }}>{infoSel ? `${infoSel.vagasOcupadas} de ${infoSel.vagas_totais}` : "—"}</span></div>
-        </div>
-        <div style={{ height: 1, background: "var(--line)" }} />
-        <div style={{ marginTop: "auto", display: "flex", gap: 7 }}>
-          {!infoSel && !passado && <button disabled={salvando} onClick={liberarDia} style={{ flex: 1, height: 32, borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11.5, fontWeight: 600 }}>Liberar data</button>}
-          {infoSel && <button disabled={salvando} onClick={fecharDia} style={{ flex: 1, height: 32, borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--bad)", fontSize: 11.5, fontWeight: 600 }}>Fechar data</button>}
-        </div>
-      </div>
+    {tab==="finance" ? <div className={styles.financeReleaseSummary}><strong>Fila operacional</strong><span>Sem calendário. A cliente permanece aqui até escolher efetivamente a cirurgia no app.</span></div> : null}
+    <label className={styles.searchWrap}><Search size={16}/><input className={styles.search} type="search" placeholder="Buscar por cliente..." value={search} onChange={(event)=>onSearch(event.target.value)}/></label>
+    <div className={styles.tableWrap}>
+      <TableHead tab={tab} termsView={termsView}/>
+      {loading ? <div className={styles.empty}>Carregando Agenda...</div> : rows.length ? rows.map((row)=><AgendaRow key={row.clientId+"-"+("appointmentId" in row?String((row as any).appointmentId):row.stage)} tab={tab} termsView={termsView} row={row} onOpen={onOpen}/>) : <div className={styles.empty}>Nenhuma cliente nesta lista.</div>}
     </div>
   </div>;
 }
 
-function AgendamentosConfirmados() {
-  interface Item { id: string; nome: string; data: string; horario: string | null; podeConfirmarAssinatura: boolean; ehHoje: boolean; }
-  const [itens, setItens] = useState<Item[]>([]);
-  const [confirmando, setConfirmando] = useState<string | null>(null);
-  async function carregar() { try { const r = await fetch("/api/admin/agendamentos-termos", { cache: "no-store" }); const d = await r.json(); if (r.ok) setItens(d.agendamentos ?? []); } catch { /* real */ } }
-  useEffect(() => { void carregar(); const t = setInterval(() => void carregar(), 30000); return () => clearInterval(t); }, []);
-  async function confirmar(id: string) {
-    setConfirmando(id);
-    try {
-      const r = await fetch("/api/admin/agendamentos-termos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-      const d = await r.json();
-      if (!r.ok) return toast.error(d.erro ?? "Não foi possível confirmar a assinatura.");
-      toast.success("Assinatura dos termos confirmada."); await carregar();
-    } finally { setConfirmando(null); }
+function TableHead({tab,termsView}:{tab:AgendaPrimaryTab;termsView:AgendaTermsView}) {
+  if(tab==="finance") return <div className={cx(styles.tableHead,styles.colsFinance)}><span>Cliente</span><span>Termos</span><span>Confirmações</span><span>Liberação</span></div>;
+  if(tab==="surgeries") return <div className={cx(styles.tableHead,styles.colsSurgeries)}><span>Cliente</span><span>Carta de crédito</span><span>Data / horário</span><span>Status</span></div>;
+  if(termsView==="confirmed") return <div className={cx(styles.tableHead,styles.colsTerms)}><span>Cliente</span><span>Data / horário</span><span>Parcelas pagas</span><span>Status</span></div>;
+  return <div className={cx(styles.tableHead,styles.colsTerms)}><span>Cliente</span><span>Parcelas pagas</span><span>Status</span><span>Ação</span></div>;
+}
+
+function AgendaRow({tab,termsView,row,onOpen}:{tab:AgendaPrimaryTab;termsView:AgendaTermsView;row:AgendaClientRow;onOpen:(row:AgendaClientRow)=>void}) {
+  function key(event:KeyboardEvent<HTMLDivElement>) {
+    if(!["Enter"," "].includes(event.key)) return;
+    event.preventDefault();
+    onOpen(row);
   }
-  return <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", overflow: "hidden" }}>
-    <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}><h2 style={{ fontSize: 15 }}>Agendamentos confirmados</h2><span style={{ fontSize: 11, color: "var(--soft)" }}>{itens.length} clientes</span></div>
-    {itens.length === 0 ? <div style={{ padding: "48px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nada nesta fila</div></div> : itens.map((c) => <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--line2)" }}>
-      <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600 }}>{c.nome}</div><div style={{ fontSize: 11, color: "var(--soft)" }} className="zip-mono">{formatarDataCurta(c.data)}{c.horario ? ` · ${c.horario}` : ""}</div></div>
-      {c.podeConfirmarAssinatura ? <button disabled={confirmando === c.id} onClick={() => confirmar(c.id)} style={{ height: 30, padding: "0 12px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11.5, fontWeight: 600 }}>Confirmar assinatura</button> : <span style={zipChip(c.ehHoje ? "warn" : "neutral")}>{c.ehHoje ? "Hoje" : "Agendado"}</span>}
-    </div>)}
+  if(tab==="finance") {
+    const item=row as AgendaReleaseRow;
+    return <div className={cx(styles.tableRow,styles.colsFinance)} role="button" tabIndex={0} onClick={()=>onOpen(row)} onKeyDown={key}>
+      <ClientCell row={row}/>
+      <div className={styles.cellStrong}>{dateLabel(item.termsDate)}<small>{item.termsTime}</small></div>
+      <div className={styles.confirmationDots}><span className={item.forecastConfirmedAt?styles.ok:styles.wait}>P</span><span className={item.attendanceStatus==="compareceu"?styles.ok:styles.wait}>C</span><span className={item.settlementStatus==="paga"?styles.ok:styles.wait}>Q</span></div>
+      <Status text={item.surgeryAgendaReleasedAt?"Agenda liberada":"Em liberação"} tone={item.surgeryAgendaReleasedAt?"green":"amber"}/>
+    </div>;
+  }
+  if(tab==="surgeries") {
+    const item=row as AgendaSurgeryRow;
+    return <div className={cx(styles.tableRow,styles.colsSurgeries)} role="button" tabIndex={0} onClick={()=>onOpen(row)} onKeyDown={key}>
+      <ClientCell row={row}/><div className={styles.cellStrong}>{money(row.creditLetter)}</div><div className={styles.cellStrong}>{dateLabel(item.date)}<small>{item.time}</small></div><Status text={item.status} tone="green"/>
+    </div>;
+  }
+  if(termsView==="confirmed") {
+    const item=row as AgendaTermsConfirmedRow;
+    return <div className={cx(styles.tableRow,styles.colsTerms)} role="button" tabIndex={0} onClick={()=>onOpen(row)} onKeyDown={key}>
+      <ClientCell row={row}/><div className={styles.cellStrong}>{dateLabel(item.date)}<small>{item.time||"—"}</small></div><div className={styles.cellStrong}>{row.paidInstallments}/{row.totalInstallments}<small>{Math.round(row.paidPercentage)}%</small></div><Status text="Termos confirmados" tone="green"/>
+    </div>;
+  }
+  return <div className={cx(styles.tableRow,styles.colsTerms)} role="button" tabIndex={0} onClick={()=>onOpen(row)} onKeyDown={key}>
+    <ClientCell row={row}/><div className={styles.cellStrong}>{row.paidInstallments}/{row.totalInstallments}<small>{Math.round(row.paidPercentage)}%</small></div><Status text={row.reviewConfirmedAt?"Levantamento concluído":"Aguardando levantamento"} tone={row.reviewConfirmedAt?"green":"amber"}/><span className={styles.rowActionText}>{row.reviewConfirmedAt?"Abrir Financeiro":"Realizar levantamento"} →</span>
   </div>;
 }
 
-function CirurgiasConfirmadas() {
-  interface Cirurgia { id: string; nome: string; cpf: string | null; data: string; statusCirurgia: string; realizada: boolean; podeConfirmarRealizacao: boolean; }
-  const [cirurgias, setCirurgias] = useState<Cirurgia[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [confirmando, setConfirmando] = useState<string | null>(null);
-  async function carregar() { setCarregando(true); try { const r = await fetch("/api/admin/cirurgias-confirmadas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setCirurgias(d.cirurgias ?? []); } finally { setCarregando(false); } }
-  useEffect(() => { void carregar(); const t = setInterval(carregar, 60000); return () => clearInterval(t); }, []);
-  async function confirmarRealizacao(agendamentoId: string) {
-    setConfirmando(agendamentoId);
-    try {
-      const r = await fetch(`/api/admin/agendamentos/${agendamentoId}/ciclo`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cirurgiaRealizada: true }) });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); toast.error(d.erro ?? "Não foi possível registrar a realização."); return; }
-      toast.success("Cirurgia registrada como realizada."); await carregar();
-    } finally { setConfirmando(null); }
-  }
-  const hoje = new Date().toISOString().slice(0, 10);
-  const proximas = cirurgias.filter((c) => !c.realizada);
-  const realizadas = cirurgias.filter((c) => c.realizada);
-  return <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", overflow: "hidden" }}>
-    <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}><h2 style={{ fontSize: 15 }}>Cirurgias confirmadas</h2><span style={{ fontSize: 11, color: "var(--soft)" }}>{proximas.length} pendente(s) · {realizadas.length} concluída(s)</span></div>
-    <div style={{ maxHeight: 480, overflowY: "auto" }}>
-      {carregando ? <p style={{ padding: 32, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</p> : proximas.length === 0 ? <p style={{ padding: 32, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Nenhuma cirurgia agendada.</p> : proximas.map((c) => { const dias = diasAte(c.data, hoje); return <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--line2)" }}>
-        <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600 }}>{c.nome}</div><div style={{ fontSize: 11, color: "var(--soft)" }} className="zip-mono">{formatarDataCurta(c.data)} · {textoContagem(dias)}</div></div>
-        {c.podeConfirmarRealizacao ? <button disabled={confirmando === c.id} onClick={() => confirmarRealizacao(c.id)} style={{ height: 30, padding: "0 12px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11.5, fontWeight: 600 }}>Confirmar realização</button> : <span style={zipChip("warn")}>{dias > 0 ? `Em ${dias} dias` : "Aguardando"}</span>}
-      </div>; })}
-    </div>
-    {realizadas.length > 0 && <div style={{ borderTop: "1px solid var(--line)" }}>
-      <div style={{ padding: "9px 14px", background: "var(--s1)", fontSize: 10.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ok)" }}>Concluídas ({realizadas.length})</div>
-      <div style={{ maxHeight: 220, overflowY: "auto" }}>{realizadas.map((c) => <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 14px", borderBottom: "1px solid var(--line2)", fontSize: 12, color: "var(--soft)" }}><span>{c.nome}</span><span className="zip-mono">{formatarDataCurta(c.data)}</span></div>)}</div>
-    </div>}
-  </div>;
+function ClientCell({row}:{row:AgendaClientRow}) {
+  return <div className={styles.clientCell}><i>{initials(row.name)}</i><span><strong>{row.name}</strong><small>{cpf(row.cpf)}</small></span></div>;
+}
+
+function Status({text,tone}:{text:string;tone:"green"|"amber"|"red"}) {
+  return <span className={cx(styles.rowStatus,styles["status_"+tone])}><i/>{text}</span>;
+}
+
+function MonthlyChart({data}:{data:AgendaSurgeriesPayload}) {
+  const max=Math.max(data.monthlyCap,...data.chart.map((item)=>item.value),1);
+  const total=data.chart.reduce((sum,item)=>sum+item.value,0);
+  return <section className={styles.monthlyReleaseCard} aria-label="Valores liberados por mês">
+    <div className={styles.monthlyReleaseHead}><div><div className={styles.monthlyReleaseTitle}>Valores liberados por mês</div><div className={styles.monthlyReleaseSub}>Soma das cartas de crédito das clientes com cirurgia confirmada no último estágio.</div></div><div className={styles.monthlyReleaseSummary}><strong>{money(total)}</strong><span>Ano exibido · teto mensal {money(data.monthlyCap)}</span></div></div>
+    <div className={styles.monthlyPlot}>{data.chart.map((item)=><div key={item.month} className={styles.monthBarWrap}><div className={styles.monthBarTrack}><div className={styles.monthBar} style={{height:Math.max(2,(item.value/max)*100)+"%"}}><span>{item.value?money(item.value):"R$ 0"}</span></div></div><div className={styles.monthBarLabel}>{new Intl.DateTimeFormat("pt-BR",{month:"short"}).format(new Date(Number(item.month.slice(0,4)),Number(item.month.slice(5,7))-1,1)).replace(".","")}</div></div>)}</div>
+  </section>;
 }

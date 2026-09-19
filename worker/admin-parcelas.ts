@@ -44,7 +44,7 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
       .order("numero_parcela", { ascending: true }),
     db
       .from("clientes")
-      .select("id,nome_completo,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,ativo,status_financeiro,updated_at")
+      .select("id,nome_completo,valor_contrato,custo_total,taxa_administrativa_percentual,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,quantidade_parcelas,percentual_minimo_agendar,ativo,status_financeiro,updated_at")
       .eq("id", clienteId)
       .maybeSingle(),
   ]);
@@ -52,15 +52,43 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
   if (clienteError) return { resposta: json({ erro: clienteError.message }, 500), cliente: null, boletos: [] as any[] };
   if (!cliente) return { resposta: json({ erro: "Cliente não encontrada." }, 404), cliente: null, boletos: [] as any[] };
 
+  const boletoIds = (boletos ?? []).map((boleto: any) => String(boleto.id));
+  const recebimentosPorBoleto = new Map<string, any>();
+  if (boletoIds.length) {
+    const { data: recebimentos, error: recebimentosError } = await db
+      .from("financeiro_recebimentos")
+      .select("boleto_id,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,instituicao_financeira,status_validacao,created_at")
+      .in("boleto_id", boletoIds)
+      .eq("status_validacao", "validado")
+      .order("created_at", { ascending: false });
+    if (recebimentosError) return { resposta: json({ erro: recebimentosError.message }, 500), cliente: null, boletos: [] as any[] };
+    for (const recebimento of recebimentos ?? []) {
+      const boletoId = String((recebimento as any).boleto_id);
+      if (!recebimentosPorBoleto.has(boletoId)) recebimentosPorBoleto.set(boletoId, recebimento);
+    }
+  }
+
   return {
     resposta: null,
     cliente: {
       ...cliente,
       valor_contrato: cliente.valor_contrato == null ? null : Number(cliente.valor_contrato),
       custo_total: cliente.custo_total == null ? null : Number(cliente.custo_total),
+      valor_total_plano: cliente.valor_total_plano == null ? null : Number(cliente.valor_total_plano),
+      valor_parcela_plano: cliente.valor_parcela_plano == null ? null : Number(cliente.valor_parcela_plano),
       taxa_administrativa_percentual: cliente.taxa_administrativa_percentual == null ? null : Number(cliente.taxa_administrativa_percentual),
     },
-    boletos: (boletos ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) })),
+    boletos: (boletos ?? []).map((boleto: any) => {
+      const recebimento = recebimentosPorBoleto.get(String(boleto.id));
+      return {
+        ...boleto,
+        valor: Number(boleto.valor),
+        valor_recebido: recebimento?.valor_recebido == null ? null : Number(recebimento.valor_recebido),
+        recebimento_data: recebimento?.data_pagamento ?? null,
+        recebimento_forma: recebimento?.forma_pagamento ?? null,
+        recebimento_instituicao: recebimento?.instituicao_financeira ?? recebimento?.instituicao_conta ?? null,
+      };
+    }),
   };
 }
 
@@ -87,36 +115,36 @@ async function salvarPlanoDoDrawer(
     return json({ erro: "Informe uma quantidade de parcelas entre 1 e 240." }, 400);
   }
 
-  const taxaBruta = body.taxaPercentual ?? body.taxaAdministrativaPercentual;
-  const taxa = taxaBruta === undefined || taxaBruta === null || taxaBruta === "" ? null : Number(taxaBruta);
-  if (taxa !== null && (!Number.isFinite(taxa) || taxa < 0 || taxa > 999.99)) {
-    return json({ erro: "Taxa administrativa inválida." }, 400);
-  }
-
   const valorContrato = numeroPositivo(body.valorContrato ?? body.cartaCredito);
   if (body.valorContrato !== undefined && valorContrato === null) {
     return json({ erro: "Informe uma carta de crédito válida." }, 400);
   }
 
   const valorParcela = numeroPositivo(body.valorParcela ?? body.valor);
-  const primeiroVencimento = String(body.primeiroVencimento ?? body.dataVencimento ?? "").trim() || null;
+  if (valorParcela === null) return json({ erro: "Informe um valor de parcela válido." }, 400);
+
+  const primeiroVencimento = String(body.primeiroVencimento ?? body.inicioPlano ?? body.dataVencimento ?? "").trim() || null;
   if (primeiroVencimento && !dataValida(primeiroVencimento)) {
-    return json({ erro: "Primeiro vencimento inválido." }, 400);
+    return json({ erro: "Início do plano inválido." }, 400);
   }
+
+  const novoModelo = body.valorTotalPlano !== undefined
+    || body.formaPagamento !== undefined
+    || body.instituicao !== undefined
+    || body.diaCobranca !== undefined
+    || body.statusPlano !== undefined;
 
   const [{ data: existentes, error: erroExistentes }, { data: clienteAtual, error: erroCliente }] = await Promise.all([
     db.from("boletos").select("id").eq("cliente_id", clienteId).limit(1),
-    db.from("clientes").select("id,valor_contrato").eq("id", clienteId).maybeSingle(),
+    db.from("clientes").select("id,valor_contrato,custo_total,valor_total_plano").eq("id", clienteId).maybeSingle(),
   ]);
   if (erroExistentes) return json({ erro: erroExistentes.message }, 500);
   if (erroCliente) return json({ erro: erroCliente.message }, 500);
   if (!clienteAtual) return json({ erro: "Cliente não encontrada." }, 404);
 
   const jaTinhaPlano = Boolean(existentes?.length);
-  const cartaEfetiva = valorContrato ?? numeroPositivo(clienteAtual.valor_contrato);
-  if (!cartaEfetiva) return json({ erro: "Informe a carta de crédito antes de criar o financeiro." }, 400);
   if (!jaTinhaPlano && !primeiroVencimento) {
-    return json({ erro: "Informe o 1º vencimento para gerar o financeiro." }, 400);
+    return json({ erro: "Informe o início do plano para gerar as parcelas." }, 400);
   }
 
   if (valorContrato !== null && Math.abs(Number(clienteAtual.valor_contrato ?? 0) - valorContrato) > 0.009) {
@@ -124,15 +152,54 @@ async function salvarPlanoDoDrawer(
     if (erroCarta) return json({ erro: erroCarta.message }, 500);
   }
 
-  const { data, error } = await db.rpc("salvar_plano_financeiro_cliente", {
-    p_cliente_id: clienteId,
-    p_quantidade: quantidade,
-    p_valor_parcela: valorParcela,
-    p_primeiro_vencimento: primeiroVencimento,
-    p_taxa_percentual: taxa,
-    p_recalcular_abertas: body.recalcularAbertas !== false,
-  });
+  let rpcName = "salvar_plano_financeiro_cliente";
+  let rpcArgs: Record<string, unknown>;
 
+  if (novoModelo) {
+    const totalPlano = numeroPositivo(body.valorTotalPlano);
+    if (body.valorTotalPlano === 0) {
+      rpcArgs = {};
+    }
+    if (totalPlano === null && Number(body.valorTotalPlano) !== 0) {
+      return json({ erro: "Informe um valor total do plano válido." }, 400);
+    }
+    const diaCobranca = inteiro(body.diaCobranca);
+    if (body.diaCobranca !== undefined && (diaCobranca === null || diaCobranca < 1 || diaCobranca > 31)) {
+      return json({ erro: "Dia de cobrança inválido." }, 400);
+    }
+    const statusPlano = String(body.statusPlano ?? "Ativa");
+    if (!["Ativa", "Suspensa"].includes(statusPlano)) return json({ erro: "Status do plano inválido." }, 400);
+
+    rpcName = "salvar_plano_financeiro_drawer";
+    rpcArgs = {
+      p_cliente_id: clienteId,
+      p_quantidade: quantidade,
+      p_valor_parcela: valorParcela,
+      p_primeiro_vencimento: primeiroVencimento,
+      p_valor_total_plano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      p_forma_pagamento: body.formaPagamento == null ? null : String(body.formaPagamento),
+      p_instituicao: body.instituicao == null ? null : String(body.instituicao),
+      p_dia_cobranca: diaCobranca,
+      p_status_plano: statusPlano,
+      p_recalcular_abertas: body.recalcularAbertas !== false,
+    };
+  } else {
+    const taxaBruta = body.taxaPercentual ?? body.taxaAdministrativaPercentual;
+    const taxa = taxaBruta === undefined || taxaBruta === null || taxaBruta === "" ? null : Number(taxaBruta);
+    if (taxa !== null && (!Number.isFinite(taxa) || taxa < 0 || taxa > 999.99)) {
+      return json({ erro: "Taxa administrativa inválida." }, 400);
+    }
+    rpcArgs = {
+      p_cliente_id: clienteId,
+      p_quantidade: quantidade,
+      p_valor_parcela: valorParcela,
+      p_primeiro_vencimento: primeiroVencimento,
+      p_taxa_percentual: taxa,
+      p_recalcular_abertas: body.recalcularAbertas !== false,
+    };
+  }
+
+  const { data, error } = await db.rpc(rpcName, rpcArgs);
   if (error) {
     const mensagem = String(error.message || "Não foi possível salvar o plano financeiro.")
       .replace(/^P0001:\s*/i, "")
@@ -146,22 +213,56 @@ async function salvarPlanoDoDrawer(
     acao: jaTinhaPlano || modo === "ajustar" ? "ajustou_plano_financeiro" : "criou_plano_financeiro",
     entidade: "clientes",
     entidade_id: clienteId,
-    detalhes: {
-      carta_credito: cartaEfetiva,
+    detalhes: novoModelo ? {
+      modelo: "drawer_v2",
+      carta_credito: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      valor_total_plano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      quantidade_parcelas: quantidade,
+      valor_parcela: valorParcela,
+      inicio_plano: primeiroVencimento,
+      forma_pagamento: body.formaPagamento ?? null,
+      instituicao: body.instituicao ?? null,
+      dia_cobranca: body.diaCobranca ?? null,
+      status_plano: body.statusPlano ?? "Ativa",
+      preservou_parcelas_pagas: true,
+    } : {
+      modelo: "legado",
+      carta_credito: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
       quantidade_parcelas: quantidade,
       valor_parcela: valorParcela,
       primeiro_vencimento: primeiroVencimento,
-      taxa_percentual: taxa,
       preservou_parcelas_pagas: true,
     },
   });
   await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", quantidadeParcelas: quantidade });
 
+  const { data: clienteAtualizado } = await db
+    .from("clientes")
+    .select("id,valor_contrato,custo_total,valor_total_plano,valor_parcela_plano,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,quantidade_parcelas,percentual_minimo_agendar")
+    .eq("id", clienteId)
+    .maybeSingle();
+
   return json({
     sucesso: true,
     boletos,
     parcelas: boletos,
-    plano: { valorContrato: cartaEfetiva, quantidadeParcelas: quantidade, valorParcela, primeiroVencimento, taxaPercentual: taxa },
+    cliente: clienteAtualizado,
+    plano: novoModelo ? {
+      valorContrato: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      valorTotalPlano: Number(body.valorTotalPlano ?? clienteAtual.valor_total_plano ?? clienteAtual.custo_total ?? 0),
+      quantidadeParcelas: quantidade,
+      valorParcela,
+      inicioPlano: primeiroVencimento,
+      formaPagamento: body.formaPagamento ?? null,
+      instituicao: body.instituicao ?? null,
+      diaCobranca: body.diaCobranca ?? null,
+      statusPlano: body.statusPlano ?? "Ativa",
+    } : {
+      valorContrato: valorContrato ?? Number(clienteAtual.valor_contrato ?? 0),
+      quantidadeParcelas: quantidade,
+      valorParcela,
+      primeiroVencimento,
+    },
   });
 }
 
@@ -273,18 +374,60 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
 
     const { data: atual } = await db.from("boletos").select("*").eq("id", boletoId).eq("cliente_id", clienteId).maybeSingle();
     if (!atual) return json({ erro: "Parcela não encontrada." }, 404);
-    if (atual.status === "pago") return json({ erro: "Parcelas pagas não podem ser alteradas." }, 400);
+    if (["pago", "pendente_confirmacao"].includes(String(atual.status))) {
+      return json({ erro: "Parcelas pagas ou em conferência não podem ser alteradas por esta ação." }, 409);
+    }
 
     if (acao === "excluir") {
-      const { data: todas } = await db.from("boletos").select("id").eq("cliente_id", clienteId);
-      const novoTotal = Math.max(0, (todas ?? []).length - 1);
+      const { data: todasAntes, error: erroTodas } = await db
+        .from("boletos")
+        .select("id,numero_parcela,valor,status")
+        .eq("cliente_id", clienteId)
+        .order("numero_parcela", { ascending: true });
+      if (erroTodas) return json({ erro: erroTodas.message }, 500);
+      if ((todasAntes ?? []).length <= 1) return json({ erro: "O plano precisa manter ao menos uma parcela." }, 409);
+
       const { error } = await db.from("boletos").delete().eq("id", boletoId).eq("cliente_id", clienteId);
       if (error) return json({ erro: error.message }, 500);
-      if (novoTotal > 0) await db.from("boletos").update({ total_parcelas: novoTotal }).eq("cliente_id", clienteId);
-      await db.from("clientes").update({ quantidade_parcelas: novoTotal > 0 ? novoTotal : null }).eq("id", clienteId);
-      await db.from("logs_alteracoes").insert({ usuario, acao: "excluiu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, valor: atual.valor, vencimento: atual.data_vencimento, novo_total: novoTotal } });
+
+      const restantes = (todasAntes ?? []).filter((item: any) => item.id !== boletoId);
+      const novoTotal = restantes.length;
+      for (let indice = 0; indice < restantes.length; indice += 1) {
+        const parcela = restantes[indice] as any;
+        const novoNumero = indice + 1;
+        const { error: erroRenumerar } = await db
+          .from("boletos")
+          .update({ numero_parcela: novoNumero, total_parcelas: novoTotal })
+          .eq("id", parcela.id)
+          .eq("cliente_id", clienteId);
+        if (erroRenumerar) return json({ erro: erroRenumerar.message }, 500);
+      }
+
+      const valorTotalPlano = Math.round(restantes.reduce((soma: number, item: any) => soma + Number(item.valor ?? 0), 0) * 100) / 100;
+      const aberta = restantes.find((item: any) => item.status !== "pago") ?? restantes[0] ?? null;
+      const { error: erroCliente } = await db.from("clientes").update({
+        quantidade_parcelas: novoTotal,
+        valor_total_plano: valorTotalPlano,
+        valor_parcela_plano: aberta ? Number(aberta.valor ?? 0) : null,
+      }).eq("id", clienteId);
+      if (erroCliente) return json({ erro: erroCliente.message }, 500);
+
+      await db.from("logs_alteracoes").insert({
+        usuario,
+        acao: "excluiu_parcela",
+        entidade: "clientes",
+        entidade_id: clienteId,
+        detalhes: {
+          parcela: atual.numero_parcela,
+          valor: Number(atual.valor ?? 0),
+          vencimento: atual.data_vencimento,
+          novo_total: novoTotal,
+          valor_total_plano: valorTotalPlano,
+          renumerou_parcelas: true,
+        },
+      });
       await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", quantidadeParcelas: novoTotal });
-      return json({ sucesso: true, totalParcelas: novoTotal });
+      return json({ sucesso: true, totalParcelas: novoTotal, valorTotalPlano });
     }
 
     if (acao === "reabrir") {

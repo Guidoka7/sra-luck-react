@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertRdCommercialReadOnly, normalizarDealRd, snapshotUpdatePreservandoLocal } from "./rd-station-readonly";
+import { assertRdCommercialReadOnly, clienteInicialDoRd, normalizarDealRd, snapshotUpdatePreservandoLocal } from "./rd-station-readonly";
 
 describe("RD Station CRM — barreira comercial somente leitura", () => {
   it("permite GET", () => {
@@ -27,6 +27,8 @@ describe("RD Station CRM — normalização e separação snapshot/local", () =>
     custom_fields: [
       { label: "Quantidade parcelas", value: "36" },
       { label: "Valor parcela", value: "900,00" },
+      { label: "Procedimento", value: "Mamoplastia" },
+      { label: "Banco", value: "BRB" },
     ],
   };
 
@@ -53,8 +55,40 @@ describe("RD Station CRM — normalização e separação snapshot/local", () =>
       campanhaOriginal: "Campanha RD",
       origemOriginal: "Instagram",
       vendedoraOriginal: "Vendedora RD",
+      procedimentoOriginal: "Mamoplastia",
+      bancoOriginal: "BRB",
       valorOriginal: 25000,
     });
+  });
+
+  it("mapeia o primeiro recebimento para a cliente local sem inventar valores", () => {
+    expect(snapshot).not.toBeNull();
+    const local = clienteInicialDoRd(snapshot!, "2026-09-18T15:00:00.000Z");
+    expect(local).toMatchObject({
+      nome_completo: "Maria RD",
+      telefone: "61999999999",
+      email: "maria@example.com",
+      procedimento: "Mamoplastia",
+      consultora: "Vendedora RD",
+      valor_contrato: 25000,
+      origem_venda: "Campanha RD",
+      banco: "BRB",
+      origem_cadastro: "rd_station",
+      crm_importado_em: "2026-09-18T15:00:00.000Z",
+      crm_ultimo_recebido_em: "2026-09-18T15:00:00.000Z",
+    });
+  });
+
+  it("mantém ausências reais como null em vez de criar nome ou valor fictício", () => {
+    const minimo = normalizarDealRd({ id: "deal-vazio", status: "won", created_at: "2026-09-18T12:00:00Z" });
+    expect(minimo).not.toBeNull();
+    expect(minimo?.nomeOriginal).toBeNull();
+    expect(minimo?.valorOriginal).toBeNull();
+    const local = clienteInicialDoRd(minimo!, "2026-09-18T15:00:00.000Z");
+    expect(local.nome_completo).toBeNull();
+    expect(local.valor_contrato).toBeNull();
+    expect(local.procedimento).toBeNull();
+    expect(local.banco).toBeNull();
   });
 
   it("atualização posterior do RD produz somente campos externos/snapshot", () => {
@@ -70,6 +104,8 @@ describe("RD Station CRM — normalização e separação snapshot/local", () =>
     expect(chaves).not.toContain("telefone");
     expect(chaves).not.toContain("email");
     expect(chaves).not.toContain("campanha_local");
+    expect(chaves).not.toContain("procedimento_local");
+    expect(chaves).not.toContain("banco_local");
     expect(chaves).not.toContain("origem_venda");
     expect(chaves).not.toContain("vendedora_responsavel");
     expect(chaves).not.toContain("valor_contrato");

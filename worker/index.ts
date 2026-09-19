@@ -1,7 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
-import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
+import { agenda, agendaTermos, agendaCirurgias, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
 import { clientPushApi } from "./client-push";
@@ -13,6 +13,7 @@ import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
 import { adminSurgeryFlow } from "./admin-surgery-flow";
+import { adminAgenda } from "./admin-agenda";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
@@ -125,7 +126,7 @@ async function loginCliente(request: Request, env: Env) {
     const cpfFormatado = formatarCpf(cpfLimpo);
     const { data: cliente, error: clienteError } = await supabase
       .from("clientes")
-      .select("id,ativo")
+      .select("id,ativo,acesso_app_liberado")
       .in("cpf", cpfFormatado ? [cpfLimpo, cpfFormatado] : [cpfLimpo])
       .eq("data_nascimento", nascimento)
       .maybeSingle();
@@ -146,6 +147,10 @@ async function loginCliente(request: Request, env: Env) {
       if (rateWriteError) clientLog.warn("Acesso inativo e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: rateWriteError });
       clientLog.warn("Login recusado para cliente inativa", { eventCode: "CLIENT_LOGIN_INACTIVE", statusCode: 403 });
       return json({ erro: "Seu acesso está temporariamente indisponível. Fale com a Sra. Luck." }, 403);
+    }
+    if (!cliente.acesso_app_liberado) {
+      clientLog.warn("Login recusado porque o acesso ao app ainda não foi liberado", { eventCode: "CLIENT_LOGIN_APP_ACCESS_NOT_RELEASED", statusCode: 403 });
+      return json({ erro: "Seu acesso ao aplicativo ainda não foi liberado. Fale com a Sra. Luck." }, 403);
     }
 
     const { error: clearRateError } = await supabase.rpc("login_limpar_rate_limit", { p_chave: key });
@@ -295,7 +300,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/cliente/session" && request.method === "GET") {
     if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503);
     const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
-    return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
+    if (!payload) return json({ autenticado: false }, 200, { "Cache-Control": "no-store" });
+    const db = createServiceSupabaseClient(env);
+    const { data: clienteSessao, error: clienteSessaoError } = await db
+      .from("clientes")
+      .select("ativo,acesso_app_liberado")
+      .eq("id", payload.clienteId)
+      .maybeSingle();
+    if (clienteSessaoError) return json({ autenticado: false }, 503, { "Cache-Control": "no-store" });
+    const autenticado = Boolean(clienteSessao?.ativo && clienteSessao?.acesso_app_liberado);
+    return json(autenticado ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
   }
 
   if (url.pathname === "/api/cliente/logout" && request.method === "POST") {
@@ -319,6 +333,23 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const clientConfig = await clientConfigApi(request, env);
   if (clientConfig) return clientConfig;
 
+  if (url.pathname === "/api/cliente/agenda/termos" && request.method === "GET") return agendaTermos(request, env);
+  if (url.pathname === "/api/cliente/agenda/cirurgias" && request.method === "GET") return agendaCirurgias(request, env);
+  if (url.pathname === "/api/cliente/agenda/termos/selecionar" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return agendar(request, env);
+  }
+  if (url.pathname === "/api/cliente/agenda/cirurgias/selecionar" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return agendarCirurgia(request, env);
+  }
+  if (url.pathname === "/api/cliente/forma-quitacao" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return solicitarLiberacaoFinanceira(request, env);
+  }
   if (url.pathname === "/api/cliente/agenda" && request.method === "GET") return agenda(request, env);
   if (url.pathname === "/api/cliente/agendar" && request.method === "POST") {
     const bad = bloquearCrossSite(request);
@@ -340,6 +371,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (bad) return bad;
     return remarcarAgendamento(request, env);
   }
+
+  const agendaAdmin = await adminAgenda(request, env);
+  if (agendaAdmin) return agendaAdmin;
 
   const clienteAgendamento = await clienteAgendamentoAcao(request, env);
   if (clienteAgendamento) return clienteAgendamento;

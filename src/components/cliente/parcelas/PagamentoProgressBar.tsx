@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, Heart } from "lucide-react";
-import { percentualNecessario } from "@/lib/utils";
 
 type ProgressoPagamento = {
   quantidade_parcelas: number;
   porcentagem_pagamento: number;
   parcelas_pagas: number;
+  percentual_minimo_agenda: number;
 };
 
 function getProgressoCorClass(porcentagem: number, necessario: number) {
@@ -18,10 +18,10 @@ function getProgressoCorClass(porcentagem: number, necessario: number) {
 }
 
 function getMensagem(porcentagem: number, pagas: number, total: number, necessario: number) {
-  if (porcentagem >= 100) return "🎉 Parabéns! Você desbloqueou sua agenda cirúrgica!";
-  if (porcentagem >= necessario) return `✨ Sua agenda já está liberada (${porcentagem}%)! Faltam apenas ${total - pagas} parcelas para quitar o contrato.`;
-  if (porcentagem >= necessario * 0.65) return `🎯 Você está em ${porcentagem}%. São necessários ${necessario}% para desbloquear sua agenda.`;
-  return `Vamos lá! Você está em ${porcentagem}%. São necessários ${necessario}% para desbloquear sua agenda — envie seus comprovantes para acelerar.`;
+  if (porcentagem >= 100) return "🎉 Parabéns! Todas as parcelas do seu planejamento estão pagas.";
+  if (porcentagem >= necessario) return `✨ Percentual mínimo atingido (${porcentagem}%). Seu contrato segue para o levantamento financeiro. Faltam ${total - pagas} parcelas para quitar o contrato.`;
+  if (porcentagem >= necessario * 0.65) return `🎯 Você está em ${porcentagem}%. São necessários ${necessario}% para seguir para o levantamento financeiro.`;
+  return `Vamos lá! Você está em ${porcentagem}%. São necessários ${necessario}% para seguir para o levantamento financeiro — envie seus comprovantes para acelerar.`;
 }
 
 export function PagamentoProgressBar({ procedimento }: { procedimento?: string | null }) {
@@ -55,7 +55,7 @@ export function PagamentoProgressBar({ procedimento }: { procedimento?: string |
   const total = progresso.quantidade_parcelas || 0;
   const pagas = progresso.parcelas_pagas || 0;
   const porcentagem = Math.max(0, Math.min(100, Math.round(progresso.porcentagem_pagamento || 0)));
-  const necessario = percentualNecessario(total);
+  const necessario = Number(progresso.percentual_minimo_agenda || 70);
 
   return (
     <div className="px-5 pt-[12px]">
@@ -98,7 +98,7 @@ export function PagamentoProgressBar({ procedimento }: { procedimento?: string |
               <div className="space-y-2 border-t border-clay/10 pt-2.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-clay/60"><strong className="text-burgundy">{pagas}</strong> de <strong>{total}</strong> parcelas pagas</span>
-                  {porcentagem >= necessario && <span className="text-success">✓ Agenda liberada</span>}
+                  {porcentagem >= necessario && <span className="text-success">✓ Percentual atingido</span>}
                 </div>
                 <div className="rounded-lg bg-bloom/50 px-3 py-2 text-center text-[11px] leading-relaxed text-burgundy">
                   {getMensagem(porcentagem, pagas, total, necessario)}

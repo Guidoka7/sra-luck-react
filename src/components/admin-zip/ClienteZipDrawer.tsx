@@ -45,7 +45,7 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const [aba, setAba] = useState<"perfil" | "financeiro">(editando ? abaInicial : "perfil");
 
   const [nome, setNome] = useState(cliente?.nome_completo ?? "");
-  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : "");
+  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf ?? "") : "");
   const [nascimento, setNascimento] = useState(cliente?.data_nascimento ?? "");
   const [telefone, setTelefone] = useState(cliente?.telefone ?? "");
   const [email, setEmail] = useState(cliente?.email ?? "");
@@ -73,10 +73,10 @@ export function ClienteZipDrawer({ cliente, onClose, onSalvo, abaInicial = "perf
   const [historico, setHistorico] = useState<LogAlteracao[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
 
-  const [carta, setCarta] = useState(cliente ? moeda(cliente.valor_contrato) : "");
+  const [carta, setCarta] = useState(cliente ? moeda(Number(cliente.valor_contrato ?? 0)) : "");
   const [quantidade, setQuantidade] = useState<QuantidadeParcelas>((cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas);
   const [taxa, setTaxa] = useState(cliente?.taxa_administrativa_percentual != null ? String(cliente.taxa_administrativa_percentual).replace(".", ",") : String(TAXA_ADMINISTRATIVA_PADRAO[(cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas]).replace(".", ","));
-  const [total, setTotal] = useState(() => (cliente ? moeda(cliente.valor_contrato * (1 + Number(cliente.taxa_administrativa_percentual ?? 0) / 100)) : ""));
+  const [total, setTotal] = useState(() => (cliente ? moeda(Number(cliente.valor_contrato ?? 0) * (1 + Number(cliente.taxa_administrativa_percentual ?? 0) / 100)) : ""));
   const [parcela, setParcela] = useState("");
   const [parcelaManual, setParcelaManual] = useState(false);
   const [vencimento, setVencimento] = useState("");

@@ -6,7 +6,7 @@ import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
-const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,status_contrato)";
+const BOLETO_SELECT = "id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,comprovante_enviado_em,data_pagamento,observacoes,created_at,updated_at,suspensa,suspensa_em,suspensa_por,carne_id,instituicao_financeira,identificador_externo,origem_boleto,clientes(id,nome_completo,cpf,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,status_contrato)";
 const RECEBIMENTO_SELECT = "id,boleto_id,cliente_id,valor_original,juros,multa,desconto,valor_recebido,data_pagamento,forma_pagamento,instituicao_conta,origem,status_validacao,comprovante_url,external_payment_id,external_reference,origem_boleto,instituicao_financeira,observacao,motivo_rejeicao,criado_por,validado_por,validado_em,created_at";
 
 function json(data: unknown, status = 200) {
@@ -87,6 +87,9 @@ function apresentarRecebivel(boleto: any, recebimento?: any) {
     instituicaoConta: recebimento?.instituicao_financeira ?? recebimento?.instituicao_conta ?? null,
     dataPagamento: recebimento?.data_pagamento ?? boleto.data_pagamento ?? null,
     comprovante: boleto.comprovante_url ?? recebimento?.comprovante_url ?? null,
+    comprovanteEnviadoEm: boleto.comprovante_enviado_em ?? (boleto.comprovante_url ? boleto.updated_at : null),
+    banco: boleto.instituicao_financeira ?? recebimento?.instituicao_financeira ?? recebimento?.instituicao_conta ?? null,
+    contratoCodigo: boleto.identificador_externo ?? boleto.carne_id ?? null,
     externalId: recebimento?.external_payment_id ?? null,
     externalReference: recebimento?.external_reference ?? null,
     observacoes: boleto.observacoes ?? recebimento?.observacao ?? null,
@@ -332,6 +335,131 @@ async function clientesFunil(db: Db) {
   return { itens, funis };
 }
 
+async function painelFinanceiro(db: Db) {
+  const [{ boletos, recebimentos, truncado }, { data: clientes, error: clientesError }, { data: carnes, error: carnesError }] = await Promise.all([
+    carregarBase(db),
+    db.from("clientes").select("id,nome_completo,cpf,consultora,origem_venda,banco,status_contrato,procedimento"),
+    db.from("carnes").select("id,cliente_id,instituicao_financeira,identificador_externo,data_geracao,created_at").order("created_at", { ascending: false }),
+  ]);
+  if (clientesError) throw new Error(clientesError.message);
+  if (carnesError) throw new Error(carnesError.message);
+
+  const clientePorId = new Map<string, any>();
+  for (const cliente of clientes ?? []) clientePorId.set(String((cliente as any).id), cliente);
+
+  const carnePorId = new Map<string, any>();
+  const carnePorCliente = new Map<string, any>();
+  for (const carne of carnes ?? []) {
+    const item = carne as any;
+    carnePorId.set(String(item.id), item);
+    if (!carnePorCliente.has(String(item.cliente_id))) carnePorCliente.set(String(item.cliente_id), item);
+  }
+
+  const porBoleto = indiceRecebimentos(recebimentos);
+  const rows = (boletos as any[]).map((boleto) => {
+    const cliente = clientePorId.get(String(boleto.cliente_id)) ?? clienteDo(boleto);
+    const recebimento = porBoleto.get(boleto.id);
+    const carne = (boleto.carne_id ? carnePorId.get(String(boleto.carne_id)) : null) ?? carnePorCliente.get(String(boleto.cliente_id));
+    const status = statusCalculado(boleto);
+    const comprovante = boleto.comprovante_url ?? recebimento?.comprovante_url ?? null;
+    const comprovanteEnviadoEm = boleto.comprovante_enviado_em ?? (comprovante ? boleto.updated_at : null);
+    const confirmadoPorComprovante = boleto.status === "pago"
+      && recebimento?.status_validacao === "validado"
+      && (recebimento?.origem === "comprovante" || recebimento?.origem_boleto === "comprovante");
+    const banco = boleto.instituicao_financeira
+      ?? recebimento?.instituicao_financeira
+      ?? recebimento?.instituicao_conta
+      ?? carne?.instituicao_financeira
+      ?? cliente?.banco
+      ?? null;
+    const contratoCodigo = carne?.identificador_externo
+      ?? boleto.identificador_externo
+      ?? (boleto.carne_id ? String(boleto.carne_id) : null)
+      ?? `SL-${String(boleto.cliente_id).slice(0, 8).toUpperCase()}`;
+    const arquivo = comprovante ? String(comprovante).split("/").pop() ?? "comprovante" : null;
+    return {
+      clientId: String(boleto.cliente_id),
+      contractId: boleto.carne_id ? String(boleto.carne_id) : contratoCodigo,
+      installmentId: String(boleto.id),
+      proofId: comprovante ? String(boleto.id) : null,
+      name: cliente?.nome_completo ?? "Cliente",
+      cpf: cliente?.cpf ?? null,
+      seller: cliente?.consultora ?? null,
+      campaign: cliente?.origem_venda ?? null,
+      procedure: cliente?.procedimento ?? null,
+      bank: banco,
+      statusContrato: cliente?.status_contrato ?? "ativo",
+      installmentNumber: Number(boleto.numero_parcela ?? 0),
+      installmentTotal: Number(boleto.total_parcelas ?? 0),
+      dueDate: boleto.data_vencimento ?? null,
+      amount: dinheiro(boleto.valor),
+      status: boleto.status === "pendente_confirmacao" ? "Aguardando análise"
+        : confirmadoPorComprovante ? "Comprovante confirmado"
+        : boleto.status === "pago" ? "Recebido"
+        : status === "vencido" ? "Atrasado"
+        : boleto.status === "rejeitado" ? "Recusado"
+        : boleto.suspensa ? "Suspensa"
+        : "Pendente",
+      contractCode: contratoCodigo,
+      uploadedAt: comprovanteEnviadoEm,
+      paymentDate: recebimento?.data_pagamento ?? boleto.data_pagamento ?? null,
+      proof: comprovante ? {
+        id: String(boleto.id),
+        fileName: arquivo,
+        path: String(comprovante),
+        uploadedAt: comprovanteEnviadoEm,
+        reviewedAt: recebimento?.validado_em ?? null,
+        reviewedBy: recebimento?.validado_por ?? null,
+      } : null,
+      createdAt: boleto.created_at,
+      updatedAt: boleto.updated_at,
+      isOverdue: status === "vencido",
+      isPendingProof: boleto.status === "pendente_confirmacao" && Boolean(comprovante),
+      isReceived: boleto.status === "pago",
+    };
+  });
+
+  const proofs = rows
+    .filter((row) => row.isPendingProof)
+    .sort((a, b) => String(b.uploadedAt ?? "").localeCompare(String(a.uploadedAt ?? "")));
+  const received = rows
+    .filter((row) => row.isReceived)
+    .sort((a, b) => String(b.paymentDate ?? b.updatedAt ?? "").localeCompare(String(a.paymentDate ?? a.updatedAt ?? "")));
+  const late = rows
+    .filter((row) => row.isOverdue)
+    .sort((a, b) => String(a.dueDate ?? "").localeCompare(String(b.dueDate ?? "")));
+
+  const priority = (row: any) => row.isPendingProof ? 0 : row.isOverdue ? 1 : row.isReceived ? 3 : 2;
+  const allByClient = new Map<string, any>();
+  for (const row of rows) {
+    const previous = allByClient.get(row.clientId);
+    if (!previous || priority(row) < priority(previous)) allByClient.set(row.clientId, row);
+  }
+  const all = [...allByClient.values()].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "pt-BR"));
+
+  const proofDatesMap = new Map<string, number>();
+  for (const row of proofs) {
+    const date = String(row.uploadedAt ?? "").slice(0, 10);
+    if (date) proofDatesMap.set(date, (proofDatesMap.get(date) ?? 0) + 1);
+  }
+  const proofDates = [...proofDatesMap.entries()]
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const banks = [...new Set(rows.map((row) => row.bank).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return {
+    proofs,
+    received,
+    late,
+    all,
+    proofDates,
+    counts: { proofs: proofs.length, received: received.length, late: late.length, all: all.length },
+    banks,
+    truncado,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 async function encaminharParcelas(request: Request, env: Env, clienteId: string, payload: Json) {
   const url = new URL(request.url);
   url.pathname = `/api/admin/clientes/${encodeURIComponent(clienteId)}/parcelas`;
@@ -351,6 +479,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
   const usuario = `admin:${auth.adminId}`;
 
   try {
+    if (path === "/api/admin/financeiro/painel" && request.method === "GET") return json(await painelFinanceiro(db));
     if (path === "/api/admin/financeiro/resumo" && request.method === "GET") return json(await resumo(db, url));
     if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db));
     if (path === "/api/admin/financeiro/recebiveis" && request.method === "GET") return json(await listarRecebiveis(db, url));
@@ -393,6 +522,15 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
     }
 
     const comprovanteMatch = path.match(/^\/api\/admin\/financeiro\/recebiveis\/([^/]+)\/comprovante$/);
+    if (comprovanteMatch && request.method === "GET") {
+      const id = decodeURIComponent(comprovanteMatch[1]);
+      const { data: boleto, error: boletoError } = await db.from("boletos").select("comprovante_url").eq("id", id).maybeSingle();
+      if (boletoError) return json({ erro: boletoError.message }, 500);
+      if (!boleto?.comprovante_url) return json({ erro: "Comprovante não encontrado." }, 404);
+      const { data, error } = await db.storage.from("boletos-clientes").createSignedUrl(boleto.comprovante_url, 300);
+      if (error || !data?.signedUrl) return json({ erro: "Não foi possível gerar o link do comprovante." }, 500);
+      return json({ url: data.signedUrl });
+    }
     if (comprovanteMatch && request.method === "POST") {
       const id = decodeURIComponent(comprovanteMatch[1]);
       const form = await request.formData();
@@ -408,7 +546,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
       const caminho = `admin/${boleto.cliente_id}/${id}/${crypto.randomUUID()}.${tipo.extensao}`;
       const { error: uploadError } = await db.storage.from("boletos-clientes").upload(caminho, bytes, { contentType: tipo.mime, upsert: false });
       if (uploadError) return json({ erro: uploadError.message }, 500);
-      const { data: atualizado, error: updateError } = await db.from("boletos").update({ comprovante_url: caminho }).eq("id", id).neq("status", "pago").select("id").maybeSingle();
+      const { data: atualizado, error: updateError } = await db.from("boletos").update({ comprovante_url: caminho, comprovante_enviado_em: new Date().toISOString() }).eq("id", id).neq("status", "pago").select("id").maybeSingle();
       if (updateError || !atualizado) {
         await db.storage.from("boletos-clientes").remove([caminho]);
         return json({ erro: updateError?.message ?? "A parcela foi liquidada durante o envio." }, updateError ? 500 : 409);

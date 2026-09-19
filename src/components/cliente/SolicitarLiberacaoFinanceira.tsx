@@ -32,6 +32,7 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
   const [dataAssinaturaTermos, setDataAssinaturaTermos] = useState<string | null>(null);
   const [horarioTermos, setHorarioTermos] = useState<string | null>(null);
   const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);
+  const [horarioCirurgia, setHorarioCirurgia] = useState<string | null>(null);
   const [datasTermos, setDatasTermos] = useState<DataDisponivel[]>([]);
   const [alteracao, setAlteracao] = useState<TipoAlteracao>(null);
   const [confirmacaoAlteracao, setConfirmacaoAlteracao] = useState<ConfirmacaoAlteracao | null>(null);
@@ -51,7 +52,8 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
       const agenda = data.agendamentoAtivo ?? data.agendamentoConcluido ?? null;
       setDataAssinaturaTermos(agenda?.data ?? null);
       setHorarioTermos(agenda?.horario ?? null);
-      setDataCirurgia(agenda?.previsaoLiberacaoFinanceira ?? null);
+      setDataCirurgia(agenda?.dataCirurgia ?? agenda?.previsaoLiberacaoFinanceira ?? null);
+      setHorarioCirurgia(agenda?.horarioCirurgia ?? null);
       setDatasTermos(data.datasDisponiveis ?? []);
     } catch {}
   }
@@ -82,7 +84,7 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
     setEnviando(true);
     setErro(null);
     try {
-      const res = await fetch("/api/cliente/solicitacao-liberacao-financeira", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ formaCusteio }) });
+      const res = await fetch("/api/cliente/forma-quitacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ formaCusteio }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.erro ?? "Não foi possível enviar sua solicitação.");
       setSolicitacao(data.solicitacao ?? null);
@@ -155,7 +157,7 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
         <div className="flex items-center justify-between gap-[10px] border-b border-[#F0E6E3] px-[14px] py-[13px]"><div><div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Minha agenda</div><div className="pt-[2px] text-[10px] font-light text-[#7A6B67]">Datas registradas para o seu atendimento.</div></div><span className="rounded-full border border-[#DCEADF] bg-[#F0F7F1] px-2 py-1 text-[8px] font-bold uppercase tracking-[.06em] text-[#3F7D5B]">Confirmada</span></div>
         <div className="grid grid-cols-2 gap-[9px] p-[11px]">
           <DataCard titulo="Assinatura dos termos" data={termos} horario={horarioTermos} onAlterar={() => setAlteracao("termos")} />
-          <DataCard titulo="Data da sua cirurgia" data={cirurgia} onAlterar={() => setAlteracao("cirurgia")} />
+          <DataCard titulo="Data da sua cirurgia" data={cirurgia} horario={horarioCirurgia} onAlterar={() => setAlteracao("cirurgia")} />
         </div>
       </section>
       {remarcacaoPendente && <div className="mt-[10px] rounded-[14px] border border-[#EFD9AA] bg-[#FFF9EF] px-[14px] py-3 text-[10px] font-light leading-[1.5] text-[#7A6B67]"><b className="font-semibold text-[#8E6420]">Solicitação de alteração enviada.</b> Prazo de até 5 dias úteis. Sua agenda atual permanece inalterada até a autorização administrativa.</div>}

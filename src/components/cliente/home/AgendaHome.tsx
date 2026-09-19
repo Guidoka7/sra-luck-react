@@ -7,7 +7,6 @@ import { AgendaBloqueadaPercentual } from "@/components/cliente/AgendaBloqueadaP
 import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLiberacaoFinanceira";
 import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
-import { percentualNecessario } from "@/lib/utils";
 import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
@@ -19,7 +18,7 @@ interface AgendaHomeProps {
   quantidadeParcelas: number | null;
   parcelasPagas: number;
   podeAgendar: boolean;
-  agendaLiberada: boolean;
+  percentualMinimoAgenda: number;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
   observacaoRevisaoFinanceira?: string | null;
   custeioAprovado: boolean;
@@ -34,12 +33,12 @@ function brDate(value: string | null | undefined) {
   return y && m && d ? `${d}/${m}/${y}` : value;
 }
 
-function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado }: Pick<AgendaHomeProps, "agendamentoAtivo" | "agendamentoConcluido" | "podeAgendar" | "agendaLiberada" | "statusRevisaoFinanceira" | "custeioAprovado">) {
+function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, statusRevisaoFinanceira, custeioAprovado }: Pick<AgendaHomeProps, "agendamentoAtivo" | "agendamentoConcluido" | "podeAgendar" | "statusRevisaoFinanceira" | "custeioAprovado">) {
   if (agendamentoConcluido) return { label: "Termos assinados", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (agendamentoAtivo) return { label: "Assinatura agendada", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (statusRevisaoFinanceira === "recusada") return { label: "Ajuste necessário", bg: "#FBEBEA", color: "#8F2A25", border: "#F0D3D1" };
   if (!podeAgendar) return { label: "Etapa 1 de 4", bg: "#F7EFED", color: "#7D2434", border: "#EBD9D5" };
-  if (!agendaLiberada || statusRevisaoFinanceira === "pendente") return { label: "Etapa 2 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
+  if (statusRevisaoFinanceira !== "aprovada") return { label: "Etapa 2 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
   if (!custeioAprovado) return { label: "Etapa 3 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
   return { label: "Etapa 4 de 4", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
 }
@@ -51,7 +50,7 @@ export function AgendaHome({
   quantidadeParcelas,
   parcelasPagas,
   podeAgendar,
-  agendaLiberada,
+  percentualMinimoAgenda,
   statusRevisaoFinanceira,
   observacaoRevisaoFinanceira,
   custeioAprovado,
@@ -59,9 +58,9 @@ export function AgendaHome({
   onEscolherData,
   onCusteioSelecionado,
 }: AgendaHomeProps) {
-  const percentualContrato = percentualNecessario(quantidadeParcelas);
+  const percentualContrato = Number(percentualMinimoAgenda || 70);
   const parcelasNecessarias = quantidadeParcelas ? Math.ceil((quantidadeParcelas * percentualContrato) / 100) : null;
-  const status = statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado });
+  const status = statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, statusRevisaoFinanceira, custeioAprovado });
 
   const tituloAgenda = agendamentoConcluido
     ? "Assinatura dos termos concluída"
@@ -77,7 +76,7 @@ export function AgendaHome({
 
   const conteudoLegado = agendamentoAtivo ? (
     <div className="animate-fadeUp">
-      <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} />
+      <SolicitarLiberacaoFinanceira ativo={statusRevisaoFinanceira === "aprovada"} />
     </div>
   ) : agendamentoConcluido ? (
     <div className="animate-fadeUp space-y-3">
@@ -92,13 +91,13 @@ export function AgendaHome({
           {agendamentoConcluido.previsaoLiberacaoFinanceira ? ` Sua cirurgia está programada para ${brDate(agendamentoConcluido.previsaoLiberacaoFinanceira)}.` : " A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
         </p>
       </Card>
-      <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} />
+      <SolicitarLiberacaoFinanceira ativo={statusRevisaoFinanceira === "aprovada"} />
     </div>
   ) : (
     <div>
       {statusRevisaoFinanceira === "recusada" ? (
         <AvisoRevisaoFinanceira status="recusada" observacao={observacaoRevisaoFinanceira ?? null} />
-      ) : !agendaLiberada ? (
+      ) : !podeAgendar || statusRevisaoFinanceira !== "aprovada" ? (
         <AgendaBloqueadaPercentual
           percentual={percentualContrato}
           parcelasPagas={parcelasPagas}

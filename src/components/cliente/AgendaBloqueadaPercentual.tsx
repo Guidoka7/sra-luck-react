@@ -19,7 +19,7 @@ export function AgendaBloqueadaPercentual({ percentual, parcelasPagas = 0, parce
   const pagas = Math.max(0, Math.floor(parcelasPagas));
   const meta = parcelasNecessarias ?? 0;
   const resumo = atual === "levantamento"
-    ? "Levantamento financeiro em andamento. Toque para acompanhar."
+    ? "Levantamento financeiro em andamento. Acompanhe abaixo os detalhes desta etapa."
     : meta > 0
       ? pagas > 0
         ? `Você já confirmou ${Math.min(pagas, meta)} de ${meta} parcelas necessárias para avançar.`
