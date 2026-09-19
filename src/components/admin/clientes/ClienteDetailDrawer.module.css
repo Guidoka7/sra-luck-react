@@ -45,7 +45,8 @@
 .plannerIntro small{grid-column:1/-1;color:#8C777B;font-size:9px;line-height:1.45}
 .plannerRows{display:grid;gap:7px}
 .plannerRow{width:100%;border:1px solid rgba(122,38,50,.09);border-radius:10px;background:#fff;padding:9px 10px;display:grid;grid-template-columns:128px minmax(0,1fr) 1fr 38px;gap:10px;align-items:center;text-align:left}
-.plannerRow:hover{box-shadow:0 5px 16px rgba(74,37,43,.055);transform:translateY(-1px)}
+.plannerRow:hover:not(:disabled){box-shadow:0 5px 16px rgba(74,37,43,.055);transform:translateY(-1px)}
+.plannerRow:disabled{cursor:not-allowed;opacity:.78}
 .plannerMonth strong{display:block;font:600 12.5px Georgia,"Times New Roman",serif;color:#4B353A}
 .plannerMonth span{display:inline-flex;margin-top:4px;border-radius:999px;padding:3px 6px;font-size:7.5px;font-weight:800;text-transform:uppercase}
 .plannerNumbers{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:8px;color:#8A777B}
@@ -63,6 +64,7 @@
 .forecastControl{display:grid;grid-template-columns:minmax(190px,1fr) auto;gap:10px;align-items:end;margin-top:12px;padding-top:11px;border-top:1px solid rgba(122,38,50,.07)}
 .forecastControl label span{display:block;margin-bottom:5px;font-size:8.5px;font-weight:800;color:#856B70;text-transform:uppercase;letter-spacing:.7px}
 .forecastControl .agendaPrimaryAction{margin-top:0;height:40px}
+.forecastControl .agendaGateNote{grid-column:1/-1;text-align:left;margin-top:-2px}
 .termsAppointment{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .termsAppointment>div{border:1px solid rgba(122,38,50,.08);border-radius:10px;background:#FFFCFC;padding:12px}
 .termsAppointment span{display:block;color:#A15E66;font-size:8px;text-transform:uppercase;letter-spacing:1px;font-weight:800}
