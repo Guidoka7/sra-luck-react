@@ -1,8 +1,7 @@
 "use client";
 
 import {
-  CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Search, Stethoscope,
-  XCircle,
+  CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Search, XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { ClienteDetailDrawer } from "@/components/admin/clientes/ClienteDetailDrawer";
