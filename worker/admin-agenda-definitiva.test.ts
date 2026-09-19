@@ -36,6 +36,10 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(paymentProgress).toContain("progresso.percentual_minimo_agenda || 70");
     expect(boletoTab).not.toContain("percentualNecessario");
     expect(paymentProgress).not.toContain("percentualNecessario");
+    expect(boletoTab).not.toContain("Sua agenda já está liberada");
+    expect(paymentProgress).not.toContain("Sua agenda já está liberada");
+    expect(boletoTab).toContain("segue para o levantamento financeiro");
+    expect(paymentProgress).toContain("segue para o levantamento financeiro");
   });
 
   it("deriva valor total e saldo das parcelas reais, incluindo valores individuais diferentes", () => {
