@@ -14,6 +14,9 @@ const panels = readFileSync(new URL("../src/components/admin/clientes/ClienteAge
 const stages = readFileSync(new URL("../src/components/cliente/AgendaEtapasInterativas.tsx", import.meta.url), "utf8");
 const blocked = readFileSync(new URL("../src/components/cliente/AgendaBloqueadaShell.tsx", import.meta.url), "utf8");
 const surgeryCalendar = readFileSync(new URL("../src/components/cliente/CalendarioCirurgia.tsx", import.meta.url), "utf8");
+const boletoTab = readFileSync(new URL("../src/components/cliente/TabBoletos.tsx", import.meta.url), "utf8");
+const paymentProgress = readFileSync(new URL("../src/components/cliente/parcelas/PagamentoProgressBar.tsx", import.meta.url), "utf8");
+const clientBoletos = readFileSync(new URL("./client-boletos.ts", import.meta.url), "utf8");
 
 describe("Agenda definitiva — regras críticas do PR #48", () => {
   it("calcula 70% pelas parcelas reais persistidas, sem total_parcelas ou quantidade_parcelas como denominador", () => {
@@ -25,6 +28,14 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(gate).toContain("public.percentual_minimo_fluxo_agenda()");
     expect(gate).toContain("exists(select 1 from public.boletos");
     expect(gate).not.toContain("quantidade_parcelas");
+  });
+
+  it("exibe a mesma meta central de 70% também nas barras financeiras do app", () => {
+    expect(clientBoletos).toContain("percentual_minimo_agenda: Number(percentualMinimo ?? 70)");
+    expect(boletoTab).toContain("progresso.percentual_minimo_agenda || 70");
+    expect(paymentProgress).toContain("progresso.percentual_minimo_agenda || 70");
+    expect(boletoTab).not.toContain("percentualNecessario");
+    expect(paymentProgress).not.toContain("percentualNecessario");
   });
 
   it("deriva valor total e saldo das parcelas reais, incluindo valores individuais diferentes", () => {
