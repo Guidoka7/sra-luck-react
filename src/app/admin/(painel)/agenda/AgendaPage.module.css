@@ -33,10 +33,8 @@
 .segmented button:hover{color:#6E2B35;background:rgba(255,255,255,.55)}
 .primaryTabs{padding:5px;border-color:rgba(122,38,50,.16);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(245,232,234,.92))}
 .primaryTabs button{height:38px;padding:0 18px;color:#855D63;font-size:11.5px}
-.primaryTabs button.active,.secondary button.active{background:linear-gradient(135deg,#7A2632,#982B3A);color:#fff;box-shadow:0 8px 18px rgba(122,38,50,.22),inset 0 0 0 1px rgba(255,255,255,.1)}
-.primaryTabs button.active::after,.secondary button.active::after{content:"";position:absolute;left:12px;right:12px;bottom:6px;height:1px;background:rgba(255,255,255,.30);border-radius:999px}
-.secondary{padding:4px;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(248,237,239,.82));border-color:rgba(122,38,50,.14)}
-.secondary button{height:34px;padding:0 15px;font-size:10.7px}
+.primaryTabs button.active{background:linear-gradient(135deg,#7A2632,#982B3A);color:#fff;box-shadow:0 8px 18px rgba(122,38,50,.22),inset 0 0 0 1px rgba(255,255,255,.1)}
+.primaryTabs button.active::after{content:"";position:absolute;left:12px;right:12px;bottom:6px;height:1px;background:rgba(255,255,255,.30);border-radius:999px}
 .agendaWorkspace{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(430px,1fr);gap:16px;align-items:stretch}
 .financeOnly{display:block}
 .financeOnly .agendaListCard{min-height:490px}
