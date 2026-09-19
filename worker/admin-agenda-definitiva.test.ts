@@ -142,6 +142,9 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(migration060).toContain("if v_projecao > 100000 then raise exception 'TETO_MENSAL_EXCEDIDO'");
     expect(panels).toContain("Carta de crédito");
     expect(panels).toContain("row.creditLetter");
+    expect(panels).toContain('disabled={row.classification === "over"}');
+    expect(panels).toContain("forecastOverCap");
+    expect(panels).toContain("ultrapassa o teto de R$ 100.000,00");
   });
 
   it("força o drawer por clientId + context sem reutilizar a última aba visual", () => {
