@@ -7,6 +7,7 @@ const migration062 = readFileSync(new URL("../supabase/migration_062_agenda_quit
 const adminAgenda = readFileSync(new URL("./admin-agenda.ts", import.meta.url), "utf8");
 const clientAgenda = readFileSync(new URL("./client-agenda.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../src/app/admin/(painel)/agenda/page.tsx", import.meta.url), "utf8");
+const pageCss = readFileSync(new URL("../src/app/admin/(painel)/agenda/AgendaPage.module.css", import.meta.url), "utf8");
 const drawer = readFileSync(new URL("../src/components/admin/clientes/ClienteDetailDrawer.tsx", import.meta.url), "utf8");
 const finance = readFileSync(new URL("../src/components/admin/clientes/ClienteFinanceTab.tsx", import.meta.url), "utf8");
 const panels = readFileSync(new URL("../src/components/admin/clientes/ClienteAgendaFinancePanels.tsx", import.meta.url), "utf8");
@@ -136,6 +137,25 @@ describe("Agenda definitiva — regras críticas do PR #48", () => {
     expect(stages).toContain('if(atual!=="data") return card');
     expect(blocked).not.toContain("setAberta");
     expect(blocked).toContain("A agenda dos termos será liberada somente na Etapa 4.");
+  });
+
+  it("preserva o handoff visual da Agenda sem uma segunda barra de tabs antiga", () => {
+    expect(page).toContain(">Termos cirúrgicos</button>");
+    expect(page).toContain(">Liberação financeira</button>");
+    expect(page).toContain(">Cirurgias</button>");
+    expect(page).toContain('<span className={styles.listFilterLabel}>Exibir</span>');
+    expect(page).toContain('<option value="eligible">Levantamentos</option>');
+    expect(page).toContain('<option value="confirmed">Termos confirmados</option>');
+    expect(page).not.toContain("styles.secondary");
+    expect(pageCss).not.toContain(".secondary{");
+    expect(pageCss).toContain("padding:18px 22px 32px");
+    expect(pageCss).toContain("max-width:1570px");
+    expect(pageCss).toContain("font-size:39px");
+    expect(pageCss).toContain("grid-template-columns:minmax(0,1.38fr) minmax(430px,1fr)");
+    expect(pageCss).toContain("grid-template-columns:minmax(0,1fr) 205px");
+    expect(pageCss).toContain("min-height:434px");
+    expect(pageCss).toContain("height:40px");
+    expect(pageCss).toContain("min-height:61px");
   });
 
   it("a rota principal não renderiza os módulos antigos da Agenda", () => {
