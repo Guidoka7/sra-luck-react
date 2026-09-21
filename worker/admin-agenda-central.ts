@@ -3,6 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { agoraSaoPaulo } from "./surgery-release";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
 import { requiredPaid } from "./agenda-elegibilidade";
+import { getAppAccessRequirements } from "./app-access";
 
 /**
  * V46 — Central de acompanhamento. Construído em cima da "Agenda
@@ -135,7 +136,7 @@ async function visaoGeral(env: Env) {
   const hoje = agoraSaoPaulo().data;
 
   const { data: clientes, error: erroClientes } = await db.from("clientes")
-    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
+    .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia,ativo,acesso_app_liberado,acesso_app_liberado_em")
     .eq("ativo", true)
     .order("nome_completo", { ascending: true });
   if (erroClientes) return json({ erro: erroClientes.message }, 500);
@@ -200,6 +201,10 @@ async function visaoGeral(env: Env) {
       cpf: cliente.cpf,
       procedimento: cliente.procedimento,
       liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em ?? null,
+      ativo: cliente.ativo === true,
+      acessoAppLiberado: cliente.acesso_app_liberado === true,
+      acessoAppLiberadoEm: cliente.acesso_app_liberado_em ?? null,
+      appAccess,
       cartaDeCredito: Number(agendamento?.valor_contrato ?? cliente.valor_contrato ?? 0),
       totalParcelas: parcelas.total || cliente.quantidade_parcelas || 0,
       parcelasPagas: parcelas.pagas,
@@ -250,6 +255,13 @@ async function clienteCentral(env: Env, clienteId: string) {
   const total = (boletos ?? []).length || cliente.quantidade_parcelas || 0;
   const pagas = (boletos ?? []).filter((b: any) => b.status === "pago").length;
   const minimo = requiredPaid(total || 12);
+
+  const appAccess = getAppAccessRequirements({
+    name: cliente.nome_completo,
+    cpf: cliente.cpf,
+    birthDate: cliente.data_nascimento,
+    installmentCount: total,
+  });
 
   let estagio: string;
   if (agendamento?.processo_concluido_em) estagio = "concluido";
