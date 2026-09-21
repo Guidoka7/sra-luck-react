@@ -32,12 +32,21 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
   const { data: agendamentos } = await supabase.from("agendamentos")
-    .select("id,data_id,status,horario_termos,termos_assinados_em,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,data_cirurgia,valor_contrato,agenda_cirurgica_liberada_em,created_at,datas(data)")
+    .select("id,data_id,status,horario_termos,termos_assinados_em,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,data_cirurgia,horario_cirurgia,valor_contrato,agenda_cirurgica_liberada_em,created_at,datas(data)")
     .eq("cliente_id", cliente.id)
     .in("status", ["confirmado", "realizado"])
     .order("created_at", { ascending: false });
-  const ativo = (agendamentos ?? []).find((a: any) => a.status === "confirmado") ?? null;
+  let ativo: any = (agendamentos ?? []).find((a: any) => a.status === "confirmado") ?? null;
   const concluido = (agendamentos ?? []).find((a: any) => a.status === "realizado") ?? null;
+  // agenda_registrar_comparecimento/quitacao só tentam liberar no momento
+  // do registro; se o prazo de 5 dias úteis só se completa depois, nada
+  // re-tenta sozinho (sem cron). A cliente não pode ficar presa esperando
+  // um admin abrir a Central primeiro — reprocessa aqui também.
+  if (ativo && ativo.comparecimento_status === "compareceu" && ativo.quitacao_status === "paga" && !ativo.agenda_cirurgica_liberada_em) {
+    await supabase.rpc("agenda_tentar_liberar_cirurgia", { p_agendamento_id: ativo.id, p_usuario: "sistema:auto-retry" });
+    const { data: relido } = await supabase.from("agendamentos").select("agenda_cirurgica_liberada_em").eq("id", ativo.id).maybeSingle();
+    if (relido) ativo = { ...ativo, agenda_cirurgica_liberada_em: relido.agenda_cirurgica_liberada_em };
+  }
   const agendamentoCorrente: any = ativo ?? concluido ?? null;
   // Fonte de verdade da liberação é agendamentos.agenda_cirurgica_liberada_em
   // (gravado por agenda_tentar_liberar_cirurgia/agenda_cirurgica_liberar_manual
@@ -124,6 +133,8 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     comparecimentoStatus: a.comparecimento_status ?? "pendente",
     quitacaoStatus: a.quitacao_status ?? "pendente",
     previsaoCirurgia: a.previsao_cirurgia ?? null,
+    dataCirurgia: a.data_cirurgia ?? null,
+    horarioCirurgia: a.horario_cirurgia ? String(a.horario_cirurgia).slice(0, 5) : null,
     status: a.status,
   } : null;
 
