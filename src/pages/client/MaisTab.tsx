@@ -13,7 +13,7 @@ interface MaisTabProps {
 }
 
 const FAQS = [
-  { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, iniciamos um levantamento financeiro de até 5 dias úteis. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura e da quitação confirmada, a agenda da cirurgia pode ser liberada antes, respeitando o prazo máximo de até 90 dias corridos." },
+  { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, você pode solicitar a liberação financeira no app. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura e da quitação confirmada, a agenda da cirurgia é liberada em até 5 dias úteis, podendo ser antecipada pela nossa equipe." },
   { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Parcelas, cada parcela mostra o status do comprovante: em análise, confirmado ou rejeitado." },
   { pergunta: "Posso pagar uma parcela no cartão de crédito?", resposta: "Sim. Ao abrir o pagamento de uma parcela, a opção de cartão leva você para o checkout seguro do Mercado Pago." },
   { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },

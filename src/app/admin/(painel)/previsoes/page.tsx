@@ -28,7 +28,7 @@ const FILTROS: { id: Grupo; label: string }[] = [
   { id: "solicit", label: "Pode solicitar termos" },
   { id: "agendado", label: "Termos agendados" },
   { id: "quit", label: "Aguardando quitação" },
-  { id: "janela", label: "Em janela de 90 dias" },
+  { id: "janela", label: "No prazo de liberação" },
   { id: "risco", label: "Em risco" },
 ];
 
@@ -118,7 +118,7 @@ export default function PrevisoesPage() {
   ];
 
   const alertas: { texto: string; kind: ZipKind; icon: string }[] = [
-    { texto: `${janela.length} cliente(s) estão dentro da janela de 90 dias`, kind: "warn", icon: "⚠" },
+    { texto: `${janela.length} cliente(s) estão dentro do prazo de liberação`, kind: "warn", icon: "⚠" },
     { texto: `${risco} previsão(ões) mudaram por atraso ou suspensão`, kind: "bad", icon: "⚠" },
   ];
   const mesExcedente = barras.find((b) => b.acima);
@@ -248,7 +248,7 @@ export default function PrevisoesPage() {
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}><span style={{ color: "var(--soft)" }}>Valor previsto</span><span style={{ fontWeight: 600 }} className="zip-mono">{formatarMoeda(cli.valorCarta ?? 0)}</span></div>
           </div> : <div style={{ border: "1px dashed var(--line)", borderRadius: 11, padding: "16px 13px", textAlign: "center" }}>
             <div style={{ fontSize: 12.5, fontWeight: 600 }}>Ainda não calculável</div>
-            <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--soft)", lineHeight: 1.5 }}>A janela de 90 dias começa somente com termos assinados e quitação confirmada.</div>
+            <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--soft)", lineHeight: 1.5 }}>O prazo de liberação começa somente com termos assinados e quitação confirmada.</div>
           </div>}
         </div>
         <div style={{ padding: "0 16px 16px" }}>

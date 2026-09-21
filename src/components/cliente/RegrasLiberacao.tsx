@@ -127,7 +127,7 @@ export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: nu
                         <span className="relative z-[1] flex h-[23px] w-[23px] flex-none items-center justify-center rounded-full bg-[#EDF5EF] text-[9px] font-semibold text-[#3F7D5B]">4</span>
                         <div className="min-w-0">
                           <div className="text-[10.6px] font-semibold text-[#4B3B38]">Quitação e liberação</div>
-                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Com assinatura e quitação confirmadas, a agenda da cirurgia pode ser liberada antes, respeitando o prazo máximo de <b className="font-medium text-[#3F7D5B]">até 90 dias corridos</b>.</p>
+                          <p className="mt-[1px] text-[9.7px] font-light leading-[1.4] text-[#81716D]">Com assinatura e quitação confirmadas, a agenda da cirurgia é liberada em <b className="font-medium text-[#3F7D5B]">até 5 dias úteis</b>, podendo ser antecipada pela nossa equipe.</p>
                         </div>
                       </div>
                     </div>

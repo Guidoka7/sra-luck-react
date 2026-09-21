@@ -4,6 +4,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { forecastLiberacoes } from "./admin-reports";
+import { agoraSaoPaulo, calcularPrazoCirurgicoComAjuste } from "./surgery-release";
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
@@ -93,7 +94,7 @@ export const REPORT_CATALOG: RelatorioDef[] = [
   { id: "a5", modulo: "agenda", nome: "Remarcações de termos", desc: "Solicitações de remarcação do tipo termos.", icone: "↻" },
   { id: "a6", modulo: "agenda", nome: "Quitações confirmadas", desc: "Clientes com quitação financeira confirmada.", icone: "$" },
   { id: "a7", modulo: "agenda", nome: "Solicitações de liberação financeira", desc: "Clientes com solicitação de liberação registrada.", icone: "L" },
-  { id: "a8", modulo: "agenda", nome: "Clientes na janela de 90 dias", desc: "Clientes com termos e quitação confirmados, dentro do prazo máximo de 90 dias corridos.", icone: "90" },
+  { id: "a8", modulo: "agenda", nome: "Clientes no prazo de 5 dias úteis", desc: "Clientes com termos e quitação confirmados, dentro do prazo de 5 dias úteis para liberação da agenda cirúrgica.", icone: "5" },
   { id: "a9", modulo: "agenda", nome: "Agenda cirúrgica liberada", desc: "Clientes com data de cirurgia já definida.", icone: "★" },
   { id: "a10", modulo: "agenda", nome: "Cirurgias agendadas", desc: "Clientes com status_cirurgia = agendada.", icone: "◷" },
   { id: "a11", modulo: "agenda", nome: "Cirurgias realizadas", desc: "Clientes com status_cirurgia = realizada.", icone: "✓" },
@@ -107,7 +108,7 @@ export const REPORT_CATALOG: RelatorioDef[] = [
   { id: "p6", modulo: "previsoes", nome: "Impacto de atrasos", desc: "Clientes com parcelas vencidas que afetam a previsão de liberação.", icone: "!" },
   { id: "p7", modulo: "previsoes", nome: "Impacto de suspensões", desc: "Clientes com contrato suspenso e previsão em aberto.", icone: "Ⅱ" },
   { id: "p8", modulo: "previsoes", nome: "Alterações de previsão", desc: "Histórico de ações administrativas sobre agendamento/cirurgia.", icone: "↺" },
-  { id: "p9", modulo: "previsoes", nome: "Próximas do limite de 90 dias", desc: "Clientes com termos e quitação confirmados, a até 10 dias do limite máximo.", icone: "90" },
+  { id: "p9", modulo: "previsoes", nome: "No dia do prazo de liberação", desc: "Clientes com termos e quitação confirmados cujo prazo de 5 dias úteis se cumpre hoje.", icone: "5" },
   { id: "p10", modulo: "previsoes", nome: "Projeção do teto orçamentário", desc: "Valor previsto por mês comparado à referência de planejamento (meta_orcamento_mensal).", icone: "R$" },
 
   { id: "o1", modulo: "operacao", nome: "Acessos ao app / PWA", desc: "Dispositivos com acesso registrado ao app da cliente.", icone: "PWA" },
@@ -204,7 +205,7 @@ async function fetchRecebimentos(db: Db) {
 async function fetchAgendamentos(db: Db) {
   const { data, error } = await db
     .from("agendamentos")
-    .select("id,cliente_id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,created_at,clientes(nome_completo,cpf,status_cirurgia,consultora)");
+    .select("id,cliente_id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,prazo_cirurgico_dias_extras,created_at,clientes(nome_completo,cpf,status_cirurgia,consultora,custeio_confirmado_em)");
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -443,18 +444,17 @@ async function executarRelatorio(id: string, db: Db, filtros: Filtros): Promise<
     case "a8":
     case "p9": {
       const agendamentos = await fetchAgendamentos(db);
-      const hoje = new Date();
+      const hoje = agoraSaoPaulo().data;
       const rows = agendamentos
-        .filter((a) => a.termos_assinados_em && rel<any>(a.clientes)?.status_financeiro !== undefined)
+        .filter((a) => a.termos_assinados_em && rel<any>(a.clientes)?.custeio_confirmado_em)
         .map((a) => {
           const c = rel<any>(a.clientes);
-          const inicio = a.termos_assinados_em ? new Date(a.termos_assinados_em) : null;
-          const limite = inicio ? new Date(inicio.getTime() + 90 * 24 * 60 * 60 * 1000) : null;
-          const diasRestantes = limite ? Math.ceil((limite.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000)) : null;
-          return { a, c, limite, diasRestantes };
+          const prazo = calcularPrazoCirurgicoComAjuste(a.termos_assinados_em, c?.custeio_confirmado_em ?? null, (a as any).prazo_cirurgico_dias_extras ?? 0);
+          const diasRestantes = prazo ? Math.max(0, Math.round((new Date(`${prazo}T00:00:00Z`).getTime() - new Date(`${hoje}T00:00:00Z`).getTime()) / 86400000)) : null;
+          return { a, c, prazo, diasRestantes };
         })
-        .filter(({ diasRestantes }) => diasRestantes != null && (id === "a8" ? diasRestantes >= 0 : diasRestantes >= 0 && diasRestantes <= 10));
-      return { colunas: ["Cliente", "CPF", "Termos assinados em", "Limite (90 dias)", "Dias restantes"], linhas: rows.map(({ a, c, limite, diasRestantes }) => [c?.nome_completo ?? "—", c?.cpf ?? "—", dataHoraBr(a.termos_assinados_em), limite ? dataBr(limite.toISOString()) : "—", String(diasRestantes)]), resumo: resumoContagem(rows.length), totalRegistros: rows.length };
+        .filter(({ diasRestantes }) => diasRestantes != null && (id === "a8" ? diasRestantes >= 0 : diasRestantes === 0));
+      return { colunas: ["Cliente", "CPF", "Termos assinados em", "Prazo (5 dias úteis)", "Dias restantes"], linhas: rows.map(({ a, c, prazo, diasRestantes }) => [c?.nome_completo ?? "—", c?.cpf ?? "—", dataHoraBr(a.termos_assinados_em), prazo ? dataBr(prazo) : "—", String(diasRestantes)]), resumo: resumoContagem(rows.length), totalRegistros: rows.length };
     }
     case "a9": {
       const rows = (await fetchAgendamentos(db)).filter((a) => Boolean(a.data_cirurgia));

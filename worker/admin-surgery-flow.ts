@@ -31,13 +31,16 @@ function erroAgendaCirurgica(error: any, liberacaoMinima?: string | null) {
   const mensagem = String(error?.message ?? "");
   if (mensagem.includes("TERMOS_NAO_ASSINADOS")) return json({ erro: "Os termos ainda não foram assinados." }, 409);
   if (mensagem.includes("SALDO_NAO_QUITADO")) return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
-  if (mensagem.includes("PRAZO_CIRURGICO_EXCEDIDO")) {
+  if (mensagem.includes("PRAZO_CIRURGICO_NAO_CONCLUIDO")) {
     return json({
       erro: liberacaoMinima
-        ? `Essa data excede o prazo máximo de liberação (até ${formatarData(liberacaoMinima)}).`
-        : "Essa data excede o prazo máximo de liberação da agenda cirúrgica.",
+        ? `O prazo de liberação da agenda cirúrgica ainda não foi concluído (previsto para ${formatarData(liberacaoMinima)}, ou libere manualmente).`
+        : "O prazo de liberação da agenda cirúrgica ainda não foi concluído.",
       agendaCirurgicaLiberarEm: liberacaoMinima ?? null,
     }, 409);
+  }
+  if (mensagem.includes("TETO_MENSAL_CIRURGIA_EXCEDIDO")) {
+    return json({ erro: "O teto mensal de R$ 100.000,00 em carta de crédito para cirurgias já foi atingido nesse mês. Escolha outra data." }, 409);
   }
   if (mensagem.includes("DATA_CIRURGIA_INDISPONIVEL")) return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
   if (mensagem.includes("DATA_CIRURGIA_OCUPADA")) return json({ erro: "Essa data acabou de ser ocupada. Escolha outra data disponível." }, 409);
@@ -152,7 +155,7 @@ async function confirmarAssinaturaTermos(request: Request, env: Env) {
       termos_assinados_em: assinatura,
       custeio_confirmado_em: cliente?.custeio_confirmado_em ?? null,
       agenda_cirurgica_liberar_em: liberacao,
-      regra: "termos_assinados + quitacao_confirmada + prazo_maximo_90_dias_corridos",
+      regra: "termos_assinados + quitacao_confirmada + prazo_padrao_5_dias_uteis",
     },
   });
 
@@ -246,7 +249,7 @@ async function salvarDataCirurgia(request: Request, env: Env, agendamentoId: str
     if (!agendamento.termos_assinados_em) return json({ erro: "Os termos ainda não foram assinados." }, 409);
     return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
   }
-  if (data > liberacao) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${formatarData(liberacao)}).`, agendaCirurgicaLiberarEm: liberacao }, 409);
+  if (data < liberacao) return json({ erro: `A data precisa ser igual ou posterior a ${formatarData(liberacao)} (prazo de 5 dias úteis desde termos + quitação, ou libere manualmente).`, agendaCirurgicaLiberarEm: liberacao }, 409);
 
   const { error } = await db.rpc("agendar_cirurgia_data", { p_agendamento_id: agendamentoId, p_data: data });
   if (error) return erroAgendaCirurgica(error, liberacao);
@@ -341,18 +344,18 @@ async function liberacaoInteligente(url: URL, env: Env) {
       const data = `${anoM}-${mesStr}-${String(dia).padStart(2, "0")}`;
       const ocupante = ocupadas.get(data);
       const passado = data < hoje;
-      // Fase 2: não há mais piso mínimo (a liberação pode ocorrer a partir de hoje).
-      // O que existe agora é um teto — dias depois do prazo máximo ficam fora da janela.
-      const foraDoPrazoMaximo = Boolean(cliente?.agendaCirurgicaLiberarEm && data > cliente.agendaCirurgicaLiberarEm);
+      // V46: prazo padrão de 5 dias úteis é um PISO — dias antes do prazo
+      // calculado (termos + quitação) ficam fora da janela, não depois.
+      const antesDoPrazo = Boolean(cliente?.agendaCirurgicaLiberarEm && data < cliente.agendaCirurgicaLiberarEm);
       const disponibilizada = disponibilizadas.has(data);
       const depois = comprometido + (cliente?.valor ?? 0);
       const ultrapassagem = Math.max(0, depois - orcamentoMensal);
-      const estado = passado || foraDoPrazoMaximo ? "passado" : ocupante ? "vermelho" : !disponibilizada ? "cinza" : !cliente ? "verde" : depois <= orcamentoMensal ? "verde" : "amarelo";
+      const estado = passado || antesDoPrazo ? "passado" : ocupante ? "vermelho" : !disponibilizada ? "cinza" : !cliente ? "verde" : depois <= orcamentoMensal ? "verde" : "amarelo";
       return {
         data,
         dia,
         estado,
-        vagasDisponiveis: !passado && !foraDoPrazoMaximo && !ocupante && disponibilizada,
+        vagasDisponiveis: !passado && !antesDoPrazo && !ocupante && disponibilizada,
         oracamentoAntes: comprometido,
         oracamentoDepois: cliente ? depois : comprometido,
         ultrapassagem,
@@ -365,11 +368,11 @@ async function liberacaoInteligente(url: URL, env: Env) {
 
   const dias = analisar(ano, mes);
   let melhorData: any = null;
-  const prazoMaximo = cliente?.agendaCirurgicaLiberarEm as string | null | undefined;
-  if (prazoMaximo) {
-    // Fase 2: não existe mais "primeiro dia elegível" fixo — buscamos, dentro da
-    // janela [hoje, prazoMaximo], o primeiro dia realmente disponível e, entre
-    // esses, preferimos um que já caiba no orçamento mensal.
+  const prazoMinimo = cliente?.agendaCirurgicaLiberarEm as string | null | undefined;
+  if (prazoMinimo) {
+    // V46: o prazo de 5 dias úteis é um piso, não um teto — buscamos, a
+    // partir dele, o primeiro dia realmente disponível e, entre esses,
+    // preferimos um que já caiba no orçamento mensal.
     const candidato = dias.find((item: any) => item.vagasDisponiveis && item.dentroOrcamento) ?? dias.find((item: any) => item.vagasDisponiveis);
     if (candidato) {
       melhorData = {
@@ -382,7 +385,7 @@ async function liberacaoInteligente(url: URL, env: Env) {
         valorCliente: cliente.valor,
         totalDepois: candidato.oracamentoDepois,
         dentroOrcamento: candidato.dentroOrcamento,
-        motivo: `Primeiro dia disponível dentro do prazo máximo (até ${prazoMaximo.split("-").reverse().join("/")}).`,
+        motivo: `Primeiro dia disponível a partir do prazo mínimo de liberação (${prazoMinimo.split("-").reverse().join("/")}).`,
       };
     }
   }
