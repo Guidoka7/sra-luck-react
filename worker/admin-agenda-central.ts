@@ -1,7 +1,7 @@
-import { exigirAdmin } from "./admin-auth";
+import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { agoraSaoPaulo } from "./surgery-release";
-import { getCookie } from "./session";
+import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
 import { requiredPaid } from "./agenda-elegibilidade";
 
 /**
@@ -39,11 +39,27 @@ async function parseBody(request: Request): Promise<Record<string, unknown>> {
   try { return (await request.json()) as Record<string, unknown>; } catch { return {}; }
 }
 
-function identificarAdmin(request: Request): string {
-  // exigirAdmin já validou a sessão antes de chegarmos aqui; usamos o
-  // cookie só para identificar quem fez a ação nos logs_alteracoes.
-  const token = getCookie(request, "admin_session");
-  return token ? `admin:${token.slice(0, 12)}` : "admin_worker";
+function origemSegura(request: Request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return new URL(origin).origin === new URL(request.url).origin; } catch { return false; }
+}
+
+async function carregarSessaoAdmin(request: Request, env: Env) {
+  if (!env.CLIENTE_SESSION_SECRET) return null;
+  return verificarTokenAdmin(getCookie(request, ADMIN_COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+}
+
+async function exigirPermissaoFinanceira(adminId: string, env: Env): Promise<Response | null> {
+  try {
+    const colaborador = await buscarColaboradorAdminAtivo(adminId, env);
+    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+      return json({ erro: "Seu papel não tem permissão para confirmar quitações ou pagamentos." }, 403);
+    }
+    return null;
+  } catch {
+    return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+  }
 }
 
 function erroPadrao(error: any, mapa: Record<string, string>) {
@@ -559,7 +575,13 @@ export async function adminAgendaCentral(request: Request, env: Env): Promise<Re
 
   const denied = await exigirAdmin(request, env);
   if (denied) return denied;
-  const usuario = identificarAdmin(request);
+
+  const sessao = await carregarSessaoAdmin(request, env);
+  if (!sessao) return json({ erro: "Sessão administrativa expirada." }, 401);
+  if (request.method !== "GET" && !origemSegura(request)) {
+    return json({ erro: "Origem da requisição não autorizada." }, 403);
+  }
+  const usuario = `admin:${sessao.adminId}`;
 
   if (path === "/api/admin/central/visao-geral" && request.method === "GET") return visaoGeral(env);
   const clienteMatch = path.match(/^\/api\/admin\/central\/cliente\/([^/]+)$/);
@@ -574,13 +596,21 @@ export async function adminAgendaCentral(request: Request, env: Env): Promise<Re
 
   if (path === "/api/admin/central/previsao" && request.method === "POST") return confirmarPrevisao(request, env, usuario);
   if (path === "/api/admin/central/comparecimento" && request.method === "POST") return registrarComparecimento(request, env, usuario);
-  if (path === "/api/admin/central/quitacao" && request.method === "POST") return registrarQuitacao(request, env, usuario);
+  if (path === "/api/admin/central/quitacao" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoFinanceira(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return registrarQuitacao(request, env, usuario);
+  }
   if (path === "/api/admin/central/liberar-tentativa" && request.method === "POST") return tentarLiberarCirurgia(request, env, usuario);
   if (path === "/api/admin/central/prazo/ajustar" && request.method === "POST") return ajustarPrazoCirurgico(request, env, usuario);
   if (path === "/api/admin/central/prazo/liberar-agora" && request.method === "POST") return liberarAgendaCirurgicaAgora(request, env, usuario);
 
   if (path === "/api/admin/central/cirurgia/agendar" && request.method === "POST") return agendarDataCirurgiaAdmin(request, env, usuario);
-  if (path === "/api/admin/central/cirurgia/pagamento" && request.method === "POST") return confirmarPagamentoCirurgia(request, env, usuario);
+  if (path === "/api/admin/central/cirurgia/pagamento" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoFinanceira(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return confirmarPagamentoCirurgia(request, env, usuario);
+  }
   if (path === "/api/admin/central/cirurgia/data" && request.method === "POST") return abrirBloquearData(request, env, "datas_liberacao_financeira");
 
   return null;
