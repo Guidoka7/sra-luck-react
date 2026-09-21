@@ -369,6 +369,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname.startsWith("/api/admin/")) {
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+      const bad = bloquearCrossSite(request);
+      if (bad) return bad;
+    }
     const denied = await exigirAdmin(request, env);
     if (denied) return denied;
   }
@@ -417,6 +421,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname.startsWith("/api/cliente/") && url.pathname !== "/api/cliente/config-publica") {
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+      const bad = bloquearCrossSite(request);
+      if (bad) return bad;
+    }
     const bloqueio = await exigirClienteComAcesso(request, env);
     if (bloqueio) return bloqueio;
   }
