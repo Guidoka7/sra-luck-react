@@ -94,6 +94,59 @@ async function gerarChaveRateLimitIdentificador(secret: string, contexto: string
   return hmacRateLimit(secret, `${contexto}:identificador:${identificador}`);
 }
 
+async function exigirClienteComAcesso(request: Request, env: Env): Promise<Response | null> {
+  if (!env.CLIENTE_SESSION_SECRET) {
+    return json({ erro: "Serviço temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+  }
+
+  const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+  if (!payload) {
+    return json({ erro: "Sessão expirada." }, 401, { "Cache-Control": "no-store" });
+  }
+
+  try {
+    const db = createServiceSupabaseClient(env);
+    const { data: cliente, error } = await db
+      .from("clientes")
+      .select("id,ativo,acesso_app_liberado")
+      .eq("id", payload.clienteId)
+      .maybeSingle();
+
+    if (error) {
+      requestLogger(request).error("Falha ao revalidar autorização da cliente", {
+        action: "client.session.revalidate",
+        actorType: "cliente",
+        actorId: await pseudonymizeActorId(payload.clienteId, env),
+        eventCode: "CLIENT_SESSION_REVALIDATE_FAILED",
+        statusCode: 503,
+        error,
+      });
+      return json({ erro: "Não foi possível validar o acesso agora." }, 503, { "Cache-Control": "no-store" });
+    }
+
+    if (!cliente?.ativo || !cliente?.acesso_app_liberado) {
+      requestLogger(request).warn("Sessão da cliente sem autorização ativa", {
+        action: "client.session.revalidate",
+        actorType: "cliente",
+        actorId: await pseudonymizeActorId(payload.clienteId, env),
+        eventCode: "CLIENT_SESSION_ACCESS_REVOKED",
+        statusCode: 403,
+      });
+      return json({ erro: "Seu acesso ao aplicativo não está disponível." }, 403, { "Cache-Control": "no-store" });
+    }
+
+    return null;
+  } catch (error) {
+    requestLogger(request).error("Exceção ao revalidar autorização da cliente", {
+      action: "client.session.revalidate",
+      eventCode: "CLIENT_SESSION_REVALIDATE_EXCEPTION",
+      statusCode: 503,
+      error,
+    });
+    return json({ erro: "Não foi possível validar o acesso agora." }, 503, { "Cache-Control": "no-store" });
+  }
+}
+
 async function loginCliente(request: Request, env: Env) {
   const log = requestLogger(request).child({ action: "client.auth.login", actorType: "anonymous" });
   const bad = bloquearCrossSite(request);
@@ -149,7 +202,7 @@ async function loginCliente(request: Request, env: Env) {
     const cpfFormatado = formatarCpf(cpfLimpo);
     const { data: cliente, error: clienteError } = await supabase
       .from("clientes")
-      .select("id,ativo")
+      .select("id,ativo,acesso_app_liberado")
       .in("cpf", cpfFormatado ? [cpfLimpo, cpfFormatado] : [cpfLimpo])
       .eq("data_nascimento", nascimento)
       .maybeSingle();
@@ -168,14 +221,14 @@ async function loginCliente(request: Request, env: Env) {
       return json({ erro: "CPF ou data de nascimento não encontrados. Confira os dados ou fale com a Sra. Luck." }, 401);
     }
     const clientLog = log.child({ actorType: "cliente", actorId: await pseudonymizeActorId(cliente.id, env) });
-    if (!cliente.ativo) {
+    if (!cliente.ativo || !cliente.acesso_app_liberado) {
       const [falhaIp, falhaCpf] = await Promise.all([
         supabase.rpc("login_registrar_falha", { p_chave: keyIp, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS }),
         supabase.rpc("login_registrar_falha", { p_chave: keyCpf, p_max_falhas: MAX_TENTATIVAS_CLIENTE_POR_CPF, p_janela_segundos: JANELA_SEGUNDOS }),
       ]);
-      if (falhaIp.error || falhaCpf.error) clientLog.warn("Acesso inativo e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: falhaIp.error ?? falhaCpf.error });
-      clientLog.warn("Login recusado para cliente inativa", { eventCode: "CLIENT_LOGIN_INACTIVE", statusCode: 403 });
-      return json({ erro: "Seu acesso está temporariamente indisponível. Fale com a Sra. Luck." }, 403);
+      if (falhaIp.error || falhaCpf.error) clientLog.warn("Acesso indisponível e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: falhaIp.error ?? falhaCpf.error });
+      clientLog.warn("Login recusado para cliente sem acesso ativo ao aplicativo", { eventCode: "CLIENT_LOGIN_ACCESS_DENIED", statusCode: 403 });
+      return json({ erro: "Seu acesso ao aplicativo não está disponível. Fale com a Sra. Luck." }, 403);
     }
 
     const [clearIp, clearCpf] = await Promise.all([
@@ -343,15 +396,29 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (monitor) return monitor;
 
   if (url.pathname === "/api/cliente/session" && request.method === "GET") {
-    if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503);
+    if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503, { "Cache-Control": "no-store" });
     const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
-    return json(payload ? { autenticado: true, clienteId: payload.clienteId } : { autenticado: false }, 200, { "Cache-Control": "no-store" });
+    if (!payload) return json({ autenticado: false }, 200, { "Cache-Control": "no-store" });
+
+    const bloqueio = await exigirClienteComAcesso(request, env);
+    if (bloqueio) {
+      return json({ autenticado: false }, bloqueio.status, {
+        "Cache-Control": "no-store",
+        ...(bloqueio.status === 401 || bloqueio.status === 403 ? { "Set-Cookie": clearSessionCookie(secure) } : {}),
+      });
+    }
+    return json({ autenticado: true, clienteId: payload.clienteId }, 200, { "Cache-Control": "no-store" });
   }
 
   if (url.pathname === "/api/cliente/logout" && request.method === "POST") {
     const bad = bloquearCrossSite(request);
     if (bad) return bad;
     return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(secure), "Cache-Control": "no-store" });
+  }
+
+  if (url.pathname.startsWith("/api/cliente/") && url.pathname !== "/api/cliente/config-publica") {
+    const bloqueio = await exigirClienteComAcesso(request, env);
+    if (bloqueio) return bloqueio;
   }
 
   const push = await clientPushApi(request, env);
