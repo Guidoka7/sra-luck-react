@@ -68,7 +68,7 @@ function erroPadrao(error: any, mapa: Record<string, string>) {
     if (mensagem.includes(codigo)) return json({ erro: texto }, 409);
   }
   console.error("Falha na Central de acompanhamento:", error);
-  return json({ erro: mensagem || "Não foi possível concluir a operação." }, 500);
+  return json({ erro: "Não foi possível concluir a operação." }, 500);
 }
 
 const ERROS_CIRURGIA = {
@@ -479,8 +479,9 @@ async function confirmarPrevisao(request: Request, env: Env, usuario: string) {
 async function registrarComparecimento(request: Request, env: Env, usuario: string) {
   const body = await parseBody(request);
   const agendamentoId = typeof body.agendamentoId === "string" ? body.agendamentoId : "";
-  const compareceu = body.compareceu !== false;
   if (!agendamentoId) return json({ erro: "Agendamento não informado." }, 400);
+  if (typeof body.compareceu !== "boolean") return json({ erro: "Informe explicitamente se a cliente compareceu." }, 400);
+  const compareceu = body.compareceu;
   const db = createServiceSupabaseClient(env);
   const { error } = await db.rpc("agenda_registrar_comparecimento", { p_agendamento_id: agendamentoId, p_compareceu: compareceu, p_usuario: usuario });
   if (error) return erroPadrao(error, ERROS_CIRURGIA);
@@ -490,8 +491,9 @@ async function registrarComparecimento(request: Request, env: Env, usuario: stri
 async function registrarQuitacao(request: Request, env: Env, usuario: string) {
   const body = await parseBody(request);
   const agendamentoId = typeof body.agendamentoId === "string" ? body.agendamentoId : "";
-  const recebido = body.recebido !== false;
   if (!agendamentoId) return json({ erro: "Agendamento não informado." }, 400);
+  if (typeof body.recebido !== "boolean") return json({ erro: "Informe explicitamente se a quitação foi recebida." }, 400);
+  const recebido = body.recebido;
   const db = createServiceSupabaseClient(env);
   const idempotencyKey = `central-v46:${agendamentoId}:${Date.now()}`;
   const { error } = await db.rpc("agenda_registrar_quitacao", { p_agendamento_id: agendamentoId, p_recebido: recebido, p_usuario: usuario, p_idempotency_key: idempotencyKey });
@@ -553,9 +555,11 @@ async function confirmarPagamentoCirurgia(request: Request, env: Env, usuario: s
 async function abrirBloquearData(request: Request, env: Env, tabela: "datas" | "datas_liberacao_financeira") {
   const body = await parseBody(request);
   const data = typeof body.data === "string" ? body.data : "";
-  const bloquear = body.acao === "bloquear";
+  const acao = body.acao;
   const vagas = Number(body.vagasTotais);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return json({ erro: "Informe uma data válida." }, 400);
+  if (acao !== "liberar" && acao !== "bloquear") return json({ erro: "A ação deve ser liberar ou bloquear." }, 400);
+  const bloquear = acao === "bloquear";
   const db = createServiceSupabaseClient(env);
   const payload: Record<string, unknown> = {
     data,
