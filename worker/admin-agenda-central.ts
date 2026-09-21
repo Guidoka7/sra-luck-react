@@ -2,6 +2,7 @@ import { exigirAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { agoraSaoPaulo } from "./surgery-release";
 import { getCookie } from "./session";
+import { requiredPaid } from "./agenda-elegibilidade";
 
 /**
  * V46 — Central de acompanhamento. Construído em cima da "Agenda
@@ -76,12 +77,6 @@ const ERROS_CIRURGIA = {
   DATA_INDISPONIVEL: "Essa data não está mais disponível.",
 };
 
-function requiredPaid(totalParcelas: number): number {
-  const tabela: Record<number, number> = { 12: 8, 18: 11, 24: 15, 36: 26, 48: 39, 60: 48, 72: 58 };
-  if (tabela[totalParcelas] != null) return tabela[totalParcelas];
-  const percent = [12, 18, 24].includes(totalParcelas) ? 60 : totalParcelas === 36 ? 70 : 80;
-  return Math.ceil((totalParcelas * percent) / 100);
-}
 
 function prazoCirurgico(comparecimentoEm: string | null, quitacaoEm: string | null, ajusteDias: number): string | null {
   if (!comparecimentoEm || !quitacaoEm) return null;
@@ -127,7 +122,7 @@ async function visaoGeral(env: Env) {
   const hoje = agoraSaoPaulo().data;
 
   const { data: clientes, error: erroClientes } = await db.from("clientes")
-    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,custeio_confirmado_em,status_cirurgia")
+    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
     .eq("ativo", true)
     .order("nome_completo", { ascending: true });
   if (erroClientes) return json({ erro: erroClientes.message }, 500);
@@ -189,7 +184,11 @@ async function visaoGeral(env: Env) {
       estagio = "financialRelease";
     } else if (dataTermos) {
       estagio = "termsConfirmed";
-    } else if (cliente.status_revisao_financeira != null) {
+    } else if (cliente.liberacao_financeira_solicitada_em != null) {
+      // V46: SEM solicitação explícita, mesmo já elegível, a cliente
+      // permanece em preEligibility — status_revisao_financeira/
+      // financeiro_confirmado_em não são usados aqui de propósito (ver
+      // comentário em migration_064 sobre por que são conceitos diferentes).
       estagio = "financialReview";
     } else {
       estagio = "preEligibility";
@@ -200,6 +199,7 @@ async function visaoGeral(env: Env) {
       nome: cliente.nome_completo,
       cpf: cliente.cpf,
       procedimento: cliente.procedimento,
+      liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em ?? null,
       cartaDeCredito: Number(agendamento?.valor_contrato ?? cliente.valor_contrato ?? 0),
       totalParcelas: parcelas.total || cliente.quantidade_parcelas || 0,
       parcelasPagas: parcelas.pagas,
@@ -230,7 +230,7 @@ async function visaoGeral(env: Env) {
 async function clienteCentral(env: Env, clienteId: string) {
   const db = createServiceSupabaseClient(env);
   const { data: cliente, error: erroCliente } = await db.from("clientes")
-    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,custeio_confirmado_em,status_cirurgia")
+    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
     .eq("id", clienteId)
     .maybeSingle();
   if (erroCliente) return json({ erro: erroCliente.message }, 500);
@@ -261,7 +261,7 @@ async function clienteCentral(env: Env, clienteId: string) {
   else if (agendamento?.data_cirurgia) estagio = "surgeryConfirmed";
   else if (dataTermos && dataTermos <= agoraSaoPaulo().data) estagio = "financialRelease";
   else if (dataTermos) estagio = "termsConfirmed";
-  else if (cliente.status_revisao_financeira != null) estagio = "financialReview";
+  else if (cliente.liberacao_financeira_solicitada_em != null) estagio = "financialReview";
   else estagio = "preEligibility";
 
   return json({
@@ -271,6 +271,7 @@ async function clienteCentral(env: Env, clienteId: string) {
       nome: cliente.nome_completo,
       cpf: cliente.cpf,
       procedimento: cliente.procedimento,
+      liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em ?? null,
       cartaDeCredito: Number(agendamento?.valor_contrato ?? cliente.valor_contrato ?? 0),
       totalParcelas: total,
       parcelasPagas: pagas,

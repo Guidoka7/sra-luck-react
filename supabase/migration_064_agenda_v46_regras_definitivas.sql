@@ -72,6 +72,19 @@ exception when duplicate_object then null; end $$;
 create index if not exists idx_agendamentos_processo_concluido
   on public.agendamentos (processo_concluido_em);
 
+-- clientes.status_revisao_financeira/data_atingiu_percentual (migration_061)
+-- são conceitos DIFERENTES da solicitação da cliente: eles também mudam via
+-- o fluxo de reenvio após "recusada" (worker/client-boletos.ts) e refletem
+-- o julgamento do ADMIN sobre o levantamento, não o clique da cliente. Usar
+-- um deles como proxy de "solicitou" quebraria se qualquer outro caminho
+-- tocar essas colunas no futuro. A solicitação precisa da sua própria
+-- coluna, gravada por uma única RPC.
+alter table public.clientes
+  add column if not exists liberacao_financeira_solicitada_em timestamptz;
+
+create index if not exists idx_clientes_liberacao_financeira_solicitada
+  on public.clientes (liberacao_financeira_solicitada_em);
+
 -- ----------------------------------------------------------------------------
 -- 2) Elegibilidade V46 (tiers por quantidade de parcelas), reaproveitando
 --    clientes.percentual_minimo_agendar já populado por cliente.
@@ -103,10 +116,14 @@ comment on function public.pode_agendar(uuid) is
 
 -- ----------------------------------------------------------------------------
 -- 3) Etapa 1 -> 2: solicitação explícita da cliente. Atingir o percentual
---    NÃO move sozinha para Levantamentos; só esta chamada move. Idempotente.
---    Reaproveita clientes.status_revisao_financeira/data_atingiu_percentual
---    (já usados por migration_061 para o mesmo conceito) em vez de criar
---    coluna nova.
+--    NÃO move sozinha para Levantamentos; só esta chamada move. Fonte de
+--    verdade é clientes.liberacao_financeira_solicitada_em (dedicada, não
+--    compartilhada com status_revisao_financeira/data_atingiu_percentual —
+--    ver comentário acima da coluna). Elegibilidade é revalidada aqui no
+--    servidor, nunca confiando em estado enviado pelo cliente. Idempotente
+--    e concorrência-segura via `for update`: de duas chamadas simultâneas,
+--    a segunda encontra a coluna já preenchida e não grava nada — sem
+--    timestamp conflitante, sem log duplicado.
 -- ----------------------------------------------------------------------------
 create or replace function public.cliente_solicitar_liberacao_financeira(
   p_cliente_id uuid
@@ -126,9 +143,9 @@ begin
     raise exception 'PERCENTUAL_MINIMO_NAO_ATINGIDO';
   end if;
 
-  if v_cliente.status_revisao_financeira is null then
+  if v_cliente.liberacao_financeira_solicitada_em is null then
     update public.clientes
-    set status_revisao_financeira = 'pendente',
+    set liberacao_financeira_solicitada_em = now(),
         data_atingiu_percentual = coalesce(data_atingiu_percentual, now()),
         updated_at = now()
     where id = p_cliente_id
@@ -140,7 +157,7 @@ begin
       'solicitou_liberacao_financeira_etapa1',
       'clientes',
       p_cliente_id,
-      jsonb_build_object('data_atingiu_percentual', v_cliente.data_atingiu_percentual)
+      jsonb_build_object('liberacao_financeira_solicitada_em', v_cliente.liberacao_financeira_solicitada_em)
     );
   end if;
 

@@ -72,15 +72,20 @@ order by 1, 2;
 -- 3) Colunas que a 064 vai ADICIONAR — devem estar AUSENTES agora (se já
 --    existirem, alguém rodou algo parecido antes; confira antes de seguir).
 -- ----------------------------------------------------------------------------
-select column_name, data_type
+select 'agendamentos' as tabela, column_name, data_type
 from information_schema.columns
 where table_schema = 'public' and table_name = 'agendamentos'
   and column_name in (
     'termos_responsavel','agenda_cirurgica_liberada_manualmente','agenda_cirurgica_liberada_por',
     'agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em',
     'pagamento_cirurgia_confirmado_por','processo_concluido_em'
-  );
--- Esperado: 0 linhas (nenhuma dessas 7 colunas deve existir ainda).
+  )
+union all
+select 'clientes', column_name, data_type
+from information_schema.columns
+where table_schema = 'public' and table_name = 'clientes'
+  and column_name = 'liberacao_financeira_solicitada_em';
+-- Esperado: 0 linhas (nenhuma dessas 8 colunas deve existir ainda).
 
 -- ----------------------------------------------------------------------------
 -- 4) Funções BASE que a 064 usa via CREATE OR REPLACE ou chama internamente
@@ -184,9 +189,14 @@ begin
   );
 
   select count(*) into v_ja_existe_nova_coluna
-  from information_schema.columns
-  where table_schema = 'public' and table_name = 'agendamentos'
-    and column_name in ('termos_responsavel','agenda_cirurgica_liberada_manualmente','agenda_cirurgica_liberada_por','agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em','pagamento_cirurgia_confirmado_por','processo_concluido_em');
+  from (
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'agendamentos'
+      and column_name in ('termos_responsavel','agenda_cirurgica_liberada_manualmente','agenda_cirurgica_liberada_por','agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em','pagamento_cirurgia_confirmado_por','processo_concluido_em')
+    union all
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'clientes' and column_name = 'liberacao_financeira_solicitada_em'
+  ) x;
 
   select count(*) into v_ja_existe_nova_funcao
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace

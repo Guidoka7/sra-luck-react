@@ -20,6 +20,9 @@ interface HomeTabProps {
   agendaLiberada: boolean;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
   observacaoRevisaoFinanceira?: string | null;
+  /** Fonte de verdade real: clientes.liberacao_financeira_solicitada_em
+   * (coluna dedicada) — nunca derivado de statusRevisaoFinanceira. */
+  liberacaoFinanceiraSolicitada: boolean;
   custeioAprovado: boolean;
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
@@ -42,6 +45,7 @@ export function HomeTab({
   agendaLiberada,
   statusRevisaoFinanceira,
   observacaoRevisaoFinanceira,
+  liberacaoFinanceiraSolicitada,
   custeioAprovado,
   confirmando,
   onEscolherData,
@@ -69,6 +73,7 @@ export function HomeTab({
         agendaLiberada={agendaLiberada}
         statusRevisaoFinanceira={statusRevisaoFinanceira}
         observacaoRevisaoFinanceira={observacaoRevisaoFinanceira}
+        liberacaoFinanceiraSolicitada={liberacaoFinanceiraSolicitada}
         custeioAprovado={custeioAprovado}
         confirmando={confirmando}
         onEscolherData={onEscolherData}

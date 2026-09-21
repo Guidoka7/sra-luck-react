@@ -22,12 +22,18 @@ interface AgendaHomeProps {
   agendaLiberada: boolean;
   statusRevisaoFinanceira: StatusRevisaoFinanceira;
   observacaoRevisaoFinanceira?: string | null;
+  /** Fonte de verdade real da solicitação (clientes.liberacao_financeira_
+   * solicitada_em) — NUNCA derivado de statusRevisaoFinanceira ou
+   * financeiro_confirmado_em, que são conceitos diferentes (julgamento do
+   * admin sobre o levantamento, não o clique da cliente). */
+  liberacaoFinanceiraSolicitada: boolean;
   custeioAprovado: boolean;
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
   onCusteioSelecionado?: () => void | Promise<void>;
   /** Chamado depois que a cliente solicita a liberação financeira, para
-   * recarregar os dados (statusRevisaoFinanceira deixa de ser nulo). */
+   * recarregar os dados reais (liberacaoFinanceiraSolicitada vem do backend
+   * no próximo GET, nunca é setado localmente). */
   onLiberacaoSolicitada?: () => void | Promise<void>;
 }
 
@@ -57,6 +63,7 @@ export function AgendaHome({
   agendaLiberada,
   statusRevisaoFinanceira,
   observacaoRevisaoFinanceira,
+  liberacaoFinanceiraSolicitada,
   custeioAprovado,
   confirmando,
   onEscolherData,
@@ -108,7 +115,7 @@ export function AgendaHome({
           parcelasPagas={parcelasPagas}
           parcelasNecessarias={parcelasNecessarias}
           datas={datasDisponiveis}
-          etapa={!podeAgendar ? "percentual" : statusRevisaoFinanceira ? "levantamento" : "elegivel"}
+          etapa={!podeAgendar ? "percentual" : liberacaoFinanceiraSolicitada ? "levantamento" : "elegivel"}
           onLiberacaoSolicitada={onLiberacaoSolicitada}
         />
       ) : !custeioAprovado ? (

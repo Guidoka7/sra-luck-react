@@ -29,9 +29,9 @@ select
   (select count(*) from public.agendamentos where processo_concluido_em is not null) as processos_concluidos;
 
 -- ----------------------------------------------------------------------------
--- 2) As 7 colunas novas devem existir agora, com os tipos/defaults certos.
+-- 2) As 8 colunas novas devem existir agora, com os tipos/defaults certos.
 -- ----------------------------------------------------------------------------
-select column_name, data_type, is_nullable, column_default
+select 'agendamentos' as tabela, column_name, data_type, is_nullable, column_default
 from information_schema.columns
 where table_schema = 'public' and table_name = 'agendamentos'
   and column_name in (
@@ -39,10 +39,15 @@ where table_schema = 'public' and table_name = 'agendamentos'
     'agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em',
     'pagamento_cirurgia_confirmado_por','processo_concluido_em'
   )
-order by column_name;
--- Esperado: 7 linhas. agenda_cirurgica_liberada_manualmente = boolean/not
+union all
+select 'clientes', column_name, data_type, is_nullable, column_default
+from information_schema.columns
+where table_schema = 'public' and table_name = 'clientes' and column_name = 'liberacao_financeira_solicitada_em'
+order by 1, 2;
+-- Esperado: 8 linhas. agenda_cirurgica_liberada_manualmente = boolean/not
 -- null/false; agenda_cirurgica_prazo_ajuste_dias = integer/not null/0;
--- as demais timestamptz/text, nullable.
+-- as demais timestamptz/text, nullable — incluindo clientes.liberacao_
+-- financeira_solicitada_em (a fonte de verdade da solicitação da Etapa 1).
 
 -- ----------------------------------------------------------------------------
 -- 3) As 8 funções novas devem existir com a assinatura esperada.
@@ -82,6 +87,20 @@ select
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public' and p.proname = 'pode_agendar';
 -- Esperado: usa_tiered_por_cliente = true.
+
+-- ----------------------------------------------------------------------------
+-- 5b) cliente_solicitar_liberacao_financeira() precisa gravar na coluna
+--     DEDICADA liberacao_financeira_solicitada_em, e NÃO pode usar
+--     status_revisao_financeira como proxy da solicitação — são conceitos
+--     diferentes (ver comentário na migration).
+-- ----------------------------------------------------------------------------
+select
+  pg_get_functiondef(p.oid) ilike '%liberacao_financeira_solicitada_em%' as usa_coluna_dedicada,
+  pg_get_functiondef(p.oid) ilike '%set status_revisao_financeira%' as grava_status_revisao_suspeito,
+  pg_get_functiondef(p.oid) as definicao
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname = 'cliente_solicitar_liberacao_financeira';
+-- Esperado: usa_coluna_dedicada = true; grava_status_revisao_suspeito = false.
 
 -- ----------------------------------------------------------------------------
 -- 6) agenda_tentar_liberar_cirurgia precisa citar a regra de 5 dias úteis
@@ -156,11 +175,18 @@ declare
   v_prazo_ok boolean;
   v_teto_previsao_ok boolean;
   v_teto_reserva_ok boolean;
+  v_solicitacao_dedicada_ok boolean;
+  v_solicitacao_usa_status_revisao boolean;
 begin
   select count(*) into v_colunas_novas
-  from information_schema.columns
-  where table_schema = 'public' and table_name = 'agendamentos'
-    and column_name in ('termos_responsavel','agenda_cirurgica_liberada_manualmente','agenda_cirurgica_liberada_por','agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em','pagamento_cirurgia_confirmado_por','processo_concluido_em');
+  from (
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'agendamentos'
+      and column_name in ('termos_responsavel','agenda_cirurgica_liberada_manualmente','agenda_cirurgica_liberada_por','agenda_cirurgica_prazo_ajuste_dias','pagamento_cirurgia_confirmado_em','pagamento_cirurgia_confirmado_por','processo_concluido_em')
+    union all
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'clientes' and column_name = 'liberacao_financeira_solicitada_em'
+  ) x;
 
   select count(*) into v_funcoes_novas
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -182,12 +208,21 @@ begin
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'agenda_reservar_cirurgia';
 
-  if v_colunas_novas < 7 then v_problemas := v_problemas || format('so %s/7 colunas novas foram criadas', v_colunas_novas); end if;
+  select
+    pg_get_functiondef(p.oid) ilike '%liberacao_financeira_solicitada_em%',
+    pg_get_functiondef(p.oid) ilike '%set status_revisao_financeira%'
+  into v_solicitacao_dedicada_ok, v_solicitacao_usa_status_revisao
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'cliente_solicitar_liberacao_financeira';
+
+  if v_colunas_novas < 8 then v_problemas := v_problemas || format('so %s/8 colunas novas foram criadas', v_colunas_novas); end if;
   if v_funcoes_novas < 8 then v_problemas := v_problemas || format('so %s/8 funcoes novas foram criadas', v_funcoes_novas); end if;
   if coalesce(v_pode_agendar_ok, false) is not true then v_problemas := v_problemas || 'pode_agendar nao referencia percentual_minimo_agendar'; end if;
   if coalesce(v_prazo_ok, false) is not true then v_problemas := v_problemas || 'agenda_tentar_liberar_cirurgia nao referencia calcular_prazo_cirurgico_v46'; end if;
   if coalesce(v_teto_previsao_ok, false) is not true then v_problemas := v_problemas || 'agenda_confirmar_previsao sem advisory lock'; end if;
   if coalesce(v_teto_reserva_ok, false) is not true then v_problemas := v_problemas || 'agenda_reservar_cirurgia sem advisory lock'; end if;
+  if coalesce(v_solicitacao_dedicada_ok, false) is not true then v_problemas := v_problemas || 'cliente_solicitar_liberacao_financeira nao usa a coluna dedicada liberacao_financeira_solicitada_em'; end if;
+  if coalesce(v_solicitacao_usa_status_revisao, false) is true then v_problemas := v_problemas || 'cliente_solicitar_liberacao_financeira ainda grava status_revisao_financeira (conceito errado)'; end if;
 
   if array_length(v_problemas, 1) is null then
     raise notice 'RESULTADO: MIGRATION APLICADA CORRETAMENTE';

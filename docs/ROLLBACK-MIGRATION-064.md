@@ -23,6 +23,21 @@ Em `public.agendamentos`:
 
 Mais uma constraint (`agendamentos_prazo_ajuste_check`, `CHECK (agenda_cirurgica_prazo_ajuste_dias >= 0)`) e um índice (`idx_agendamentos_processo_concluido`).
 
+Em `public.clientes`:
+
+| Coluna | Tipo | Default |
+|---|---|---|
+| `liberacao_financeira_solicitada_em` | timestamptz | null |
+
+Mais um índice (`idx_clientes_liberacao_financeira_solicitada`). Esta é a
+**única fonte de verdade** de "a cliente solicitou a liberação financeira"
+(Etapa 1 → 2). Deliberadamente **não** reaproveita `status_revisao_
+financeira`/`financeiro_confirmado_em` — são conceitos diferentes (o
+julgamento do admin sobre o levantamento, não o clique da cliente), e podem
+mudar por outros caminhos (ex.: reenvio automático após "recusada" em
+`worker/client-boletos.ts`), o que quebraria a garantia de "atingir o
+percentual não move sozinha para Levantamentos" se fossem a mesma coluna.
+
 ### Funções substituídas (`CREATE OR REPLACE`)
 
 Estas já existiam (migrations 060/061, aplicadas via `feat/cliente-detail-drawer`, não commitadas em `main`). A 064 troca o **corpo**, não a assinatura:
@@ -131,12 +146,16 @@ passaram por elas.
 
 ### 2. Colunas adicionadas — normalmente NÃO precisam ser removidas
 
-As 7 colunas novas são aditivas, nullable (exceto as duas com default
+As 8 colunas novas (7 em `agendamentos` + `clientes.liberacao_financeira_
+solicitada_em`) são aditivas, nullable (exceto as duas com default
 `false`/`0`, que são inertes até alguma função nova escrever nelas). Reverter
 as 4 funções acima já faz o sistema parar de lê-las/escrevê-las via as RPCs
-antigas. Só remova as colunas se houver certeza absoluta de que nada mais no
-código (worker/frontend) ainda as referencia — e mesmo assim, prefira manter
-até uma limpeza posterior deliberada, porque:
+antigas — mas note que `liberacao_financeira_solicitada_em` só é lida/
+gravada pela função NOVA `cliente_solicitar_liberacao_financeira` (não há
+versão antiga dela para reverter; reverter = simplesmente parar de chamá-la,
+via rollback do deploy do worker). Só remova as colunas se houver certeza
+absoluta de que nada mais no código (worker/frontend) ainda as referencia —
+e mesmo assim, prefira manter até uma limpeza posterior deliberada, porque:
 
 - `DROP COLUMN` é destrutivo e perde qualquer dado já gravado nelas (ex.:
   `processo_concluido_em` de uma cirurgia já paga);
@@ -159,6 +178,8 @@ drop index if exists idx_agendamentos_processo_concluido;
 -- alter table public.agendamentos drop column if exists pagamento_cirurgia_confirmado_em;
 -- alter table public.agendamentos drop column if exists pagamento_cirurgia_confirmado_por;
 -- alter table public.agendamentos drop column if exists processo_concluido_em;
+drop index if exists idx_clientes_liberacao_financeira_solicitada;
+-- alter table public.clientes drop column if exists liberacao_financeira_solicitada_em;
 ```
 
 As linhas de `DROP COLUMN` estão deliberadamente comentadas. Não descomentar

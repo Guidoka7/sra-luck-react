@@ -26,7 +26,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   if (!s) return json({ erro: "Sessão expirada." }, 401);
   const supabase = createServiceSupabaseClient(env);
   const { data: cliente } = await supabase.from("clientes")
-    .select("id,nome_completo,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia,data_atingiu_percentual")
+    .select("id,nome_completo,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia,data_atingiu_percentual,liberacao_financeira_solicitada_em")
     .eq("id", s.clienteId)
     .single();
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
@@ -142,10 +142,15 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     cliente: { id: cliente.id, nome: cliente.nome_completo, procedimento: cliente.procedimento },
     elegibilidade: {
       elegivel: Boolean(elegivel),
-      // V46: atingir o percentual não move sozinha para Levantamentos.
-      // status_revisao_financeira só existe depois do clique explícito em
-      // "Solicitar liberação financeira" (cliente_solicitar_liberacao_financeira).
-      liberacaoFinanceiraSolicitadaEm: cliente.status_revisao_financeira != null ? (cliente.data_atingiu_percentual ?? null) : null,
+      // V46: atingir o percentual não move sozinha para Levantamentos. Fonte
+      // de verdade é a coluna dedicada clientes.liberacao_financeira_
+      // solicitada_em (gravada só por cliente_solicitar_liberacao_
+      // financeira) — nunca status_revisao_financeira/financeiro_confirmado_
+      // em, que são conceitos diferentes (julgamento do admin, não o clique
+      // da cliente) e podem mudar por outros caminhos (ex.: reenvio após
+      // "recusada" em worker/client-boletos.ts).
+      liberacaoFinanceiraSolicitada: Boolean(cliente.liberacao_financeira_solicitada_em),
+      liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em ?? null,
     },
     termosAguardandoNovaEscolha: Boolean(cliente.financeiro_confirmado_em) && !ativo,
     financeiro: {
@@ -421,18 +426,22 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
  * solicitação e move a cliente para a fila de Levantamentos no admin.
  *
  * Chama a RPC `cliente_solicitar_liberacao_financeira`
- * (migration_064_agenda_v46_regras_definitivas.sql), que reaproveita
- * `clientes.status_revisao_financeira`/`data_atingiu_percentual` — os
- * mesmos campos que migration_061 já usa para este conceito — em vez de
- * uma coluna nova. Idempotente: a própria RPC não regrava se já solicitado.
+ * (migration_064_agenda_v46_regras_definitivas.sql), que grava em
+ * `clientes.liberacao_financeira_solicitada_em` — coluna DEDICADA, não
+ * compartilhada com `status_revisao_financeira`/`financeiro_confirmado_em`
+ * (conceitos diferentes: julgamento do admin, não o clique da cliente).
+ * Elegibilidade é revalidada no servidor dentro da RPC, nunca confiando em
+ * nada enviado pelo cliente. Idempotente e concorrência-segura (a RPC usa
+ * `for update`): duas chamadas simultâneas resultam em um único timestamp
+ * e um único registro de auditoria.
  */
 export async function solicitarLiberacaoEtapa1(request: Request, env: Env): Promise<Response> {
   const s = await sessao(request, env);
   if (!s) return json({ erro: "Sessão expirada." }, 401);
 
   const supabase = createServiceSupabaseClient(env);
-  const jaSolicitadaAntes = await supabase.from("clientes").select("status_revisao_financeira").eq("id", s.clienteId).maybeSingle();
-  const jaSolicitado = Boolean(jaSolicitadaAntes.data?.status_revisao_financeira);
+  const jaSolicitadaAntes = await supabase.from("clientes").select("liberacao_financeira_solicitada_em").eq("id", s.clienteId).maybeSingle();
+  const jaSolicitado = Boolean(jaSolicitadaAntes.data?.liberacao_financeira_solicitada_em);
 
   const { data: cliente, error } = await supabase.rpc("cliente_solicitar_liberacao_financeira", { p_cliente_id: s.clienteId });
   if (error) {
@@ -443,5 +452,5 @@ export async function solicitarLiberacaoEtapa1(request: Request, env: Env): Prom
     return json({ erro: "Não foi possível registrar a solicitação." }, 500);
   }
 
-  return json({ ok: true, liberacaoFinanceiraSolicitadaEm: (cliente as any)?.data_atingiu_percentual ?? null, jaSolicitado });
+  return json({ ok: true, liberacaoFinanceiraSolicitada: true, liberacaoFinanceiraSolicitadaEm: (cliente as any)?.liberacao_financeira_solicitada_em ?? null, jaSolicitado });
 }

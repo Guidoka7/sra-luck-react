@@ -32,6 +32,7 @@ type AgendamentoAgenda = {
 
 type AgendaData = {
   cliente: { id: string; nome: string; procedimento: string | null };
+  elegibilidade: { elegivel: boolean; liberacaoFinanceiraSolicitada: boolean; liberacaoFinanceiraSolicitadaEm: string | null };
   financeiro: { statusCirurgia: string | null };
   solicitacaoLiberacaoFinanceira: { id: string; status: StatusCusteio } | null;
   agendamentoAtivo: AgendamentoAgenda | null;
@@ -187,6 +188,7 @@ export function AgendaPage() {
             agendaLiberada={boletos.agenda_liberada}
             statusRevisaoFinanceira={boletos.status_revisao_financeira}
             observacaoRevisaoFinanceira={boletos.observacao_revisao_financeira}
+            liberacaoFinanceiraSolicitada={agenda.elegibilidade.liberacaoFinanceiraSolicitada}
             custeioAprovado={custeioAprovado}
             confirmando={confirmando}
             onEscolherData={escolherData}
