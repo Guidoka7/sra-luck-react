@@ -62,6 +62,18 @@ async function exigirPermissaoFinanceira(adminId: string, env: Env): Promise<Res
   }
 }
 
+async function exigirPermissaoAgenda(adminId: string, env: Env): Promise<Response | null> {
+  try {
+    const colaborador = await buscarColaboradorAdminAtivo(adminId, env);
+    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.AGENDA_GERENCIAR)) {
+      return json({ erro: "Seu papel não tem permissão para gerenciar a agenda." }, 403);
+    }
+    return null;
+  } catch {
+    return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+  }
+}
+
 function erroPadrao(error: any, mapa: Record<string, string>) {
   const mensagem = String(error?.message ?? "");
   for (const [codigo, texto] of Object.entries(mapa)) {
@@ -560,29 +572,73 @@ export async function adminAgendaCentral(request: Request, env: Env): Promise<Re
   if (path === "/api/admin/central/termos" && request.method === "GET") return agendaTermos(url, env);
   if (path === "/api/admin/central/cirurgia" && request.method === "GET") return agendaCirurgia(url, env);
 
-  if (path === "/api/admin/central/termos/responsavel" && request.method === "POST") return definirResponsavelTermos(request, env, usuario);
-  if (path === "/api/admin/central/termos/devolver-escolha" && request.method === "POST") return liberarTermosParaNovaEscolha(request, env, usuario);
-  if (path === "/api/admin/central/termos/reagendar" && request.method === "POST") return reagendarTermosAgora(request, env, usuario);
-  if (path === "/api/admin/central/termos/data" && request.method === "POST") return abrirBloquearData(request, env, "datas");
+  if (path === "/api/admin/central/termos/responsavel" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return definirResponsavelTermos(request, env, usuario);
+  }
+  if (path === "/api/admin/central/termos/devolver-escolha" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return liberarTermosParaNovaEscolha(request, env, usuario);
+  }
+  if (path === "/api/admin/central/termos/reagendar" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return reagendarTermosAgora(request, env, usuario);
+  }
+  if (path === "/api/admin/central/termos/data" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return abrirBloquearData(request, env, "datas");
+  }
 
-  if (path === "/api/admin/central/previsao" && request.method === "POST") return confirmarPrevisao(request, env, usuario);
-  if (path === "/api/admin/central/comparecimento" && request.method === "POST") return registrarComparecimento(request, env, usuario);
+  if (path === "/api/admin/central/previsao" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return confirmarPrevisao(request, env, usuario);
+  }
+  if (path === "/api/admin/central/comparecimento" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return registrarComparecimento(request, env, usuario);
+  }
   if (path === "/api/admin/central/quitacao" && request.method === "POST") {
     const semPermissao = await exigirPermissaoFinanceira(sessao.adminId, env);
     if (semPermissao) return semPermissao;
     return registrarQuitacao(request, env, usuario);
   }
-  if (path === "/api/admin/central/liberar-tentativa" && request.method === "POST") return tentarLiberarCirurgia(request, env, usuario);
-  if (path === "/api/admin/central/prazo/ajustar" && request.method === "POST") return ajustarPrazoCirurgico(request, env, usuario);
-  if (path === "/api/admin/central/prazo/liberar-agora" && request.method === "POST") return liberarAgendaCirurgicaAgora(request, env, usuario);
+  if (path === "/api/admin/central/liberar-tentativa" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return tentarLiberarCirurgia(request, env, usuario);
+  }
+  if (path === "/api/admin/central/prazo/ajustar" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return ajustarPrazoCirurgico(request, env, usuario);
+  }
+  if (path === "/api/admin/central/prazo/liberar-agora" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return liberarAgendaCirurgicaAgora(request, env, usuario);
+  }
 
-  if (path === "/api/admin/central/cirurgia/agendar" && request.method === "POST") return agendarDataCirurgiaAdmin(request, env, usuario);
+  if (path === "/api/admin/central/cirurgia/agendar" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return agendarDataCirurgiaAdmin(request, env, usuario);
+  }
   if (path === "/api/admin/central/cirurgia/pagamento" && request.method === "POST") {
     const semPermissao = await exigirPermissaoFinanceira(sessao.adminId, env);
     if (semPermissao) return semPermissao;
     return confirmarPagamentoCirurgia(request, env, usuario);
   }
-  if (path === "/api/admin/central/cirurgia/data" && request.method === "POST") return abrirBloquearData(request, env, "datas_liberacao_financeira");
+  if (path === "/api/admin/central/cirurgia/data" && request.method === "POST") {
+    const semPermissao = await exigirPermissaoAgenda(sessao.adminId, env);
+    if (semPermissao) return semPermissao;
+    return abrirBloquearData(request, env, "datas_liberacao_financeira");
+  }
 
   return null;
 }
