@@ -38,15 +38,8 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     .order("created_at", { ascending: false });
   let ativo: any = (agendamentos ?? []).find((a: any) => a.status === "confirmado") ?? null;
   const concluido = (agendamentos ?? []).find((a: any) => a.status === "realizado") ?? null;
-  // agenda_registrar_comparecimento/quitacao só tentam liberar no momento
-  // do registro; se o prazo de 5 dias úteis só se completa depois, nada
-  // re-tenta sozinho (sem cron). A cliente não pode ficar presa esperando
-  // um admin abrir a Central primeiro — reprocessa aqui também.
-  if (ativo && ativo.comparecimento_status === "compareceu" && ativo.quitacao_status === "paga" && !ativo.agenda_cirurgica_liberada_em) {
-    await supabase.rpc("agenda_tentar_liberar_cirurgia", { p_agendamento_id: ativo.id, p_usuario: "sistema:auto-retry" });
-    const { data: relido } = await supabase.from("agendamentos").select("agenda_cirurgica_liberada_em").eq("id", ativo.id).maybeSingle();
-    if (relido) ativo = { ...ativo, agenda_cirurgica_liberada_em: relido.agenda_cirurgica_liberada_em };
-  }
+  // A liberação automática após os 5 dias úteis é processada pelo cron do
+  // banco (migration_065). Este GET é estritamente somente leitura.
   const agendamentoCorrente: any = ativo ?? concluido ?? null;
   // Fonte de verdade da liberação é agendamentos.agenda_cirurgica_liberada_em
   // (gravado por agenda_tentar_liberar_cirurgia/agenda_cirurgica_liberar_manual
