@@ -111,24 +111,9 @@ function adicionarDiasUteis(dataIso: string, dias: number): string {
   return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`;
 }
 
-/**
- * agenda_registrar_comparecimento/agenda_registrar_quitacao só disparam
- * agenda_tentar_liberar_cirurgia no MOMENTO do registro. Se ambos já
- * estavam confirmados e o prazo de 5 dias úteis só se completa depois
- * (sem nova ação de comparecimento/quitação naquele momento), nada mais
- * re-tenta a liberação sozinho — não há cron. Por isso a Visão Geral
- * reprocessa, a cada carregamento, todo agendamento na fila de Liberação
- * financeira com comparecimento+quitação confirmados e ainda não liberado;
- * a própria RPC é idempotente e só libera quando o prazo é realmente
- * atingido (ou nunca, se ainda faltar).
- */
-async function reprocessarLiberacoesPendentes(db: ReturnType<typeof createServiceSupabaseClient>, agendamentos: any[]) {
-  const pendentes = (agendamentos ?? []).filter(
-    (a) => a.status === "confirmado" && a.comparecimento_status === "compareceu" && a.quitacao_status === "paga" && !a.agenda_cirurgica_liberada_em,
-  );
-  if (!pendentes.length) return;
-  await Promise.all(pendentes.map((a) => db.rpc("agenda_tentar_liberar_cirurgia", { p_agendamento_id: a.id, p_usuario: "sistema:auto-retry" })));
-}
+// A liberação automática após o prazo V46 é processada pelo cron do banco
+// (migration_065). GETs desta API são somente leitura: visualizar a Central
+// nunca deve causar mutação de estado.
 
 // ----------------------------------------------------------------------------
 // Visão geral: 5 filas operacionais.
@@ -155,20 +140,7 @@ async function visaoGeral(env: Env) {
   ]);
   if (erroAgendamentos) return json({ erro: erroAgendamentos.message }, 500);
 
-  await reprocessarLiberacoesPendentes(db, agendamentosBrutos ?? []);
-  // Após o reprocessamento, re-lê os campos que a RPC pode ter alterado
-  // (agenda_cirurgica_liberada_em) em vez de confiar na leitura já feita.
-  const idsRelevantes = (agendamentosBrutos ?? [])
-    .filter((a: any) => a.comparecimento_status === "compareceu" && a.quitacao_status === "paga" && !a.agenda_cirurgica_liberada_em)
-    .map((a: any) => a.id);
-  let agendamentos = agendamentosBrutos ?? [];
-  if (idsRelevantes.length) {
-    const { data: atualizados } = await db.from("agendamentos")
-      .select("id,agenda_cirurgica_liberada_em")
-      .in("id", idsRelevantes);
-    const atualizadosPorId = new Map((atualizados ?? []).map((a: any) => [a.id, a.agenda_cirurgica_liberada_em]));
-    agendamentos = agendamentos.map((a: any) => atualizadosPorId.has(a.id) ? { ...a, agenda_cirurgica_liberada_em: atualizadosPorId.get(a.id) } : a);
-  }
+  const agendamentos = agendamentosBrutos ?? [];
 
   const agendamentoPorCliente = new Map<string, any>();
   for (const a of agendamentos ?? []) {
@@ -261,12 +233,7 @@ async function clienteCentral(env: Env, clienteId: string) {
       .limit(1),
     db.from("boletos").select("status").eq("cliente_id", clienteId),
   ]);
-  let agendamento: any = (agendamentos ?? [])[0] ?? null;
-  if (agendamento && agendamento.comparecimento_status === "compareceu" && agendamento.quitacao_status === "paga" && !agendamento.agenda_cirurgica_liberada_em) {
-    await db.rpc("agenda_tentar_liberar_cirurgia", { p_agendamento_id: agendamento.id, p_usuario: "sistema:auto-retry" });
-    const { data: relido } = await db.from("agendamentos").select("agenda_cirurgica_liberada_em").eq("id", agendamento.id).maybeSingle();
-    if (relido) agendamento = { ...agendamento, agenda_cirurgica_liberada_em: relido.agenda_cirurgica_liberada_em };
-  }
+  const agendamento: any = (agendamentos ?? [])[0] ?? null;
   const dataTermos = agendamento ? one(agendamento.datas)?.data ?? null : null;
   const total = (boletos ?? []).length || cliente.quantidade_parcelas || 0;
   const pagas = (boletos ?? []).filter((b: any) => b.status === "pago").length;
