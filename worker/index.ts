@@ -1,7 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
-import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
+import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoEtapa1, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
 import { clientPushApi } from "./client-push";
@@ -13,6 +13,7 @@ import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
 import { adminSurgeryFlow } from "./admin-surgery-flow";
+import { adminAgendaCentral } from "./admin-agenda-central";
 import { monitoramentoErros } from "./monitoramento-erros";
 import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
@@ -335,6 +336,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (bad) return bad;
     return solicitarLiberacaoFinanceira(request, env);
   }
+  if (url.pathname === "/api/cliente/agenda/solicitar-liberacao" && request.method === "POST") {
+    const bad = bloquearCrossSite(request);
+    if (bad) return bad;
+    return solicitarLiberacaoEtapa1(request, env);
+  }
   if (url.pathname === "/api/cliente/remarcar-agendamento" && request.method === "POST") {
     const bad = bloquearCrossSite(request);
     if (bad) return bad;
@@ -347,6 +353,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (adminAgendamento) return adminAgendamento;
   const cirurgiaAdmin = await adminSurgeryFlow(request, env);
   if (cirurgiaAdmin) return cirurgiaAdmin;
+  const centralAdmin = await adminAgendaCentral(request, env);
+  if (centralAdmin) return centralAdmin;
 
   if (url.pathname === "/api/cliente/boletos" && request.method === "GET") return handleClienteBoletos(request, env);
   const boletoMatch = url.pathname.match(/^\/api\/cliente\/boletos\/([^/]+)\/(anexar|arquivo|comprovante)$/);

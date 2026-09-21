@@ -1,6 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
-import { agoraSaoPaulo, calcularLiberacaoCirurgica } from "./surgery-release";
+import { agoraSaoPaulo } from "./surgery-release";
 
 const COOKIE_NAME = "cliente_session";
 const HORARIOS_VALIDOS = new Set(["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]);
@@ -26,23 +26,26 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   if (!s) return json({ erro: "Sessão expirada." }, 401);
   const supabase = createServiceSupabaseClient(env);
   const { data: cliente } = await supabase.from("clientes")
-    .select("id,nome_completo,procedimento,valor_contrato,status_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia")
+    .select("id,nome_completo,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia,data_atingiu_percentual")
     .eq("id", s.clienteId)
     .single();
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
   const { data: agendamentos } = await supabase.from("agendamentos")
-    .select("id,data_id,status,horario_termos,termos_assinados_em,previsao_liberacao_financeira,created_at,datas(data)")
+    .select("id,data_id,status,horario_termos,termos_assinados_em,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,data_cirurgia,valor_contrato,agenda_cirurgica_liberada_em,created_at,datas(data)")
     .eq("cliente_id", cliente.id)
     .in("status", ["confirmado", "realizado"])
     .order("created_at", { ascending: false });
   const ativo = (agendamentos ?? []).find((a: any) => a.status === "confirmado") ?? null;
   const concluido = (agendamentos ?? []).find((a: any) => a.status === "realizado") ?? null;
-  const termosConfirmados = (agendamentos ?? []).find((a: any) => Boolean(a.termos_assinados_em)) ?? null;
-  const agendaCirurgicaLiberarEm = calcularLiberacaoCirurgica(
-    (termosConfirmados as any)?.termos_assinados_em ?? null,
-    cliente.custeio_confirmado_em ?? null,
-  );
+  const agendamentoCorrente: any = ativo ?? concluido ?? null;
+  // Fonte de verdade da liberação é agendamentos.agenda_cirurgica_liberada_em
+  // (gravado por agenda_tentar_liberar_cirurgia/agenda_cirurgica_liberar_manual
+  // no backend) — nunca recalculado aqui.
+  const agendaCirurgicaLiberarEm = agendamentoCorrente?.agenda_cirurgica_liberada_em ?? null;
+  const cartaDeCredito = Number(agendamentoCorrente?.valor_contrato ?? cliente.valor_contrato ?? 0);
+
+  const { data: elegivel } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
 
   const { data: solicitacao } = await supabase.from("solicitacoes_liberacao_financeira")
     .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at,updated_at")
@@ -75,28 +78,42 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     vagasRestantes: Math.max(0, d.vagas_totais - (ocupacao.get(d.id) ?? 0)),
   }));
 
-  const agendaCirurgicaLiberada = Boolean(agendaCirurgicaLiberarEm && agendaCirurgicaLiberarEm <= hoje);
+  const cirurgicaLiberada = Boolean(agendaCirurgicaLiberarEm) && !agendamentoCorrente?.data_cirurgia;
   let datasCirurgiaDisponiveis: Array<{ id: string; data: string; vagasRestantes: number }> = [];
-  if (agendaCirurgicaLiberada) {
+  if (cirurgicaLiberada) {
     const { data: datasCirurgia } = await supabase.from("datas_liberacao_financeira")
-      .select("id,data,status")
+      .select("id,data,status,fechamento_manual,vagas_totais")
       .eq("status", "disponivel")
+      .eq("fechamento_manual", false)
       .gte("data", hoje)
       .order("data", { ascending: true });
     const { data: cirurgias } = await supabase.from("agendamentos")
-      .select("previsao_liberacao_financeira")
+      .select("data_cirurgia")
       .in("status", ["confirmado", "realizado"])
-      .not("previsao_liberacao_financeira", "is", null);
+      .not("data_cirurgia", "is", null);
     const ocupacaoCirurgia = new Map<string, number>();
     for (const a of cirurgias ?? []) {
-      const data = (a as any).previsao_liberacao_financeira as string | null;
-      if (data) ocupacaoCirurgia.set(data, (ocupacaoCirurgia.get(data) ?? 0) + 1);
+      const data = (a as any).data_cirurgia as string | null;
+      if (!data) continue;
+      ocupacaoCirurgia.set(data, (ocupacaoCirurgia.get(data) ?? 0) + 1);
     }
-    datasCirurgiaDisponiveis = (datasCirurgia ?? []).map((d: any) => ({
-      id: d.id,
-      data: d.data,
-      vagasRestantes: Math.max(0, 1 - (ocupacaoCirurgia.get(d.data) ?? 0)),
+    // V46 §17: a cliente não vê mês em que sua carta de crédito não caiba no
+    // teto de R$ 100.000 — usa a mesma função SQL do backend
+    // (agenda_comprometimento_mes), não uma soma recalculada aqui.
+    const mesesDatas = Array.from(new Set((datasCirurgia ?? []).map((d: any) => String(d.data).slice(0, 7))));
+    const comprometidoPorMes = new Map<string, number>();
+    await Promise.all(mesesDatas.map(async (mes) => {
+      const { data: comprometido } = await supabase.rpc("agenda_comprometimento_mes", { p_mes: `${mes}-01`, p_excluir_cliente: cliente.id });
+      comprometidoPorMes.set(mes, Number(comprometido ?? 0));
     }));
+    datasCirurgiaDisponiveis = (datasCirurgia ?? [])
+      .filter((d: any) => (comprometidoPorMes.get(String(d.data).slice(0, 7)) ?? 0) + cartaDeCredito <= 100000)
+      .map((d: any) => ({
+        id: d.id,
+        data: d.data,
+        vagasRestantes: Math.max(0, Number(d.vagas_totais ?? 1) - (ocupacaoCirurgia.get(d.data) ?? 0)),
+      }))
+      .filter((d) => d.vagasRestantes > 0);
   }
 
   const mapAgendamento = (a: any) => a ? {
@@ -104,12 +121,22 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     data: a.datas?.data,
     horario: a.horario_termos ? String(a.horario_termos).slice(0, 5) : null,
     termosAssinadosEm: a.termos_assinados_em ?? null,
-    previsaoLiberacaoFinanceira: a.previsao_liberacao_financeira ?? null,
+    comparecimentoStatus: a.comparecimento_status ?? "pendente",
+    quitacaoStatus: a.quitacao_status ?? "pendente",
+    previsaoCirurgia: a.previsao_cirurgia ?? null,
     status: a.status,
   } : null;
 
   return json({
     cliente: { id: cliente.id, nome: cliente.nome_completo, procedimento: cliente.procedimento },
+    elegibilidade: {
+      elegivel: Boolean(elegivel),
+      // V46: atingir o percentual não move sozinha para Levantamentos.
+      // status_revisao_financeira só existe depois do clique explícito em
+      // "Solicitar liberação financeira" (cliente_solicitar_liberacao_financeira).
+      liberacaoFinanceiraSolicitadaEm: cliente.status_revisao_financeira != null ? (cliente.data_atingiu_percentual ?? null) : null,
+    },
+    termosAguardandoNovaEscolha: Boolean(cliente.financeiro_confirmado_em) && !ativo,
     financeiro: {
       statusRevisao: cliente.status_revisao_financeira ?? null,
       saldoRestante: cliente.financeiro_saldo_restante ?? null,
@@ -127,7 +154,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     datasDisponiveis: datas,
     datasCirurgiaDisponiveis,
     agendaCirurgicaLiberarEm,
-    agendaCirurgicaLiberada,
+    agendaCirurgicaLiberada: cirurgicaLiberada,
     dataTesteAtiva: dataValida(testDate) ? hoje : null,
   });
 }
@@ -177,58 +204,37 @@ export async function agendar(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, agendamentoId, data: dataAlvo?.data, horario });
 }
 
+const HORARIOS_CIRURGIA_VALIDOS = new Set(["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"]);
+
 export async function agendarCirurgia(request: Request, env: Env): Promise<Response> {
   const s = await sessao(request, env);
   if (!s) return json({ erro: "Sessão expirada." }, 401);
   let body: any;
   try { body = await request.json(); } catch { return json({ erro: "Requisição inválida." }, 400); }
   const data = body?.data as string | undefined;
+  const horario = body?.horario as string | undefined;
   if (!data || !dataValida(data)) return json({ erro: "Escolha a data da cirurgia." }, 400);
+  if (!horario || !HORARIOS_CIRURGIA_VALIDOS.has(horario)) return json({ erro: "Escolha um horário válido." }, 400);
 
   const supabase = createServiceSupabaseClient(env);
-  const { data: cliente } = await supabase.from("clientes")
-    .select("id,custeio_confirmado_em")
-    .eq("id", s.clienteId)
-    .single();
-  if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
-
-  const { data: agendamento } = await supabase.from("agendamentos")
-    .select("id,data_id,status,termos_assinados_em,previsao_liberacao_financeira,datas(data)")
-    .eq("cliente_id", cliente.id)
-    .in("status", ["realizado", "confirmado"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!agendamento) return json({ erro: "Primeiro escolha a data da assinatura dos termos." }, 409);
-  if (!agendamento.termos_assinados_em) return json({ erro: "Os termos ainda não foram assinados." }, 409);
-  if (!cliente.custeio_confirmado_em) return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
-
-  const liberacao = calcularLiberacaoCirurgica(agendamento.termos_assinados_em, cliente.custeio_confirmado_em);
-  if (!liberacao) return json({ erro: "Não foi possível calcular a liberação da agenda cirúrgica." }, 409);
-  if (data > liberacao) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${liberacao.split("-").reverse().join("/")}).`, agendaCirurgicaLiberarEm: liberacao }, 409);
-
-  const { data: solicitacao } = await supabase.from("solicitacoes_liberacao_financeira")
-    .select("id")
-    .eq("cliente_id", cliente.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!solicitacao) return json({ erro: "Informe primeiro como será realizado o custeio do valor restante." }, 409);
-
-  const { error } = await supabase.rpc("agendar_cirurgia_data", { p_agendamento_id: agendamento.id, p_data: data });
+  // agenda_reservar_cirurgia (migration_060/064) já valida, na mesma
+  // transação: agenda liberada, previsão como piso, capacidade da data e o
+  // teto mensal de R$ 100.000 — nenhuma dessas regras é recalculada aqui.
+  const { error } = await supabase.rpc("agenda_reservar_cirurgia", { p_cliente_id: s.clienteId, p_data: data, p_horario: horario, p_usuario: `cliente:${s.clienteId}` });
   if (error) {
     const m = error.message ?? "";
-    if (m.includes("TERMOS_NAO_ASSINADOS")) return json({ erro: "Os termos ainda não foram assinados." }, 409);
-    if (m.includes("SALDO_NAO_QUITADO")) return json({ erro: "A quitação do saldo ainda não foi confirmada." }, 409);
-    if (m.includes("PRAZO_CIRURGICO_EXCEDIDO")) return json({ erro: `Essa data excede o prazo máximo de liberação (até ${liberacao.split("-").reverse().join("/")}).` }, 409);
+    if (m.includes("AGENDA_CIRURGICA_NAO_LIBERADA")) return json({ erro: "Sua agenda cirúrgica ainda não foi liberada." }, 409);
+    if (m.includes("ANTES_DA_PREVISAO")) return json({ erro: "Escolha uma data igual ou posterior à previsão confirmada pela equipe." }, 409);
+    if (m.includes("DATA_PASSADA")) return json({ erro: "Escolha uma data futura." }, 409);
     if (m.includes("DATA_CIRURGIA_INDISPONIVEL")) return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
-    if (m.includes("DATA_CIRURGIA_OCUPADA")) return json({ erro: "Essa data acabou de ser ocupada. Escolha outra data disponível." }, 409);
-    if (m.includes("AGENDAMENTO_NAO_ENCONTRADO")) return json({ erro: "O agendamento não está mais disponível para alteração." }, 409);
+    if (m.includes("VAGAS_ESGOTADAS")) return json({ erro: "As vagas dessa data acabaram de se esgotar." }, 409);
+    if (m.includes("HORARIO_OCUPADO")) return json({ erro: "Esse horário acabou de ser ocupado nessa data." }, 409);
+    if (m.includes("HORARIO_INVALIDO")) return json({ erro: "Escolha um horário válido." }, 409);
+    if (m.includes("TETO_MENSAL_EXCEDIDO")) return json({ erro: "O teto financeiro mensal para cirurgias já foi atingido nesse mês. Escolha outra data." }, 409);
     console.error("Falha ao confirmar data da cirurgia:", error);
     return json({ erro: "Não foi possível confirmar a data da cirurgia." }, 500);
   }
-  await supabase.from("solicitacoes_liberacao_financeira").update({ updated_at: new Date().toISOString() }).eq("id", solicitacao.id);
-  return json({ ok: true, data, agendaCirurgicaLiberarEm: liberacao });
+  return json({ ok: true, data, horario });
 }
 
 const FORMAS_CUSTEIO = ["cartao", "pix", "cheques", "boleto_100"] as const;
@@ -339,7 +345,7 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
 
   const supabase = createServiceSupabaseClient(env);
   const { data: agendamento } = await supabase.from("agendamentos")
-    .select("id,data_id,horario_termos,termos_assinados_em,previsao_liberacao_financeira,datas(data)")
+    .select("id,data_id,horario_termos,termos_assinados_em,agenda_cirurgica_liberada_em,previsao_cirurgia,datas(data)")
     .eq("cliente_id", s.clienteId)
     .eq("status", "confirmado")
     .maybeSingle();
@@ -364,14 +370,13 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
     if ((count ?? 0) >= dataAlvo.vagas_totais) return json({ erro: "As vagas dessa data acabaram de se esgotar." }, 409);
     dataSolicitada = dataAlvo.data;
   } else {
-    const { data: cliente } = await supabase.from("clientes").select("custeio_confirmado_em").eq("id", s.clienteId).maybeSingle();
-    const liberacao = calcularLiberacaoCirurgica((agendamento as any).termos_assinados_em ?? null, cliente?.custeio_confirmado_em ?? null);
-    if (!liberacao) return json({ erro: "A liberação da agenda cirúrgica ainda não foi calculada para o seu contrato." }, 409);
-    if (dataEscolhida! < liberacao) return json({ erro: `A cirurgia só pode ser agendada a partir de ${liberacao.split("-").reverse().join("/")}.`, agendaCirurgicaLiberarEm: liberacao }, 409);
-    const { data: dataAlvo } = await supabase.from("datas_liberacao_financeira").select("id,data,status").eq("data", dataEscolhida!).maybeSingle();
-    if (!dataAlvo || dataAlvo.status !== "disponivel") return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
-    const { count } = await supabase.from("agendamentos").select("id", { count: "exact", head: true }).eq("status", "confirmado").eq("previsao_liberacao_financeira", dataEscolhida!).neq("id", agendamento.id);
-    if ((count ?? 0) > 0) return json({ erro: "Essa data acabou de ser ocupada. Escolha outra data disponível." }, 409);
+    if (!(agendamento as any).agenda_cirurgica_liberada_em) return json({ erro: "Sua agenda cirúrgica ainda não foi liberada." }, 409);
+    const previsao = (agendamento as any).previsao_cirurgia as string | null;
+    if (previsao && dataEscolhida! < previsao) return json({ erro: `A cirurgia só pode ser agendada a partir de ${previsao.split("-").reverse().join("/")}.` }, 409);
+    const { data: dataAlvo } = await supabase.from("datas_liberacao_financeira").select("id,data,status,fechamento_manual,vagas_totais").eq("data", dataEscolhida!).maybeSingle();
+    if (!dataAlvo || dataAlvo.status !== "disponivel" || dataAlvo.fechamento_manual) return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
+    const { count } = await supabase.from("agendamentos").select("id", { count: "exact", head: true }).in("status", ["confirmado", "realizado"]).eq("data_cirurgia", dataEscolhida!).neq("id", agendamento.id);
+    if ((count ?? 0) >= dataAlvo.vagas_totais) return json({ erro: "Essa data acabou de ser ocupada. Escolha outra data disponível." }, 409);
     dataSolicitada = dataEscolhida!;
   }
 
@@ -396,4 +401,36 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
     solicitacao,
     mensagem: "Sua solicitação de alteração foi enviada para análise. O prazo é de até 5 dias úteis. Sua agenda atual permanece inalterada até a autorização.",
   });
+}
+
+/**
+ * V46 — Etapa 1 (Elegibilidade e solicitação): atingir o percentual mínimo
+ * de parcelas pagas NÃO move a cliente para Levantamentos sozinho. Só este
+ * clique explícito, feito pela própria cliente no app, registra a
+ * solicitação e move a cliente para a fila de Levantamentos no admin.
+ *
+ * Chama a RPC `cliente_solicitar_liberacao_financeira`
+ * (migration_064_agenda_v46_regras_definitivas.sql), que reaproveita
+ * `clientes.status_revisao_financeira`/`data_atingiu_percentual` — os
+ * mesmos campos que migration_061 já usa para este conceito — em vez de
+ * uma coluna nova. Idempotente: a própria RPC não regrava se já solicitado.
+ */
+export async function solicitarLiberacaoEtapa1(request: Request, env: Env): Promise<Response> {
+  const s = await sessao(request, env);
+  if (!s) return json({ erro: "Sessão expirada." }, 401);
+
+  const supabase = createServiceSupabaseClient(env);
+  const jaSolicitadaAntes = await supabase.from("clientes").select("status_revisao_financeira").eq("id", s.clienteId).maybeSingle();
+  const jaSolicitado = Boolean(jaSolicitadaAntes.data?.status_revisao_financeira);
+
+  const { data: cliente, error } = await supabase.rpc("cliente_solicitar_liberacao_financeira", { p_cliente_id: s.clienteId });
+  if (error) {
+    const m = error.message ?? "";
+    if (m.includes("CLIENTE_NAO_ENCONTRADA")) return json({ erro: "Cliente não encontrada." }, 404);
+    if (m.includes("PERCENTUAL_MINIMO_NAO_ATINGIDO")) return json({ erro: "Você ainda não atingiu a quantidade mínima de parcelas pagas para solicitar a liberação financeira." }, 409);
+    console.error("Falha ao solicitar liberação financeira (Etapa 1):", error);
+    return json({ erro: "Não foi possível registrar a solicitação." }, 500);
+  }
+
+  return json({ ok: true, liberacaoFinanceiraSolicitadaEm: (cliente as any)?.data_atingiu_percentual ?? null, jaSolicitado });
 }
