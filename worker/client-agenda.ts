@@ -71,8 +71,9 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
       .order("created_at", { ascending: false })
     : { data: [] as any[] };
 
-  const testDate = getCookie(request, "sra_luck_test_date") ?? undefined;
-  const hoje = dataValida(testDate) ? testDate! : agoraSaoPaulo().data;
+  // Produção: o backend sempre usa a data real de São Paulo. Nenhum cookie
+  // ou controle do frontend pode alterar o relógio usado para disponibilidade.
+  const hoje = agoraSaoPaulo().data;
   const { data: datasDisponiveis } = await supabase.from("datas")
     .select("id,data,vagas_totais")
     .eq("status", "disponivel")
@@ -171,7 +172,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     datasCirurgiaDisponiveis,
     agendaCirurgicaLiberarEm,
     agendaCirurgicaLiberada: cirurgicaLiberada,
-    dataTesteAtiva: dataValida(testDate) ? hoje : null,
+    dataTesteAtiva: null,
   });
 }
 
