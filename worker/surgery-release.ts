@@ -1,14 +1,17 @@
 const TIME_ZONE = "America/Sao_Paulo";
 
 /**
- * Fase 2 (2026-09-14): a janela de liberação da agenda cirúrgica deixou de
- * ser "5 dias úteis" e passou a ser um PRAZO MÁXIMO de 90 dias corridos.
- * A liberação real pode ocorrer antes, conforme capacidade do mês
- * (configuracoes.meta_orcamento_mensal é só referência de planejamento,
- * nunca trava) — este valor é apenas o teto que os endpoints/telas usam
- * para não deixar a cliente aguardar indefinidamente.
+ * V46 (2026-09-21): a janela de liberação da agenda cirúrgica deixou de ser
+ * um PRAZO MÁXIMO de 90 dias corridos (Fase 2) e voltou a ser um prazo
+ * PADRÃO de 5 dias úteis, com dois ajustes administrativos possíveis:
+ *   - extensão manual em dias úteis (+1/+3/+5), acumulada por agendamento;
+ *   - liberação manual antecipada, que ignora o prazo calculado.
+ * A contagem só começa quando termos assinados E quitação confirmada já
+ * existem (nenhum dos dois isoladamente inicia a janela), usando o marco
+ * mais recente entre os dois eventos, e começa a valer no PRÓXIMO dia útil
+ * após esse marco.
  */
-export const PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS_CORRIDOS = 90;
+export const PRAZO_PADRAO_LIBERACAO_CIRURGICA_DIAS_UTEIS = 5;
 
 export function dataSaoPaulo(valor: string | Date | null | undefined): string | null {
   if (!valor) return null;
@@ -46,24 +49,57 @@ export function agoraSaoPaulo() {
   };
 }
 
-export function adicionarDiasCorridos(dataIso: string, dias: number): string {
+function parseDataIso(dataIso: string): Date {
   const match = dataIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) throw new Error("DATA_INVALIDA");
   const data = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   if (Number.isNaN(data.getTime())) throw new Error("DATA_INVALIDA");
-  data.setUTCDate(data.getUTCDate() + Math.max(0, dias));
+  return data;
+}
+
+function formatarDataIso(data: Date): string {
   return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`;
 }
 
+export function adicionarDiasCorridos(dataIso: string, dias: number): string {
+  const data = parseDataIso(dataIso);
+  data.setUTCDate(data.getUTCDate() + Math.max(0, dias));
+  return formatarDataIso(data);
+}
+
+/** Dia útil = segunda a sexta (não considera feriados). Espelha public.adicionar_dias_uteis (migration_028). */
+export function ehDiaUtil(dataIso: string): boolean {
+  const diaSemana = parseDataIso(dataIso).getUTCDay();
+  return diaSemana !== 0 && diaSemana !== 6;
+}
+
+export function adicionarDiasUteis(dataIso: string, dias: number): string {
+  const data = parseDataIso(dataIso);
+  let adicionados = 0;
+  while (adicionados < Math.max(0, dias)) {
+    data.setUTCDate(data.getUTCDate() + 1);
+    const diaSemana = data.getUTCDay();
+    if (diaSemana !== 0 && diaSemana !== 6) adicionados++;
+  }
+  return formatarDataIso(data);
+}
+
+export function proximoDiaUtil(dataIso: string): string {
+  return adicionarDiasUteis(dataIso, 1);
+}
+
 /**
- * Calcula o PRAZO MÁXIMO (teto) da liberação da agenda cirúrgica.
+ * Calcula o prazo PADRÃO (5 dias úteis) da liberação da agenda cirúrgica,
+ * sem considerar extensões manuais nem liberação antecipada — essas duas
+ * camadas ficam em `calcularPrazoCirurgicoComAjuste`, que é o que os
+ * endpoints administrativos devem efetivamente usar.
  *
- * Regra vigente (Fase 2): só existe janela quando termos assinados E
- * quitação confirmada já existem — nenhum dos dois isoladamente inicia a
- * contagem. A data-base é a mais recente entre os dois eventos, e o teto é
- * essa data + 90 dias corridos. A liberação real (escolhida pelo admin
- * dentro da capacidade do mês) pode acontecer em qualquer data até esse
- * teto — este valor não é a data automática da cirurgia.
+ * Regra: só existe janela quando termos assinados E quitação confirmada já
+ * existem — nenhum dos dois isoladamente inicia a contagem. A data-base é a
+ * mais recente entre os dois eventos, e o prazo é essa data-base + 5 dias
+ * úteis (a contagem, em termos de exibição, "começa" no próximo dia útil
+ * após a data-base — ver `proximoDiaUtil` — mas o prazo final é sempre
+ * data-base + 5 dias úteis, sem contar duas vezes o primeiro dia útil).
  */
 export function calcularLiberacaoCirurgica(
   termosAssinadosEm: string | null | undefined,
@@ -73,5 +109,39 @@ export function calcularLiberacaoCirurgica(
   const quitacao = dataSaoPaulo(custeioConfirmadoEm);
   if (!termos || !quitacao) return null;
   const base = termos >= quitacao ? termos : quitacao;
-  return adicionarDiasCorridos(base, PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS_CORRIDOS);
+  return adicionarDiasUteis(base, PRAZO_PADRAO_LIBERACAO_CIRURGICA_DIAS_UTEIS);
+}
+
+/**
+ * Aplica a extensão manual (em dias úteis, acumulada) por cima do prazo
+ * padrão. `diasExtras` vem de `agendamentos.prazo_cirurgico_dias_extras`.
+ */
+export function calcularPrazoCirurgicoComAjuste(
+  termosAssinadosEm: string | null | undefined,
+  custeioConfirmadoEm: string | null | undefined,
+  diasExtras: number | null | undefined,
+): string | null {
+  const prazoBase = calcularLiberacaoCirurgica(termosAssinadosEm, custeioConfirmadoEm);
+  if (!prazoBase) return null;
+  const extras = Math.max(0, Number(diasExtras || 0));
+  return extras > 0 ? adicionarDiasUteis(prazoBase, extras) : prazoBase;
+}
+
+/**
+ * A agenda cirúrgica está liberada quando a liberação manual antecipada foi
+ * registrada OU quando a data real (America/Sao_Paulo) já atingiu o prazo
+ * calculado (padrão + ajustes). `hojeIso` é injetável para testes; em
+ * produção deve vir de `agoraSaoPaulo().data`.
+ */
+export function agendaCirurgicaLiberada(params: {
+  termosAssinadosEm: string | null | undefined;
+  custeioConfirmadoEm: string | null | undefined;
+  diasExtras: number | null | undefined;
+  liberadaManualmenteEm: string | null | undefined;
+  hojeIso: string;
+}): boolean {
+  if (params.liberadaManualmenteEm) return true;
+  const prazo = calcularPrazoCirurgicoComAjuste(params.termosAssinadosEm, params.custeioConfirmadoEm, params.diasExtras);
+  if (!prazo) return false;
+  return params.hojeIso >= prazo;
 }
