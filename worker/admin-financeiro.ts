@@ -394,6 +394,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
     const comprovanteMatch = path.match(/^\/api\/admin\/financeiro\/recebiveis\/([^/]+)\/comprovante$/);
     if (comprovanteMatch && request.method === "POST") {
+      const colaboradorComprovante = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaboradorComprovante || !temPermissaoAdmin(colaboradorComprovante, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+        return json({ erro: "Seu papel não tem permissão para anexar comprovantes financeiros." }, 403);
+      }
       const id = decodeURIComponent(comprovanteMatch[1]);
       const form = await request.formData();
       const arquivo = form.get("arquivo");
