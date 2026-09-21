@@ -13,8 +13,8 @@ import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento"
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 
 interface AgendaHomeProps {
-  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
+  agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
+  agendamentoConcluido: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   quantidadeParcelas: number | null;
   parcelasPagas: number;
@@ -26,6 +26,9 @@ interface AgendaHomeProps {
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
   onCusteioSelecionado?: () => void | Promise<void>;
+  /** Chamado depois que a cliente solicita a liberação financeira, para
+   * recarregar os dados (statusRevisaoFinanceira deixa de ser nulo). */
+  onLiberacaoSolicitada?: () => void | Promise<void>;
 }
 
 function brDate(value: string | null | undefined) {
@@ -58,6 +61,7 @@ export function AgendaHome({
   confirmando,
   onEscolherData,
   onCusteioSelecionado,
+  onLiberacaoSolicitada,
 }: AgendaHomeProps) {
   const percentualContrato = percentualNecessario(quantidadeParcelas);
   const parcelasNecessarias = quantidadeParcelas ? Math.ceil((quantidadeParcelas * percentualContrato) / 100) : null;
@@ -89,7 +93,7 @@ export function AgendaHome({
         <h2 className="mt-2 font-heading text-[19px] font-semibold text-[#315F47]">Assinatura confirmada</h2>
         <p className="mt-1 text-[10.5px] font-light leading-[1.5] text-[#698273]">
           Sua assinatura foi confirmada em {brDate(agendamentoConcluido.data)}{agendamentoConcluido.horario ? ` às ${agendamentoConcluido.horario}` : ""}.
-          {agendamentoConcluido.previsaoLiberacaoFinanceira ? ` Sua cirurgia está programada para ${brDate(agendamentoConcluido.previsaoLiberacaoFinanceira)}.` : " A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
+          {agendamentoConcluido.dataCirurgia ? ` Sua cirurgia está programada para ${brDate(agendamentoConcluido.dataCirurgia)}.` : " A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
         </p>
       </Card>
       <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} />
@@ -104,7 +108,8 @@ export function AgendaHome({
           parcelasPagas={parcelasPagas}
           parcelasNecessarias={parcelasNecessarias}
           datas={datasDisponiveis}
-          etapa={podeAgendar ? "levantamento" : "percentual"}
+          etapa={!podeAgendar ? "percentual" : statusRevisaoFinanceira ? "levantamento" : "elegivel"}
+          onLiberacaoSolicitada={onLiberacaoSolicitada}
         />
       ) : !custeioAprovado ? (
         <EscolherFormaPagamento datas={datasDisponiveis} onSelecionada={onCusteioSelecionado} />

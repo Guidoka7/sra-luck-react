@@ -13,8 +13,8 @@ interface HomeTabProps {
   parcelasPagas: number;
   naoLidas: number;
   onAbrirNotificacoes: () => void;
-  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null } | null;
+  agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
+  agendamentoConcluido: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   podeAgendar: boolean;
   agendaLiberada: boolean;
@@ -24,6 +24,7 @@ interface HomeTabProps {
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
   onCusteioSelecionado?: () => void | Promise<void>;
+  onLiberacaoSolicitada?: () => void | Promise<void>;
 }
 
 export function HomeTab({
@@ -45,6 +46,7 @@ export function HomeTab({
   confirmando,
   onEscolherData,
   onCusteioSelecionado,
+  onLiberacaoSolicitada,
 }: HomeTabProps) {
   return (
     <div>
@@ -71,6 +73,7 @@ export function HomeTab({
         confirmando={confirmando}
         onEscolherData={onEscolherData}
         onCusteioSelecionado={onCusteioSelecionado}
+        onLiberacaoSolicitada={onLiberacaoSolicitada}
       />
 
       <DisciplinaCard />

@@ -10,12 +10,14 @@ export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaA
 function parseDataLocal(iso: string) { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
 function formatarData(iso: string | null) { return iso ? format(parseDataLocal(iso), "dd/MM/yyyy") : "—"; }
 const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
+const HORARIOS_CIRURGIA = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"];
 
 export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao }) => {
   const hoje = startOfDay(new Date());
   const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>([]);
   const [mesAtual, setMesAtual] = useState(() => startOfMonth(dataCirurgiaAtual ? parseDataLocal(dataCirurgiaAtual) : hoje));
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(dataCirurgiaAtual);
+  const [horarioSelecionado, setHorarioSelecionado] = useState<string>(HORARIOS_CIRURGIA[0]);
   const [confirmando, setConfirmando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [agendaLiberarEm, setAgendaLiberarEm] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
     if (modoAlteracao) { onSolicitarAlteracao?.(diaSelecionado); return; }
     setConfirmando(true); setErro(null);
     try {
-      const res = await fetch("/api/cliente/agendar-cirurgia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: diaSelecionado }) });
+      const res = await fetch("/api/cliente/agendar-cirurgia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: diaSelecionado, horario: horarioSelecionado }) });
       const resultado = await res.json();
       if (!res.ok) { setErro(resultado.erro ?? "Não foi possível confirmar a data da cirurgia."); return; }
       onConfirmada?.(resultado.data);
@@ -87,7 +89,15 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
     {!modoAlteracao && <div className="border-b border-[#F0DDDD] bg-[#FFF7F7] px-[13px] py-3"><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#B65B67]">Escolha a data da sua cirurgia</div><div className="pt-[2px] font-heading text-[15px] font-semibold text-[#7D2434]">Sua agenda cirúrgica está liberada</div><div className="pt-[2px] text-[9.5px] font-light text-[#7A6B67]">Os termos foram assinados em <b className="font-medium text-[#7D2434]">{format(parseDataLocal(dataAssinatura), "dd/MM/yyyy")}</b>. Escolha uma data liberada pela equipe.</div></div>}
     <div className="p-[13px]">
       <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={diaSelecionado} onSelecionar={selecionarDia} mudarMes={mudarMes} />
-      {diaSelecionado && <div className="mt-[11px] rounded-[12px] bg-[#F9F0EE] p-[11px] text-center"><div className="text-[10.2px] font-light text-[#7A6B67]">Você selecionou <b className="font-semibold text-[#7D2434]">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</b></div><button type="button" onClick={() => void confirmar()} disabled={confirmando} className="mt-[9px] w-full rounded-[11px] bg-[#6B1F2E] px-[13px] py-[11px] text-[11px] font-medium text-white disabled:opacity-50">{confirmando ? "Confirmando..." : modoAlteracao ? "Solicitar alteração" : "Confirmar data"}</button>{modoAlteracao && <button type="button" onClick={() => window.location.reload()} className="mt-[8px] text-[9px] font-medium text-[#8A7B77] underline">Cancelar alteração</button>}</div>}
+      {diaSelecionado && <div className="mt-[11px] rounded-[12px] bg-[#F9F0EE] p-[11px] text-center">
+        <div className="text-[10.2px] font-light text-[#7A6B67]">Você selecionou <b className="font-semibold text-[#7D2434]">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</b></div>
+        {!modoAlteracao && <label className="mt-[9px] flex items-center justify-center gap-[7px] text-[10px] text-[#7A6B67]">
+          Horário:
+          <select value={horarioSelecionado} onChange={(e) => setHorarioSelecionado(e.target.value)} className="rounded-[8px] border border-[#EADFDB] bg-white px-2 py-1 text-[10.5px] text-[#7D2434]">
+            {HORARIOS_CIRURGIA.map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
+        </label>}
+        <button type="button" onClick={() => void confirmar()} disabled={confirmando} className="mt-[9px] w-full rounded-[11px] bg-[#6B1F2E] px-[13px] py-[11px] text-[11px] font-medium text-white disabled:opacity-50">{confirmando ? "Confirmando..." : modoAlteracao ? "Solicitar alteração" : "Confirmar data"}</button>{modoAlteracao && <button type="button" onClick={() => window.location.reload()} className="mt-[8px] text-[9px] font-medium text-[#8A7B77] underline">Cancelar alteração</button>}</div>}
       {erro && <div className="mt-2 rounded-[10px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-center text-[9.5px] text-[#8F2A25]">{erro}</div>}
     </div>
   </section>;

@@ -91,7 +91,7 @@ export function MomentoEspecialCelebracao() {
         if (!agenda) return;
         const hoje = hojeDaAplicacao();
         const termos = agenda.data as string | null | undefined;
-        const liberacao = agenda.previsaoLiberacaoFinanceira as string | null | undefined;
+        const liberacao = agenda.dataCirurgia as string | null | undefined;
         const dt = termos ? diferencaEmDias(termos, hoje) : null;
         const dl = liberacao ? diferencaEmDias(liberacao, hoje) : null;
         let proximo: MomentoEspecial = null;

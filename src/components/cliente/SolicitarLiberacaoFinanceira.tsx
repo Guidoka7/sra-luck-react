@@ -51,7 +51,7 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
       const agenda = data.agendamentoAtivo ?? data.agendamentoConcluido ?? null;
       setDataAssinaturaTermos(agenda?.data ?? null);
       setHorarioTermos(agenda?.horario ?? null);
-      setDataCirurgia(agenda?.previsaoLiberacaoFinanceira ?? null);
+      setDataCirurgia(agenda?.dataCirurgia ?? null);
       setDatasTermos(data.datasDisponiveis ?? []);
     } catch {}
   }

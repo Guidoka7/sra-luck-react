@@ -14,12 +14,28 @@ import { MaisTab } from "@/pages/client/MaisTab";
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
 
+type StatusComparecimento = "pendente" | "compareceu" | "nao_compareceu";
+type StatusQuitacao = "pendente" | "paga" | "nao_realizada";
+
+type AgendamentoAgenda = {
+  id: string;
+  data: string;
+  horario: string | null;
+  termosAssinadosEm: string | null;
+  comparecimentoStatus: StatusComparecimento;
+  quitacaoStatus: StatusQuitacao;
+  previsaoCirurgia: string | null;
+  dataCirurgia: string | null;
+  horarioCirurgia: string | null;
+  status?: string;
+};
+
 type AgendaData = {
   cliente: { id: string; nome: string; procedimento: string | null };
   financeiro: { statusCirurgia: string | null };
   solicitacaoLiberacaoFinanceira: { id: string; status: StatusCusteio } | null;
-  agendamentoAtivo: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; previsaoLiberacaoFinanceira: string | null; status?: string } | null;
+  agendamentoAtivo: AgendamentoAgenda | null;
+  agendamentoConcluido: AgendamentoAgenda | null;
   datasDisponiveis: { id: string; data: string; vagasRestantes: number }[];
   agendaCirurgicaLiberada: boolean;
   agendaCirurgicaLiberarEm: string | null;
@@ -133,8 +149,8 @@ export function AgendaPage() {
   const agendaAtual = agenda.agendamentoAtivo ?? agenda.agendamentoConcluido;
   const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
   const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
-  const termosAssinados = Boolean(agenda.agendamentoConcluido);
-  const cirurgiaAgendada = Boolean(agendaAtual?.previsaoLiberacaoFinanceira);
+  const termosAssinados = agendaAtual?.comparecimentoStatus === "compareceu" || Boolean(agenda.agendamentoConcluido);
+  const cirurgiaAgendada = Boolean(agendaAtual?.dataCirurgia);
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   return (
@@ -175,6 +191,7 @@ export function AgendaPage() {
             confirmando={confirmando}
             onEscolherData={escolherData}
             onCusteioSelecionado={() => carregar(true)}
+            onLiberacaoSolicitada={() => carregar(true)}
           />
         )}
 
@@ -191,7 +208,7 @@ export function AgendaPage() {
             agendaCirurgicaLiberada={agenda.agendaCirurgicaLiberada}
             cirurgiaAgendada={cirurgiaAgendada}
             cirurgiaRealizada={cirurgiaRealizada}
-            previsaoLiberacaoFinanceira={agendaAtual?.previsaoLiberacaoFinanceira ?? null}
+            previsaoLiberacaoFinanceira={agendaAtual?.dataCirurgia ?? null}
             agendaCirurgicaLiberarEm={agenda.agendaCirurgicaLiberarEm}
             notificacoesCompactas={notificacoesState.notificacoes}
             onVerNotificacoes={() => setAba("notificacoes")}
