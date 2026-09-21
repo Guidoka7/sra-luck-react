@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -178,6 +179,17 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
   const recurso = match[2] as "parcelas" | "boletos";
   const db = createServiceSupabaseClient(env);
   const usuario = `admin:${sessao.adminId}`;
+
+  if (request.method !== "GET") {
+    try {
+      const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env);
+      if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+        return json({ erro: "Seu papel não tem permissão para alterar o plano financeiro." }, 403);
+      }
+    } catch {
+      return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+    }
+  }
 
   if (request.method === "GET") {
     const plano = await listarPlano(db, clienteId);
