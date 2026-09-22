@@ -138,7 +138,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
       acao: "cadastrou_cliente_a_partir_de_venda",
       entidade: "clientes",
       entidade_id: cliente.id,
-      detalhes: { novaVendaId: id, rdStationId: venda.rd_station_id, nomeCliente: cliente.nome_completo, escritaNoRd: false },
+      detalhes: { novaVendaId: id, rdStationId: venda.rd_station_id, escritaNoRd: false },
     });
 
     return json({ cliente, venda: { ...venda, cliente_id: cliente.id, status: "aguardando_boletos" } });
