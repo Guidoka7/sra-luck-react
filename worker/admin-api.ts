@@ -80,6 +80,54 @@ export function validarTransicaoStatusContrato(
   };
 }
 
+/** Formas de quitação aceitas no levantamento (mesmos valores de FORMAS_CUSTEIO no admin). */
+export const FORMAS_CUSTEIO_VALIDAS = ["cartao", "pix", "cheques", "boleto_100"] as const;
+
+/**
+ * Levantamento financeiro (Etapa 2): valida e monta o patch de
+ * `POST /clientes/:id/revisao-financeira`.
+ * - "aprovada" exige saldo >= 0, ao menos uma forma válida e taxa 0–100 quando
+ *   enviada; na primeira aprovação grava `financeiro_confirmado_em`.
+ * - Reaprovar um levantamento já aprovado é só edição da configuração
+ *   financeira: preserva `financeiro_confirmado_em` (marco, relatórios e
+ *   Agenda de Termos não mudam).
+ * - "recusada" mantém o comportamento anterior (divergência).
+ */
+export function montarPatchRevisaoFinanceira(
+  body: Json,
+  statusAtual: string | null,
+  agoraIso: string,
+): { erro: string } | { patch: Record<string, unknown> } {
+  const decisao = String(body.decisao ?? "");
+  if (decisao !== "aprovada" && decisao !== "recusada") return { erro: "Decisão do levantamento inválida." };
+  const patch: Record<string, unknown> = {
+    status_revisao_financeira: decisao,
+    observacao_revisao_financeira: body.observacao ? String(body.observacao).trim().slice(0, 500) : null,
+  };
+  if (decisao === "recusada") {
+    if (body.saldoRestante !== undefined) patch.financeiro_saldo_restante = Number(body.saldoRestante);
+    if (body.taxaCartao !== undefined) patch.financeiro_taxa_cartao = Number(body.taxaCartao);
+    if (body.formasCusteio !== undefined) patch.financeiro_formas_custeio = body.formasCusteio;
+    return { patch };
+  }
+  const saldo = Number(body.saldoRestante);
+  if (body.saldoRestante === undefined || body.saldoRestante === null || body.saldoRestante === "" || !Number.isFinite(saldo) || saldo < 0) {
+    return { erro: "Informe um saldo restante válido." };
+  }
+  const formas = Array.isArray(body.formasCusteio) ? [...new Set(body.formasCusteio.map((f: unknown) => String(f)))] : [];
+  if (!formas.length) return { erro: "Selecione ao menos uma forma de quitação." };
+  if (formas.some((f) => !(FORMAS_CUSTEIO_VALIDAS as readonly string[]).includes(f))) return { erro: "Forma de quitação inválida." };
+  patch.financeiro_saldo_restante = Math.round(saldo * 100) / 100;
+  patch.financeiro_formas_custeio = formas;
+  if (body.taxaCartao !== undefined && body.taxaCartao !== null) {
+    const taxa = Number(body.taxaCartao);
+    if (!Number.isFinite(taxa) || taxa < 0 || taxa > 100) return { erro: "Informe uma taxa de cartão válida." };
+    patch.financeiro_taxa_cartao = taxa;
+  }
+  if (statusAtual !== "aprovada") patch.financeiro_confirmado_em = agoraIso;
+  return { patch };
+}
+
 export async function adminApi(request: Request, env: Env): Promise<Response | null> {
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
@@ -173,7 +221,7 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   if(path==="/api/admin/datas-liberacao-financeira"&&request.method==="GET"){const {data,error}=await supabase.from("datas_liberacao_financeira").select("*").order("data",{ascending:true});if(error)return json({erro:publicError(error)},500);return json({datas:data??[]});}
   if(path==="/api/admin/previsoes-liberacao"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,previsao_liberacao_financeira,status,clientes(id,nome_completo,cpf)").not("previsao_liberacao_financeira","is",null).order("previsao_liberacao_financeira",{ascending:true});if(error)return json({previsoes:[]});return json({previsoes:data??[]});}
   if((path==="/api/admin/liberacoes-financeiras"||path==="/api/admin/solicitacoes-liberacao-financeira")&&request.method==="GET"){const table=path.includes("solicitacoes")?"solicitacoes_liberacao_financeira":"liberacoes_financeiras";const {data,error}=await supabase.from(table).select("*").order("created_at",{ascending:false});if(error)return json({erro:publicError(error)},500);return json({[path.includes("solicitacoes")?"solicitacoes":"liberacoes"]:data??[]});}
-  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request),patch:any={status_revisao_financeira:b.decisao,observacao_revisao_financeira:b.observacao??null};if(b.saldoRestante!==undefined)patch.financeiro_saldo_restante=Number(b.saldoRestante);if(b.taxaCartao!==undefined)patch.financeiro_taxa_cartao=Number(b.taxaCartao);if(b.formasCusteio!==undefined)patch.financeiro_formas_custeio=b.formasCusteio;if(b.decisao==="aprovada")patch.financeiro_confirmado_em=new Date().toISOString();const {data,error}=await supabase.from("clientes").update(patch).eq("id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({cliente:data});}
+  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request);const atual=await supabase.from("clientes").select("status_revisao_financeira").eq("id",id).maybeSingle();if(atual.error)return json({erro:publicError(atual.error)},400);if(!atual.data)return json({erro:"Cliente não encontrada."},404);const montado=montarPatchRevisaoFinanceira(b,atual.data.status_revisao_financeira??null,new Date().toISOString());if("erro" in montado)return json({erro:montado.erro},400);const {data,error}=await supabase.from("clientes").update(montado.patch).eq("id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({cliente:data});}
 
   const statusContrato=path.match(/^\/api\/admin\/clientes\/([^/]+)\/status-contrato$/);
   if(statusContrato&&request.method==="POST"){
