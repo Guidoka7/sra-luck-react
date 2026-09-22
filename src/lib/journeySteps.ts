@@ -1,3 +1,4 @@
+import { PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS } from "@/lib/clienteAgenda";
 import type { ElementType } from "react";
 import { Calendar, Clock3, CreditCard, FileSignature, HeartHandshake, PartyPopper, Sparkles } from "lucide-react";
 import { formatarDataLonga } from "./utils";
@@ -143,7 +144,7 @@ export function deriveJourneySteps({
       id: "liberacao-cirurgica", title: "Liberação da agenda da cirurgia", icon: Clock3,
       status: agendaCirurgicaLiberada ? "done" : termosAssinados ? "current" : "upcoming",
       description: !termosAssinados
-        ? "Depois da assinatura e da quitação do saldo, sua agenda da cirurgia é liberada em até 5 dias úteis (podendo ocorrer antes, a critério da equipe)."
+        ? `Depois da assinatura dos termos e da quitação do saldo, a liberação da sua agenda da cirurgia é iniciada e ocorre em até ${PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS} dias corridos (podendo ocorrer antes, a critério da equipe).`
         : agendaCirurgicaLiberada
           ? "Agenda da cirurgia liberada para você escolher a data."
           : dataAgendaCirurgicaFormatada

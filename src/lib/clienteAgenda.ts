@@ -5,6 +5,13 @@
  * seguida, em silêncio).
  */
 
+/**
+ * Prazo máximo (teto) para liberar a agenda cirúrgica, contado a partir da
+ * mais recente entre assinatura dos termos e quitação confirmada.
+ * Fonte: docs/BUSINESS-RULES.md §12 — ponto único para quando virar configuração.
+ */
+export const PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS = 90;
+
 export type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 export type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
 export type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
