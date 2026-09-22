@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 import { CirurgiaConfirmada } from "@/components/cliente/CirurgiaConfirmada";
 import { Card } from "@/components/ui/Card";
-import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
 import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
 import { AgendaBloqueadaPercentual } from "@/components/cliente/AgendaBloqueadaPercentual";
 import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLiberacaoFinanceira";
@@ -95,7 +94,7 @@ function TrilhaAgenda({ passo }: { passo: number }) {
     <div className="mx-5 mt-4 rounded-[18px] border border-[#EFE2DE] bg-white px-3 pb-3 pt-[14px] shadow-[0_5px_16px_rgba(46,36,34,.04)]" aria-label={passo >= total ? "Todas as etapas concluídas" : `Passo ${passo + 1} de ${total}: ${TRILHA_AGENDA[passo]}`}>
       <div className="relative">
         <div className="absolute left-[10%] right-[10%] top-[13px] h-[2px] rounded-full bg-[#F0E4E1]" aria-hidden="true">
-          <motion.div className="h-full rounded-full bg-gradient-to-r from-[#6B1F2E] to-[#B65B67]" initial={false} animate={{ width: `${progresso}%` }} transition={{ duration: 0.5, ease: "easeOut" }} />
+          <motion.div className="h-full rounded-full bg-[#4F8A65]" initial={false} animate={{ width: `${progresso}%` }} transition={{ duration: 0.5, ease: "easeOut" }} />
         </div>
         <ol className="relative m-0 grid list-none grid-cols-5 p-0">
           {TRILHA_AGENDA.map((nome, i) => {
@@ -104,11 +103,11 @@ function TrilhaAgenda({ passo }: { passo: number }) {
             return (
               <li key={nome} className="flex flex-col items-center gap-[6px]">
                 <span
-                  className={`relative flex h-[28px] w-[28px] items-center justify-center rounded-full text-[11px] font-semibold ${feito ? "bg-[#6B1F2E] text-white" : atual ? "border-[1.5px] border-[#6B1F2E] bg-white text-[#6B1F2E] shadow-[0_0_0_4px_rgba(182,91,103,.14)]" : "border border-[#E6D8D4] bg-[#FBF7F5] text-[#B6A6A2]"}`}
+                  className={`relative flex h-[28px] w-[28px] items-center justify-center rounded-full text-[11px] font-semibold ${feito ? "bg-[#3F7D5B] text-white shadow-[0_3px_8px_rgba(63,125,91,.22)]" : atual ? "border-[1.5px] border-[#6B1F2E] bg-white text-[#6B1F2E] shadow-[0_0_0_4px_rgba(182,91,103,.14)]" : "border border-[#E6D8D4] bg-[#FBF7F5] text-[#B6A6A2]"}`}
                 >
                   {feito ? <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3.5 7.2 2.3 2.2 4.7-4.8" /></svg> : i + 1}
                 </span>
-                <span className={`text-center text-[9.5px] leading-tight ${atual ? "font-semibold text-[#6B1F2E]" : feito ? "font-medium text-[#7A6A66]" : "font-light text-[#A99894]"}`}>{nome}</span>
+                <span className={`text-center text-[9.5px] leading-tight ${atual ? "font-semibold text-[#6B1F2E]" : feito ? "font-medium text-[#3F7D5B]" : "font-light text-[#A99894]"}`}>{nome}</span>
               </li>
             );
           })}
@@ -312,7 +311,7 @@ export function AgendaTab({
     </div>
   ) : agendamentoAtivo ? (
     <div className="animate-fadeUp">
-      <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} onCirurgiaConfirmada={onAgendaAtualizada} snapshot={snapshot} />
+      <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} onCirurgiaConfirmada={onAgendaAtualizada} snapshot={snapshot} ocultarResumoAssinatura />
     </div>
   ) : statusRevisaoFinanceira === "recusada" ? (
     <AvisoRevisaoFinanceira status="recusada" observacao={observacaoRevisaoFinanceira ?? null} />
@@ -333,14 +332,12 @@ export function AgendaTab({
     />
   ) : (
     <Card className="rounded-[18px] border border-[#CFE2D3] border-t-[3px] border-t-[#4F8A65] bg-[#FBFFFC] p-[14px] shadow-[0_10px_26px_rgba(63,125,91,.09)]">
-      <AgendaEtapasInterativas atual="data" percentual={percentualContrato} parcelasPagas={parcelasPagas} parcelasNecessarias={parcelasNecessarias} />
-      <div className="mt-[12px] border-t border-[#DDEADF] pt-[12px]">
-        {datasDisponiveis.length === 0 ? (
-          <p className="p-5 text-center text-[11px] font-light leading-[1.5] text-[#698273]">Ainda não há datas disponíveis no momento. Fale com a nossa equipe para saber mais.</p>
-        ) : (
-          <CalendarioAgendamento datas={datasDisponiveis} onConfirmar={onEscolherData} confirmando={confirmando} />
-        )}
-      </div>
+      {/* As etapas já aparecem na trilha do topo; aqui fica só o calendário. */}
+      {datasDisponiveis.length === 0 ? (
+        <p className="p-5 text-center text-[11px] font-light leading-[1.5] text-[#698273]">Ainda não há datas disponíveis no momento. Fale com a nossa equipe para saber mais.</p>
+      ) : (
+        <CalendarioAgendamento datas={datasDisponiveis} onConfirmar={onEscolherData} confirmando={confirmando} />
+      )}
     </Card>
   );
 
