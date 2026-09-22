@@ -532,16 +532,25 @@ async function oauthCallback(request: Request, env: Env) {
   const state = url.searchParams.get("state") || "";
   const adminId = await validarState(state, env.CLIENTE_SESSION_SECRET);
   if (!code || !adminId) return json({ erro: "Retorno OAuth inválido ou expirado." }, 400);
+
+  const sessaoAtual = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
+  if (!sessaoAtual || sessaoAtual.adminId !== adminId) return json({ erro: "Sessão administrativa inválida para concluir a autorização." }, 401);
+  const colaborador = await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
+  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
+    return json({ erro: "Sem permissão para concluir a autorização do RD Station." }, 403);
+  }
+
   const redirectUri = await rdCredential(env, "redirect_uri") || `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/api/integrations/rd-station/oauth/callback`;
   try {
     const token = await tokenRequest(env, { code, redirect_uri: redirectUri, grant_type: "authorization_code" });
-    await persistirTokens(env, `admin:${adminId}`, token);
+    await persistirTokens(env, colaborador.id, token);
     const db = createServiceSupabaseClient(env);
-    await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "autorizou_oauth_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { somenteLeitura: true } });
+    await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "autorizou_oauth_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { somenteLeitura: true } });
     const destino = `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/admin/integracoes?rd=conectado`;
     return Response.redirect(destino, 302);
   } catch (error) {
-    return json({ erro: "Não foi possível concluir a autorização OAuth do RD Station.", detalhe: error instanceof Error ? error.message : "Erro OAuth" }, 502);
+    console.error("Falha ao concluir OAuth do RD Station:", error);
+    return json({ erro: "Não foi possível concluir a autorização OAuth do RD Station." }, 502);
   }
 }
 
