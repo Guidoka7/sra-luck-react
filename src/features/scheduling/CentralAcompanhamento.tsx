@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ClienteZipDrawer } from "@/components/admin-zip/ClienteZipDrawer";
+import { ClienteDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
 import "./central-v46.css";
 import { centralApi, dataBr, diaSemana } from "./api";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 import { OverviewBoard } from "./OverviewBoard";
 import { TermsAgendaTab } from "./TermsAgendaTab";
 import { SurgeryAgendaTab } from "./SurgeryAgendaTab";
-import { ClienteProcessDrawer } from "./ClienteProcessDrawer";
 import { SystemDateModal } from "./SystemDateModal";
 
 type Aba = "overview" | "terms" | "surgery";
@@ -33,8 +32,10 @@ export function CentralAcompanhamento() {
   const [drawer, setDrawer] = useState<{ clienteId: string; estagio: EstagioCentral | null } | null>(null);
   const [novaCliente, setNovaCliente] = useState(false);
   const [escolherDia, setEscolherDia] = useState(false);
-  const [dataTermos, setDataTermos] = useState<string | null>(null);
-  const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);
+  // `?data=AAAA-MM-DD` (vindo de "Ver na agenda" no drawer das outras telas) só pré-seleciona o dia.
+  const dataParam = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("data") ?? "") ? searchParams.get("data") : null;
+  const [dataTermos, setDataTermos] = useState<string | null>(abaParam === "termos" ? dataParam : null);
+  const [dataCirurgia, setDataCirurgia] = useState<string | null>(abaParam === "cirurgia" ? dataParam : null);
   const [recarregarKey, setRecarregarKey] = useState(0);
 
   const carregar = useCallback(async () => {
@@ -102,7 +103,7 @@ export function CentralAcompanhamento() {
       <SurgeryAgendaTab hoje={hoje} data={dataCirurgia} onData={setDataCirurgia} recarregarKey={recarregarKey} liberadas={liberadas} cartoes={cartoes} onAbrirCliente={(id) => abrir(id)} onConsultarProcesso={(id) => abrir(id, "surgeryConfirmed")} onMudou={carregar} />
     </section>}
 
-    {drawer && hoje && <ClienteProcessDrawer key={drawer.clienteId} clienteId={drawer.clienteId} estagioOrigem={drawer.estagio} hoje={hoje}
+    {drawer && hoje && <ClienteDrawer key={drawer.clienteId} clienteId={drawer.clienteId} abaInicial="process" estagioOrigem={drawer.estagio} hoje={hoje}
       sugestoesResponsavel={sugestoesResponsavel} onClose={() => setDrawer(null)} onChanged={aoMudar}
       onIrParaAgenda={(tipo, data) => {
         if (tipo === "terms") { if (data) setDataTermos(data); setAba("terms"); }
@@ -112,6 +113,6 @@ export function CentralAcompanhamento() {
     {escolherDia && hoje && <SystemDateModal atual={diaRef ?? hoje} hoje={hoje} contagens={contagens} onClose={() => setEscolherDia(false)}
       onAplicar={(iso) => { setDataTermos(iso); setDataCirurgia(iso); }} />}
 
-    {novaCliente && <ClienteZipDrawer cliente={null} onClose={() => setNovaCliente(false)} onSalvo={() => { setNovaCliente(false); void carregar(); }} />}
+    {novaCliente && <ClienteDrawer clienteId={null} hoje={hoje} onClose={() => setNovaCliente(false)} onChanged={carregar} />}
   </div>;
 }

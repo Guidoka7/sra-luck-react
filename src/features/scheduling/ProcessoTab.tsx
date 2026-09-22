@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { Cliente } from "@/types/database";
-import type { ClienteCadastro } from "@/components/admin-zip/cliente/useClienteCadastro";
-import { ClienteComprovanteAguardando, ClienteInstallmentsSection } from "@/components/admin-zip/cliente/ClienteFinancePanel";
+import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
 import type { CartaoCliente, EstagioCentral } from "./types";
 import { ChosenDate, estadoLiberacao, faltamTexto } from "./v46Cards";
@@ -75,6 +74,8 @@ export function ProcessoTab(p: {
   registrarParcela: () => void; temParcelaAberta: boolean;
   concluirLevantamento: (d: "aprovada" | "recusada", obs?: string) => Promise<boolean>;
   irParaAgenda: (tipo: "terms" | "surgery", data: string | null) => void;
+  /** Parcelas/comprovantes reais (mesmo componente da aba Financeiro), exibidos no Levantamento. */
+  parcelas?: ReactNode;
 }) {
   const { c, real, estagio } = p;
   const historico = ordemEstagio(estagio) < ordemEstagio(real);
@@ -209,7 +210,7 @@ function OperacaoElegibilidade({ c, ocupado, registrarParcela, temParcelaAberta 
   </section>;
 }
 
-function OperacaoLevantamento({ c, cad, cadastro, form, ocupado, abrirModal }: Parameters<typeof ProcessoTab>[0]) {
+function OperacaoLevantamento({ c, cadastro, form, ocupado, abrirModal, parcelas }: Parameters<typeof ProcessoTab>[0]) {
   const concluido = c.statusRevisaoFinanceira === "aprovada";
   const formas = (cadastro.financeiro_formas_custeio ?? []) as string[];
   return <>
@@ -241,10 +242,7 @@ function OperacaoLevantamento({ c, cad, cadastro, form, ocupado, abrirModal }: P
             </div>
           </div>
         </section>}
-    <div className="zip-admin v46-embed">
-      <ClienteComprovanteAguardando cad={cad} />
-      <ClienteInstallmentsSection cad={cad} />
-    </div>
+    {parcelas}
   </>;
 }
 
@@ -456,7 +454,7 @@ function Acordeoes({ cad, eventos }: { c: CartaoCliente; cad: ClienteCadastro; e
     <details className="drawer-accordion"><summary>Documentos <span>{comprovantes.length}</span></summary><div className="accordion-body">
       {comprovantes.length ? comprovantes.map((b) => <div key={b.id} className="document-row">
         <div><b>Comprovante · parcela {b.numero_parcela}/{b.total_parcelas}</b><small>{b.data_pagamento ? `Pago em ${dataBr(b.data_pagamento)}` : "Enviado para conferência"}</small></div>
-        <a className="mini-link" href={b.comprovante_url!} target="_blank" rel="noreferrer">Abrir</a>
+        <a className="mini-link" href={cad.comprovanteHref(b)} target="_blank" rel="noreferrer">Abrir</a>
       </div>) : <div className="empty-card">Nenhum documento anexado.</div>}
     </div></details>
     <details className="drawer-accordion"><summary>Histórico financeiro <span>{financeiros.length}</span></summary><div className="accordion-body"><div className="history-list">

@@ -5,16 +5,16 @@ import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/li
 import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
-import { moedaNumero } from "./clienteUi";
+const moedaNumero = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
  * Estado e ações reais do cadastro da cliente (Perfil + Financeiro).
- * Implementação única usada por Clientes, Financeiro e pelo drawer da Central
- * de acompanhamento — antes vivia inteira dentro de ClienteZipDrawer.
+ * Implementação única usada pelo drawer compartilhado da cliente
+ * (Clientes, Financeiro e Central de acompanhamento).
  * Perfil e Financeiro compartilham estado (ex.: salvar o perfil também envia
  * carta de crédito/taxa), por isso ficam no mesmo hook.
  */
-export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }: { onSalvo: () => void; onClose: () => void }) {
+export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }: { onSalvo: (cliente?: Cliente) => void; onClose: () => void }) {
   const editando = Boolean(cliente);
 
   const [nome, setNome] = useState(cliente?.nome_completo ?? "");
@@ -24,6 +24,11 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const [email, setEmail] = useState(cliente?.email ?? "");
   const [procedimento, setProcedimento] = useState(cliente?.procedimento ?? "");
   const [observacoes, setObservacoes] = useState(cliente?.observacoes_internas ?? "");
+  const [consultora, setConsultora] = useState(cliente?.consultora ?? "");
+  const [acessoLiberado, setAcessoLiberado] = useState(Boolean(cliente?.acesso_app_liberado));
+  const [acessoLiberadoEm, setAcessoLiberadoEm] = useState<string | null>(cliente?.acesso_app_liberado_em ?? null);
+  const [liberandoAcesso, setLiberandoAcesso] = useState(false);
+  const [alterandoParcela, setAlterandoParcela] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
@@ -106,12 +111,12 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
       const r = await fetch(editando ? `/api/admin/clientes/${cliente!.id}` : "/api/admin/clientes", {
         method: editando ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nomeCompleto: nome, cpf, dataNascimento: nascimento, telefone, email, procedimento, observacoes, valorContrato: cartaNumero || undefined, taxaAdministrativaPercentual: taxaNumero || undefined }),
+        body: JSON.stringify({ nomeCompleto: nome, cpf, dataNascimento: nascimento, telefone, email, procedimento, consultora: consultora.trim() || null, observacoes, valorContrato: cartaNumero || undefined, taxaAdministrativaPercentual: taxaNumero || undefined }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar.");
       toast.success(editando ? "Perfil atualizado." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
-      onSalvo();
+      onSalvo(d.cliente ?? undefined);
       if (!editando) onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar.");
@@ -244,29 +249,80 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const proximaLiberacao = boletos.find((b) => b.status !== "pago");
   const aguardandoConferencia = boletos.find((b) => b.status === "pendente_confirmacao");
 
-  async function confirmarPagamento() {
-    if (!aguardandoConferencia) return;
+  async function confirmarPagamento(alvo: Boleto | null = aguardandoConferencia ?? null) {
+    if (!alvo) return false;
     setValidando(true);
     try {
-      await financeiroApi.validar(aguardandoConferencia.id, "confirmar", "");
+      await financeiroApi.validar(alvo.id, "confirmar", "");
       toast.success("Pagamento confirmado.");
-      void carregarBoletos();
+      await carregarBoletos();
+      void carregarPerfilExtra();
       onSalvo();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível confirmar o pagamento."); }
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível confirmar o pagamento."); return false; }
     finally { setValidando(false); }
   }
-  async function rejeitarComprovante() {
-    if (!aguardandoConferencia) return;
-    const motivo = window.prompt("Motivo da rejeição ou divergência (obrigatório):");
-    if (!motivo || !motivo.trim()) return;
+  /** Rejeição exige motivo (validado também no servidor). */
+  async function rejeitarComprovante(motivo: string, alvo: Boleto | null = aguardandoConferencia ?? null) {
+    if (!alvo) return false;
+    if (!motivo.trim()) { toast.error("Informe o motivo da rejeição."); return false; }
     setValidando(true);
     try {
-      await financeiroApi.validar(aguardandoConferencia.id, "rejeitar", motivo);
+      await financeiroApi.validar(alvo.id, "rejeitar", motivo.trim());
       toast.success("Comprovante rejeitado. Parcela voltou para aberto.");
-      void carregarBoletos();
+      await carregarBoletos();
+      void carregarPerfilExtra();
       onSalvo();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível rejeitar o comprovante."); }
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível rejeitar o comprovante."); return false; }
     finally { setValidando(false); }
+  }
+
+  /** Editar/suspender/reabrir/excluir parcela — `/api/admin/financeiro/recebiveis/:id`. */
+  async function alterarParcela(alvo: Boleto, payload: { acao: "editar" | "suspender" | "reabrir" | "excluir"; valor?: number; dataVencimento?: string; observacoes?: string }, sucesso: string) {
+    if (alterandoParcela) return false;
+    setAlterandoParcela(true);
+    try {
+      await financeiroApi.alterar(alvo.id, payload);
+      toast.success(sucesso);
+      await carregarBoletos();
+      void carregarPerfilExtra();
+      onSalvo();
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível alterar a parcela."); return false; }
+    finally { setAlterandoParcela(false); }
+  }
+  async function anexarComprovante(alvo: Boleto, arquivo: File) {
+    if (alterandoParcela) return false;
+    setAlterandoParcela(true);
+    try {
+      await financeiroApi.anexarComprovante(alvo.id, arquivo);
+      toast.success("Comprovante anexado.");
+      await carregarBoletos();
+      void carregarPerfilExtra();
+      onSalvo();
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível anexar o comprovante."); return false; }
+    finally { setAlterandoParcela(false); }
+  }
+  /** Link assinado de curta duração (o storage é privado). */
+  const comprovanteHref = (alvo: Boleto) => `/api/admin/boletos/${encodeURIComponent(alvo.id)}/comprovante`;
+
+  /** Liberação do acesso ao app — regra e requisitos validados no servidor. */
+  async function liberarAcessoApp() {
+    if (!cliente?.id || acessoLiberado || liberandoAcesso) return;
+    setLiberandoAcesso(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${encodeURIComponent(cliente.id)}/liberar-acesso-app`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível liberar o acesso ao aplicativo.");
+      setAcessoLiberado(Boolean(d.cliente?.acesso_app_liberado ?? true));
+      setAcessoLiberadoEm(d.cliente?.acesso_app_liberado_em ?? null);
+      toast.success(d.jaLiberado ? "O acesso ao aplicativo já estava liberado." : "Acesso ao aplicativo liberado.");
+      void carregarPerfilExtra();
+      onSalvo();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível liberar o acesso ao aplicativo."); }
+    finally { setLiberandoAcesso(false); }
   }
 
   function abrirBaixaManual(b: Boleto) {
@@ -282,7 +338,8 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
       await financeiroApi.baixa(baixaAlvo.id, { dataPagamento: baixaData, juros: Number(baixaJuros) || 0, multa: Number(baixaMulta) || 0, formaPagamento: baixaForma, instituicaoConta: baixaBanco, observacao: baixaObs });
       toast.success("Baixa manual registrada.");
       setBaixaAlvo(null);
-      void carregarBoletos();
+      await carregarBoletos();
+      void carregarPerfilExtra();
       onSalvo();
     } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível registrar a baixa."); }
     finally { setSalvandoBaixa(false); }
@@ -300,6 +357,8 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
 
   return {
     cliente, editando,
+    consultora, setConsultora, acessoLiberado, acessoLiberadoEm, liberandoAcesso, liberarAcessoApp,
+    alterandoParcela, alterarParcela, anexarComprovante, comprovanteHref, carregarPerfilExtra,
     nome, setNome, cpf, setCpf, nascimento, setNascimento, telefone, setTelefone, email, setEmail, procedimento, setProcedimento, observacoes, setObservacoes,
     salvandoPerfil, salvarPerfil,
     excluindo, confirmarExclusao, setConfirmarExclusao, excluirCliente,

@@ -1,21 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
+import { useTheme } from "@/components/ui/ThemeProvider";
+import { ClienteDrawer, type AbaDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
+import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
-import { ClienteZipDrawer } from "@/components/admin-zip/ClienteZipDrawer";
-import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { FUNIL_CLIENTE_LABEL } from "@/features/financeiro/types";
 import type { ClienteFunilItem, FunilClienteBucket } from "@/features/financeiro/types";
 import type { Cliente } from "@/types/database";
+import styles from "@/components/admin/lista/AdminLista.module.css";
 
 /**
- * Reprodução fiel de Admin Financeiro.dc.html: funil por cliente (o mesmo
- * modelo aprovado na Correção 1), tabela densa com progresso/saldo/status,
- * legenda "Status do contrato" e drawer lateral [PERFIL][FINANCEIRO] abrindo
- * em FINANCEIRO. O "Financeiro Unificado" antigo permanece só como
- * infraestrutura por baixo (financeiroApi) — não é mais a UI principal.
+ * Financeiro — padrão visual aprovado (referência k338) sobre o funil real
+ * por cliente (`GET /api/admin/financeiro/clientes`). Clicar no nome abre o
+ * drawer único da cliente direto no Financeiro, onde o comprovante é
+ * analisado (confirmar/rejeitar), a baixa é registrada e o plano é ajustado.
  */
 
 const ORDEM: FunilClienteBucket[] = ["aguardando_conferencia", "ativos", "todos", "suspensos", "negativados", "cancelados"];
@@ -29,132 +30,189 @@ const FUNIL_NOTA: Record<FunilClienteBucket, string> = {
   cancelados: "Acesso ao app bloqueado. O histórico permanece disponível.",
 };
 
-const STATUS_DOCS: { nome: string; modo: string; desc: string; kind: ZipKind }[] = [
-  { nome: "Aguardando conferência", modo: "Automático", desc: "Existe comprovante aguardando análise.", kind: "warn" },
-  { nome: "Ativo", modo: "Automático", desc: "Contrato operando normalmente.", kind: "ok" },
-  { nome: "Suspenso", modo: "Manual", desc: "Parcelas restantes suspensas no app. Pode ter período determinado ou indeterminado.", kind: "warn" },
-  { nome: "Negativado", modo: "Manual", desc: "Parcelas suspensas e pagamentos indisponíveis.", kind: "bad" },
-  { nome: "Cancelado", modo: "Manual", desc: "Acesso ao app bloqueado e cliente movida para Cancelados.", kind: "neutral" },
+const STATUS_DOCS: { nome: string; modo: string; desc: string; cls: string }[] = [
+  { nome: "Aguardando conferência", modo: "Automático", desc: "Existe comprovante aguardando análise.", cls: styles.statusProof },
+  { nome: "Ativo", modo: "Automático", desc: "Contrato operando normalmente.", cls: "" },
+  { nome: "Suspenso", modo: "Manual", desc: "Parcelas restantes suspensas no app. Pode ter período determinado ou indeterminado.", cls: styles.statusSuspensa },
+  { nome: "Negativado", modo: "Manual", desc: "Parcelas suspensas e pagamentos indisponíveis.", cls: styles.statusNegativada },
+  { nome: "Cancelado", modo: "Manual", desc: "Acesso ao app bloqueado e cliente movida para Cancelados.", cls: styles.statusCancelled },
 ];
 
-function bucketKind(bucket: FunilClienteBucket): ZipKind {
-  if (bucket === "ativos") return "ok";
-  if (bucket === "aguardando_conferencia" || bucket === "suspensos") return "warn";
-  if (bucket === "negativados") return "bad";
-  return "neutral";
+type SortMode = "venc" | "saldo" | "az" | "za";
+
+const Svg = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={d} /></svg>;
+const ICON = {
+  search: "M10.8 4.4a6.4 6.4 0 1 0 0 12.8 6.4 6.4 0 0 0 0-12.8ZM16 16l4 4",
+  chevron: "m7 9 5 5 5-5",
+  clear: "M5 8a8 8 0 1 1-1 6M5 8V3M5 8h5",
+  empty: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM8.5 10.5h.01M15.5 10.5h.01M8.5 16c1.8-1.7 5.2-1.7 7 0",
+  aguardando_conferencia: "M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20ZM10 11h5M10 14.5h5M10 18h3",
+  ativos: "m5 12.5 4.2 4.2L19 7",
+  todos: "M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm8.2.8a2.4 2.4 0 1 0 0 4.8M2.8 19v-1c0-2.8 2.2-5 5-5h.4c2.8 0 5 2.2 5 5v1M15.5 13.2h.8c2.7 0 4.8 2.1 4.8 4.8v1",
+  suspensos: "M9 6v12M15 6v12",
+  negativados: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 7.5v5.5M12 16.5h.01",
+  cancelados: "m6 6 12 12M18 6 6 18",
+};
+
+function iniciais(nome: string) {
+  const p = nome.trim().split(/\s+/).filter(Boolean);
+  return ((p[0]?.[0] ?? "") + (p.length > 1 ? p[p.length - 1]?.[0] ?? "" : p[0]?.[1] ?? "")).toUpperCase() || "—";
 }
 function dataBr(v: string | null | undefined) { return v ? v.slice(0, 10).split("-").reverse().join("/") : "—"; }
+function bucketClass(b: FunilClienteBucket) {
+  if (b === "aguardando_conferencia") return styles.statusProof;
+  if (b === "suspensos") return styles.statusSuspensa;
+  if (b === "negativados") return styles.statusNegativada;
+  if (b === "cancelados") return styles.statusCancelled;
+  return "";
+}
 
 export default function FinanceiroPage() {
+  const { theme } = useTheme();
   const [itens, setItens] = useState<ClienteFunilItem[]>([]);
   const [clientesCompletos, setClientesCompletos] = useState<Cliente[]>([]);
   const [funis, setFunis] = useState<Array<{ bucket: FunilClienteBucket; total: number }>>([]);
   const [bucket, setBucket] = useState<FunilClienteBucket>("aguardando_conferencia");
   const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState<SortMode>("venc");
   const [carregando, setCarregando] = useState(true);
-  const [modal, setModal] = useState<Cliente | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<{ id: string; aba: AbaDrawer } | null>(null);
 
   async function carregar() {
-    setCarregando(true);
     try {
       const [funil, lista] = await Promise.all([financeiroApi.funilClientes(), financeiroApi.clientes()]);
       setItens(funil.itens);
       setFunis(funil.funis);
       setClientesCompletos(lista as Cliente[]);
+      setErro(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao carregar o funil de clientes.");
+      const msg = error instanceof Error ? error.message : "Falha ao carregar o funil de clientes.";
+      setErro(msg); toast.error(msg);
     } finally {
       setCarregando(false);
     }
   }
   useEffect(() => { void carregar(); }, []);
 
-  const termo = busca.trim().toLowerCase();
+  useEffect(() => {
+    if (!menuId) return;
+    const fechar = (e: PointerEvent) => { if (!(e.target as HTMLElement).closest("[data-client-row-menu]")) setMenuId(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuId(null); };
+    document.addEventListener("pointerdown", fechar);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", fechar); document.removeEventListener("keydown", esc); };
+  }, [menuId]);
+
+  const termo = busca.trim().toLocaleLowerCase("pt-BR");
   const visiveis = useMemo(() => {
     const base = bucket === "todos" ? itens : itens.filter((item) => item.bucket === bucket);
-    if (!termo) return base;
-    return base.filter((i) => [i.nome, i.cpf, i.vendedora, i.campanha].some((v) => v?.toLowerCase().includes(termo)));
-  }, [itens, bucket, termo]);
+    const filtrados = termo ? base.filter((i) => [i.nome, i.cpf, i.vendedora, i.campanha].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo)) : base;
+    return [...filtrados].sort((a, b) => {
+      if (ordenacao === "saldo") return b.saldoAReceber - a.saldoAReceber;
+      if (ordenacao === "venc") return (a.proximoVencimento ?? "9999").localeCompare(b.proximoVencimento ?? "9999");
+      const cmp = a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
+      return ordenacao === "az" ? cmp : -cmp;
+    });
+  }, [itens, bucket, termo, ordenacao]);
 
-  function abrir(item: ClienteFunilItem) {
-    const cliente = clientesCompletos.find((c) => c.id === item.clienteId);
-    if (!cliente) { toast.error("Não foi possível abrir o perfil completo desta cliente agora."); return; }
-    setModal(cliente);
-  }
+  const total = (b: FunilClienteBucket) => funis.find((f) => f.bucket === b)?.total ?? 0;
+  function abrir(item: ClienteFunilItem, aba: AbaDrawer = "finance") { setMenuId(null); setDrawer({ id: item.clienteId, aba }); }
 
-  return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-    <div style={{ flex: "1 1 560px", minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
+  return <div className={`${styles.page} ${theme === "dark" ? styles.dark : ""}`}>
+    <section className={styles.pageHeader}>
+      <div>
+        <div className={styles.eyebrow}>Financeiro</div>
+        <div className={styles.titleRow}><h1 className={styles.pageTitle}>Financeiro</h1><span className={styles.goldLine} /></div>
+        <p className={styles.pageSub}>Conferência de comprovantes, controle de parcelas e operações financeiras em um único espaço.</p>
+      </div>
+      <div className={styles.pageHeadRight}>
+        <div className={styles.decorative}><span className={styles.decorativeLine} /><span className={styles.decorativeText}>Disciplina hoje,<br />liberdade sempre.</span></div>
+      </div>
+    </section>
+
+    <nav className={styles.tabs} aria-label="Funil financeiro" role="tablist" style={{ "--tabs": ORDEM.length } as CSSProperties}>
+      {ORDEM.map((b) => <button key={b} className={`${styles.tab} ${bucket === b ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={bucket === b} onClick={() => { setBucket(b); setMenuId(null); }}>
+        <span className={styles.tabIcon}><Svg d={ICON[b]} /></span>
+        <span className={styles.tabLabel}>{FUNIL_CLIENTE_LABEL[b]}</span>
+        <span className={styles.countPill}>{total(b)}</span>
+      </button>)}
+    </nav>
+
+    <section className={styles.filters} aria-label="Filtros do financeiro">
+      <label className={styles.field}><Svg d={ICON.search} /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, campanha ou vendedora..." aria-label="Buscar clientes no financeiro" /></label>
+      <button className={styles.clearBtn} type="button" onClick={() => setBusca("")}><Svg d={ICON.clear} />Limpar busca</button>
+    </section>
+
+    <section className={styles.listCard}>
+      <header className={styles.cardHead}>
         <div>
-          <h1 style={{ fontSize: 27 }}>Financeiro</h1>
-          <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Conferência de comprovantes, controle de parcelas e operações financeiras em um único espaço.</p>
+          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{FUNIL_CLIENTE_LABEL[bucket]}</span><span className={styles.cardCount}>{total(bucket)} {total(bucket) === 1 ? "cliente" : "clientes"}</span></div>
+          <div className={styles.cardSub}>{visiveis.length} nesta página</div>
         </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14 }}>
-        {ORDEM.map((b) => {
-          const on = bucket === b;
-          const total = funis.find((f) => f.bucket === b)?.total ?? 0;
-          return <button key={b} onClick={() => setBucket(b)} style={{ display: "flex", alignItems: "center", gap: 7, height: 31, padding: "0 13px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
-            {FUNIL_CLIENTE_LABEL[b]}<span style={{ display: "inline-grid", placeItems: "center", minWidth: 19, height: 17, padding: "0 5px", borderRadius: 999, background: on ? "var(--robg)" : "var(--line2)", color: on ? "var(--bg)" : "var(--soft)", fontSize: 10, fontWeight: 700 }}>{total}</span>
-          </button>;
-        })}
-      </div>
-
-      <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", backdropFilter: "blur(18px)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <h2 style={{ fontSize: 15 }}>{FUNIL_CLIENTE_LABEL[bucket]}</h2>
-            <span style={{ fontSize: 11, color: "var(--soft)" }}>{visiveis.length} clientes</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, height: 31, width: 274, maxWidth: "44vw", padding: "0 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)" }}>
-            <span style={{ color: "var(--rose)", fontSize: 11.5 }}>⌕</span>
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, campanha ou vendedora…" style={{ flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", fontSize: 11.5, color: "var(--ink)" }} />
-          </div>
+        <div className={styles.cardTools}>
+          <span className={styles.orderLabel}>Ordenar por</span>
+          <label className={styles.smallSelect}>
+            <select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as SortMode)} aria-label="Ordenar clientes do financeiro">
+              <option value="venc">Vencimento mais próximo</option><option value="saldo">Maior saldo em aberto</option><option value="az">Nome A-Z</option><option value="za">Nome Z-A</option>
+            </select>
+            <Svg d={ICON.chevron} />
+          </label>
         </div>
-        <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--line)", fontSize: 11, color: "var(--soft)", background: "var(--s1)" }}>{FUNIL_NOTA[bucket]}</div>
+      </header>
+      <div className={styles.funilNote}>{FUNIL_NOTA[bucket]}</div>
 
-        <div style={{ overflowX: "auto", maxHeight: 560, overflowY: "auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(170px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 104px 132px 110px 174px 34px", gap: 11, minWidth: 1060, padding: "0 14px", height: 33, alignItems: "center", background: "var(--s1)", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, zIndex: 2 }}>
-            {["Cliente", "Vendedora", "Campanha", "Próx. venc.", "Progresso", "Saldo aberto", "Status", ""].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</div>)}
-          </div>
+      {carregando ? <div className={styles.loadingState}>Carregando financeiro...</div>
+        : erro && itens.length === 0 ? <div className={styles.emptyState} role="alert"><Svg d={ICON.empty} /><strong>Não foi possível carregar o Financeiro.</strong><span>{erro}</span><button className={styles.clearBtn} style={{ margin: "12px auto 0" }} type="button" onClick={() => { setCarregando(true); void carregar(); }}>Tentar novamente</button></div>
+        : visiveis.length === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>Nenhuma cliente neste funil.</strong><span>Ajuste a busca ou escolha outro funil.</span></div>
+        : <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <colgroup><col className={styles.finClientCol} /><col className={styles.finSellerCol} /><col className={styles.finCampaignCol} /><col className={styles.finDueCol} /><col className={styles.finProgressCol} /><col className={styles.finBalanceCol} /><col className={styles.finStatusCol} /><col className={styles.actionsCol} /></colgroup>
+              <thead><tr><th>Cliente</th><th>Vendedora</th><th>Campanha</th><th>Próx. venc.</th><th>Progresso</th><th>Saldo aberto</th><th>Status</th><th className={styles.center}>Ações</th></tr></thead>
+              <tbody>{visiveis.map((r) => {
+                const pct = r.parcelasTotal ? Math.round((r.parcelasPagas / r.parcelasTotal) * 100) : 0;
+                const aberto = menuId === r.clienteId;
+                return <tr key={r.clienteId} onClick={() => abrir(r)}>
+                  <td><button type="button" className={`${styles.nameBtn} ${styles.clientCell}`} onClick={(e) => { e.stopPropagation(); abrir(r); }} aria-label={`Abrir ${r.nome} no Financeiro`}>
+                    <div className={styles.clientAvatar} aria-hidden="true">{iniciais(r.nome)}</div>
+                    <div className={styles.clientMeta}><div className={styles.clientName}>{r.nome}</div>{r.quitado ? <span className={styles.quitado}>Quitado</span> : <div className={styles.clientCpf}>{r.cpf ? formatarCpf(r.cpf) : "CPF não informado"}</div>}</div>
+                  </button></td>
+                  <td>{r.vendedora || <span className={styles.dash}>—</span>}</td>
+                  <td>{r.campanha || <span className={styles.dash}>—</span>}</td>
+                  <td className={styles.mono}>{dataBr(r.proximoVencimento)}</td>
+                  <td><div className={styles.progressTrack} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${r.parcelasPagas} de ${r.parcelasTotal} parcelas pagas`}><div className={styles.progressFill} style={{ width: `${pct}%` }} /></div><div className={styles.progressText}>{r.parcelasPagas} / {r.parcelasTotal}{r.vencidas ? ` · ${r.vencidas} vencida(s)` : ""}</div></td>
+                  <td className={`${styles.mono} ${styles.strong}`}>{formatarMoeda(r.saldoAReceber)}</td>
+                  <td><span className={`${styles.statusPill} ${bucketClass(r.bucket)}`}><span className={styles.statusDot} />{r.aguardandoValidacao > 0 && r.bucket === "aguardando_conferencia" ? `${r.aguardandoValidacao} comprovante(s)` : FUNIL_CLIENTE_LABEL[r.bucket]}</span></td>
+                  <td className={styles.center}><div className={styles.rowMenuWrap} data-client-row-menu>
+                    <button className={styles.rowMenuBtn} type="button" aria-label={`Ações de ${r.nome}`} aria-haspopup="menu" aria-expanded={aberto} onClick={(e) => { e.stopPropagation(); setMenuId(aberto ? null : r.clienteId); }}>⋮</button>
+                    {aberto && <div className={styles.rowMenu} role="menu">
+                      <button type="button" role="menuitem" onClick={(e) => { e.stopPropagation(); abrir(r, "finance"); }}>{r.aguardandoValidacao > 0 ? "Analisar comprovante" : "Abrir financeiro"}</button>
+                      <button type="button" role="menuitem" onClick={(e) => { e.stopPropagation(); abrir(r, "profile"); }}>Perfil</button>
+                      <button type="button" role="menuitem" onClick={(e) => { e.stopPropagation(); abrir(r, "process"); }}>Processo</button>
+                    </div>}
+                  </div></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>}
+    </section>
 
-          {carregando ? <div style={{ padding: 46, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</div> : visiveis.length === 0 ? <div style={{ padding: "46px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma cliente neste funil</div><div style={{ marginTop: 5, fontSize: 12, color: "var(--soft)" }}>Ajuste a busca ou escolha outro funil.</div></div>
-            : visiveis.map((r) => <div key={r.clienteId} onClick={() => abrir(r)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(170px,1.4fr) minmax(110px,.9fr) minmax(130px,1fr) 104px 132px 110px 174px 34px", gap: 11, minWidth: 1060, padding: "0 14px", height: 50, alignItems: "center", cursor: "pointer", borderBottom: "1px solid var(--line2)" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.nome}</div>
-                {r.quitado && <span style={{ display: "inline-block", marginTop: 3, height: 18, lineHeight: "18px", padding: "0 7px", borderRadius: 999, background: "var(--okbg)", color: "var(--ok)", fontSize: 9.5, fontWeight: 600 }}>Quitado</span>}
-              </div>
-              <div style={{ minWidth: 0, fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.vendedora || "—"}</div>
-              <div style={{ minWidth: 0, fontSize: 12, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.campanha || "—"}</div>
-              <div style={{ fontSize: 12, color: "var(--soft)" }} className="zip-mono">{dataBr(r.proximoVencimento)}</div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ height: 5, borderRadius: 999, background: "var(--line2)", overflow: "hidden" }}><div style={{ height: "100%", width: `${r.parcelasTotal ? Math.round((r.parcelasPagas / r.parcelasTotal) * 100) : 0}%`, borderRadius: 999, background: r.bucket === "ativos" ? "var(--bg)" : r.bucket === "aguardando_conferencia" ? "var(--gold)" : "var(--soft)" }} /></div>
-                <div style={{ marginTop: 3, fontSize: 10, color: "var(--soft)" }} className="zip-mono">{r.parcelasPagas} / {r.parcelasTotal}</div>
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600 }} className="zip-mono">{formatarMoeda(r.saldoAReceber)}</div>
-              <div style={{ minWidth: 0, overflow: "hidden" }}><span style={zipChip(bucketKind(r.bucket))}>{FUNIL_CLIENTE_LABEL[r.bucket]}</span></div>
-              <div style={{ textAlign: "right", color: "var(--soft)", fontSize: 13 }}>⋯</div>
-            </div>)}
-        </div>
-        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--line)", fontSize: 11, color: "var(--soft)" }}>{visiveis.length} clientes · lista contínua</div>
+    <section className={`${styles.listCard} ${styles.legendCard}`} aria-label="Status do contrato">
+      <header className={styles.cardHead}><div className={styles.cardTitleLine}><span className={styles.cardTitle}>Status do contrato</span></div></header>
+      <div className={styles.legendGrid}>
+        {STATUS_DOCS.map((d) => <div key={d.nome} className={styles.legendItem}>
+          <span className={`${styles.statusPill} ${d.cls}`}><span className={styles.statusDot} />{d.nome}</span><span className={styles.legendMode}>{d.modo}</span>
+          <p>{d.desc}</p>
+        </div>)}
       </div>
+    </section>
 
-      <div style={{ marginTop: 14, border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, boxShadow: "var(--sh)", overflow: "hidden" }}>
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}><h2 style={{ fontSize: 15 }}>Status do contrato</h2></div>
-        <div style={{ padding: "13px 14px", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(248px,1fr))", gap: 11 }}>
-          {STATUS_DOCS.map((d) => <div key={d.nome} style={{ border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 11, padding: "11px 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={zipChip(d.kind)}>{d.nome}</span><span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--soft)" }}>{d.modo}</span></div>
-            <div style={{ marginTop: 6, fontSize: 11, color: "var(--soft)", lineHeight: 1.5 }}>{d.desc}</div>
-          </div>)}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 10, textAlign: "right" }}>
-        <a href="/admin/financeiro/avancado" style={{ fontSize: 10.5, color: "var(--soft)", textDecoration: "underline" }}>Ferramenta interna transitória — recebíveis em lote e conciliação bancária →</a>
-      </div>
+    <div style={{ marginTop: 10, textAlign: "right" }}>
+      <a href="/admin/financeiro/avancado" className={styles.cardSub} style={{ textDecoration: "underline" }}>Ferramenta interna transitória — recebíveis em lote e conciliação bancária →</a>
     </div>
 
-    {modal && <ClienteZipDrawer cliente={modal} abaInicial="financeiro" onClose={() => setModal(null)} onSalvo={() => { setModal(null); void carregar(); }} />}
+    {drawer && <ClienteDrawer key={drawer.id} clienteId={drawer.id} cliente={clientesCompletos.find((c) => c.id === drawer.id) ?? null} abaInicial={drawer.aba}
+      onClose={() => setDrawer(null)} onChanged={carregar} />}
   </div>;
 }
