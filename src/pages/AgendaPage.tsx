@@ -159,7 +159,7 @@ export function AgendaPage() {
     if (notificacao.destino === "agenda") setAba("inicio");
     else if (notificacao.destino === "parcelas") setAba("parcelas");
     else if (notificacao.destino === "clube") setAba("mais");
-    else if (notificacao.destino === "jornada") setAba("jornada");
+    else if (notificacao.destino === "jornada") { setMaisSubTelaInicial("jornada"); setAba("mais"); }
   }
 
   /** Abre a Home e rola até "Minha agenda" (AgendaHome), sem tocar na lógica da agenda. */
@@ -269,25 +269,6 @@ export function AgendaPage() {
 
         {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} />}
 
-        {aba === "jornada" && (
-          <JornadaTab
-            {...journeyInputFromProcess({
-              percentualPagamento: boletos.porcentagem_pagamento ?? 0,
-              percentualAtingido: boletos.pode_agendar,
-              statusRevisao: boletos.status_revisao_financeira,
-              custeioStatus,
-              temAgendamentoTermos: Boolean(agendaAtual),
-              comparecimentoConfirmado: agendaAtual?.comparecimentoStatus === "compareceu",
-              processoConcluido: Boolean(agenda.agendamentoConcluido),
-              agendaCirurgicaLiberadaEm: agenda.agendaCirurgicaLiberarEm,
-              dataCirurgia: agendaAtual?.dataCirurgia ?? null,
-              cirurgiaRealizada,
-            })}
-            notificacoesCompactas={notificacoesState.notificacoes}
-            onVerNotificacoes={() => setAba("notificacoes")}
-          />
-        )}
-
         {aba === "notificacoes" && (
           <NotificacoesTab
             notificacoes={notificacoesState.notificacoes}
@@ -304,6 +285,25 @@ export function AgendaPage() {
             nomeCliente={agenda.cliente.nome}
             onSair={() => void sair()}
             onIrParcelas={() => setAba("parcelas")}
+            renderJornada={(onVoltar) => (
+              <JornadaTab
+                {...journeyInputFromProcess({
+                  percentualPagamento: boletos.porcentagem_pagamento ?? 0,
+                  percentualAtingido: boletos.pode_agendar,
+                  statusRevisao: boletos.status_revisao_financeira,
+                  custeioStatus,
+                  temAgendamentoTermos: Boolean(agendaAtual),
+                  comparecimentoConfirmado: agendaAtual?.comparecimentoStatus === "compareceu",
+                  processoConcluido: Boolean(agenda.agendamentoConcluido),
+                  agendaCirurgicaLiberadaEm: agenda.agendaCirurgicaLiberarEm,
+                  dataCirurgia: agendaAtual?.dataCirurgia ?? null,
+                  cirurgiaRealizada,
+                })}
+                notificacoesCompactas={notificacoesState.notificacoes}
+                onVerNotificacoes={() => setAba("notificacoes")}
+                onVoltar={onVoltar}
+              />
+            )}
             initialSubTela={maisSubTelaInicial}
             onInitialSubTelaConsumed={consumirMaisSubTela}
           />

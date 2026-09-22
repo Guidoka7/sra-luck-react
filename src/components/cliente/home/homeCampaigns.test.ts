@@ -78,7 +78,7 @@ describe("campaign-dependent slides need real configuration", () => {
 
 describe("CTA destinations map to the current client app", () => {
   it("routes every active slide to an existing tab or sub-screen", () => {
-    const tabs = ["inicio", "parcelas", "jornada", "notificacoes", "mais"];
+    const tabs = ["inicio", "parcelas", "notificacoes", "mais"];
     for (const slide of resolveHomeCampaignSlides()) {
       const nav = resolveHomeCampaignNavigation(slide.action);
       expect(nav, slide.id).not.toBeNull();
@@ -90,7 +90,7 @@ describe("CTA destinations map to the current client app", () => {
     expect(resolveHomeCampaignNavigation("clube")).toEqual({ tab: "mais", maisSubTela: "clube" });
     expect(resolveHomeCampaignNavigation("atendimento")).toEqual({ tab: "mais", maisSubTela: "atendimento" });
     expect(resolveHomeCampaignNavigation("parcelas")).toEqual({ tab: "parcelas" });
-    expect(resolveHomeCampaignNavigation("jornada")).toEqual({ tab: "jornada" });
+    expect(resolveHomeCampaignNavigation("jornada")).toEqual({ tab: "mais", maisSubTela: "jornada" });
     expect(resolveHomeCampaignNavigation("notificacoes")).toEqual({ tab: "notificacoes" });
     expect(resolveHomeCampaignNavigation("agenda")).toEqual({ tab: "inicio", scrollToAgenda: true });
   });
