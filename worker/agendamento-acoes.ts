@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 
 const CLIENTE_COOKIE = "cliente_session";
@@ -84,7 +85,12 @@ export async function adminAgendamentoAcao(request: Request, env: Env): Promise<
   if (!match) return null;
   if (request.method !== "PATCH") return json({ erro: "Método não permitido." }, 405);
   if (!mesmaOrigem(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  if (!(await adminSessao(request, env))) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const sessaoAdmin = await adminSessao(request, env);
+  if (!sessaoAdmin) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const colaborador = await buscarColaboradorAdminAtivo(sessaoAdmin.adminId, env).catch(() => null);
+  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.AGENDA_GERENCIAR)) {
+    return json({ erro: "Seu papel não tem permissão para gerenciar agendamentos." }, 403);
+  }
 
   const agendamentoId = decodeURIComponent(match[1]);
   let body: any;
