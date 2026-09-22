@@ -132,14 +132,14 @@ export async function gerarConfiguracaoVapid(subjectInput: string): Promise<Vapi
 }
 
 async function autorizar(request: Request, env: Env) {
-  if (!env.CLIENTE_SESSION_SECRET) return { adminId: null, resposta: json({ erro: "Serviço temporariamente indisponível." }, 503) };
+  if (!env.CLIENTE_SESSION_SECRET) return { adminId: null, colaboradorId: null, resposta: json({ erro: "Serviço temporariamente indisponível." }, 503) };
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
-  if (!session) return { adminId: null, resposta: json({ erro: "Sessão administrativa expirada." }, 401) };
+  if (!session) return { adminId: null, colaboradorId: null, resposta: json({ erro: "Sessão administrativa expirada." }, 401) };
   const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env).catch(() => null);
   if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
-    return { adminId: null, resposta: json({ erro: "Seu papel não tem permissão para gerenciar o Web Push." }, 403) };
+    return { adminId: null, colaboradorId: null, resposta: json({ erro: "Seu papel não tem permissão para gerenciar o Web Push." }, 403) };
   }
-  return { adminId: session.adminId, resposta: null };
+  return { adminId: session.adminId, colaboradorId: colaborador.id, resposta: null };
 }
 
 async function carregarConfiguracao(env: Env) {
@@ -213,7 +213,7 @@ async function guardarPar(env: Env, adminId: string, config: VapidConfiguracao, 
   await salvarCredencialInterna(env, "web_push", "vapid_public_key", config.publicKey, adminId);
   await salvarCredencialInterna(env, "web_push", "vapid_private_key", config.privateKey, adminId);
   await db.from("logs_alteracoes").insert({
-    usuario: `admin:${adminId}`,
+    usuario: adminId,
     acao: rotacao ? "rotacionou_vapid_web_push" : "configurou_vapid_web_push",
     entidade: "integracoes",
     entidade_id: "web_push",
@@ -225,7 +225,7 @@ async function guardarPar(env: Env, adminId: string, config: VapidConfiguracao, 
 async function registrarTeste(env: Env, adminId: string, valido: boolean, detalhe: string, assinaturas: number) {
   const db = createServiceSupabaseClient(env);
   await db.from("logs_alteracoes").insert({
-    usuario: `admin:${adminId}`,
+    usuario: adminId,
     acao: "testou_conexao_integracao",
     entidade: "integracoes",
     entidade_id: "web_push",
@@ -240,6 +240,7 @@ export async function webPushConfigApi(request: Request, env: Env): Promise<Resp
   const auth = await autorizar(request, env);
   if (auth.resposta) return auth.resposta;
   const adminId = auth.adminId!;
+  const colaboradorId = auth.colaboradorId!;
 
   if (request.method === "GET") return json(await diagnosticoSeguro(env));
   if (request.method !== "POST") return json({ erro: "Método não suportado." }, 405);
@@ -255,7 +256,7 @@ export async function webPushConfigApi(request: Request, env: Env): Promise<Resp
 
   if (body.acao === "testar") {
     const diagnostico = await diagnosticoSeguro(env);
-    await registrarTeste(env, adminId, diagnostico.validado, diagnostico.detalhe, diagnostico.assinaturas);
+    await registrarTeste(env, colaboradorId, diagnostico.validado, diagnostico.detalhe, diagnostico.assinaturas);
     return json({ conectado: diagnostico.validado, ...diagnostico }, diagnostico.validado ? 200 : 422);
   }
 
@@ -287,9 +288,9 @@ export async function webPushConfigApi(request: Request, env: Env): Promise<Resp
   config = { subject: validacao.subject, publicKey: validacao.publicKey, privateKey: validacao.privateKey };
 
   try {
-    const salvo = await guardarPar(env, adminId, config, Boolean(body.confirmarRotacao));
+    const salvo = await guardarPar(env, colaboradorId, config, Boolean(body.confirmarRotacao));
     if (salvo.resposta) return salvo.resposta;
-    await registrarTeste(env, adminId, true, "Par VAPID válido, pareado e salvo no cofre do sistema.", salvo.assinaturas);
+    await registrarTeste(env, colaboradorId, true, "Par VAPID válido, pareado e salvo no cofre do sistema.", salvo.assinaturas);
     return json({
       ok: true,
       conectado: true,
