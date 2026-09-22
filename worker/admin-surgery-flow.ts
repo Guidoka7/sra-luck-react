@@ -1,5 +1,6 @@
-import { exigirAdmin } from "./admin-auth";
+import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
 import { agoraSaoPaulo, calcularLiberacaoCirurgica, dataSaoPaulo } from "./surgery-release";
 
 function json(data: unknown, status = 200) {
@@ -114,7 +115,7 @@ async function listarCirurgiasConfirmadas(env: Env) {
   return json({ cirurgias, hoje });
 }
 
-async function confirmarAssinaturaTermos(request: Request, env: Env) {
+async function confirmarAssinaturaTermos(request: Request, env: Env, usuario: string) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await parseBody(request);
   const id = typeof body.id === "string" ? body.id : "";
@@ -146,7 +147,7 @@ async function confirmarAssinaturaTermos(request: Request, env: Env) {
   if (error) return json({ erro: "Não foi possível confirmar a assinatura." }, 500);
 
   await db.from("logs_alteracoes").insert({
-    usuario: "admin_worker",
+    usuario,
     acao: "confirmou_assinatura_termos",
     entidade: "agendamentos",
     entidade_id: agendamento.id,
@@ -168,7 +169,7 @@ async function confirmarAssinaturaTermos(request: Request, env: Env) {
   });
 }
 
-async function atualizarCiclo(request: Request, env: Env, agendamentoId: string) {
+async function atualizarCiclo(request: Request, env: Env, agendamentoId: string, usuario: string) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await parseBody(request);
   const db = createServiceSupabaseClient(env);
@@ -209,7 +210,7 @@ async function atualizarCiclo(request: Request, env: Env, agendamentoId: string)
 
   const liberacao = calcularLiberacaoCirurgica(agendamento.termos_assinados_em, custeioConfirmadoEm);
   await db.from("logs_alteracoes").insert({
-    usuario: "admin_worker",
+    usuario,
     acao: "atualizou_ciclo_liberacao",
     entidade: "clientes",
     entidade_id: cliente.id,
@@ -231,7 +232,7 @@ async function atualizarCiclo(request: Request, env: Env, agendamentoId: string)
   });
 }
 
-async function salvarDataCirurgia(request: Request, env: Env, agendamentoId: string) {
+async function salvarDataCirurgia(request: Request, env: Env, agendamentoId: string, usuario: string) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await parseBody(request);
   const data = typeof body.previsaoLiberacaoFinanceira === "string" ? body.previsaoLiberacaoFinanceira : "";
@@ -254,7 +255,7 @@ async function salvarDataCirurgia(request: Request, env: Env, agendamentoId: str
   const { error } = await db.rpc("agendar_cirurgia_data", { p_agendamento_id: agendamentoId, p_data: data });
   if (error) return erroAgendaCirurgica(error, liberacao);
   await db.from("logs_alteracoes").insert({
-    usuario: "admin_worker",
+    usuario,
     acao: "agendou_cirurgia",
     entidade: "agendamentos",
     entidade_id: agendamentoId,
@@ -411,18 +412,38 @@ export async function adminSurgeryFlow(request: Request, env: Env): Promise<Resp
   const denied = await exigirAdmin(request, env);
   if (denied) return denied;
 
+  const sessao = env.CLIENTE_SESSION_SECRET
+    ? await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE_NAME), env.CLIENTE_SESSION_SECRET)
+    : null;
+  if (!sessao) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
+  const pode = (permissao: string) => temPermissaoAdmin(colaborador, permissao);
+  const usuario = colaborador.id;
+
   if (path === "/api/admin/agendamentos-termos") {
     if (request.method === "GET") return listarAgendamentosTermos(env);
-    if (request.method === "POST") return confirmarAssinaturaTermos(request, env);
+    if (request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para confirmar assinatura de termos." }, 403);
+      return confirmarAssinaturaTermos(request, env, usuario);
+    }
     return json({ erro: "Método não suportado." }, 405);
   }
   if (ciclo) {
     if (request.method !== "PATCH") return json({ erro: "Método não suportado." }, 405);
-    return atualizarCiclo(request, env, decodeURIComponent(ciclo[1]));
+    const body = await request.clone().json().catch(() => ({})) as Record<string, unknown>;
+    if (typeof body.custeioConfirmado === "boolean" && !pode(PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+      return json({ erro: "Seu papel não tem permissão para confirmar quitação financeira." }, 403);
+    }
+    if (typeof body.cirurgiaRealizada === "boolean" && !pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) {
+      return json({ erro: "Seu papel não tem permissão para atualizar o status da cirurgia." }, 403);
+    }
+    return atualizarCiclo(request, env, decodeURIComponent(ciclo[1]), usuario);
   }
   if (previsao) {
     if (request.method !== "PATCH") return null;
-    return salvarDataCirurgia(request, env, decodeURIComponent(previsao[1]));
+    if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para agendar cirurgia." }, 403);
+    return salvarDataCirurgia(request, env, decodeURIComponent(previsao[1]), usuario);
   }
   if (path === "/api/admin/cirurgias-confirmadas" && request.method === "GET") return listarCirurgiasConfirmadas(env);
   if (path === "/api/admin/solicitacoes-liberacao-financeira" && request.method === "GET") return listarSolicitacoes(env);
