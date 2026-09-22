@@ -302,10 +302,17 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     }
 
     if (acao === "reabrir") {
-      const { data, error } = await db.from("boletos").update({ status: "nao_pago", data_pagamento: null, observacoes: body.observacoes ?? atual.observacoes }).eq("id", boletoId).eq("cliente_id", clienteId).select("*").single();
+      const { data, error } = await db.from("boletos").update({
+        status: "nao_pago",
+        data_pagamento: null,
+        suspensa: false,
+        suspensa_em: null,
+        suspensa_por: null,
+        observacoes: body.observacoes ?? atual.observacoes,
+      }).eq("id", boletoId).eq("cliente_id", clienteId).select("*").single();
       if (error) return json({ erro: publicError(error) }, 500);
-      await db.from("logs_alteracoes").insert({ usuario, acao: "reabriu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, status_anterior: atual.status } });
-      await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: atual.numero_parcela });
+      await db.from("logs_alteracoes").insert({ usuario, acao: "reabriu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, status_anterior: atual.status, estava_suspensa: Boolean(atual.suspensa), vencimento: atual.data_vencimento } });
+      await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: data.numero_parcela });
       return json({ boleto: { ...data, valor: Number(data.valor) } });
     }
 
@@ -343,18 +350,53 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
     if (!ids.length) return json({ erro: "Selecione ao menos uma parcela em aberto." }, 400);
 
-    const { data: atuais, error } = await db.from("boletos").select("id,status,numero_parcela").eq("cliente_id", clienteId).order("numero_parcela", { ascending: true });
+    const { data: atuais, error } = await db.from("boletos")
+      .select("id,status,numero_parcela,data_vencimento,suspensa")
+      .eq("cliente_id", clienteId)
+      .order("numero_parcela", { ascending: true });
     if (error) return json({ erro: publicError(error) }, 500);
+
     const selecionadas = (atuais ?? []).filter((boleto: any) => ids.includes(String(boleto.id)));
     if (selecionadas.length !== ids.length) return json({ erro: "Uma ou mais parcelas não pertencem a esta cliente." }, 400);
-    if (selecionadas.some((boleto: any) => boleto.status === "pago")) return json({ erro: "Parcelas pagas nunca podem ser suspensas." }, 400);
+    if (selecionadas.some((boleto: any) => ["pago", "pendente_confirmacao"].includes(String(boleto.status)))) {
+      return json({ erro: "Parcelas pagas ou em conferência não podem ser suspensas." }, 400);
+    }
 
-    const agora = new Date().toISOString();
-    const { error: erroSuspensao } = await db.from("boletos").update({ suspensa: true, suspensa_em: agora, suspensa_por: usuario }).in("id", ids).eq("cliente_id", clienteId).neq("status", "pago");
-    if (erroSuspensao) return json({ erro: publicError(erroSuspensao) }, 500);
-    await db.from("logs_alteracoes").insert({ usuario, acao: "suspendeu_parcelas", entidade: "clientes", entidade_id: clienteId, detalhes: { parcelas: selecionadas.map((boleto: any) => boleto.numero_parcela), quantidade: ids.length } });
+    const antes = new Map(selecionadas.map((boleto: any) => [String(boleto.id), {
+      numero: Number(boleto.numero_parcela),
+      vencimento: boleto.data_vencimento ?? null,
+    }]));
+
+    const { data: reorganizadas, error: erroSuspensao } = await db.rpc("suspender_realocar_parcelas_cliente", {
+      p_cliente_id: clienteId,
+      p_parcela_ids: ids,
+      p_usuario: usuario,
+    });
+    if (erroSuspensao) return json({ erro: publicError(erroSuspensao, "Não foi possível suspender e realocar as parcelas.") }, 400);
+
+    const realocadas = (reorganizadas ?? [])
+      .filter((boleto: any) => ids.includes(String(boleto.id)))
+      .map((boleto: any) => ({
+        id: boleto.id,
+        de_numero: antes.get(String(boleto.id))?.numero ?? null,
+        para_numero: Number(boleto.numero_parcela),
+        de_vencimento: antes.get(String(boleto.id))?.vencimento ?? null,
+        para_vencimento: boleto.data_vencimento ?? null,
+      }));
+
+    await db.from("logs_alteracoes").insert({
+      usuario,
+      acao: "suspendeu_parcelas",
+      entidade: "clientes",
+      entidade_id: clienteId,
+      detalhes: {
+        parcelas: selecionadas.map((boleto: any) => boleto.numero_parcela),
+        quantidade: ids.length,
+        realocadas,
+      },
+    });
     await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", suspensas: ids.length });
-    return json({ sucesso: true, mensagem: `${ids.length} parcela(s) suspensa(s).` });
+    return json({ sucesso: true, mensagem: `${ids.length} parcela(s) suspensa(s) e realocada(s) para o final do contrato.`, boletos: reorganizadas });
   }
 
   return json({ erro: "Ação inválida." }, 400);
