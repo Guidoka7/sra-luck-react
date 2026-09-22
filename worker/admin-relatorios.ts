@@ -652,6 +652,16 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
   if (!session) return json({ erro: "Sessão administrativa expirada." }, 401);
   const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env);
   if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
+  if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method)) {
+    const origin = request.headers.get("Origin");
+    if (origin) {
+      try {
+        if (new URL(origin).origin !== new URL(request.url).origin) return json({ erro: "Requisição de origem não autorizada." }, 403);
+      } catch {
+        return json({ erro: "Requisição de origem não autorizada." }, 403);
+      }
+    }
+  }
 
   const db = createServiceSupabaseClient(env);
 
@@ -665,6 +675,9 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
   }
 
   if (url.pathname === "/api/admin/relatorios/preview" && request.method === "POST") {
+    if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {
+      return json({ erro: "Seu papel não tem permissão para visualizar relatórios." }, 403);
+    }
     const body = (await request.json().catch(() => ({}))) as { relatorioId?: string; filtros?: Filtros };
     const def = REPORT_CATALOG.find((r) => r.id === body.relatorioId);
     if (!def) return json({ erro: "Relatório não encontrado." }, 404);
@@ -679,7 +692,8 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
         indisponivel: resultado.indisponivel,
       });
     } catch (error) {
-      return json({ erro: error instanceof Error ? error.message : "Não foi possível gerar a prévia." }, 500);
+      console.error("Falha ao gerar prévia de relatório:", error);
+      return json({ erro: "Não foi possível gerar a prévia." }, 500);
     }
   }
 
@@ -696,7 +710,8 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
     try {
       resultado = await executarRelatorio(def.id, db, body.filtros ?? {});
     } catch (error) {
-      return json({ erro: error instanceof Error ? error.message : "Não foi possível gerar o relatório." }, 500);
+      console.error("Falha ao gerar relatório:", error);
+      return json({ erro: "Não foi possível gerar o relatório." }, 500);
     }
     if (resultado.indisponivel) {
       return json({ erro: resultado.indisponivel }, 501);
@@ -730,6 +745,9 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
   }
 
   if (url.pathname === "/api/admin/relatorios/historico" && request.method === "GET") {
+    if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {
+      return json({ erro: "Seu papel não tem permissão para visualizar o histórico de relatórios." }, 403);
+    }
     const { data, error } = await db
       .from("relatorios_exportacoes")
       .select("id,modulo,relatorio_id,formato,total_linhas,nome_arquivo,gerado_por,created_at")
