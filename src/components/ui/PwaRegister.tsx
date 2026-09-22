@@ -15,14 +15,17 @@ export function PwaRegister() {
     const areaPwa = areaCliente || pathname.startsWith("/equipe");
     if (!areaPwa) return;
 
-    let manifestLink = document.querySelector<HTMLLinkElement>('link[data-sra-luck-client-manifest="true"]');
+    // Mantém UM único manifest no documento. Antes havia um manifest estático
+    // no index.html e outro criado aqui, o que podia deixar o Chrome com duas
+    // referências concorrentes durante a checagem de instalabilidade.
+    let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (!manifestLink) {
       manifestLink = document.createElement("link");
       manifestLink.rel = "manifest";
-      manifestLink.href = "/simulador-iphone.webmanifest";
-      manifestLink.dataset.sraLuckClientManifest = "true";
       document.head.appendChild(manifestLink);
     }
+    manifestLink.href = "/simulador-iphone.webmanifest";
+    manifestLink.dataset.sraLuckClientManifest = "true";
 
     let appleTitle = document.querySelector<HTMLMetaElement>('meta[data-sra-luck-client-pwa="title"]');
     if (!appleTitle) {
