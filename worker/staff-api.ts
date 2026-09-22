@@ -44,6 +44,13 @@ function sameOrigin(request: Request) {
   try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
+function jsonGrande(request: Request, maxBytes: number) {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) return false;
+  const length = Number(request.headers.get("content-length") || 0);
+  return Number.isFinite(length) && length > maxBytes;
+}
+
 async function hmacRateLimit(secret: string, material: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -150,6 +157,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
   if (path === "/api/equipe/auth" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    if (jsonGrande(request, 16_384)) return json({ erro: "Requisição muito grande." }, 413);
     if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
     const b = await parseBody(request);
     const email = String(b.email ?? "").trim().toLowerCase();
