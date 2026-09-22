@@ -52,6 +52,16 @@ export function CalendarioAgendamento({ datas, onConfirmar, confirmando, bloquea
   }, [datas, hoje]);
 
   const porData = useMemo(() => new Map(datas.map((item) => [item.data, item])), [datas]);
+
+  useEffect(() => {
+    if (!diaSelecionado) return;
+    const atual = porData.get(diaSelecionado);
+    if (!atual || atual.vagasRestantes <= 0) {
+      setDiaSelecionado(null);
+      setHorarioSelecionado(null);
+    }
+  }, [porData, diaSelecionado]);
+
   const celulas = Array.from({ length: mesAtual.getDay() + getDaysInMonth(mesAtual) }, (_, index) => index < mesAtual.getDay() ? null : index - mesAtual.getDay() + 1);
   const entradaSelecionada = diaSelecionado ? porData.get(diaSelecionado) : null;
   const horarios = entradaSelecionada?.horarios?.length
