@@ -1,4 +1,4 @@
-import { buscarColaboradorAdminAtivo } from "./admin-auth";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { obterCredencial } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
