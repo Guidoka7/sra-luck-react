@@ -324,11 +324,15 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     const acao = String(body.acao || "") as AcaoAutomacao;
     if (!["verificar_atrasos", "verificar_momentos_especiais", "enviar_agora_todas"].includes(acao)) return json({ erro: "Ação inválida." }, 400);
     try { return json(await executarAutomacaoNotificacoes(env, acao)); }
-    catch (error) { return json({ erro: error instanceof Error ? error.message : "Falha ao executar automação." }, 500); }
+    catch (error) { console.error("Falha na automação de notificações:", error); return json({ erro: "Falha ao executar automação." }, 500); }
   }
 
   if (path.match(/^\/api\/admin\/boletos\/[^/]+\/comprovante$/) && request.method === "GET") {
     const admin = await adminId(request, env); if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
+    const colaborador = await buscarColaboradorAdminAtivo(admin, env).catch(() => null);
+    if (!colaborador || (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_VALIDAR_COMPROVANTE) && !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL))) {
+      return json({ erro: "Seu papel não tem permissão para visualizar comprovantes financeiros." }, 403);
+    }
     const match = path.match(/^\/api\/admin\/boletos\/([^/]+)\/comprovante$/); const id = decodeURIComponent(match![1]);
     const db = createServiceSupabaseClient(env);
     const { data: boleto, error: boletoError } = await db.from("boletos").select("comprovante_url").eq("id", id).maybeSingle();
