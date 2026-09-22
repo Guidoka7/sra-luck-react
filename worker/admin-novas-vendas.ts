@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 
 function json(data: unknown, status = 200) {
@@ -12,6 +13,12 @@ async function exigirAdmin(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   const token = getCookie(request, "admin_session");
   return verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET);
+}
+
+function sameOrigin(request: Request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
 /**
@@ -28,6 +35,13 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
 
   const auth = await exigirAdmin(request, env);
   if (!auth) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const mutating = ["POST", "PATCH", "PUT", "DELETE"].includes(request.method);
+  if (mutating && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const colaborador = await buscarColaboradorAdminAtivo(auth.adminId, env).catch(() => null);
+  if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
+  if (mutating && !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.CLIENTES_EDITAR)) {
+    return json({ erro: "Seu papel não tem permissão para editar ou cadastrar clientes a partir do CRM." }, 403);
+  }
   const db = createServiceSupabaseClient(env);
 
   if (path === "/api/admin/novas-vendas" && request.method === "GET") {
@@ -72,7 +86,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     if (error) return json({ erro: error.message }, 500);
     if (!data) return json({ erro: "Venda não encontrada." }, 404);
     await db.from("logs_alteracoes").insert({
-      usuario: auth.adminId,
+      usuario: colaborador.id,
       acao: "editou_venda_local_sem_sync_rd",
       entidade: "novas_vendas",
       entidade_id: id,
@@ -120,7 +134,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     if (erroUpdate) return json({ erro: erroUpdate.message }, 500);
 
     await db.from("logs_alteracoes").insert({
-      usuario: auth.adminId,
+      usuario: colaborador.id,
       acao: "cadastrou_cliente_a_partir_de_venda",
       entidade: "clientes",
       entidade_id: cliente.id,
