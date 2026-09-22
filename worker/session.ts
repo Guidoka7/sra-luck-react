@@ -33,8 +33,10 @@ async function assinarPayload(payload: Record<string, unknown>, secret: string):
 }
 
 async function verificarPayload<T extends object>(token: string | null | undefined, secret: string, maxAgeSeconds: number): Promise<T | null> {
-  if (!token) return null;
-  const [payloadStr, signature] = token.split(".");
+  if (!token || token.length > 8192) return null;
+  const partes = token.split(".");
+  if (partes.length !== 2) return null;
+  const [payloadStr, signature] = partes;
   if (!payloadStr || !signature) return null;
   const expected = await hmac(payloadStr, secret);
   if (expected.length !== signature.length) return null;
@@ -45,7 +47,10 @@ async function verificarPayload<T extends object>(token: string | null | undefin
   if (mismatch !== 0) return null;
   try {
     const payload = JSON.parse(base64urlDecode(payloadStr)) as T & { iat?: number };
-    if (!Number.isFinite(payload.iat) || Date.now() - payload.iat! > maxAgeSeconds * 1000) return null;
+    const agora = Date.now();
+    if (!Number.isFinite(payload.iat) || payload.iat! <= 0) return null;
+    if (payload.iat! > agora + 5 * 60 * 1000) return null;
+    if (agora - payload.iat! > maxAgeSeconds * 1000) return null;
     return payload;
   } catch {
     return null;
