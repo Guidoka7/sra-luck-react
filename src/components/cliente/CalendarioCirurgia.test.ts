@@ -57,3 +57,22 @@ describe("CalendarioCirurgia — informativo por forma de pagamento", () => {
     expect(cartao).not.toContain("Como funciona a liberação?");
   });
 });
+
+describe("CalendarioCirurgia — informativo da liberação (BUSINESS-RULES §12)", () => {
+  it("antes da assinatura, explica que a liberação começa após termos + quitação, com o prazo máximo vigente", () => {
+    const html = renderToStaticMarkup(createElement(CalendarioCirurgia, { dataAssinatura: "2026-09-22" }));
+    expect(html).toContain("Agenda cirúrgica");
+    expect(html).toContain("será iniciada a liberação da sua agenda cirúrgica");
+    expect(html).toContain("90 dias corridos");
+    expect(html).toContain("Assinatura dos termos");
+    expect(html).toContain("Quitação do saldo restante confirmada");
+    expect(html).not.toContain("5 dias úteis");
+  });
+
+  it("usa a previsão real de liberação quando o backend a informa", () => {
+    const snapshot = { agendaCirurgicaLiberarEm: "2026-11-20", agendaCirurgicaLiberada: false, datasCirurgiaDisponiveis: [], financeiro: { statusCirurgia: null, custeioConfirmadoEm: "2026-09-22T10:00:00Z" } } as never;
+    const html = renderToStaticMarkup(createElement(CalendarioCirurgia, { dataAssinatura: "2026-09-22", termosAssinados: true, snapshot }));
+    expect(html).toContain("Liberação em andamento");
+    expect(html).toContain("20/11/2026");
+  });
+});

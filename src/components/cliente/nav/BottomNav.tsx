@@ -18,9 +18,9 @@ function Icone({ id }: { id: ClientTab }) {
 /** "mais" continua sendo uma tela, mas é aberta pelo botão fixo do topo (MenuButton). */
 const ITEMS: { id: ClientTab; label: string }[] = [
   { id: "inicio", label: "Início" },
-  { id: "agenda", label: "Agenda" },
   { id: "premios", label: "Prêmios" },
   { id: "parcelas", label: "Financeiro" },
+  { id: "agenda", label: "Agenda" },
 ];
 
 export function BottomNav({ aba, onSelecionar }: BottomNavProps) {

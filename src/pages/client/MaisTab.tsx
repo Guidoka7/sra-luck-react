@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ProfilePhotoPicker } from "@/components/cliente/ProfilePhotoPicker";
 import { registrarErro } from "@/lib/monitoramento";
 import { ConfiguracoesApp } from "@/pages/client/ConfiguracoesApp";
+import { PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS } from "@/lib/clienteAgenda";
 
 type SubTela = "documentos" | "jornada" | "atendimento" | "faq" | "configuracoes" | "seguranca" | null;
 export type MaisSubTelaInicial = Extract<SubTela, "jornada" | "atendimento">;
@@ -17,7 +18,7 @@ interface MaisTabProps {
 }
 
 const FAQS = [
-  { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, você pode solicitar a liberação financeira no app. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura e da quitação confirmada, a agenda da cirurgia é liberada em até 5 dias úteis, podendo ser antecipada pela nossa equipe." },
+  { pergunta: "Como funciona a liberação da minha agenda?", resposta: `Ao atingir o percentual mínimo de parcelas pagas do seu plano, você pode solicitar a liberação financeira no app. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura dos termos e da quitação confirmada, é iniciada a liberação da agenda da cirurgia, que ocorre em até ${PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS} dias corridos e pode ser antecipada pela nossa equipe.` },
   { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Financeiro, cada parcela mostra o status do comprovante: em análise, confirmado ou rejeitado." },
   { pergunta: "Posso pagar uma parcela no cartão de crédito?", resposta: "Sim. Ao abrir o pagamento de uma parcela, a opção de cartão leva você para o checkout seguro do Mercado Pago." },
   { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Na aba Prêmios você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },
