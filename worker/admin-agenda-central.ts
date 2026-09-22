@@ -175,6 +175,12 @@ async function visaoGeral(env: Env) {
     const parcelas = parcelasPorCliente.get(cliente.id) ?? { total: cliente.quantidade_parcelas ?? 0, pagas: 0 };
     const minimo = requiredPaid(parcelas.total || cliente.quantidade_parcelas || 12);
     const faltam = Math.max(0, minimo - parcelas.pagas);
+    const appAccess = getAppAccessRequirements({
+      name: cliente.nome_completo,
+      cpf: cliente.cpf,
+      birthDate: cliente.data_nascimento,
+      installmentCount: parcelas.total || cliente.quantidade_parcelas || 0,
+    });
 
     let estagio: keyof typeof filas;
     if (agendamento?.processo_concluido_em) {
@@ -235,7 +241,7 @@ async function visaoGeral(env: Env) {
 async function clienteCentral(env: Env, clienteId: string) {
   const db = createServiceSupabaseClient(env);
   const { data: cliente, error: erroCliente } = await db.from("clientes")
-    .select("id,nome_completo,cpf,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
+    .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
     .eq("id", clienteId)
     .maybeSingle();
   if (erroCliente) return json({ erro: erroCliente.message }, 500);
