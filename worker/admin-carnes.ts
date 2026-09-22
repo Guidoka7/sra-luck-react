@@ -1,5 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { extrairDadosBoleto, pontuarCandidatos, type BoletoCandidato } from "./pdf-boleto-parser";
 
@@ -52,6 +53,14 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
   const session = await exigirAdmin(request, env);
   if (!session) return json({ erro: "Sessão administrativa expirada." }, 401);
   if (request.method !== "GET" && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  let atorFinanceiro: string | null = null;
+  if (request.method !== "GET") {
+    const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env).catch(() => null);
+    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+      return json({ erro: "Seu papel não tem permissão para alterar carnês ou vínculos financeiros." }, 403);
+    }
+    atorFinanceiro = colaborador.id;
+  }
   const db = createServiceSupabaseClient(env);
 
   const carnesCliente = path.match(/^\/api\/admin\/clientes\/([^/]+)\/carnes$/);
@@ -88,7 +97,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       if (error) return json({ erro: error.code === "23505" ? "Já existe um carnê com esse identificador para esta instituição." : error.message }, 400);
 
       await db.from("logs_alteracoes").insert({
-        usuario: session.adminId,
+        usuario: atorFinanceiro ?? session.adminId,
         acao: "criou_carne",
         entidade: "clientes",
         entidade_id: clienteId,
@@ -231,7 +240,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       if (erroInsert) return json({ erro: erroInsert.message }, 500);
 
       await db.from("logs_alteracoes").insert({
-        usuario: session.adminId,
+        usuario: atorFinanceiro ?? session.adminId,
         acao: "importou_carne_pdf",
         entidade: "clientes",
         entidade_id: clienteId,
@@ -288,7 +297,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
     if (erroUpdate) return json({ erro: erroUpdate.message }, 500);
 
     await db.from("logs_alteracoes").insert({
-      usuario: session.adminId,
+      usuario: atorFinanceiro ?? session.adminId,
       acao: "vinculou_boleto_importado",
       entidade: "clientes",
       entidade_id: importacao.cliente_id,
