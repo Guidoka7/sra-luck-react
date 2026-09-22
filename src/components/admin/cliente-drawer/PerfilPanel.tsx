@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatarCpf } from "@/lib/cpf";
-import { getAppAccessRequirements } from "../../../../worker/app-access";
+import { dataNascimentoValida, getAppAccessRequirements } from "../../../../worker/app-access";
 import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { formatCurrency, formatDate, formatDateTime, descreverHistorico } from "./drawerFormat";
@@ -25,7 +25,9 @@ export function PerfilPanel({ cad, formId, previsaoLiberacao, onPedirExclusao }:
   const [historicoAberto, setHistoricoAberto] = useState(false);
   useEffect(() => { setHistoricoAberto(false); }, [cad.cliente?.id]);
 
-  const requisitos = getAppAccessRequirements({ name: cad.nome, cpf: cad.cpf, birthDate: cad.nascimento, installmentCount: cad.boletos.length });
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const requisitos = getAppAccessRequirements({ name: cad.nome, cpf: cad.cpf, birthDate: cad.nascimento, installmentCount: cad.boletos.length }, hojeIso);
+  const acessoComDadosInvalidos = cad.acessoLiberado && !requisitos.canRelease;
 
   function editar(s: Secao) {
     setSnapshot((a) => ({ ...a, nome: cad.nome, cpf: cad.cpf, nascimento: cad.nascimento, telefone: cad.telefone ?? "", email: cad.email ?? "", procedimento: cad.procedimento ?? "", carta: cad.carta, consultora: cad.consultora, observacoes: cad.observacoes ?? "" }));
@@ -51,7 +53,7 @@ export function PerfilPanel({ cad, formId, previsaoLiberacao, onPedirExclusao }:
         {editando.personal ? <div className={styles.formGrid}>
           <Field label="Nome completo" id="perfil-nome"><input id="perfil-nome" className={styles.input} value={cad.nome} onChange={(e) => cad.setNome(e.target.value)} required autoComplete="off" /></Field>
           <Field label="CPF" id="perfil-cpf"><input id="perfil-cpf" className={styles.input} value={cad.cpf} maxLength={14} disabled={cad.editando} title={cad.editando ? "O CPF não pode ser alterado depois do cadastro." : undefined} onChange={(e) => cad.setCpf(formatarCpf(e.target.value))} /></Field>
-          <Field label="Data de nascimento" id="perfil-nasc"><input id="perfil-nasc" className={styles.input} type="date" value={cad.nascimento} onChange={(e) => cad.setNascimento(e.target.value)} required /></Field>
+          <Field label="Data de nascimento" id="perfil-nasc"><input id="perfil-nasc" className={styles.input} type="date" value={cad.nascimento} max={hojeIso} aria-invalid={Boolean(cad.nascimento) && !dataNascimentoValida(cad.nascimento, hojeIso)} onChange={(e) => cad.setNascimento(e.target.value)} required /></Field>
           <Field label="Telefone" id="perfil-tel"><input id="perfil-tel" className={styles.input} value={cad.telefone ?? ""} onChange={(e) => cad.setTelefone(e.target.value)} /></Field>
           <Field label="E-mail" id="perfil-email" wide><input id="perfil-email" className={styles.input} type="email" value={cad.email ?? ""} onChange={(e) => cad.setEmail(e.target.value)} /></Field>
         </div> : <div className={styles.infoGrid}>
@@ -70,20 +72,23 @@ export function PerfilPanel({ cad, formId, previsaoLiberacao, onPedirExclusao }:
         <div className={styles.appAccessHeader}>
           <div>
             <span className={styles.appAccessKicker}>Status</span>
-            <strong className={cad.acessoLiberado ? styles.appAccessReleased : requisitos.canRelease ? styles.appAccessReady : styles.appAccessWaiting}>
-              {cad.acessoLiberado ? "● Acesso liberado" : requisitos.canRelease ? "Pronta para acesso" : "Aguardando requisitos"}
+            <strong className={acessoComDadosInvalidos ? styles.appAccessWaiting : cad.acessoLiberado ? styles.appAccessReleased : requisitos.canRelease ? styles.appAccessReady : styles.appAccessWaiting}>
+              {acessoComDadosInvalidos ? "● Acesso liberado · revisar dados" : cad.acessoLiberado ? "● Acesso liberado" : requisitos.canRelease ? "Pronta para acesso" : "Aguardando requisitos"}
             </strong>
           </div>
-          {cad.acessoLiberado ? <span className={styles.appAccessBadge}>Liberado</span> : null}
+          {cad.acessoLiberado ? <span className={styles.appAccessBadge}>{acessoComDadosInvalidos ? "Revisar dados" : "Liberado"}</span> : null}
         </div>
         <div className={styles.appAccessChecklist} aria-label="Requisitos para liberação do aplicativo">
           <Requisito ok={requisitos.hasName} feito="Nome cadastrado" falta="Nome ainda não cadastrado" />
-          <Requisito ok={requisitos.hasCpf} feito="CPF válido" falta="CPF válido ainda não cadastrado" />
-          <Requisito ok={requisitos.hasBirthDate} feito="Data de nascimento cadastrada" falta="Data de nascimento ainda não cadastrada" />
+          <Requisito ok={requisitos.hasCpf} feito="CPF válido" falta="CPF inválido ou não cadastrado" />
+          <Requisito ok={requisitos.hasBirthDate} feito="Data de nascimento válida" falta="Informe uma data de nascimento válida" />
           <Requisito ok={requisitos.hasFinancial} feito="Financeiro criado" falta="Financeiro ainda não criado" />
         </div>
         {cad.acessoLiberado
-          ? <div className={styles.appAccessReleasedInfo}><span>Data da liberação</span><strong>{cad.acessoLiberadoEm ? formatDateTime(cad.acessoLiberadoEm) : "Acesso legado — data não registrada"}</strong></div>
+          ? <>
+              <div className={styles.appAccessReleasedInfo}><span>Data da liberação</span><strong>{cad.acessoLiberadoEm ? formatDateTime(cad.acessoLiberadoEm) : "Acesso legado — data não registrada"}</strong></div>
+              {acessoComDadosInvalidos ? <p className={styles.appAccessHint}>O acesso já estava liberado, mas o cadastro atual possui requisito inválido. Corrija e salve os dados do perfil; o acesso não será revogado automaticamente.</p> : null}
+            </>
           : <>
               <button className={styles.appAccessButton} type="button" disabled={!requisitos.canRelease || cad.liberandoAcesso} onClick={() => void cad.liberarAcessoApp()} aria-busy={cad.liberandoAcesso}>{cad.liberandoAcesso ? "Liberando..." : "Liberar acesso ao app"}</button>
               {!requisitos.canRelease ? <p className={styles.appAccessHint}>Conclua os requisitos acima para liberar o acesso. Procedimento não é requisito.</p> : null}
