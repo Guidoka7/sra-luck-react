@@ -50,6 +50,24 @@ async function vapid(env: Env) {
   return { subject, publicKey, privateKey };
 }
 
+function endpointPushPermitido(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+    const host = url.hostname.toLowerCase();
+    return host === "fcm.googleapis.com"
+      || host === "android.googleapis.com"
+      || host === "updates.push.services.mozilla.com"
+      || host === "push.services.mozilla.com"
+      || host === "web.push.apple.com"
+      || host.endsWith(".push.services.mozilla.com")
+      || host.endsWith(".notify.windows.com")
+      || host.endsWith(".push.apple.com");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Envia Web Push diretamente do Worker usando Web Crypto/RFC 8291 + VAPID.
  * Assinaturas 404/410 são removidas automaticamente porque o push service já
@@ -92,6 +110,13 @@ export async function enviarWebPushParaCliente(
   });
 
   for (const subscription of subscriptions ?? []) {
+    if (!endpointPushPermitido(String(subscription.endpoint ?? ""))) {
+      await db.from("web_push_subscriptions").delete().eq("id", subscription.id).eq("cliente_id", clienteId);
+      resultado.removidas += 1;
+      resultado.falhas += 1;
+      resultado.erros.push("Assinatura push inválida removida.");
+      continue;
+    }
     try {
       const requestInit = await buildPushPayload(
         { data, options: { ttl: 60 * 60 * 24 } },
@@ -116,7 +141,8 @@ export async function enviarWebPushParaCliente(
       resultado.erros.push(`Push HTTP ${response.status}`);
     } catch (erro) {
       resultado.falhas += 1;
-      resultado.erros.push(erro instanceof Error ? erro.message.slice(0, 240) : "Falha ao enviar Web Push.");
+      console.error("Falha ao enviar Web Push:", erro);
+      resultado.erros.push("Falha ao enviar Web Push.");
     }
   }
 
