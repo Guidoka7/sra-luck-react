@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { calcularLiberacaoCirurgica } from "./surgery-release";
 
@@ -11,9 +12,13 @@ function json(data: unknown, status = 200) {
 
 async function auth(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
-  return (await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET))
-    ? null
-    : json({ erro: "Sessão administrativa expirada." }, 401);
+  const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
+  if (!sessao) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {
+    return json({ erro: "Seu papel não tem permissão para visualizar relatórios." }, 403);
+  }
+  return null;
 }
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -310,7 +315,7 @@ export async function adminReports(request: Request, env: Env): Promise<Response
       return json(await forecastLiberacoes(db));
     } catch (error) {
       console.error("Falha no forecast de liberações:", error);
-      return json({ erro: error instanceof Error ? error.message : "Não foi possível gerar a previsão." }, 500);
+      return json({ erro: "Não foi possível gerar a previsão." }, 500);
     }
   }
 
