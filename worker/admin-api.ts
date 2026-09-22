@@ -5,6 +5,15 @@ import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from
 import { dataNascimentoValida, getAppAccessRequirements } from "./app-access";
 
 type Json = Record<string, any>;
+
+export function exclusaoClienteDeveArquivar(error: unknown): boolean {
+  const e = (error ?? {}) as { code?: string; message?: string; details?: string; constraint?: string };
+  const texto = [e.message, e.details, e.constraint].filter(Boolean).join(" ").toLowerCase();
+  return e.code === "23503"
+    || texto.includes("clientes_historico_financeiro_protegido")
+    || texto.includes("histórico financeiro")
+    || texto.includes("historico financeiro");
+}
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
 async function body(request: Request): Promise<Json> { try { return await request.json(); } catch { return {}; } }
 async function exigirAdmin(request: Request, env: Env) { if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503); const token=getCookie(request,"admin_session"); return (await verificarTokenAdmin(token,env.CLIENTE_SESSION_SECRET))?null:json({erro:"Sessão administrativa expirada."},401); }
@@ -147,9 +156,35 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
     if(erroExistente)return json({erro:publicError(erroExistente)},500);
     if(!existente)return json({erro:"Cliente não encontrada."},404);
     const {error}=await supabase.from("clientes").delete().eq("id",id);
-    if(error)return json({erro:publicError(error)},400);
-    await supabase.from("logs_alteracoes").insert({usuario:colaborador1.id,acao:"excluiu_cliente",entidade:"clientes",entidade_id:id,detalhes:{registroExcluido:true}});
-    return json({ok:true});
+    if(error){
+      if(!exclusaoClienteDeveArquivar(error))return json({erro:publicError(error)},400);
+
+      // O banco protege histórico financeiro/operacional contra DELETE físico.
+      // Nesses casos, "Excluir perfil" vira arquivamento operacional: preserva
+      // parcelas/agendamentos/recebimentos para auditoria, remove o cadastro
+      // das áreas ativas e revoga novos acessos ao app.
+      const {data:arquivada,error:erroArquivar}=await supabase.from("clientes").update({
+        ativo:false,
+        acesso_app_liberado:false,
+        status_contrato:"cancelado",
+        suspenso_desde:null,
+        suspenso_ate:null,
+        suspensao_motivo:null,
+      }).eq("id",id).select("id").maybeSingle();
+      if(erroArquivar)return json({erro:publicError(erroArquivar)},400);
+      if(!arquivada)return json({erro:"Cliente não encontrada."},404);
+
+      await supabase.from("logs_alteracoes").insert({
+        usuario:colaborador1.id,
+        acao:"arquivou_cliente",
+        entidade:"clientes",
+        entidade_id:id,
+        detalhes:{registroExcluido:false,modo:"arquivado",historicoPreservado:true},
+      });
+      return json({ok:true,arquivado:true});
+    }
+    await supabase.from("logs_alteracoes").insert({usuario:colaborador1.id,acao:"excluiu_cliente",entidade:"clientes",entidade_id:id,detalhes:{registroExcluido:true,modo:"fisico"}});
+    return json({ok:true,arquivado:false});
   }
   const cb=path.match(/^\/api\/admin\/clientes\/([^/]+)\/(boletos|parcelas)$/);if(cb){const id=decodeURIComponent(cb[1]);if(request.method==="GET"){const {data,error}=await supabase.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,boleto_url,data_pagamento,observacoes,suspensa,suspensa_em,suspensa_por,created_at,updated_at").eq("cliente_id",id).order("numero_parcela",{ascending:true});if(error)return json({erro:publicError(error)},500);return json({boletos:data??[],parcelas:data??[]});}const semPermissaoParcelas=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL,"Seu papel não tem permissão para alterar parcelas.");if(semPermissaoParcelas)return semPermissaoParcelas;const b=await body(request);if(request.method==="POST"&&cb[2]==="boletos"){const {data:c}=await supabase.from("clientes").select("valor_contrato,quantidade_parcelas,taxa_administrativa_percentual").eq("id",id).maybeSingle();const total=Math.max(Number(b.totalParcelas??c?.quantidade_parcelas??1),1);const valor=Number(b.valor??((Number(c?.valor_contrato??0)*(1+Number(c?.taxa_administrativa_percentual??0)/100))/total));const rows=Array.from({length:total},(_,i)=>({cliente_id:id,numero_parcela:i+1,total_parcelas:total,valor,data_vencimento:b.dataVencimento??null,status:"pendente"}));const {data,error}=await supabase.from("boletos").insert(rows).select("*");if(error)return json({erro:publicError(error)},400);return json({boletos:data});}if(request.method==="POST"&&cb[2]==="parcelas"){if(b.acao==="excluir"&&b.boletoId){const {error}=await supabase.from("boletos").delete().eq("id",b.boletoId).eq("cliente_id",id);if(error)return json({erro:publicError(error)},400);return json({ok:true});}if(b.acao==="editar"&&b.boletoId){const patch:any={};if(b.valor!==undefined)patch.valor=Number(b.valor);if(b.dataVencimento!==undefined)patch.data_vencimento=b.dataVencimento||null;const {data,error}=await supabase.from("boletos").update(patch).eq("id",b.boletoId).eq("cliente_id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({boleto:data});}}if(request.method==="PATCH"){const idB=b.boletoId;if(!idB)return json({erro:"Boleto não informado."},400);const patch:any={};if(b.valor!==undefined)patch.valor=Number(b.valor);if(b.dataVencimento!==undefined)patch.data_vencimento=b.dataVencimento||null;if(b.status!==undefined)patch.status=b.status;const {data,error}=await supabase.from("boletos").update(patch).eq("id",idB).eq("cliente_id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({boleto:data});}}
   if(path==="/api/admin/boletos"&&request.method==="GET"){let q=supabase.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,status,comprovante_url,boleto_url,data_pagamento,observacoes,suspensa,suspensa_em,suspensa_por,created_at,updated_at,clientes(id,nome_completo,cpf)").order("created_at",{ascending:false});const status=url.searchParams.get("status"),cid=url.searchParams.get("cliente_id");if(status&&status!=="todos")q=q.eq("status",status);if(cid)q=q.eq("cliente_id",cid);const {data,error}=await q;if(error)return json({erro:publicError(error)},500);return json({boletos:(data??[]).map((x:any)=>({...x,valor:Number(x.valor)}))});}
