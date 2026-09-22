@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 
 interface InstallmentSummaryRow {
@@ -64,6 +65,9 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !mesmaOrigem(request)) {
       return json({ erro: "Requisição de origem não autorizada." }, 403);
     }
+    const colaborador = await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
+    if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
+    const pode = (permissao: string) => temPermissaoAdmin(colaborador, permissao);
     const db = createServiceSupabaseClient(env);
 
     if (path === "/api/admin/credit-ops/contracts" && request.method === "GET") {
@@ -76,6 +80,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/contracts" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para criar contratos de crédito." }, 403);
       const b = await body(request);
       const clienteId = String(b.clienteId ?? "");
       const codigo = String(b.codigo ?? "").trim();
@@ -98,6 +103,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
 
     const contract = path.match(/^\/api\/admin\/credit-ops\/contracts\/([^/]+)$/);
     if (contract && request.method === "PATCH") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar contratos de crédito." }, 403);
       const b = await body(request);
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       const map: Record<string, string> = {
@@ -150,6 +156,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/rewards" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar recompensas." }, 403);
       const b = await body(request);
       const { data, error } = await db.from("clube_recompensas").insert({
         titulo: b.titulo,
@@ -174,6 +181,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/team/commission-rules" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.EQUIPE_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar regras de comissão." }, 403);
       const b = await body(request);
       const { data, error } = await db.from("comissao_regras").insert({
         perfil: b.perfil,
@@ -188,6 +196,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/team/trainings" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.EQUIPE_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para criar treinamentos." }, 403);
       const b = await body(request);
       const { data, error } = await db.from("treinamentos").insert({
         titulo: b.titulo,
