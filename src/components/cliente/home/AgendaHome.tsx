@@ -43,6 +43,11 @@ function brDate(value: string | null | undefined) {
   return y && m && d ? `${d}/${m}/${y}` : value;
 }
 
+/** Etapa 3: levantamento aprovado, mas a cliente ainda não escolheu o custeio. */
+export function deveMostrarEscolhaCusteio(statusRevisaoFinanceira: StatusRevisaoFinanceira, custeioAprovado: boolean) {
+  return statusRevisaoFinanceira === "aprovada" && !custeioAprovado;
+}
+
 export function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado }: Pick<AgendaHomeProps, "agendamentoAtivo" | "agendamentoConcluido" | "podeAgendar" | "agendaLiberada" | "statusRevisaoFinanceira" | "custeioAprovado">) {
   if (agendamentoConcluido) return { label: "Termos assinados", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (agendamentoAtivo) return { label: "Assinatura agendada", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
@@ -112,7 +117,7 @@ export function AgendaHome({
     <div>
       {statusRevisaoFinanceira === "recusada" ? (
         <AvisoRevisaoFinanceira status="recusada" observacao={observacaoRevisaoFinanceira ?? null} />
-      ) : statusRevisaoFinanceira === "aprovada" && !custeioAprovado ? (
+      ) : deveMostrarEscolhaCusteio(statusRevisaoFinanceira, custeioAprovado) ? (
         // Etapa 3 começa imediatamente após o levantamento ser confirmado.
         // agendaLiberada ainda é false neste momento por desenho do backend:
         // ela exige a forma de pagamento já escolhida. Por isso a seleção
