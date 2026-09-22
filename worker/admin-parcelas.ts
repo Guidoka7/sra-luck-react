@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
@@ -49,8 +50,8 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
       .eq("id", clienteId)
       .maybeSingle(),
   ]);
-  if (error) return { resposta: json({ erro: error.message }, 500), cliente: null, boletos: [] as any[] };
-  if (clienteError) return { resposta: json({ erro: clienteError.message }, 500), cliente: null, boletos: [] as any[] };
+  if (error) return { resposta: json({ erro: publicError(error) }, 500), cliente: null, boletos: [] as any[] };
+  if (clienteError) return { resposta: json({ erro: publicError(clienteError) }, 500), cliente: null, boletos: [] as any[] };
   if (!cliente) return { resposta: json({ erro: "Cliente não encontrada." }, 404), cliente: null, boletos: [] as any[] };
 
   return {
@@ -109,8 +110,8 @@ async function salvarPlanoDoDrawer(
     db.from("boletos").select("id").eq("cliente_id", clienteId).limit(1),
     db.from("clientes").select("id,valor_contrato").eq("id", clienteId).maybeSingle(),
   ]);
-  if (erroExistentes) return json({ erro: erroExistentes.message }, 500);
-  if (erroCliente) return json({ erro: erroCliente.message }, 500);
+  if (erroExistentes) return json({ erro: publicError(erroExistentes) }, 500);
+  if (erroCliente) return json({ erro: publicError(erroCliente) }, 500);
   if (!clienteAtual) return json({ erro: "Cliente não encontrada." }, 404);
 
   const jaTinhaPlano = Boolean(existentes?.length);
@@ -122,7 +123,7 @@ async function salvarPlanoDoDrawer(
 
   if (valorContrato !== null && Math.abs(Number(clienteAtual.valor_contrato ?? 0) - valorContrato) > 0.009) {
     const { error: erroCarta } = await db.from("clientes").update({ valor_contrato: valorContrato }).eq("id", clienteId);
-    if (erroCarta) return json({ erro: erroCarta.message }, 500);
+    if (erroCarta) return json({ erro: publicError(erroCarta) }, 500);
   }
 
   const { data, error } = await db.rpc("salvar_plano_financeiro_cliente", {
@@ -138,7 +139,8 @@ async function salvarPlanoDoDrawer(
     const mensagem = String(error.message || "Não foi possível salvar o plano financeiro.")
       .replace(/^P0001:\s*/i, "")
       .replace(/^ERROR:\s*/i, "");
-    return json({ erro: mensagem }, /parcela paga|em conferência|não é possível reduzir/i.test(mensagem) ? 409 : 400);
+    const conflito = /parcela paga|em conferência|não é possível reduzir/i.test(mensagem);
+    return json({ erro: conflito ? "Não é possível reduzir o plano com parcelas pagas ou em conferência." : publicError(error, "Não foi possível salvar o plano financeiro.") }, conflito ? 409 : 400);
   }
 
   const boletos = (data ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) }));
@@ -243,7 +245,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
       .eq("cliente_id", clienteId)
       .order("numero_parcela", { ascending: false })
       .limit(1);
-    if (existentesError) return json({ erro: existentesError.message }, 500);
+    if (existentesError) return json({ erro: publicError(existentesError) }, 500);
 
     const ultima = Number(existentes?.[0]?.numero_parcela ?? 0);
     const total = ultima + quantidade;
@@ -271,7 +273,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     });
 
     const { error } = await db.from("boletos").insert(rows);
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     await db.from("boletos").update({ total_parcelas: total }).eq("cliente_id", clienteId);
     await db.from("clientes").update({ quantidade_parcelas: total }).eq("id", clienteId);
     await db.from("logs_alteracoes").insert({ usuario, acao: "gerou_parcelas", entidade: "clientes", entidade_id: clienteId, detalhes: { quantidade_adicionada: quantidade, total_anterior: ultima, total_novo: total, valor_parcela: valor } });
@@ -291,7 +293,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
       const { data: todas } = await db.from("boletos").select("id").eq("cliente_id", clienteId);
       const novoTotal = Math.max(0, (todas ?? []).length - 1);
       const { error } = await db.from("boletos").delete().eq("id", boletoId).eq("cliente_id", clienteId);
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       if (novoTotal > 0) await db.from("boletos").update({ total_parcelas: novoTotal }).eq("cliente_id", clienteId);
       await db.from("clientes").update({ quantidade_parcelas: novoTotal > 0 ? novoTotal : null }).eq("id", clienteId);
       await db.from("logs_alteracoes").insert({ usuario, acao: "excluiu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, valor: atual.valor, vencimento: atual.data_vencimento, novo_total: novoTotal } });
@@ -301,7 +303,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
 
     if (acao === "reabrir") {
       const { data, error } = await db.from("boletos").update({ status: "nao_pago", data_pagamento: null, observacoes: body.observacoes ?? atual.observacoes }).eq("id", boletoId).eq("cliente_id", clienteId).select("*").single();
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       await db.from("logs_alteracoes").insert({ usuario, acao: "reabriu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, status_anterior: atual.status } });
       await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: atual.numero_parcela });
       return json({ boleto: { ...data, valor: Number(data.valor) } });
@@ -317,7 +319,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     if (valor !== undefined) update.valor = valor;
     if (dataVencimento !== undefined) update.data_vencimento = dataVencimento;
     const { data, error } = await db.from("boletos").update(update).eq("id", boletoId).eq("cliente_id", clienteId).select("*").single();
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     await db.from("logs_alteracoes").insert({ usuario, acao: "editou_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, de: { valor: atual.valor, data_vencimento: atual.data_vencimento }, para: { valor: data.valor, data_vencimento: data.data_vencimento } } });
     await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: atual.numero_parcela });
     return json({ boleto: { ...data, valor: Number(data.valor) } });
@@ -333,7 +335,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
       .insert({ usuario, acao: "registrou_observacao", entidade: "clientes", entidade_id: clienteId, detalhes: { texto } })
       .select("id,created_at")
       .single();
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     return json({ sucesso: true, observacao: { id: data.id, texto, usuario, created_at: data.created_at } });
   }
 
@@ -342,14 +344,14 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     if (!ids.length) return json({ erro: "Selecione ao menos uma parcela em aberto." }, 400);
 
     const { data: atuais, error } = await db.from("boletos").select("id,status,numero_parcela").eq("cliente_id", clienteId).order("numero_parcela", { ascending: true });
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     const selecionadas = (atuais ?? []).filter((boleto: any) => ids.includes(String(boleto.id)));
     if (selecionadas.length !== ids.length) return json({ erro: "Uma ou mais parcelas não pertencem a esta cliente." }, 400);
     if (selecionadas.some((boleto: any) => boleto.status === "pago")) return json({ erro: "Parcelas pagas nunca podem ser suspensas." }, 400);
 
     const agora = new Date().toISOString();
     const { error: erroSuspensao } = await db.from("boletos").update({ suspensa: true, suspensa_em: agora, suspensa_por: usuario }).in("id", ids).eq("cliente_id", clienteId).neq("status", "pago");
-    if (erroSuspensao) return json({ erro: erroSuspensao.message }, 500);
+    if (erroSuspensao) return json({ erro: publicError(erroSuspensao) }, 500);
     await db.from("logs_alteracoes").insert({ usuario, acao: "suspendeu_parcelas", entidade: "clientes", entidade_id: clienteId, detalhes: { parcelas: selecionadas.map((boleto: any) => boleto.numero_parcela), quantidade: ids.length } });
     await avisarCliente(db, clienteId, { tipo: "parcelamento_atualizado", suspensas: ids.length });
     return json({ sucesso: true, mensagem: `${ids.length} parcela(s) suspensa(s).` });

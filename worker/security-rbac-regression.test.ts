@@ -89,3 +89,26 @@ describe("regressões de segurança RBAC e borda HTTP", () => {
     expect(credenciais).toContain("Compatibilidade somente de leitura");
   });
 });
+
+// Exercise the permission resolver itself; handler integration is covered by security-runtime.
+import { adminReadPermissions, canReadAdminRoute } from "./admin-route-permissions";
+import { PERMISSOES_ADMIN as P, type ColaboradorAdmin } from "./admin-auth";
+
+describe("matriz executável de permissões de leitura", () => {
+  it.each([
+    ["/api/admin/financeiro/recebiveis", P.FINANCEIRO_REVISAO],
+    ["/api/admin/clientes/c/boletos", P.FINANCEIRO_VALIDAR_COMPROVANTE],
+    ["/api/admin/staff", P.EQUIPE_GERENCIAR],
+    ["/api/admin/credit-ops/contracts", P.CREDITO_GERENCIAR],
+    ["/api/admin/previsao-liberacoes", P.AGENDA_GERENCIAR],
+    ["/api/admin/integrations/status", P.INTEGRACOES_GERENCIAR_CREDENCIAIS],
+    ["/api/admin/relatorios/historico", P.RELATORIOS_VISUALIZAR],
+    ["/api/admin/monitoramento-erros", P.MONITORAMENTO_VISUALIZAR],
+  ])("nega sem permissão e aceita a permissão de %s", (path, permission) => {
+    const actor: ColaboradorAdmin = { id: "test", auth_user_id: "test", cargo: "financeiro", ativo: true, permissoes: [] };
+    expect(adminReadPermissions(path)).toContain(permission);
+    expect(canReadAdminRoute(actor, path)).toBe(false);
+    expect(canReadAdminRoute({ ...actor, permissoes: [permission] }, path)).toBe(true);
+    expect(canReadAdminRoute({ ...actor, cargo: "administrativo" }, path)).toBe(true);
+  });
+});

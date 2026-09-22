@@ -17,11 +17,11 @@ export async function executarMonitoramentoPreventivo(env: Env) {
     try {
       const result = await fn();
       if (result.error) {
-        falhas.push({ nome, detalhe: result.error.message });
+        falhas.push({ nome, detalhe: "Falha no serviço" });
         log.error("Check preventivo retornou erro", { eventCode: "PREVENTIVE_CHECK_FAILED", check: nome, error: result.error });
       }
     } catch (error) {
-      const detalhe = error instanceof Error ? error.message : "Falha desconhecida";
+      const detalhe = "Falha no serviço";
       falhas.push({ nome, detalhe });
       log.error("Check preventivo lançou exceção", { eventCode: "PREVENTIVE_CHECK_EXCEPTION", check: nome, error });
     }

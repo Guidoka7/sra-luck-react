@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
@@ -70,7 +71,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
         db.from("datas_liberacao_financeira").select("*").gte("data", inicio).lt("data", proximo).order("data", { ascending: true }),
         db.from("agendamentos").select("previsao_liberacao_financeira,valor_contrato,clientes(nome_completo)").in("status", ["confirmado", "realizado"]).gte("previsao_liberacao_financeira", inicio).lt("previsao_liberacao_financeira", proximo),
       ]);
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       const mapa = new Map<string, { nome: string; valor: number }[]>();
       for (const item of ocupacoes ?? []) {
         const data = (item as any).previsao_liberacao_financeira as string | null;
@@ -89,7 +90,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
       const b = await body(request);
       if (typeof b.data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.data)) return json({ erro: "Informe uma data válida." }, 400);
       const { data, error } = await db.from("datas_liberacao_financeira").upsert({ data: b.data, status: "disponivel" }, { onConflict: "data" }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ data });
     }
 
@@ -101,7 +102,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
       const { data: ocupacoes } = await db.from("agendamentos").select("id").in("status", ["confirmado", "realizado"]).eq("previsao_liberacao_financeira", dataSolicitada).limit(1);
       if ((ocupacoes ?? []).length) return json({ erro: "Esta data já possui uma cirurgia confirmada e não pode ser fechada." }, 409);
       const { data, error } = await db.from("datas_liberacao_financeira").delete().eq("data", dataSolicitada).select("*").maybeSingle();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       if (!data) return json({ erro: "Data não encontrada ou já estava fechada." }, 404);
       return json({ data });
     }
@@ -114,7 +115,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
         .select("id,cliente_id,agendamento_id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,created_at,updated_at,clientes(nome_completo,cpf,quantidade_parcelas,custeio_confirmado_em),agendamentos(previsao_liberacao_financeira,termos_assinados_em,datas(data))")
         .in("status", ["pendente", "em_analise", "aprovada"])
         .order("created_at", { ascending: true });
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       const solicitacoes = (data ?? []).filter((item: any) => !one(item.agendamentos)?.previsao_liberacao_financeira).map((item: any) => {
         const agendamento = one(item.agendamentos);
         const cliente = one(item.clientes);
@@ -155,7 +156,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
         .eq("id", id)
         .select("id,cliente_id,agendamento_id,status,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,observacao")
         .single();
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       if (dataLiberacao && atual.agendamento_id) {
         const { data: agendamento } = await db.from("agendamentos").select("id,termos_assinados_em,clientes(custeio_confirmado_em)").eq("id", atual.agendamento_id).maybeSingle();
         const cliente = one((agendamento as any)?.clientes);
@@ -175,8 +176,8 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
       db.from("clientes").select("id,nome_completo,cpf,ativo").eq("ativo", true).order("nome_completo", { ascending: true }),
       db.from("cliente_app_devices").select("cliente_id,device_key,device_type,display_mode,is_pwa_installed,notification_permission,push_active,user_agent,first_access_at,last_access_at,pwa_installed_at,notifications_activated_at").order("last_access_at", { ascending: false }),
     ]);
-    if (erroClientes) return json({ erro: erroClientes.message }, 500);
-    if (erroDevices) return json({ erro: erroDevices.message }, 500);
+    if (erroClientes) return json({ erro: publicError(erroClientes) }, 500);
+    if (erroDevices) return json({ erro: publicError(erroDevices) }, 500);
     const mapa = new Map<string, any[]>();
     for (const d of devices ?? []) {
       const lista = mapa.get(d.cliente_id) ?? [];

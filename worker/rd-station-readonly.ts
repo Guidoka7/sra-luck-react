@@ -184,6 +184,7 @@ async function criarState(adminId: string, segredo: string) {
 }
 
 async function validarState(state: string, segredo: string) {
+  if (state.length > 8192 || state.split(".").length !== 2) return null;
   const [payload, assinatura] = state.split(".");
   if (!payload || !assinatura) return null;
   const esperado = await hmacBase64Url(segredo, payload);
@@ -193,7 +194,7 @@ async function validarState(state: string, segredo: string) {
   if (diff !== 0) return null;
   try {
     const parsed = JSON.parse(fromBase64Url(payload)) as { adminId?: string; exp?: number };
-    if (!parsed.adminId || !parsed.exp || parsed.exp < Date.now()) return null;
+    if (typeof parsed.adminId !== "string" || !parsed.adminId || !Number.isFinite(parsed.exp) || parsed.exp! < Date.now() || parsed.exp! > Date.now() + 10 * 60_000) return null;
     return parsed.adminId;
   } catch { return null; }
 }

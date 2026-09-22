@@ -80,5 +80,11 @@ export default async function handler(request: Request) {
     );
   }
 
-  return worker.fetch(request, buildEnv(request));
+  // This adapter runs only on Vercel, which overwrites X-Forwarded-For.
+  // Do not trust a client-supplied Cloudflare header on this deployment.
+  const headers = new Headers(request.headers);
+  headers.delete("cf-connecting-ip");
+  headers.delete("x-real-ip");
+  const trustedRequest = new Request(request, { headers });
+  return worker.fetch(trustedRequest, buildEnv(trustedRequest));
 }

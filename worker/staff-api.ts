@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import {
@@ -166,14 +167,14 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
     const { ipKey, emailKey } = await chavesRateLimitEquipe(request, env.CLIENTE_SESSION_SECRET, email);
     const [limiteIp, limiteEmail] = await Promise.all([
-      db.rpc("login_pode_tentar", {
+      db.rpc("rate_limit_consumir", {
         p_chave: ipKey,
-        p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP,
+        p_max_tentativas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP,
         p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS,
       }),
-      db.rpc("login_pode_tentar", {
+      db.rpc("rate_limit_consumir", {
         p_chave: emailKey,
-        p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL,
+        p_max_tentativas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL,
         p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS,
       }),
     ]);
@@ -184,10 +185,6 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
     const { data: auth, error: authError } = await db.auth.signInWithPassword({ email, password });
     if (authError || !auth.user) {
-      await Promise.all([
-        db.rpc("login_registrar_falha", { p_chave: ipKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
-        db.rpc("login_registrar_falha", { p_chave: emailKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
-      ]);
       return json({ erro: "E-mail ou senha incorretos." }, 401);
     }
 
@@ -198,17 +195,9 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
       .maybeSingle();
     const cargo = cargoValido(staff?.cargo);
     if (error || !staff || !staff.ativo || !cargo) {
-      await Promise.all([
-        db.rpc("login_registrar_falha", { p_chave: ipKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
-        db.rpc("login_registrar_falha", { p_chave: emailKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
-      ]);
       return json({ erro: "Seu acesso ao portal da equipe não está ativo." }, 403);
     }
 
-    await Promise.all([
-      db.rpc("login_limpar_rate_limit", { p_chave: ipKey }),
-      db.rpc("login_limpar_rate_limit", { p_chave: emailKey }),
-    ]);
 
     const token = await criarTokenStaff(String(staff.id), auth.user.id, cargo, env.CLIENTE_SESSION_SECRET);
     const secure = url.protocol === "https:";
@@ -314,7 +303,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
         concluido_em: value >= 100 ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ progresso: data });
     }
 
@@ -329,7 +318,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
     if (path === "/api/admin/staff" && request.method === "GET") {
       const { data, error } = await db.from("colaboradores").select("id,nome,email,cargo,ativo,permissoes,created_at,updated_at").order("nome");
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ colaboradores: data ?? [] });
     }
 
@@ -355,27 +344,16 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
         email_confirm: true,
         user_metadata: { nome, tipo: "colaborador", cargo },
       });
-      if (authError || !auth.user) return json({ erro: authError?.message ?? "Não foi possível criar o acesso." }, 400);
+      if (authError || !auth.user) return json({ erro: publicError(authError, "Não foi possível criar o acesso.") }, 400);
 
-      const { data, error } = await db.from("colaboradores").insert({
-        auth_user_id: auth.user.id,
-        nome,
-        email,
-        cargo,
-        permissoes,
-        ativo: true,
-      }).select("id,nome,email,cargo,ativo,permissoes,created_at,updated_at").single();
+      const { data, error } = await db.rpc("admin_salvar_colaborador_auditado", {
+        p_actor_auth_id: adminId, p_id: null,
+        p_dados: { auth_user_id: auth.user.id, nome, email, cargo, permissoes, ativo: true },
+      });
       if (error) {
         await db.auth.admin.deleteUser(auth.user.id).catch(() => undefined);
-        return json({ erro: error.message }, 400);
+        return json({ erro: publicError(error) }, error.code === "42501" ? 403 : 400);
       }
-      await db.from("logs_alteracoes").insert({
-        usuario: adminColaboradorId,
-        acao: "criou_colaborador",
-        entidade: "colaboradores",
-        entidade_id: data.id,
-        detalhes: { cargo: data.cargo, ativo: data.ativo, permissoes: data.permissoes ?? [] },
-      });
       return json({ colaborador: data }, 201);
     }
 
@@ -396,6 +374,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
       const novoCargo = b.cargo !== undefined || b.perfil !== undefined ? cargoValido(b.cargo ?? b.perfil) : null;
       if ((b.cargo !== undefined || b.perfil !== undefined) && !novoCargo) return json({ erro: "Cargo inválido." }, 400);
+      if (b.ativo !== undefined && typeof b.ativo !== "boolean") return json({ erro: "Status inválido." }, 400);
       const novoAtivo = b.ativo !== undefined ? Boolean(b.ativo) : Boolean(atual.ativo);
       if (String(atual.auth_user_id) === adminId && (!novoAtivo || (novoCargo && novoCargo !== "administrativo"))) {
         return json({ erro: "Você não pode remover o próprio acesso administrativo." }, 409);
@@ -412,15 +391,10 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
       const permissoes = permissoesValidas(b.permissoes);
       if (permissoes !== null) patch.permissoes = permissoes;
 
-      const { data, error } = await db.from("colaboradores").update(patch).eq("id", id).select("id,nome,email,cargo,ativo,permissoes,created_at,updated_at").single();
-      if (error) return json({ erro: error.message }, 400);
-      await db.from("logs_alteracoes").insert({
-        usuario: adminColaboradorId,
-        acao: "alterou_colaborador",
-        entidade: "colaboradores",
-        entidade_id: id,
-        detalhes: { campos: Object.keys(patch).filter((campo) => campo !== "updated_at"), cargo: data.cargo, ativo: data.ativo, permissoes: data.permissoes ?? [] },
+      const { data, error } = await db.rpc("admin_salvar_colaborador_auditado", {
+        p_actor_auth_id: adminId, p_id: id, p_dados: patch,
       });
+      if (error) return json({ erro: publicError(error) }, error.code === "42501" ? 403 : 400);
       return json({ colaborador: data });
     }
 

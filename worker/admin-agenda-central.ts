@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { agoraSaoPaulo } from "./surgery-release";
@@ -139,7 +140,7 @@ async function visaoGeral(env: Env) {
     .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia,ativo,acesso_app_liberado,acesso_app_liberado_em")
     .eq("ativo", true)
     .order("nome_completo", { ascending: true });
-  if (erroClientes) return json({ erro: erroClientes.message }, 500);
+  if (erroClientes) return json({ erro: publicError(erroClientes) }, 500);
 
   const clienteIds = (clientes ?? []).map((c: any) => c.id);
   const safeIds = clienteIds.length ? clienteIds : ["00000000-0000-0000-0000-000000000000"];
@@ -151,7 +152,7 @@ async function visaoGeral(env: Env) {
       .order("created_at", { ascending: false }),
     db.from("boletos").select("cliente_id,status").in("cliente_id", safeIds),
   ]);
-  if (erroAgendamentos) return json({ erro: erroAgendamentos.message }, 500);
+  if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
 
   const agendamentos = agendamentosBrutos ?? [];
 
@@ -244,7 +245,7 @@ async function clienteCentral(env: Env, clienteId: string) {
     .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
     .eq("id", clienteId)
     .maybeSingle();
-  if (erroCliente) return json({ erro: erroCliente.message }, 500);
+  if (erroCliente) return json({ erro: publicError(erroCliente) }, 500);
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
   const [{ data: agendamentos }, { data: boletos }] = await Promise.all([
@@ -322,8 +323,8 @@ async function agendaTermos(url: URL, env: Env) {
       .eq("status", "confirmado")
       .gte("datas.data", "2000-01-01"),
   ]);
-  if (erroDatas) return json({ erro: erroDatas.message }, 500);
-  if (erroAgendamentos) return json({ erro: erroAgendamentos.message }, 500);
+  if (erroDatas) return json({ erro: publicError(erroDatas) }, 500);
+  if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
 
   const porData = new Map<string, any[]>();
   for (const a of agendamentos ?? []) {
@@ -382,9 +383,9 @@ async function agendaCirurgia(url: URL, env: Env) {
       .order("data_cirurgia", { ascending: true }),
     db.rpc("agenda_comprometimento_mes", { p_mes: inicio, p_excluir_cliente: null }),
   ]);
-  if (erroDatas) return json({ erro: erroDatas.message }, 500);
-  if (erroAgendamentos) return json({ erro: erroAgendamentos.message }, 500);
-  if (erroComprometido) return json({ erro: erroComprometido.message }, 500);
+  if (erroDatas) return json({ erro: publicError(erroDatas) }, 500);
+  if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
+  if (erroComprometido) return json({ erro: publicError(erroComprometido) }, 500);
 
   const porData = new Map<string, number>();
   for (const a of agendamentos ?? []) {
@@ -565,7 +566,7 @@ async function abrirBloquearData(request: Request, env: Env, tabela: "datas" | "
   };
   if (Number.isFinite(vagas) && vagas > 0) payload.vagas_totais = vagas;
   const { data: atualizado, error } = await db.from(tabela).upsert(payload, { onConflict: "data" }).select("*").maybeSingle();
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
   return json({ ok: true, data: atualizado });
 }
 

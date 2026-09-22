@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
@@ -172,7 +173,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       let query = db.from("agenda_janelas").select("*").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
       if (tipo === "termos" || tipo === "cirurgia") query = query.eq("tipo", tipo);
       const { data, error } = await query;
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ janelas: data ?? [] });
     }
 
@@ -192,7 +193,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         status: "disponivel",
         observacao: b.observacao || null,
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ janela: created }, 201);
     }
 
@@ -205,7 +206,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       if (b.vagas !== undefined) patch.vagas = Math.max(0, Number(b.vagas));
       if (b.observacao !== undefined) patch.observacao = b.observacao || null;
       const { data, error } = await db.from("agenda_janelas").update(patch).eq("id", decodeURIComponent(windowMatch[1])).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ janela: data });
     }
 
@@ -239,14 +240,14 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       const b = await parseBody(request);
       const signedAt = typeof b.assinadoEm === "string" ? b.assinadoEm : new Date().toISOString();
       const { data: current, error: currentError } = await db.from("contratos_credito").select("quitado_em").eq("id", contractId).single();
-      if (currentError) return json({ erro: currentError.message }, 404);
+      if (currentError) return json({ erro: publicError(currentError) }, 404);
       const currentContract = current as unknown as Pick<ContractRow, "quitado_em"> | null;
       const { data, error } = await db.from("contratos_credito").update({
         termos_assinados_em: signedAt,
         etapa: currentContract?.quitado_em ? "quitado" : "aguardando_quitacao",
         updated_at: new Date().toISOString(),
       }).eq("id", contractId).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ contrato: data });
     }
 
@@ -261,7 +262,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         etapa: "quitado",
         updated_at: new Date().toISOString(),
       }).eq("id", contractId).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ contrato: data });
     }
 
@@ -270,7 +271,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       const today = new Date().toISOString().slice(0, 10);
       const { data, error } = await db.from("contratos_credito").update({ etapa: "agenda_cirurgica_liberada", updated_at: new Date().toISOString() })
         .eq("etapa", "quitado").lte("agenda_cirurgica_liberar_em", today).select("id,cliente_id,agenda_cirurgica_liberar_em");
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ liberados: data ?? [] });
     }
 
@@ -359,7 +360,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         escolha_forma_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", contract.id).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ contrato: data });
     }
 

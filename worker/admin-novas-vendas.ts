@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
@@ -49,7 +50,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     let query = db.from("novas_vendas").select("*").order("data_venda", { ascending: false });
     if (status) query = query.eq("status", status);
     const { data, error } = await query;
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     return json({ vendas: data ?? [] });
   }
 
@@ -83,7 +84,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     if (!Object.keys(patch).length) return json({ erro: "Nenhum campo local informado." }, 400);
     patch.updated_at = new Date().toISOString();
     const { data, error } = await db.from("novas_vendas").update(patch).eq("id", id).select("*").maybeSingle();
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     if (!data) return json({ erro: "Venda não encontrada." }, 404);
     await db.from("logs_alteracoes").insert({
       usuario: colaborador.id,
@@ -99,7 +100,7 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
   if (cadastrar && request.method === "POST") {
     const id = decodeURIComponent(cadastrar[1]);
     const { data: venda, error: erroVenda } = await db.from("novas_vendas").select("*").eq("id", id).maybeSingle();
-    if (erroVenda) return json({ erro: erroVenda.message }, 500);
+    if (erroVenda) return json({ erro: publicError(erroVenda) }, 500);
     if (!venda) return json({ erro: "Venda não encontrada." }, 404);
     if (venda.cliente_id) return json({ erro: "Esta venda já está vinculada a uma cliente." }, 409);
 
@@ -125,13 +126,13 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
       status_financeiro: "a_pagar",
     }).select("*").single();
     if (erroCliente) {
-      return json({ erro: erroCliente.code === "23505" ? "Já existe uma cliente cadastrada com esse CPF." : erroCliente.message }, 400);
+      return json({ erro: erroCliente.code === "23505" ? "Já existe uma cliente cadastrada com esse CPF." : publicError(erroCliente) }, 400);
     }
 
     const { error: erroUpdate } = await db.from("novas_vendas")
       .update({ cliente_id: cliente.id, status: "aguardando_boletos", updated_at: new Date().toISOString() })
       .eq("id", id);
-    if (erroUpdate) return json({ erro: erroUpdate.message }, 500);
+    if (erroUpdate) return json({ erro: publicError(erroUpdate) }, 500);
 
     await db.from("logs_alteracoes").insert({
       usuario: colaborador.id,

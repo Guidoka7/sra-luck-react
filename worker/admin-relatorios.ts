@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as XLSX from "xlsx";
 import { createServiceSupabaseClient, type Env } from "./supabase";
@@ -753,7 +754,7 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
       .select("id,modulo,relatorio_id,formato,total_linhas,nome_arquivo,gerado_por,created_at")
       .order("created_at", { ascending: false })
       .limit(50);
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
 
     const geradoresIds = [...new Set((data ?? []).map((h) => h.gerado_por))];
     const { data: colaboradoresData } = geradoresIds.length

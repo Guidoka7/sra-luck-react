@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
 const LIMITE_ITENS = 8;
@@ -135,7 +136,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     ]);
 
     for (const result of [clientesRes, boletosRes, termosMesRes, cirurgiasMesRes, termosProximosRes, cirurgiasProximasRes]) {
-      if (result.error) return json({ erro: result.error.message }, 500);
+      if (result.error) return json({ erro: publicError(result.error) }, 500);
     }
 
     const clientes = (clientesRes.data ?? []) as any[];
@@ -359,6 +360,6 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     });
   } catch (error) {
     console.error("Falha na visão geral administrativa:", error);
-    return json({ erro: error instanceof Error ? error.message : "Serviço temporariamente indisponível." }, 503);
+    return json({ erro: publicError(error, "Serviço temporariamente indisponível.") }, 503);
   }
 }

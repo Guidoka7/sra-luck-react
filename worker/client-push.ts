@@ -130,8 +130,7 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
       return json({ erro: "Este dispositivo já possui uma assinatura vinculada." }, 409);
     }
 
-    const { error } = await db.from("web_push_subscriptions").upsert(
-      {
+    const values = {
         cliente_id: client,
         endpoint,
         p256dh,
@@ -139,9 +138,13 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
         device_key: deviceKey,
         user_agent: request.headers.get("User-Agent")?.slice(0, 1000) ?? null,
         updated_at: new Date().toISOString(),
-      },
-      { onConflict: "endpoint" },
-    );
+      };
+    // Do not upsert ownership: concurrent registrations from different sessions
+    // must never transfer a subscription to the last writer.
+    const { error } = existente
+      ? await db.from("web_push_subscriptions").update(values).eq("endpoint", endpoint).eq("cliente_id", client)
+      : await db.from("web_push_subscriptions").insert(values);
+    if (error?.code === "23505") return json({ erro: "Este dispositivo já possui uma assinatura vinculada." }, 409);
 
     if (error) {
       log.error("Falha ao registrar assinatura push", {

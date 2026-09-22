@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
@@ -323,7 +324,7 @@ export async function adminReports(request: Request, env: Env): Promise<Response
     const { data, error } = await db.from("agendamentos")
       .select("id,cliente_id,valor_contrato,previsao_liberacao_financeira,termos_assinados_em,status,datas(data),clientes(id,nome_completo,status_cirurgia,status_financeiro,custeio_confirmado_em,financeiro_saldo_restante,consultora)")
       .order("created_at", { ascending: false });
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: publicError(error) }, 500);
     const clientes = (data ?? []).map((a: any) => {
       const d = Array.isArray(a.datas) ? a.datas[0]?.data ?? null : a.datas?.data ?? null;
       const c = Array.isArray(a.clientes) ? a.clientes[0] : a.clientes;
@@ -354,7 +355,7 @@ export async function adminReports(request: Request, env: Env): Promise<Response
     .gte("datas.data", inicio)
     .lt("datas.data", fim)
     .order("created_at", { ascending: true });
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
 
   const meses = MESES.map((nome, index) => {
     const mes = index + 1;

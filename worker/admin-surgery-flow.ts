@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
@@ -57,7 +58,7 @@ async function listarAgendamentosTermos(env: Env) {
     .eq("status", "confirmado")
     .order("data", { ascending: true, foreignTable: "datas" })
     .order("horario_termos", { ascending: true });
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
 
   const hoje = agoraSaoPaulo();
   const agendamentos = (data ?? []).map((a: any) => {
@@ -95,7 +96,7 @@ async function listarCirurgiasConfirmadas(env: Env) {
     .select("id,cliente_id,data_cirurgia,valor_contrato,clientes(id,nome_completo,cpf,status_cirurgia)")
     .not("data_cirurgia", "is", null)
     .order("data_cirurgia", { ascending: true });
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
 
   const hoje = agoraSaoPaulo().data;
   const cirurgias = (data ?? []).map((a: any) => {
@@ -206,7 +207,7 @@ async function atualizarCiclo(request: Request, env: Env, agendamentoId: string,
     .eq("id", cliente.id)
     .select("id,nome_completo,status_cirurgia,status_financeiro,custeio_confirmado_em")
     .single();
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
 
   const liberacao = calcularLiberacaoCirurgica(agendamento.termos_assinados_em, custeioConfirmadoEm);
   await db.from("logs_alteracoes").insert({
@@ -270,7 +271,7 @@ async function listarSolicitacoes(env: Env) {
     .select("id,cliente_id,agendamento_id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,created_at,updated_at,clientes(nome_completo,cpf,quantidade_parcelas,custeio_confirmado_em),agendamentos(previsao_liberacao_financeira,termos_assinados_em,datas(data))")
     .in("status", ["pendente", "em_analise", "aprovada"])
     .order("created_at", { ascending: true });
-  if (error) return json({ erro: error.message }, 500);
+  if (error) return json({ erro: publicError(error) }, 500);
   const solicitacoes = (data ?? [])
     .filter((item: any) => !one(item.agendamentos)?.previsao_liberacao_financeira)
     .map((item: any) => {

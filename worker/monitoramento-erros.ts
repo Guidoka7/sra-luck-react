@@ -188,7 +188,7 @@ export async function monitoramentoErros(request: Request, env: Env) {
       metodo: limparTexto(body?.metodo, 12),
       status_http: Number.isInteger(body?.status_http) ? body.status_http : null,
       codigo: limparTexto(body?.codigo, 120),
-      stack: limparTexto(sanitizeLogValue(body?.stack), 5000),
+      stack: null,
       componente: limparTexto(sanitizeLogValue(body?.componente), 200),
       request_id: requestId,
       user_agent: limparTexto(sanitizeLogValue(request.headers.get("User-Agent")), 500),
@@ -207,7 +207,7 @@ export async function monitoramentoErros(request: Request, env: Env) {
     const db = createServiceSupabaseClient(env);
     const limite = Math.min(Math.max(Number(url.searchParams.get("limite") || 100), 1), 300);
     const { data: recentes, error } = await db.from("monitoramento_erros")
-      .select("id,criado_em,origem,nivel,action,actor_type,actor_id,duration_ms,rota,metodo,status_http,codigo,mensagem,stack,componente,request_id,ambiente,detalhes")
+      .select("id,criado_em,origem,nivel,action,actor_type,actor_id,duration_ms,rota,metodo,status_http,codigo,mensagem,componente,request_id,ambiente,detalhes")
       .order("criado_em", { ascending: false }).limit(limite);
     if (error) {
       log.error("Falha ao carregar eventos de monitoramento", { action: "observability.events.read", eventCode: "OBSERVABILITY_READ_FAILED", statusCode: 503, error });

@@ -77,7 +77,7 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
   };
 }
 
-export async function exigirAdmin(request: Request, env: Env): Promise<Response | null> {
+export async function exigirAdmin(request: Request, env: Env, permissoes?: readonly string[] | null): Promise<Response | null> {
   if (!env.CLIENTE_SESSION_SECRET || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     requestLogger(request).fatal("Configuração obrigatória ausente para autorização administrativa", { action: "admin.authorization.validate", eventCode: "ADMIN_AUTH_CONFIG_MISSING", statusCode: 503 });
     return jsonErro("Serviço temporariamente indisponível.", 503);
@@ -93,6 +93,9 @@ export async function exigirAdmin(request: Request, env: Env): Promise<Response 
     if (!colaborador) {
       log.warn("Administrador autenticado sem autorização ativa", { eventCode: "ADMIN_AUTH_DENIED", statusCode: 403 });
       return jsonErro("Acesso administrativo não autorizado.", 403);
+    }
+    if (permissoes && !permissoes.some((p) => temPermissaoAdmin(colaborador, p))) {
+      return jsonErro("Seu papel não tem permissão para consultar este recurso.", 403);
     }
   } catch (error) {
     log.error("Falha técnica ao validar autorização administrativa", { eventCode: "ADMIN_AUTH_LOOKUP_FAILED", statusCode: 503, error });

@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
@@ -133,7 +134,7 @@ async function validateMercadoPagoSignature(request: Request, webhookSecret: str
   const dataId = (new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "").toLowerCase();
   const parts = Object.fromEntries(signature.split(",").map((item) => item.trim().split("=")).filter(([k, v]) => k && v));
   const ts = parts.ts || "", v1 = parts.v1 || "";
-  if (!ts || !v1) return false;
+  if (!dataId || !ts || !v1) return false;
   let manifest = "";
   if (dataId) manifest += `id:${dataId};`;
   if (requestId) manifest += `request-id:${requestId};`;
@@ -153,8 +154,7 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   }
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 512_000) return json({ erro: "Evento muito grande." }, 413);
-  const payload = await request.json().catch(() => ({})) as any;
-  const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
+  const paymentId = String(new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "");
   if (!paymentId) return json({ ok: true, ignored: true }, 200);
   const db = createServiceSupabaseClient(env);
 
@@ -176,7 +176,7 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   const pagoEm = payment.date_approved ? String(payment.date_approved) : null;
   const { data: existente } = await db.from("pagamentos_externos").select("id,status_validacao").eq("provedor", "mercado_pago").eq("external_payment_id", paymentId).maybeSingle();
 
-  const dadosProvedor = { boleto_id: boleto.id, cliente_id: boleto.cliente_id, external_reference: externalReference || null, valor: Number.isFinite(valorPago) ? valorPago : null, status_provedor: statusProvedor, metodo: String(payment.payment_method_id || payment.payment_type_id || "cartao"), pago_em: pagoEm, payload: payment };
+  const dadosProvedor = { boleto_id: boleto.id, cliente_id: boleto.cliente_id, external_reference: externalReference || null, valor: Number.isFinite(valorPago) ? valorPago : null, status_provedor: statusProvedor, metodo: String(payment.payment_method_id || payment.payment_type_id || "cartao"), pago_em: pagoEm, payload: { id: paymentId, status: statusProvedor, transaction_amount: valorPago, date_approved: pagoEm } };
   if (existente) {
     const { error } = await db.from("pagamentos_externos").update(dadosProvedor).eq("id", existente.id);
     if (error) {
@@ -199,7 +199,7 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     if (error) log.error("Pagamento aprovado, mas parcela não entrou na fila humana", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_PENDING_CONFIRMATION_FAILED", error });
   }
 
-  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({ provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id, payload: payment, status: "processado", processado_em: new Date().toISOString() }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
+  const { error: integrationEventError } = await db.from("integracao_eventos").upsert({ provedor: "mercado_pago", event_id: paymentId, event_type: "payment_status", referencia: boleto.id, payload: dadosProvedor, status: "processado", processado_em: new Date().toISOString() }, { onConflict: "provedor,event_id", ignoreDuplicates: false });
   if (integrationEventError) log.warn("Webhook processado, mas evento de integração não foi persistido", { entityType: "boleto", entityId: boleto.id, eventCode: "MP_INTEGRATION_EVENT_FAILED", error: integrationEventError });
 
   const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: "sistema:mercado_pago", acao: "recebeu_evento_mercado_pago", entidade: "boletos", entidade_id: boleto.id, detalhes: { paymentId, statusProvedor, transactionAmount: payment.transaction_amount ?? null, cliente_id: boleto.cliente_id, baixaAutomatica: false, aguardandoConferenciaHumana: statusProvedor === "approved" } });
@@ -256,9 +256,9 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
         entidade_id: boletoId,
         detalhes: { operacao_id: op?.id ?? null, protocolo: result?.protocolo ?? null },
       });
-      return json({ ok: true, resultado: result });
+      return json({ ok: true, resultado: { protocolo: result?.protocolo ?? null, status: result?.status ?? null } });
     } catch (error) {
-      await db.from("conta_azul_operacoes").update({ status: "erro", erro: error instanceof Error ? error.message : "Erro Conta Azul", updated_at: new Date().toISOString() }).eq("id", op?.id);
+      await db.from("conta_azul_operacoes").update({ status: "erro", erro: publicError(error, "Erro Conta Azul"), updated_at: new Date().toISOString() }).eq("id", op?.id);
       log.error("Falha ao sincronizar conta a receber com Conta Azul", { entityType: "boleto", entityId: boletoId, eventCode: "CONTA_AZUL_RECEIVABLE_FAILED", statusCode: 502, error });
       return json({ erro: "Falha ao sincronizar com Conta Azul." }, 502);
     }
@@ -271,7 +271,7 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
     const patch = { nota: body.nota, descricao: body.descricao, vencimento: body.vencimento, composicao_valor: body.composicaoValor, versao: version, data_pagamento_esperado: body.dataPagamentoEsperado, metodo_pagamento: body.metodoPagamento, id_conta_financeira: body.contaFinanceiraId };
     Object.keys(patch).forEach((key) => (patch as any)[key] === undefined && delete (patch as any)[key]);
     try {
-      const result = await contaAzulRequest(env, `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(externalId)}`, { method: "PATCH", body: JSON.stringify(patch) });
+      const result: any = await contaAzulRequest(env, `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(externalId)}`, { method: "PATCH", body: JSON.stringify(patch) });
       await db.from("logs_alteracoes").insert({
         usuario: colaboradorId,
         acao: "atualizou_parcela_conta_azul",
@@ -279,7 +279,7 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
         entidade_id: externalId,
         detalhes: { campos: Object.keys(patch) },
       });
-      return json({ ok: true, resultado: result });
+      return json({ ok: true, resultado: { protocolo: result?.protocolo ?? null, status: result?.status ?? null } });
     } catch (error) {
       log.error("Falha ao atualizar parcela no Conta Azul", { eventCode: "CONTA_AZUL_INSTALLMENT_UPDATE_FAILED", statusCode: 502, error });
       return json({ erro: "Falha ao atualizar a parcela no Conta Azul." }, 502);

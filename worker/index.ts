@@ -24,6 +24,8 @@ import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
 import { adminCarnes } from "./admin-carnes";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
+import { protectRequest } from "./http-security";
+import { adminReadPermissions } from "./admin-route-permissions";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -169,7 +171,8 @@ async function loginCliente(request: Request, env: Env) {
     return json({ erro: "Requisição inválida." }, 400);
   }
 
-  const { cpf, dataNascimento } = body;
+  const cpf = typeof body?.cpf === "string" ? body.cpf : "";
+  const dataNascimento = typeof body?.dataNascimento === "string" ? body.dataNascimento : "";
   if (!cpf || !dataNascimento) return json({ erro: "Preencha CPF e data de nascimento." }, 400);
   const cpfLimpo = apenasDigitos(cpf);
   const nascimento = normalizarDataNascimento(dataNascimento);
@@ -184,14 +187,14 @@ async function loginCliente(request: Request, env: Env) {
     const keyIp = await gerarChaveRateLimit(request, env.CLIENTE_SESSION_SECRET);
     const keyCpf = await gerarChaveRateLimitIdentificador(env.CLIENTE_SESSION_SECRET, "cliente-login", cpfLimpo);
     const [limiteIp, limiteCpf] = await Promise.all([
-      supabase.rpc("login_pode_tentar", {
+      supabase.rpc("rate_limit_consumir", {
         p_chave: keyIp,
-        p_max_falhas: MAX_TENTATIVAS,
+        p_max_tentativas: MAX_TENTATIVAS,
         p_janela_segundos: JANELA_SEGUNDOS,
       }),
-      supabase.rpc("login_pode_tentar", {
+      supabase.rpc("rate_limit_consumir", {
         p_chave: keyCpf,
-        p_max_falhas: MAX_TENTATIVAS_CLIENTE_POR_CPF,
+        p_max_tentativas: MAX_TENTATIVAS_CLIENTE_POR_CPF,
         p_janela_segundos: JANELA_SEGUNDOS,
       }),
     ]);
@@ -221,30 +224,15 @@ async function loginCliente(request: Request, env: Env) {
       return json({ erro: "Não foi possível validar seus dados agora. Tente novamente em instantes." }, 503);
     }
     if (!cliente) {
-      const [falhaIp, falhaCpf] = await Promise.all([
-        supabase.rpc("login_registrar_falha", { p_chave: keyIp, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS }),
-        supabase.rpc("login_registrar_falha", { p_chave: keyCpf, p_max_falhas: MAX_TENTATIVAS_CLIENTE_POR_CPF, p_janela_segundos: JANELA_SEGUNDOS }),
-      ]);
-      if (falhaIp.error || falhaCpf.error) log.warn("Credenciais inválidas e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: falhaIp.error ?? falhaCpf.error });
       log.warn("Login da cliente recusado por credenciais inválidas", { eventCode: "CLIENT_LOGIN_DENIED", statusCode: 401 });
       return json({ erro: "CPF ou data de nascimento não encontrados. Confira os dados ou fale com a Sra. Luck." }, 401);
     }
     const clientLog = log.child({ actorType: "cliente", actorId: await pseudonymizeActorId(cliente.id, env) });
     if (!cliente.ativo || !cliente.acesso_app_liberado) {
-      const [falhaIp, falhaCpf] = await Promise.all([
-        supabase.rpc("login_registrar_falha", { p_chave: keyIp, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS }),
-        supabase.rpc("login_registrar_falha", { p_chave: keyCpf, p_max_falhas: MAX_TENTATIVAS_CLIENTE_POR_CPF, p_janela_segundos: JANELA_SEGUNDOS }),
-      ]);
-      if (falhaIp.error || falhaCpf.error) clientLog.warn("Acesso indisponível e contador de rate limit não foi atualizado", { eventCode: "CLIENT_LOGIN_RATE_COUNTER_FAILED", error: falhaIp.error ?? falhaCpf.error });
       clientLog.warn("Login recusado para cliente sem acesso ativo ao aplicativo", { eventCode: "CLIENT_LOGIN_ACCESS_DENIED", statusCode: 403 });
       return json({ erro: "Seu acesso ao aplicativo não está disponível. Fale com a Sra. Luck." }, 403);
     }
 
-    const [clearIp, clearCpf] = await Promise.all([
-      supabase.rpc("login_limpar_rate_limit", { p_chave: keyIp }),
-      supabase.rpc("login_limpar_rate_limit", { p_chave: keyCpf }),
-    ]);
-    if (clearIp.error || clearCpf.error) clientLog.warn("Login aceito, mas rate limit não foi limpo", { eventCode: "CLIENT_LOGIN_RATE_CLEAR_FAILED", error: clearIp.error ?? clearCpf.error });
     const token = await criarTokenSessao(cliente.id, env.CLIENTE_SESSION_SECRET);
     const response = new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -276,8 +264,8 @@ async function loginAdmin(request: Request, env: Env) {
     return json({ erro: "Requisição inválida." }, 400);
   }
 
-  const email = body.email?.trim().toLowerCase();
-  const senha = body.senha ?? "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const senha = typeof body?.senha === "string" ? body.senha : "";
   if (!email || !senha || email.length > 320 || senha.length > 1024) return json({ erro: "E-mail ou senha incorretos." }, 401);
 
   const supabase = createServiceSupabaseClient(env);
@@ -286,14 +274,14 @@ async function loginAdmin(request: Request, env: Env) {
 
   try {
     const [limiteIp, limiteEmail] = await Promise.all([
-      supabase.rpc("login_pode_tentar", {
+      supabase.rpc("rate_limit_consumir", {
         p_chave: keyIp,
-        p_max_falhas: MAX_TENTATIVAS,
+        p_max_tentativas: MAX_TENTATIVAS,
         p_janela_segundos: JANELA_SEGUNDOS,
       }),
-      supabase.rpc("login_pode_tentar", {
+      supabase.rpc("rate_limit_consumir", {
         p_chave: keyEmail,
-        p_max_falhas: MAX_TENTATIVAS_ADMIN_POR_EMAIL,
+        p_max_tentativas: MAX_TENTATIVAS_ADMIN_POR_EMAIL,
         p_janela_segundos: JANELA_SEGUNDOS,
       }),
     ]);
@@ -308,11 +296,6 @@ async function loginAdmin(request: Request, env: Env) {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
     if (error || !data.session || !data.user) {
-      const [falhaIp, falhaEmail] = await Promise.all([
-        supabase.rpc("login_registrar_falha", { p_chave: keyIp, p_max_falhas: MAX_TENTATIVAS, p_janela_segundos: JANELA_SEGUNDOS }),
-        supabase.rpc("login_registrar_falha", { p_chave: keyEmail, p_max_falhas: MAX_TENTATIVAS_ADMIN_POR_EMAIL, p_janela_segundos: JANELA_SEGUNDOS }),
-      ]);
-      if (falhaIp.error || falhaEmail.error) log.warn("Login administrativo recusado e contador de rate limit não foi atualizado", { eventCode: "ADMIN_LOGIN_RATE_COUNTER_FAILED", error: falhaIp.error ?? falhaEmail.error });
       log.warn("Login administrativo recusado", { eventCode: "ADMIN_LOGIN_DENIED", statusCode: 401 });
       return json({ erro: "E-mail ou senha incorretos." }, 401);
     }
@@ -320,20 +303,9 @@ async function loginAdmin(request: Request, env: Env) {
     const adminLog = log.child({ actorType: "admin", actorId: await pseudonymizeActorId(data.user.id, env) });
     const colaborador = await buscarColaboradorAdminAtivo(data.user.id, env);
     if (!colaborador) {
-      const [clearIp, clearEmail] = await Promise.all([
-        supabase.rpc("login_limpar_rate_limit", { p_chave: keyIp }),
-        supabase.rpc("login_limpar_rate_limit", { p_chave: keyEmail }),
-      ]);
-      if (clearIp.error || clearEmail.error) adminLog.warn("Acesso administrativo negado e rate limit não foi limpo", { eventCode: "ADMIN_LOGIN_RATE_CLEAR_FAILED", error: clearIp.error ?? clearEmail.error });
       adminLog.warn("Usuário autenticado sem autorização administrativa", { eventCode: "ADMIN_LOGIN_NOT_AUTHORIZED", statusCode: 403 });
       return json({ erro: "Acesso administrativo não autorizado." }, 403, { "Cache-Control": "no-store" });
     }
-
-    const [clearIp, clearEmail] = await Promise.all([
-      supabase.rpc("login_limpar_rate_limit", { p_chave: keyIp }),
-      supabase.rpc("login_limpar_rate_limit", { p_chave: keyEmail }),
-    ]);
-    if (clearIp.error || clearEmail.error) adminLog.warn("Login administrativo aceito, mas rate limit não foi limpo", { eventCode: "ADMIN_LOGIN_RATE_CLEAR_FAILED", error: clearIp.error ?? clearEmail.error });
     const secure = new URL(request.url).protocol === "https:";
     const token = await criarTokenAdmin(data.user.id, env.CLIENTE_SESSION_SECRET);
     adminLog.info("Login administrativo concluído", { eventCode: "ADMIN_LOGIN_OK" });
@@ -392,7 +364,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const grande = bloquearJsonGrande(request, 262_144);
       if (grande) return grande;
     }
-    const denied = await exigirAdmin(request, env);
+    const denied = await exigirAdmin(request, env, ["GET", "HEAD"].includes(request.method) ? adminReadPermissions(url.pathname) : null);
     if (denied) return denied;
   }
 
@@ -540,7 +512,8 @@ export default {
     const log = requestLogger(request, requestId);
     const inicio = Date.now();
     try {
-      const response = await handleRequest(request, env);
+      const protectedRequest = await protectRequest(request);
+      const response = protectedRequest instanceof Response ? protectedRequest : await handleRequest(protectedRequest, env);
       const durationMs = Date.now() - inicio;
       const context = { action: "http.request", statusCode: response.status, durationMs };
       if (response.status >= 500) log.error("Requisição concluída com falha de servidor", { ...context, eventCode: "HTTP_5XX" });

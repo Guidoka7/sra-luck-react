@@ -47,3 +47,26 @@ describe("sessões assinadas do Worker", () => {
     expect(setAdminSessionCookie("abc", true)).toContain("HttpOnly");
   });
 });
+
+import { criarTokenStaff, verificarTokenStaff } from "./session";
+
+describe("limites e separação das sessões", () => {
+  it("rejeita adulteração e segmentos extras também para admin e equipe", async () => {
+    const admin = await criarTokenAdmin("admin-test", SEGREDO);
+    const staff = await criarTokenStaff("staff-test", "auth-test", "sdr", SEGREDO);
+    expect(await verificarTokenAdmin(`${admin}.extra`, SEGREDO)).toBeNull();
+    expect(await verificarTokenStaff(`${staff}.extra`, SEGREDO)).toBeNull();
+    expect(await verificarTokenStaff(`${staff}x`, SEGREDO)).toBeNull();
+    expect(await verificarTokenAdmin(staff, SEGREDO)).toBeNull();
+    expect(await verificarTokenSessao(admin, SEGREDO)).toBeNull();
+  });
+  it("rejeita token grande antes de processá-lo", async () => {
+    expect(await verificarTokenSessao("a".repeat(8193), SEGREDO)).toBeNull();
+  });
+  it("rejeita payload assinado sem iat", async () => {
+    const payload = Buffer.from(JSON.stringify({ clienteId: "client-test" })).toString("base64url");
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SEGREDO), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signature = Buffer.from(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))).toString("base64url");
+    expect(await verificarTokenSessao(`${payload}.${signature}`, SEGREDO)).toBeNull();
+  });
+});

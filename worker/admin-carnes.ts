@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { PDFDocument } from "pdf-lib";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
@@ -69,7 +70,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
 
     if (request.method === "GET") {
       const { data, error } = await db.from("carnes").select("*").eq("cliente_id", clienteId).order("data_geracao", { ascending: false });
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ carnes: data ?? [] });
     }
 
@@ -94,7 +95,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
         valor_parcela: valorParcela,
         valor_total: valorTotal,
       }).select("*").single();
-      if (error) return json({ erro: error.code === "23505" ? "Já existe um carnê com esse identificador para esta instituição." : error.message }, 400);
+      if (error) return json({ erro: error.code === "23505" ? "Já existe um carnê com esse identificador para esta instituição." : publicError(error) }, 400);
 
       await db.from("logs_alteracoes").insert({
         usuario: atorFinanceiro ?? session.adminId,
@@ -113,7 +114,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
 
     if (request.method === "GET") {
       const { data, error } = await db.from("importacoes_boletos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false });
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ importacoes: data ?? [] });
     }
 
@@ -181,7 +182,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
         const caminho = `importacoes/${clienteId}/${paginaSha256}.pdf`;
 
         const { error: erroUpload } = await db.storage.from(BUCKET).upload(caminho, paginaBytes, { contentType: "application/pdf", upsert: false });
-        if (erroUpload) return json({ erro: `Falha ao salvar a página ${numeroPagina}: ${erroUpload.message}` }, 500);
+        if (erroUpload) return json({ erro: publicError(erroUpload, "Não foi possível salvar a página do boleto.") }, 500);
 
         const dadosExtraidos = await extrairDadosBoleto(paginaBytes);
         const sugestao = pontuarCandidatos(dadosExtraidos, candidatos, numeroPagina, clienteRow?.cpf ?? null, instituicao || null);
@@ -237,14 +238,14 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       }
 
       const { data: inseridas, error: erroInsert } = await db.from("importacoes_boletos").insert(importacoes).select("*");
-      if (erroInsert) return json({ erro: erroInsert.message }, 500);
+      if (erroInsert) return json({ erro: publicError(erroInsert) }, 500);
 
       await db.from("logs_alteracoes").insert({
         usuario: atorFinanceiro ?? session.adminId,
         acao: "importou_carne_pdf",
         entidade: "clientes",
         entidade_id: clienteId,
-        detalhes: { arquivo: arquivo.name, totalPaginas, totalParcelasCliente: candidatos.length, importacaoIds: (inseridas ?? []).map((i: any) => i.id) },
+        detalhes: { tipo: "application/pdf", totalPaginas, totalParcelasCliente: candidatos.length, importacaoIds: (inseridas ?? []).map((i: any) => i.id) },
       });
 
       return json({ importacoes: inseridas ?? [] }, 201);
@@ -257,7 +258,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
     const { data: importacao, error: erroImportacao } = await db.from("importacoes_boletos").select("*").eq("id", id).maybeSingle();
-    if (erroImportacao) return json({ erro: erroImportacao.message }, 500);
+    if (erroImportacao) return json({ erro: publicError(erroImportacao) }, 500);
     if (!importacao) return json({ erro: "Importação não encontrada." }, 404);
     if (importacao.status_vinculacao === "vinculado") return json({ erro: "Esta página já foi vinculada." }, 409);
 
@@ -268,7 +269,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       .select("id,cliente_id,numero_parcela,carne_id,instituicao_financeira,identificador_externo")
       .eq("id", boletoId)
       .maybeSingle();
-    if (erroBoleto) return json({ erro: erroBoleto.message }, 500);
+    if (erroBoleto) return json({ erro: publicError(erroBoleto) }, 500);
     if (!boleto || boleto.cliente_id !== importacao.cliente_id) return json({ erro: "Parcela inválida para esta cliente." }, 400);
 
     const identificador = importacao.linha_digitavel
@@ -285,7 +286,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       identificador_externo: identificador,
       origem_boleto: "carne_pdf",
     }).eq("id", boletoId);
-    if (erroUpdateBoleto) return json({ erro: erroUpdateBoleto.message }, 500);
+    if (erroUpdateBoleto) return json({ erro: publicError(erroUpdateBoleto) }, 500);
 
     const { data: atualizada, error: erroUpdate } = await db.from("importacoes_boletos").update({
       status: "vinculado",
@@ -294,7 +295,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       carne_vinculado_id: importacao.carne_id,
       boleto_vinculado_id: boletoId,
     }).eq("id", id).select("*").single();
-    if (erroUpdate) return json({ erro: erroUpdate.message }, 500);
+    if (erroUpdate) return json({ erro: publicError(erroUpdate) }, 500);
 
     await db.from("logs_alteracoes").insert({
       usuario: atorFinanceiro ?? session.adminId,
@@ -311,7 +312,7 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
   if (ignorar && request.method === "POST") {
     const id = decodeURIComponent(ignorar[1]);
     const { data, error } = await db.from("importacoes_boletos").update({ status_vinculacao: "ignorado" }).eq("id", id).select("*").single();
-    if (error) return json({ erro: error.message }, 400);
+    if (error) return json({ erro: publicError(error) }, 400);
     return json({ importacao: data });
   }
 

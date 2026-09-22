@@ -20,7 +20,7 @@ type LogContext = {
   [key: string]: unknown;
 };
 
-const SENSITIVE_KEY = /(password|senha|authorization|cookie|set-cookie|session|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|webhook[_-]?secret|service[_-]?role|api[_-]?key|cpf|data[_-]?nascimento|birth|email|telefone|phone|whatsapp|endereco|address|pix|qr[_-]?code|card|pan|cvv|p256dh|endpoint|auth)/i;
+const SENSITIVE_KEY = /(password|senha|authorization|cookie|set-cookie|session|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|webhook[_-]?secret|service[_-]?role|api[_-]?key|cpf|data[_-]?nascimento|birth|email|telefone|phone|whatsapp|endereco|address|pix|qr[_-]?code|card|pan|cvv|p256dh|endpoint|auth|nome[_-]?completo|full[_-]?name|private[_-]?key|credential|credencial|segredo|chave[_-]?privada|stack)/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BEARER_RE = /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b/g;
@@ -41,6 +41,7 @@ let consoleSanitizerInstalled = false;
 
 function sanitizeString(value: string): string {
   return value
+    .replace(/([?&](?:token|access_token|refresh_token|secret|key|code)=)[^&\s]+/gi, "$1[SECRET_REDACTED]")
     .replace(BEARER_RE, "[SECRET_REDACTED]")
     .replace(JWT_RE, "[SECRET_REDACTED]")
     .replace(EMAIL_RE, "[PII_REDACTED]")

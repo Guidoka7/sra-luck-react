@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
@@ -75,7 +76,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         .from("contratos_credito")
         .select("*, clientes(id,nome_completo,cpf,telefone,email)")
         .order("created_at", { ascending: false });
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ contratos: data ?? [] });
     }
 
@@ -97,7 +98,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         percentual_minimo: Number(b.percentualMinimo ?? 60),
         etapa: "aguardando_conferencia",
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ contrato: data }, 201);
     }
 
@@ -122,7 +123,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       };
       for (const [from, to] of Object.entries(map)) if (b[from] !== undefined) patch[to] = b[from];
       const { data, error } = await db.from("contratos_credito").update(patch).eq("id", decodeURIComponent(contract[1])).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ contrato: data });
     }
 
@@ -138,7 +139,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       ]);
       const errors = [paid.error, proofs.error, overdue.error, events.error]
         .filter((value): value is NonNullable<typeof value> => Boolean(value))
-        .map((value) => value.message);
+        .map((value) => publicError(value));
       return json({
         data: day,
         liquidados: paid.data ?? [],
@@ -151,7 +152,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
 
     if (path === "/api/admin/credit-ops/rewards" && request.method === "GET") {
       const { data, error } = await db.from("clube_recompensas").select("*").order("pontos", { ascending: true });
-      if (error) return json({ erro: error.message }, 500);
+      if (error) return json({ erro: publicError(error) }, 500);
       return json({ recompensas: data ?? [] });
     }
 
@@ -166,7 +167,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         estoque: b.estoque === undefined ? null : Number(b.estoque),
         ativo: b.ativo !== false,
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ recompensa: data }, 201);
     }
 
@@ -191,7 +192,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         meta_base: b.metaBase === undefined ? null : Number(b.metaBase),
         configuracao: b.configuracao || {},
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ regra: data }, 201);
     }
 
@@ -207,7 +208,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         perfis: Array.isArray(b.perfis) ? b.perfis : ["todos"],
         obrigatorio: Boolean(b.obrigatorio),
       }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) return json({ erro: publicError(error) }, 400);
       return json({ treinamento: data }, 201);
     }
 

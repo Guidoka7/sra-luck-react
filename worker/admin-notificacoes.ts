@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
@@ -164,7 +165,7 @@ async function registrarNotificacao(env: Env, db: Db, input: {
       enviadas: 0,
       falhas: 1,
       removidas: 0,
-      erros: [error instanceof Error ? error.message.slice(0, 240) : "Falha ao enviar Web Push."],
+      erros: [publicError(error, "Falha ao enviar Web Push.")],
     };
   }
 
@@ -390,7 +391,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         if (valor === undefined) continue;
         alterou = true;
         const { error } = await db.from("notificacoes_config").upsert({ chave, valor: String(valor), tipo: typeof valor === "boolean" ? "boolean" : "number" }, { onConflict: "chave" });
-        if (error) return json({ erro: error.message }, 400);
+        if (error) return json({ erro: publicError(error) }, 400);
       }
       if (!alterou) return json({ erro: "Configuração inválida." }, 400);
       return json({ config: await carregarConfig(db), mensagem: "Configurações salvas." });
@@ -401,7 +402,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
       const acao = String(b.acao || "") as AcaoAutomacao;
       if (!["verificar_atrasos", "verificar_momentos_especiais", "enviar_agora_todas"].includes(acao)) return json({ erro: "Ação inválida." }, 400);
       try { return json(await executarAutomacaoNotificacoes(env, acao)); }
-      catch (error) { return json({ erro: error instanceof Error ? error.message : "Falha ao executar automação." }, 500); }
+      catch (error) { return json({ erro: publicError(error, "Falha ao executar automação.") }, 500); }
     }
   }
 
@@ -409,7 +410,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     const b = await parse(request); if (!b.id) return json({ erro: "Template não informado." }, 400);
     const patch: Record<string, unknown> = {}; for (const k of ["titulo", "corpo", "emoji", "is_active"]) if (b[k] !== undefined) patch[k] = b[k];
     const { data, error } = await db.from("notificacao_templates").update(patch).eq("id", b.id).select("*").single();
-    if (error) return json({ erro: error.message }, 400);
+    if (error) return json({ erro: publicError(error) }, 400);
     return json({ template: data, mensagem: "Template atualizado." });
   }
 
@@ -418,7 +419,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     const tipo = String(b.tipo ?? "").trim(), titulo = String(b.titulo ?? "").trim(), corpo = String(b.corpo ?? "").trim();
     if (!tipo || !titulo || !corpo) return json({ erro: "Tipo, título e corpo são obrigatórios." }, 400);
     const { data, error } = await db.from("notificacao_templates").insert({ tipo, dias_referencia: b.diasReferencia != null ? Number(b.diasReferencia) : null, titulo, corpo, emoji: b.emoji ?? "💬", is_active: b.isActive !== false }).select("*").single();
-    if (error) return json({ erro: error.message }, 400);
+    if (error) return json({ erro: publicError(error) }, 400);
     return json({ template: data, mensagem: "Template criado." }, 201);
   }
 
@@ -435,11 +436,11 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         acao: "enviou_notificacao_manual",
         entidade: "notificacoes_cliente",
         entidade_id: resultado.notificacao.id,
-        detalhes: { cliente: cliente.nome_completo, titulo: resultado.notificacao.titulo, pushStatus: resultado.pushStatus, pushEnviadas: resultado.push.enviadas },
+        detalhes: { cliente_id: cliente.id, pushStatus: resultado.pushStatus, pushEnviadas: resultado.push.enviadas },
       });
       return json({ notificacao: resultado.notificacao, cliente: { id: cliente.id, nome: cliente.nome_completo }, push: resultado.push, pushStatus: resultado.pushStatus, mensagem: "Notificação registrada e Web Push processado." });
     } catch (error) {
-      return json({ erro: error instanceof Error ? error.message : "Não foi possível enviar a notificação." }, 500);
+      return json({ erro: publicError(error, "Não foi possível enviar a notificação.") }, 500);
     }
   }
 

@@ -100,11 +100,12 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     if (!boleto || boleto.cliente_id !== sessao.clienteId) return json({ erro: "Boleto não encontrado." }, 404);
     if (!boleto.comprovante_url) return json({ erro: "Esta parcela não possui comprovante." }, 404);
     if (boleto.status === "pago") return json({ erro: "Comprovante de parcela paga não pode ser removido." }, 409);
-    const { error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    const { data: atualizado, error: updateError } = await supabase.from("boletos").update({ comprovante_url: null, status: "nao_pago", data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago").eq("comprovante_url", boleto.comprovante_url).select("id").maybeSingle();
     if (updateError) {
       log.error("Falha ao remover referência do comprovante", { action: "client.receipt.delete", eventCode: "RECEIPT_DB_DELETE_FAILED", statusCode: 500, error: updateError });
       return json({ erro: "Não foi possível remover o comprovante." }, 500);
     }
+    if (!atualizado) return json({ erro: "A parcela foi atualizada durante a solicitação. Atualize a página." }, 409);
     const { error } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);
     if (error) log.warn("Banco atualizado, mas arquivo do comprovante não foi removido", { action: "client.receipt.delete", eventCode: "RECEIPT_STORAGE_DELETE_FAILED", error });
     else log.info("Comprovante removido", { action: "client.receipt.delete", eventCode: "RECEIPT_DELETED" });
@@ -127,19 +128,21 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
     const tipo = detectarTipoArquivo(bytes);
     if (!tipo || tipo !== arquivo.type) return json({ erro: "O conteúdo do arquivo não corresponde ao tipo informado. Envie um PDF, JPG ou PNG válido." }, 400);
 
-    const caminho = `${sessao.clienteId}/${boletoId}/${Date.now()}.${extensao(tipo)}`;
+    const caminho = `${sessao.clienteId}/${boleto.id}/${crypto.randomUUID()}.${extensao(tipo)}`;
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(caminho, arquivo, { contentType: tipo, upsert: false });
     if (uploadError) {
       log.error("Falha no upload do comprovante", { action: "client.receipt.upload", eventCode: "RECEIPT_UPLOAD_FAILED", statusCode: 500, error: uploadError });
       return json({ erro: "Erro ao enviar o arquivo." }, 500);
     }
 
-    const { error: updateError } = await supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
-    if (updateError) {
+    let update = supabase.from("boletos").update({ status: "pendente_confirmacao", comprovante_url: caminho, data_pagamento: null, observacoes: null }).eq("id", boletoId).eq("cliente_id", sessao.clienteId).neq("status", "pago");
+    update = boleto.comprovante_url ? update.eq("comprovante_url", boleto.comprovante_url) : update.is("comprovante_url", null);
+    const { data: atualizado, error: updateError } = await update.select("id").maybeSingle();
+    if (updateError || !atualizado) {
       const { error: rollbackError } = await supabase.storage.from(BUCKET).remove([caminho]);
       if (rollbackError) log.error("Falha no rollback do arquivo após erro de banco", { action: "client.receipt.upload.rollback", eventCode: "RECEIPT_UPLOAD_ROLLBACK_FAILED", error: rollbackError });
       log.error("Arquivo enviado, mas comprovante não foi salvo no banco", { action: "client.receipt.upload", eventCode: "RECEIPT_DB_SAVE_FAILED", statusCode: 500, error: updateError });
-      return json({ erro: "Erro ao salvar o comprovante." }, 500);
+      return json({ erro: updateError ? "Erro ao salvar o comprovante." : "A parcela foi atualizada durante o envio. Atualize a página." }, updateError ? 500 : 409);
     }
     if (boleto.comprovante_url && boleto.comprovante_url !== caminho) {
       const { error: oldFileError } = await supabase.storage.from(BUCKET).remove([boleto.comprovante_url]);

@@ -127,7 +127,7 @@ export async function enviarWebPushParaCliente(
         },
         chaves,
       );
-      const response = await fetch(subscription.endpoint, requestInit);
+      const response = await fetch(subscription.endpoint, { ...requestInit, redirect: "error" });
       if (response.ok) {
         resultado.enviadas += 1;
         continue;

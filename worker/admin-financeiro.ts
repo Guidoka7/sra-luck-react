@@ -1,3 +1,4 @@
+import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
@@ -237,6 +238,19 @@ async function detalheRecebivel(db: Db, id: string) {
   return { recebivel: apresentarRecebivel(boleto, indice.get(id)), recebimentos: recebimentos.data ?? [], historico: historico.data ?? [] };
 }
 
+// Exact allowlist of intentional RPC domain errors; never reflect arbitrary SQL text.
+const ERROS_FINANCEIROS: Record<string, string> = {
+  "Data do pagamento obrigatoria": "Data do pagamento obrigatória.",
+  "Forma de pagamento invalida": "Forma de pagamento inválida.",
+  "Composicao financeira invalida": "Composição financeira inválida.",
+  "Parcela nao encontrada": "Parcela não encontrada.",
+  "Parcela ja liquidada": "Parcela já liquidada.",
+  "Desconto superior ao valor devido": "Desconto superior ao valor devido.",
+  "Acao de validacao invalida": "Ação de validação inválida.",
+  "Motivo da rejeicao obrigatorio": "Motivo da rejeição obrigatório.",
+  "Comprovante nao esta pendente de validacao": "Comprovante não está pendente de validação.",
+};
+
 function erroRpc(message: string) {
   if (/nao encontrada|não encontrada/i.test(message)) return 404;
   if (/ja liquidada|não esta pendente|nao esta pendente|duplicate key/i.test(message)) return 409;
@@ -388,7 +402,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
         p_instituicao_conta: texto(b.instituicaoConta), p_observacao: texto(b.observacao),
         p_usuario: usuario, p_idempotency_key: idempotencyKey,
       });
-      if (error) return json({ erro: error.message }, erroRpc(error.message));
+      if (error) return json({ erro: publicError(error, ERROS_FINANCEIROS[error.message]) }, erroRpc(error.message));
       return json({ recebimento: data }, 201);
     }
 
@@ -411,11 +425,11 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
       if (boleto.status === "pago") return json({ erro: "A parcela já está liquidada." }, 409);
       const caminho = `admin/${boleto.cliente_id}/${id}/${crypto.randomUUID()}.${tipo.extensao}`;
       const { error: uploadError } = await db.storage.from("boletos-clientes").upload(caminho, bytes, { contentType: tipo.mime, upsert: false });
-      if (uploadError) return json({ erro: uploadError.message }, 500);
+      if (uploadError) return json({ erro: publicError(uploadError) }, 500);
       const { data: atualizado, error: updateError } = await db.from("boletos").update({ comprovante_url: caminho }).eq("id", id).neq("status", "pago").select("id").maybeSingle();
       if (updateError || !atualizado) {
         await db.storage.from("boletos-clientes").remove([caminho]);
-        return json({ erro: updateError?.message ?? "A parcela foi liquidada durante o envio." }, updateError ? 500 : 409);
+        return json({ erro: publicError(updateError, "A parcela foi liquidada durante o envio.") }, updateError ? 500 : 409);
       }
       if (boleto.comprovante_url && boleto.comprovante_url !== caminho) await db.storage.from("boletos-clientes").remove([boleto.comprovante_url]);
       await db.from("logs_alteracoes").insert({ usuario, acao: "anexou_comprovante_baixa_manual", entidade: "boletos", entidade_id: id, detalhes: { cliente_id: boleto.cliente_id, tipo: tipo.mime, tamanho: arquivo.size } });
@@ -436,7 +450,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
         p_boleto_id: decodeURIComponent(validacaoMatch[1]), p_acao: acao, p_observacao: observacao,
         p_usuario: usuario, p_idempotency_key: idempotencyKey,
       });
-      if (error) return json({ erro: error.message }, erroRpc(error.message));
+      if (error) return json({ erro: publicError(error, ERROS_FINANCEIROS[error.message]) }, erroRpc(error.message));
       return json({ recebimento: data });
     }
 
@@ -454,6 +468,10 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
       return detalhe ? json(detalhe) : json({ erro: "Parcela não encontrada." }, 404);
     }
     if (recebivelMatch && request.method === "PATCH") {
+      const colaborador = await buscarColaboradorAdminAtivo(auth.adminId, env);
+      if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) {
+        return json({ erro: "Seu papel não tem permissão para alterar parcelas." }, 403);
+      }
       const id = decodeURIComponent(recebivelMatch[1]);
       const b = await lerBody(request);
       const { data: boleto } = await db.from("boletos").select("id,cliente_id,status,observacoes").eq("id", id).maybeSingle();
@@ -463,8 +481,8 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
         const observacao = texto(b.observacao);
         if (!observacao) return json({ erro: "Informe uma observação." }, 400);
         const { error } = await db.from("boletos").update({ observacoes: observacao }).eq("id", id);
-        if (error) return json({ erro: error.message }, 500);
-        await db.from("logs_alteracoes").insert({ usuario, acao: "adicionou_observacao_financeira", entidade: "boletos", entidade_id: id, detalhes: { cliente_id: boleto.cliente_id, observacao } });
+        if (error) return json({ erro: publicError(error) }, 500);
+        await db.from("logs_alteracoes").insert({ usuario, acao: "adicionou_observacao_financeira", entidade: "boletos", entidade_id: id, detalhes: { cliente_id: boleto.cliente_id, campos: ["observacoes"] } });
         return json({ sucesso: true });
       }
       const payload: Json = { acao, boletoId: id };
@@ -478,6 +496,6 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
     return json({ erro: "Rota financeira não encontrada." }, 404);
   } catch (error) {
     console.error("Falha no Financeiro Unificado:", error);
-    return json({ erro: error instanceof Error ? error.message : "Falha inesperada no módulo financeiro." }, 500);
+    return json({ erro: publicError(error, "Falha inesperada no módulo financeiro.") }, 500);
   }
 }
