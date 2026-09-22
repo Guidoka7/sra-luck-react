@@ -14,6 +14,9 @@ const notificacoes = worker("admin-notificacoes.ts");
 const creditOps = worker("credit-ops.ts");
 const rd = worker("rd-station-readonly.ts");
 const integrations = worker("integrations-core.ts");
+const clientPush = worker("client-push.ts");
+const pushSender = worker("web-push-sender.ts");
+const credenciais = worker("integrations-credenciais.ts");
 
 describe("regressões de segurança RBAC e borda HTTP", () => {
   it("centraliza as permissões sensíveis novas", () => {
@@ -64,5 +67,25 @@ describe("regressões de segurança RBAC e borda HTTP", () => {
     expect(rd).toContain('request.headers.get("x-sra-luck-rd-key")');
     expect(integrations).toContain(').toLowerCase();');
     expect(integrations).toContain('contentLength > 512_000');
+  });
+
+  it("OAuth RD revalida o colaborador e não devolve detalhe interno", () => {
+    expect(rd).toContain("buscarColaboradorAdminAtivo(adminId, env)");
+    expect(rd).toContain("INTEGRACOES_GERENCIAR_CREDENCIAIS");
+    expect(rd).not.toContain('detalhe: error instanceof Error ? error.message');
+  });
+
+  it("Web Push não aceita endpoint arbitrário e o emissor repete a validação", () => {
+    expect(clientPush).toContain("endpointPushPermitido");
+    expect(clientPush).toContain('host === "fcm.googleapis.com"');
+    expect(clientPush).toContain('host === "web.push.apple.com"');
+    expect(pushSender).toContain("endpointPushPermitido");
+    expect(pushSender).toContain("Assinatura push inválida removida.");
+  });
+
+  it("credenciais de integração usam separação de domínio criptográfico", () => {
+    expect(credenciais).toContain("sra-luck:integrations-credentials:v2:");
+    expect(credenciais).toContain("derivarChaveLegada");
+    expect(credenciais).toContain("Compatibilidade somente de leitura");
   });
 });
