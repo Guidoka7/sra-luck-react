@@ -310,7 +310,7 @@ export async function solicitarLiberacaoFinanceira(request: Request, env: Env): 
       .eq("id", existente.id)
       .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at")
       .single();
-    if (erroAtualizacao) return json({ erro: erroAtualizacao.message }, 500);
+    if (erroAtualizacao) { console.error("Falha ao atualizar forma de custeio:", erroAtualizacao); return json({ erro: "Não foi possível salvar sua forma de pagamento." }, 500); }
     return json({ solicitacao: atualizada });
   }
 
@@ -324,14 +324,14 @@ export async function solicitarLiberacaoFinanceira(request: Request, env: Env): 
     status: "aprovada",
     observacao,
   }).select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at").single();
-  if (error) return json({ erro: error.message }, 500);
+  if (error) { console.error("Falha ao registrar forma de custeio:", error); return json({ erro: "Não foi possível salvar sua forma de pagamento." }, 500); }
 
   await supabase.from("logs_alteracoes").insert({
     usuario: `cliente:${cliente.id}`,
     acao: "escolheu_forma_custeio_saldo",
     entidade: "solicitacoes_liberacao_financeira",
     entidade_id: data.id,
-    detalhes: { cliente: cliente.nome_completo, formaCusteio, saldoRestante, taxaCartao, totalComTaxa, agendamentoId: agendamentoAtivo?.id ?? null },
+    detalhes: { cliente_id: cliente.id, formaCusteio, saldoRestante, taxaCartao, totalComTaxa, agendamentoId: agendamentoAtivo?.id ?? null },
   });
   return json({ solicitacao: data });
 }
@@ -404,7 +404,7 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
   const { data: solicitacao, error } = tipo === "termos"
     ? await supabase.from("solicitacoes_remarcacao_agendamento").insert(payload).select("id,tipo,status,data_solicitada,horario_termos,created_at").single()
     : await supabase.from("solicitacoes_remarcacao_agendamento").upsert(payload, { onConflict: "agendamento_id,tipo" }).select("id,tipo,status,data_solicitada,horario_termos,created_at").single();
-  if (error) return json({ erro: `Não foi possível enviar sua solicitação de alteração: ${error.message}` }, 500);
+  if (error) { console.error("Falha ao registrar solicitação de remarcação:", error); return json({ erro: "Não foi possível enviar sua solicitação de alteração." }, 500); }
 
   return json({
     ok: true,
