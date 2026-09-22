@@ -29,6 +29,24 @@ async function clienteId(request: Request, env: Env) {
   return session?.clienteId ?? null;
 }
 
+function endpointPushPermitido(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+    const host = url.hostname.toLowerCase();
+    return host === "fcm.googleapis.com"
+      || host === "android.googleapis.com"
+      || host === "updates.push.services.mozilla.com"
+      || host === "push.services.mozilla.com"
+      || host === "web.push.apple.com"
+      || host.endsWith(".push.services.mozilla.com")
+      || host.endsWith(".notify.windows.com")
+      || host.endsWith(".push.apple.com");
+  } catch {
+    return false;
+  }
+}
+
 type SubscriptionBody = {
   deviceKey?: string;
   subscription?: {
@@ -83,11 +101,12 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
 
     if (!endpoint || !p256dh || !auth) return json({ erro: "Assinatura push inválida." }, 400);
     if (
-      !/^https:\/\//i.test(endpoint) ||
+      !endpointPushPermitido(endpoint) ||
       endpoint.length > 4096 ||
       p256dh.length > 1024 ||
       auth.length > 1024
     ) {
+      log.warn("Endpoint de PushSubscription recusado", { eventCode: "PUSH_ENDPOINT_REJECTED", statusCode: 400 });
       return json({ erro: "Assinatura push inválida." }, 400);
     }
 
@@ -149,6 +168,8 @@ export async function clientPushApi(request: Request, env: Env): Promise<Respons
     const endpoint = String(body.endpoint ?? "").trim();
     const deviceKey = String(body.deviceKey ?? "").trim();
     if (!endpoint && !deviceKey) return json({ erro: "Dispositivo não informado." }, 400);
+    if (endpoint && (!endpointPushPermitido(endpoint) || endpoint.length > 4096)) return json({ erro: "Dispositivo inválido." }, 400);
+    if (deviceKey.length > 200) return json({ erro: "Dispositivo inválido." }, 400);
 
     const db = createServiceSupabaseClient(env);
     let query = db.from("web_push_subscriptions").delete().eq("cliente_id", client);
