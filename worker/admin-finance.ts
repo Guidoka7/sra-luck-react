@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { calcularLiberacaoCirurgica } from "./surgery-release";
 import { adminFinanceiro } from "./admin-financeiro";
@@ -20,6 +21,19 @@ async function exigirAdmin(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
   const token = getCookie(request, "admin_session");
   return (await verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET)) ? null : json({ erro: "Sessão administrativa expirada." }, 401);
+}
+
+async function exigirPermissao(request: Request, env: Env, permissao: string, mensagem: string): Promise<Response | null> {
+  if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
+  const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
+  if (!sessao) return json({ erro: "Sessão administrativa expirada." }, 401);
+  try {
+    const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env);
+    if (!colaborador || !temPermissaoAdmin(colaborador, permissao)) return json({ erro: mensagem }, 403);
+    return null;
+  } catch {
+    return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+  }
 }
 
 function one<T = any>(value: T | T[] | null | undefined): T | null {
@@ -70,6 +84,8 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
     }
 
     if (request.method === "POST") {
+      const semPermissao = await exigirPermissao(request, env, PERMISSOES_ADMIN.AGENDA_GERENCIAR, "Seu papel não tem permissão para alterar datas da agenda.");
+      if (semPermissao) return semPermissao;
       const b = await body(request);
       if (typeof b.data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.data)) return json({ erro: "Informe uma data válida." }, 400);
       const { data, error } = await db.from("datas_liberacao_financeira").upsert({ data: b.data, status: "disponivel" }, { onConflict: "data" }).select("*").single();
@@ -78,6 +94,8 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
     }
 
     if (request.method === "DELETE") {
+      const semPermissao = await exigirPermissao(request, env, PERMISSOES_ADMIN.AGENDA_GERENCIAR, "Seu papel não tem permissão para alterar datas da agenda.");
+      if (semPermissao) return semPermissao;
       const dataSolicitada = url.searchParams.get("data");
       if (!dataSolicitada) return json({ erro: "Informe a data." }, 400);
       const { data: ocupacoes } = await db.from("agendamentos").select("id").in("status", ["confirmado", "realizado"]).eq("previsao_liberacao_financeira", dataSolicitada).limit(1);
@@ -111,6 +129,8 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
     }
 
     if (request.method === "PATCH") {
+      const semPermissao = await exigirPermissao(request, env, PERMISSOES_ADMIN.FINANCEIRO_REVISAO, "Seu papel não tem permissão para analisar liberações financeiras.");
+      if (semPermissao) return semPermissao;
       const b = await body(request);
       const id = typeof b.id === "string" ? b.id : null;
       const status = typeof b.status === "string" ? b.status : null;
