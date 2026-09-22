@@ -157,9 +157,9 @@ export async function monitoramentoErros(request: Request, env: Env) {
     if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
     const rateDb = createServiceSupabaseClient(env);
     const rateKey = await chaveRateLimitTelemetria(request, env.CLIENTE_SESSION_SECRET);
-    const { data: permitido, error: rateError } = await rateDb.rpc("login_pode_tentar", {
+    const { data: permitido, error: rateError } = await rateDb.rpc("rate_limit_consumir", {
       p_chave: rateKey,
-      p_max_falhas: 60,
+      p_max_tentativas: 60,
       p_janela_segundos: 900,
     });
     if (rateError) return json({ erro: "Não foi possível registrar o evento agora." }, 503);
@@ -199,12 +199,6 @@ export async function monitoramentoErros(request: Request, env: Env) {
       log.error("Falha ao persistir evento de monitoramento", { action: "observability.event.persist", eventCode: "OBSERVABILITY_PERSIST_FAILED", statusCode: 503, error });
       return json({ erro: "Não foi possível registrar o evento." }, 503);
     }
-    const { error: rateWriteError } = await rateDb.rpc("login_registrar_falha", {
-      p_chave: rateKey,
-      p_max_falhas: 60,
-      p_janela_segundos: 900,
-    });
-    if (rateWriteError) log.warn("Evento registrado, mas rate limit de telemetria não foi atualizado", { eventCode: "OBSERVABILITY_RATE_COUNTER_FAILED", error: rateWriteError });
     return json({ ok: true }, 201);
   }
 
