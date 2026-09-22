@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { integrationsStatusApi } from "./integrations-status";
 import { pseudonymizeActorId, requestLogger, sanitizeLogValue } from "./logger";
@@ -20,9 +21,34 @@ function sameOrigin(request: Request) {
   try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
-async function admin(request: Request, env: Env) {
+async function adminComPermissaoMonitoramento(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return false;
-  return Boolean(await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET));
+  const sessao = await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (!sessao) return false;
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  return Boolean(colaborador && temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.MONITORAMENTO_VISUALIZAR));
+}
+
+async function hmacRateLimit(secret: string, material: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(material));
+  let binary = "";
+  for (const byte of new Uint8Array(signature)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function chaveRateLimitTelemetria(request: Request, secret: string) {
+  const ip = request.headers.get("CF-Connecting-IP")?.trim()
+    || request.headers.get("x-real-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+  return hmacRateLimit(secret, `monitoramento:ip:${ip}`);
 }
 
 async function actorContext(request: Request, env: Env): Promise<{ actor_type: "admin" | "cliente" | "anonymous"; actor_id: string | null }> {
@@ -128,6 +154,16 @@ export async function monitoramentoErros(request: Request, env: Env) {
     if (!sameOrigin(request)) return json({ erro: "Origem não autorizada." }, 403);
     const length = Number(request.headers.get("content-length") || 0);
     if (length > MAX_BODY) return json({ erro: "Evento muito grande." }, 413);
+    if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
+    const rateDb = createServiceSupabaseClient(env);
+    const rateKey = await chaveRateLimitTelemetria(request, env.CLIENTE_SESSION_SECRET);
+    const { data: permitido, error: rateError } = await rateDb.rpc("login_pode_tentar", {
+      p_chave: rateKey,
+      p_max_falhas: 60,
+      p_janela_segundos: 900,
+    });
+    if (rateError) return json({ erro: "Não foi possível registrar o evento agora." }, 503);
+    if (!Boolean(permitido)) return json({ erro: "Limite de eventos excedido." }, 429);
     let body: any;
     try { body = await request.json(); } catch { return json({ erro: "Evento inválido." }, 400); }
     const mensagem = limparTexto(sanitizeLogValue(body?.mensagem), 1200);
@@ -163,11 +199,17 @@ export async function monitoramentoErros(request: Request, env: Env) {
       log.error("Falha ao persistir evento de monitoramento", { action: "observability.event.persist", eventCode: "OBSERVABILITY_PERSIST_FAILED", statusCode: 503, error });
       return json({ erro: "Não foi possível registrar o evento." }, 503);
     }
+    const { error: rateWriteError } = await rateDb.rpc("login_registrar_falha", {
+      p_chave: rateKey,
+      p_max_falhas: 60,
+      p_janela_segundos: 900,
+    });
+    if (rateWriteError) log.warn("Evento registrado, mas rate limit de telemetria não foi atualizado", { eventCode: "OBSERVABILITY_RATE_COUNTER_FAILED", error: rateWriteError });
     return json({ ok: true }, 201);
   }
 
   if (url.pathname === "/api/admin/monitoramento-erros" && request.method === "GET") {
-    if (!(await admin(request, env))) return json({ erro: "Sessão administrativa expirada." }, 401);
+    if (!(await adminComPermissaoMonitoramento(request, env))) return json({ erro: "Sem permissão para visualizar o monitoramento." }, 403);
     const db = createServiceSupabaseClient(env);
     const limite = Math.min(Math.max(Number(url.searchParams.get("limite") || 100), 1), 300);
     const { data: recentes, error } = await db.from("monitoramento_erros")
@@ -194,7 +236,7 @@ export async function monitoramentoErros(request: Request, env: Env) {
   }
 
   if (url.pathname === "/api/admin/diagnostico" && request.method === "GET") {
-    if (!(await admin(request, env))) return json({ erro: "Sessão administrativa expirada." }, 401);
+    if (!(await adminComPermissaoMonitoramento(request, env))) return json({ erro: "Sem permissão para executar diagnósticos." }, 403);
     const db = createServiceSupabaseClient(env);
     const checks: Array<{ nome: string; ok: boolean; detalhe: string; ms: number }> = [];
     const probe = async (nome: string, fn: () => Promise<{ error: any }>) => {
