@@ -16,7 +16,6 @@ export function JornadaTab(props: JornadaTabProps) {
     <div className="sl-tab pb-[10px]">
       <div className="sl-journey-top">
         <div className="flex min-h-[31px] items-center">{props.onVoltar ? <button type="button" onClick={props.onVoltar} className="flex items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[91px] object-contain" />}</div>
-        <span className="sl-journey-chip">Sua jornada</span>
       </div>
 
       <div className="flex items-end justify-between gap-3 px-5 pb-2 pt-[19px]">

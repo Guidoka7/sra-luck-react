@@ -276,7 +276,7 @@ export function resolveHomeCampaignSlides(
   });
 }
 
-export type HomeCampaignTab = "inicio" | "parcelas" | "notificacoes" | "mais";
+export type HomeCampaignTab = "inicio" | "parcelas" | "mais";
 
 export interface HomeCampaignNavigation {
   tab: HomeCampaignTab;
@@ -284,6 +284,8 @@ export interface HomeCampaignNavigation {
   maisSubTela?: "clube" | "jornada" | "atendimento";
   /** Na Home, rola até a seção "Minha agenda" (AgendaHome) sem alterar sua lógica. */
   scrollToAgenda?: boolean;
+  /** Abre o balão de notificações do sininho. */
+  openNotifications?: boolean;
 }
 
 /**
@@ -294,7 +296,7 @@ export function resolveHomeCampaignNavigation(destination: HomeCampaignDestinati
   switch (destination) {
     case "parcelas": return { tab: "parcelas" };
     case "jornada": return { tab: "mais", maisSubTela: "jornada" };
-    case "notificacoes": return { tab: "notificacoes" };
+    case "notificacoes": return { tab: "inicio", openNotifications: true };
     case "agenda": return { tab: "inicio", scrollToAgenda: true };
     case "clube": return { tab: "mais", maisSubTela: "clube" };
     case "atendimento": return { tab: "mais", maisSubTela: "atendimento" };

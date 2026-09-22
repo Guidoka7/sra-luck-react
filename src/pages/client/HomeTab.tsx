@@ -13,8 +13,6 @@ interface HomeTabProps {
   quantidadeParcelas: number | null;
   porcentagemPagamento: number;
   parcelasPagas: number;
-  naoLidas: number;
-  onAbrirNotificacoes: () => void;
   /** Destino do CTA do carrossel; a navegação fica no shell do app (AgendaPage). */
   onCampaignAction: (destination: HomeCampaignDestination) => void;
   agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
@@ -41,8 +39,6 @@ export function HomeTab({
   quantidadeParcelas,
   porcentagemPagamento,
   parcelasPagas,
-  naoLidas,
-  onAbrirNotificacoes,
   onCampaignAction,
   agendamentoAtivo,
   agendamentoConcluido,
@@ -66,8 +62,6 @@ export function HomeTab({
         procedimento={procedimento}
         quantidadeParcelas={quantidadeParcelas}
         percentualPago={porcentagemPagamento}
-        naoLidas={naoLidas}
-        onAbrirNotificacoes={onAbrirNotificacoes}
       />
 
       <HomeCampaignCarousel onAction={(slide) => onCampaignAction(slide.action)} />

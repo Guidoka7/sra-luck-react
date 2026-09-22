@@ -11,7 +11,7 @@ import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { journeyInputFromProcess } from "@/lib/journeySteps";
-import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
+import { NotificationBell } from "@/components/cliente/nav/NotificationBell";
 import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
@@ -60,6 +60,7 @@ export function AgendaPage() {
   const [agenda, setAgenda] = useState<AgendaData | null>(null);
   const [boletos, setBoletos] = useState<BoletosData | null>(null);
   const [aba, setAba] = useState<ClientTab>("inicio");
+  const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -182,12 +183,14 @@ export function AgendaPage() {
     if (nav.scrollToAgenda) { abrirAgendaNaHome(); return; }
     setMaisSubTelaInicial(nav.maisSubTela ?? null);
     setAba(nav.tab);
+    if (nav.openNotifications) setNotificacoesAbertas(true);
   }
 
   const consumirMaisSubTela = useCallback(() => setMaisSubTelaInicial(null), []);
 
   function selecionarAba(abaSelecionada: ClientTab) {
     setMaisSubTelaInicial(null);
+    setNotificacoesAbertas(false);
     setAba(abaSelecionada);
   }
 
@@ -247,8 +250,6 @@ export function AgendaPage() {
             quantidadeParcelas={boletos.quantidade_parcelas}
             porcentagemPagamento={boletos.porcentagem_pagamento ?? 0}
             parcelasPagas={boletos.parcelas_pagas ?? 0}
-            naoLidas={notificacoesState.naoLidas}
-            onAbrirNotificacoes={() => setAba("notificacoes")}
             onCampaignAction={abrirDestinoCampanha}
             agendamentoAtivo={agenda.agendamentoAtivo}
             agendamentoConcluido={agenda.agendamentoConcluido}
@@ -268,17 +269,6 @@ export function AgendaPage() {
         )}
 
         {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} />}
-
-        {aba === "notificacoes" && (
-          <NotificacoesTab
-            notificacoes={notificacoesState.notificacoes}
-            naoLidas={notificacoesState.naoLidas}
-            carregando={notificacoesState.carregando}
-            onMarcarLida={(id) => void notificacoesState.marcarLida(id)}
-            onMarcarTodasLidas={() => void notificacoesState.marcarTodasLidas()}
-            onAcao={abrirNotificacao}
-          />
-        )}
 
         {aba === "mais" && (
           <MaisTab
@@ -300,7 +290,7 @@ export function AgendaPage() {
                   cirurgiaRealizada,
                 })}
                 notificacoesCompactas={notificacoesState.notificacoes}
-                onVerNotificacoes={() => setAba("notificacoes")}
+                onVerNotificacoes={() => setNotificacoesAbertas(true)}
                 onVoltar={onVoltar}
               />
             )}
@@ -310,7 +300,18 @@ export function AgendaPage() {
         )}
       </div>
 
-      <BottomNav aba={aba} onSelecionar={selecionarAba} naoLidas={notificacoesState.naoLidas} />
+      <NotificationBell
+        aberto={notificacoesAbertas}
+        onAbertoChange={setNotificacoesAbertas}
+        notificacoes={notificacoesState.notificacoes}
+        naoLidas={notificacoesState.naoLidas}
+        carregando={notificacoesState.carregando}
+        onMarcarLida={(id) => void notificacoesState.marcarLida(id)}
+        onMarcarTodasLidas={() => void notificacoesState.marcarTodasLidas()}
+        onAcao={abrirNotificacao}
+      />
+
+      <BottomNav aba={aba} onSelecionar={selecionarAba} />
     </main>
   );
 }
