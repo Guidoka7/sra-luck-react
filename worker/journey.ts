@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 
 type CreditStage =
@@ -165,6 +166,9 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
   if (path.startsWith("/api/admin/journey/")) {
     const userId = await adminId(request, env);
     if (!userId) return json({ erro: "Sessão administrativa expirada." }, 401);
+    const colaborador = await buscarColaboradorAdminAtivo(userId, env).catch(() => null);
+    if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
+    const pode = (permissao: string) => temPermissaoAdmin(colaborador, permissao);
     const db = createServiceSupabaseClient(env);
 
     if (path === "/api/admin/journey/windows" && request.method === "GET") {
@@ -177,6 +181,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
     }
 
     if (path === "/api/admin/journey/windows" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para gerenciar janelas da agenda." }, 403);
       const b = await parseBody(request);
       const tipo = b.tipo === "cirurgia" ? "cirurgia" : "termos";
       const data = String(b.data ?? "");
@@ -197,6 +202,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     const windowMatch = path.match(/^\/api\/admin\/journey\/windows\/([^/]+)$/);
     if (windowMatch && request.method === "PATCH") {
+      if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para gerenciar janelas da agenda." }, 403);
       const b = await parseBody(request);
       const patch: Record<string, unknown> = {};
       if (b.status !== undefined) patch.status = b.status;
@@ -209,6 +215,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     const financialReview = path.match(/^\/api\/admin\/journey\/contracts\/([^/]+)\/financial-review$/);
     if (financialReview && request.method === "PATCH") {
+      if (!pode(PERMISSOES_ADMIN.FINANCEIRO_REVISAO)) return json({ erro: "Seu papel não tem permissão para concluir a revisão financeira." }, 403);
       const b = await parseBody(request);
       const contractId = decodeURIComponent(financialReview[1]);
       const forms = Array.isArray(b.formasQuitacao) ? b.formasQuitacao.filter((x): x is string => typeof x === "string") : [];
@@ -228,6 +235,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     const termsSigned = path.match(/^\/api\/admin\/journey\/contracts\/([^/]+)\/terms-signed$/);
     if (termsSigned && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para confirmar os termos." }, 403);
       const contractId = decodeURIComponent(termsSigned[1]);
       const b = await parseBody(request);
       const signedAt = typeof b.assinadoEm === "string" ? b.assinadoEm : new Date().toISOString();
@@ -245,6 +253,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     const settle = path.match(/^\/api\/admin\/journey\/contracts\/([^/]+)\/settle$/);
     if (settle && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL)) return json({ erro: "Seu papel não tem permissão para confirmar quitação." }, 403);
       const contractId = decodeURIComponent(settle[1]);
       const b = await parseBody(request);
       const settledAt = typeof b.quitadoEm === "string" ? b.quitadoEm : new Date().toISOString();
@@ -258,6 +267,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
     }
 
     if (path === "/api/admin/journey/refresh-releases" && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para atualizar liberações." }, 403);
       const today = new Date().toISOString().slice(0, 10);
       const { data, error } = await db.from("contratos_credito").update({ etapa: "agenda_cirurgica_liberada", updated_at: new Date().toISOString() })
         .eq("etapa", "quitado").lte("agenda_cirurgica_liberar_em", today).select("id,cliente_id,agenda_cirurgica_liberar_em");
