@@ -12,6 +12,7 @@ import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { journeyInputFromProcess } from "@/lib/journeySteps";
 import { NotificationBell } from "@/components/cliente/nav/NotificationBell";
+import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
@@ -159,7 +160,7 @@ export function AgendaPage() {
   function abrirNotificacao(notificacao: NotificacaoCliente) {
     if (notificacao.destino === "agenda") setAba("inicio");
     else if (notificacao.destino === "parcelas") setAba("parcelas");
-    else if (notificacao.destino === "clube") setAba("mais");
+    else if (notificacao.destino === "clube") setAba("premios");
     else if (notificacao.destino === "jornada") { setMaisSubTelaInicial("jornada"); setAba("mais"); }
   }
 
@@ -268,13 +269,14 @@ export function AgendaPage() {
           />
         )}
 
+        {aba === "premios" && <ClubeScreen onIrParcelas={() => setAba("parcelas")} />}
+
         {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} />}
 
         {aba === "mais" && (
           <MaisTab
             nomeCliente={agenda.cliente.nome}
             onSair={() => void sair()}
-            onIrParcelas={() => setAba("parcelas")}
             renderJornada={(onVoltar) => (
               <JornadaTab
                 {...journeyInputFromProcess({

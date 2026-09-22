@@ -276,12 +276,12 @@ export function resolveHomeCampaignSlides(
   });
 }
 
-export type HomeCampaignTab = "inicio" | "parcelas" | "mais";
+export type HomeCampaignTab = "inicio" | "premios" | "parcelas" | "mais";
 
 export interface HomeCampaignNavigation {
   tab: HomeCampaignTab;
-  /** Subtela do Mais aberta diretamente (Clube/Atendimento já existentes). */
-  maisSubTela?: "clube" | "jornada" | "atendimento";
+  /** Subtela do Mais aberta diretamente (Jornada/Atendimento). */
+  maisSubTela?: "jornada" | "atendimento";
   /** Na Home, rola até a seção "Minha agenda" (AgendaHome) sem alterar sua lógica. */
   scrollToAgenda?: boolean;
   /** Abre o balão de notificações do sininho. */
@@ -298,7 +298,7 @@ export function resolveHomeCampaignNavigation(destination: HomeCampaignDestinati
     case "jornada": return { tab: "mais", maisSubTela: "jornada" };
     case "notificacoes": return { tab: "inicio", openNotifications: true };
     case "agenda": return { tab: "inicio", scrollToAgenda: true };
-    case "clube": return { tab: "mais", maisSubTela: "clube" };
+    case "clube": return { tab: "premios" };
     case "atendimento": return { tab: "mais", maisSubTela: "atendimento" };
     case "campanhas": return null;
   }

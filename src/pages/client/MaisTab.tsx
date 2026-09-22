@@ -1,16 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { ProfilePhotoPicker } from "@/components/cliente/ProfilePhotoPicker";
 import { registrarErro } from "@/lib/monitoramento";
 import { ConfiguracoesApp } from "@/pages/client/ConfiguracoesApp";
 
-type SubTela = "clube" | "documentos" | "jornada" | "atendimento" | "faq" | "configuracoes" | "seguranca" | null;
-export type MaisSubTelaInicial = Extract<SubTela, "clube" | "jornada" | "atendimento">;
+type SubTela = "documentos" | "jornada" | "atendimento" | "faq" | "configuracoes" | "seguranca" | null;
+export type MaisSubTelaInicial = Extract<SubTela, "jornada" | "atendimento">;
 
 interface MaisTabProps {
   nomeCliente: string;
   onSair: () => void;
-  onIrParcelas: () => void;
   /** Subtela "Jornada", renderizada pela página com os dados do processo. */
   renderJornada: (onVoltar: () => void) => ReactNode;
   /** Entrada direta em uma subtela existente (CTA do carrossel da Home). */
@@ -20,14 +18,13 @@ interface MaisTabProps {
 
 const FAQS = [
   { pergunta: "Como funciona a liberação da minha agenda?", resposta: "Ao atingir o percentual mínimo de parcelas pagas do seu plano, você pode solicitar a liberação financeira no app. Aprovado o levantamento e confirmado o custeio do saldo, você segue para os termos. Depois da assinatura e da quitação confirmada, a agenda da cirurgia é liberada em até 5 dias úteis, podendo ser antecipada pela nossa equipe." },
-  { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Parcelas, cada parcela mostra o status do comprovante: em análise, confirmado ou rejeitado." },
+  { pergunta: "Onde vejo meus comprovantes enviados?", resposta: "Na aba Financeiro, cada parcela mostra o status do comprovante: em análise, confirmado ou rejeitado." },
   { pergunta: "Posso pagar uma parcela no cartão de crédito?", resposta: "Sim. Ao abrir o pagamento de uma parcela, a opção de cartão leva você para o checkout seguro do Mercado Pago." },
-  { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },
+  { pergunta: "Como funcionam os pontos do Clube de Vantagens?", resposta: "Na aba Prêmios você acompanha o saldo, as movimentações, indicações e os benefícios disponíveis no Clube de vantagens." },
 ];
 
-function IconeMenu({ tipo }: { tipo: "clube" | "documentos" | "jornada" | "atendimento" | "faq" | "configuracoes" | "seguranca" | "sair" }) {
+function IconeMenu({ tipo }: { tipo: "documentos" | "jornada" | "atendimento" | "faq" | "configuracoes" | "seguranca" | "sair" }) {
   const base = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.45, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  if (tipo === "clube") return <svg {...base}><path d="M20 12v9H4v-9"/><path d="M2 7h20v5H2z"/><path d="M12 21V7"/><path d="M12 7H7.4a2.4 2.4 0 1 1 2.08-3.6L12 7Z"/><path d="M12 7h4.6a2.4 2.4 0 1 0-2.08-3.6L12 7Z"/></svg>;
   if (tipo === "documentos") return <svg {...base}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>;
   if (tipo === "jornada") return <svg {...base}><circle cx="6.5" cy="6.5" r="2.2"/><circle cx="17.5" cy="12" r="2.2"/><circle cx="8.7" cy="18.5" r="2.2"/><path d="M8.5 7.4c2.7.4 4.7 1.9 6.9 3.4M15.7 13.6c-1.5 2-3.1 3.3-5.1 4.1"/></svg>;
   if (tipo === "atendimento") return <svg {...base}><path d="M21 12a8.5 8.5 0 0 1-9 8.5 9.7 9.7 0 0 1-3.8-.8L3 21l1.4-4.6A8.5 8.5 0 1 1 21 12Z"/><path d="M8.5 11.8h.01M12 11.8h.01M15.5 11.8h.01"/></svg>;
@@ -61,7 +58,7 @@ function IconeBiometria() {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round"><path d="M8.7 3.8A7.8 7.8 0 0 1 19.9 10"/><path d="M4.1 10a7.8 7.8 0 0 1 1.7-4.1"/><path d="M4 14.2c.3 2.4 1.3 4.5 3 6"/><path d="M8 11.2a4 4 0 0 1 7.9.8c0 3.9-1.1 7-3.2 9.2"/><path d="M8 15.1c.2 2.1.8 3.9 1.9 5.5"/><path d="M11.9 8a4 4 0 0 0-3.6 2.3"/></svg>;
 }
 
-export function MaisTab({ nomeCliente, onSair, onIrParcelas, renderJornada, initialSubTela = null, onInitialSubTelaConsumed }: MaisTabProps) {
+export function MaisTab({ nomeCliente, onSair, renderJornada, initialSubTela = null, onInitialSubTelaConsumed }: MaisTabProps) {
   const [sub, setSub] = useState<SubTela>(initialSubTela);
   const [contato, setContato] = useState<{ whatsapp: string | null; telefone: string | null }>({ whatsapp: null, telefone: null });
   const [contatoFalhou, setContatoFalhou] = useState(false);
@@ -152,7 +149,6 @@ export function MaisTab({ nomeCliente, onSair, onIrParcelas, renderJornada, init
     setBiometriaMensagem("Biometria desativada neste dispositivo.");
   }
 
-  if (sub === "clube") return <ClubeScreen onVoltar={() => setSub(null)} onIrParcelas={onIrParcelas} />;
   if (sub === "documentos") return <div className="sl-tab pb-6"><SubHeader titulo="Meus documentos" onVoltar={() => setSub(null)} /><div className="px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="flex h-10 w-10 items-center justify-center rounded-[13px] border border-[#E9D9D5] bg-[#FFF9F8] text-[#B86575]"><IconeMenu tipo="documentos"/></div><div className="pt-3 font-heading text-[19px] font-semibold text-[#43322F]">Documentos da sua jornada</div><p className="pt-1 text-[10.8px] font-light leading-[1.55] text-[#8D7D79]">Para solicitar uma cópia do contrato, comprovantes ou outro documento, fale com a equipe pelo Atendimento.</p><button type="button" onClick={() => setSub("atendimento")} className="mt-4 w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[10px] text-[10.5px] font-semibold text-white">Ir para Atendimento</button></div></div></div>;
   if (sub === "jornada") return <>{renderJornada(() => setSub(null))}</>;
   if (sub === "atendimento") return <div className="sl-tab pb-6"><SubHeader titulo="Atendimento" onVoltar={() => setSub(null)} /><div className="grid gap-[9px] px-[18px] pt-4">{contato.whatsapp && <a href={`https://wa.me/${contato.whatsapp}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><IconeMenu tipo="atendimento"/></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">WhatsApp</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">Fale agora com a equipe</span></span></a>}{contato.telefone && <a href={`tel:${contato.telefone}`} className="flex items-center gap-3 rounded-[17px] border border-[#E5D5D1] bg-white p-[14px]"><span className="sl-more-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45"><path d="M7.5 3.5 10 8 8 9.5c1.4 2.8 3.7 5.1 6.5 6.5l1.5-2 4.5 2.5c-.4 2.5-2.2 4-4.5 4C9.1 20.5 3.5 14.9 3.5 8c0-2.3 1.5-4.1 4-4.5Z"/></svg></span><span><span className="block text-[12.5px] font-medium text-[#4B3936]">Ligar para a equipe</span><span className="block pt-[2px] text-[10px] font-light text-[#9A8A86]">{contato.telefone}</span></span></a>}{!contato.whatsapp && !contato.telefone && <div className="rounded-[17px] border border-[#ECE2DF] bg-white p-4 text-[10.8px] font-light text-[#8D7D79]">{contatoFalhou ? "Não foi possível carregar os canais de atendimento agora. Tente novamente em instantes." : "Os canais de atendimento ainda não foram configurados pela equipe."}</div>}</div></div>;
@@ -161,7 +157,6 @@ export function MaisTab({ nomeCliente, onSair, onIrParcelas, renderJornada, init
   if (sub === "seguranca") return <div className="sl-tab pb-6"><SubHeader titulo="Segurança" onVoltar={() => setSub(null)} /><div className="grid gap-[10px] px-[18px] pt-4"><div className="rounded-[18px] border border-[#ECE2DF] bg-white p-4"><div className="sl-more-icon"><IconeMenu tipo="seguranca"/></div><p className="pt-3 text-[10.8px] font-light leading-[1.55] text-[#7F6F6B]">Seu acesso é feito por CPF e data de nascimento. Nunca compartilhe dados bancários fora dos canais oficiais da Sra. Luck.</p></div><div className="rounded-[18px] border border-[#E7D8D4] bg-white p-4"><div className="flex items-start gap-3"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[13px] bg-[#F7EFED] text-[#7D2434]"><IconeBiometria/></span><div className="min-w-0 flex-1"><div className="text-[12.5px] font-semibold text-[#3F302D]">Ativar biometria</div><div className="pt-[2px] text-[10px] font-light leading-[1.45] text-[#8D7D79]">Use a biometria ou o bloqueio de tela deste aparelho para adicionar uma camada extra de proteção.</div></div></div><button type="button" disabled={biometriaSuportada !== true || biometriaProcessando} onClick={() => { if (biometriaAtiva) desativarBiometria(); else void ativarBiometria(); }} className={`mt-4 w-full rounded-[11px] px-3 py-[10px] text-[10.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${biometriaAtiva ? "border border-[#D8E7DC] bg-[#F1F7F2] text-[#3F7D5B]" : "bg-[#6B1F2E] text-white"}`}>{biometriaProcessando ? "Aguardando biometria…" : biometriaAtiva ? "Biometria ativada · Desativar" : biometriaSuportada === false ? "Biometria indisponível" : biometriaSuportada === null ? "Verificando dispositivo…" : "Ativar biometria"}</button>{biometriaMensagem && <div className={`pt-2 text-[9.8px] font-medium ${biometriaAtiva ? "text-[#4E7B5D]" : "text-[#9A6B64]"}`}>{biometriaMensagem}</div>}</div><button type="button" onClick={onSair} className="w-full rounded-[11px] border border-[#EAD0CF] bg-[#FBF0EF] px-3 py-[10px] text-[10.5px] font-semibold text-[#8F2A25]">Encerrar acesso com segurança</button></div></div>;
 
   const itens = [
-    { id: "clube" as const, nome: "Clube de vantagens", subtitulo: "Presentes e experiências para sua jornada" },
     { id: "documentos" as const, nome: "Meus documentos", subtitulo: "Contrato e documentos da sua jornada" },
     { id: "jornada" as const, nome: "Jornada", subtitulo: "Do contrato à sua cirurgia, passo a passo" },
     { id: "atendimento" as const, nome: "Atendimento", subtitulo: "Fale com a equipe Sra. Luck" },

@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 
-export type ClientTab = "inicio" | "parcelas" | "mais";
+export type ClientTab = "inicio" | "premios" | "parcelas" | "mais";
 
 interface BottomNavProps {
   aba: ClientTab;
@@ -9,13 +9,15 @@ interface BottomNavProps {
 
 function Icone({ id }: { id: ClientTab }) {
   if (id === "inicio") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinejoin="round"><path d="M4 9.5 11 4l7 5.5V18H4z"/><path d="M9 18v-5h4v5"/></svg>;
+  if (id === "premios") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 11v7h-13v-7"/><path d="M3.5 7.5h15V11h-15z"/><path d="M11 18V7.5"/><path d="M11 7.5H8a1.9 1.9 0 1 1 1.6-2.9L11 7.5Z"/><path d="M11 7.5h3a1.9 1.9 0 1 0-1.6-2.9L11 7.5Z"/></svg>;
   if (id === "parcelas") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><rect x="3.5" y="4.5" width="15" height="5" rx="1.8"/><rect x="3.5" y="12.5" width="15" height="5" rx="1.8"/></svg>;
   return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><path d="M4 7h14M4 11h14M4 15h9"/></svg>;
 }
 
 const ITEMS: { id: ClientTab; label: string }[] = [
   { id: "inicio", label: "Início" },
-  { id: "parcelas", label: "Parcelas" },
+  { id: "premios", label: "Prêmios" },
+  { id: "parcelas", label: "Financeiro" },
   { id: "mais", label: "Mais" },
 ];
 
