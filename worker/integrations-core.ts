@@ -130,7 +130,7 @@ async function validateMercadoPagoSignature(request: Request, webhookSecret: str
   if (!webhookSecret) return false;
   const signature = request.headers.get("x-signature") || "";
   const requestId = request.headers.get("x-request-id") || "";
-  const dataId = new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "";
+  const dataId = (new URL(request.url).searchParams.get("data.id") || new URL(request.url).searchParams.get("data_id") || "").toLowerCase();
   const parts = Object.fromEntries(signature.split(",").map((item) => item.trim().split("=")).filter(([k, v]) => k && v));
   const ts = parts.ts || "", v1 = parts.v1 || "";
   if (!ts || !v1) return false;
@@ -151,6 +151,8 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
     log.warn("Webhook Mercado Pago com assinatura inválida", { eventCode: "MP_WEBHOOK_INVALID_SIGNATURE", statusCode: 401 });
     return json({ erro: "Assinatura inválida." }, 401);
   }
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 512_000) return json({ erro: "Evento muito grande." }, 413);
   const payload = await request.json().catch(() => ({})) as any;
   const paymentId = String(new URL(request.url).searchParams.get("data.id") || payload?.data?.id || "");
   if (!paymentId) return json({ ok: true, ignored: true }, 200);
