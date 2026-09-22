@@ -67,6 +67,15 @@ function bloquearCrossSite(request: Request) {
   return mesmaOrigem(request) ? null : json({ erro: "Requisição de origem não autorizada." }, 403);
 }
 
+function bloquearJsonGrande(request: Request, maxBytes: number) {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) return null;
+  const length = Number(request.headers.get("content-length") || 0);
+  return Number.isFinite(length) && length > maxBytes
+    ? json({ erro: "Requisição muito grande." }, 413)
+    : null;
+}
+
 async function hmacRateLimit(secret: string, material: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -359,8 +368,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  if (url.pathname === "/api/cliente/auth" && request.method === "POST") return loginCliente(request, env);
-  if (url.pathname === "/api/admin/auth" && request.method === "POST") return loginAdmin(request, env);
+  if (url.pathname === "/api/cliente/auth" && request.method === "POST") {
+    const grande = bloquearJsonGrande(request, 16_384);
+    if (grande) return grande;
+    return loginCliente(request, env);
+  }
+  if (url.pathname === "/api/admin/auth" && request.method === "POST") {
+    const grande = bloquearJsonGrande(request, 16_384);
+    if (grande) return grande;
+    return loginAdmin(request, env);
+  }
 
   if (url.pathname === "/api/admin/logout" && request.method === "POST") {
     const bad = bloquearCrossSite(request);
@@ -372,6 +389,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
       const bad = bloquearCrossSite(request);
       if (bad) return bad;
+      const grande = bloquearJsonGrande(request, 262_144);
+      if (grande) return grande;
     }
     const denied = await exigirAdmin(request, env);
     if (denied) return denied;
@@ -424,6 +443,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
       const bad = bloquearCrossSite(request);
       if (bad) return bad;
+      const grande = bloquearJsonGrande(request, 262_144);
+      if (grande) return grande;
     }
     const bloqueio = await exigirClienteComAcesso(request, env);
     if (bloqueio) return bloqueio;
