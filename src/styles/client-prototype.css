@@ -122,7 +122,7 @@
 .client-app .sl-more-sub { font-size:10.5px;font-weight:300;color:#A2938F;padding-top:2px; }
 
 /* Bottom nav */
-.client-app .sl-bottom-nav { position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;display:grid;grid-template-columns:repeat(5,1fr);padding:9px 6px calc(max(env(safe-area-inset-bottom),0px) + 14px);background:rgba(251,247,245,.96);border-top:1px solid #F0E6E3;backdrop-filter:blur(8px);z-index:60;box-shadow:none; }
+.client-app .sl-bottom-nav { position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;display:grid;grid-template-columns:repeat(4,1fr);padding:9px 6px calc(max(env(safe-area-inset-bottom),0px) + 14px);background:rgba(251,247,245,.96);border-top:1px solid #F0E6E3;backdrop-filter:blur(8px);z-index:60;box-shadow:none; }
 .client-app .sl-bottom-item { position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;padding:4px 0;color:#A99894;background:transparent;border:0;font-size:10px;font-weight:400;letter-spacing:.02em;text-transform:none; }
 .client-app .sl-bottom-item.active { color:#6B1F2E; }
 .client-app .sl-bottom-item svg { width:21px;height:21px;stroke-width:1.2; }
@@ -133,6 +133,8 @@
 .client-app .sl-bell-fixed { position:fixed;top:var(--sl-bell-top);right:var(--sl-bell-right);z-index:65;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid #DECBC6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 9px rgba(83,47,50,.07);color:#6B1F2E;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:background .15s,border-color .15s; }
 .client-app .sl-bell-fixed.open { z-index:76;background:#6B1F2E;border-color:#6B1F2E;color:#FFF; }
 .client-app .sl-bell-count { position:absolute;top:-4px;right:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:#B3342E;border:1.5px solid #FBF7F5;color:#fff;font-size:9.5px;font-weight:600;line-height:1;display:flex;align-items:center;justify-content:center; }
+.client-app .sl-menu-fixed { position:fixed;top:var(--sl-bell-top);right:calc(var(--sl-bell-right) + 42px);z-index:65;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid #DECBC6;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 9px rgba(83,47,50,.07);color:#6B1F2E;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:background .15s,border-color .15s,color .15s; }
+.client-app .sl-menu-fixed.active { background:#6B1F2E;border-color:#6B1F2E;color:#FFF; }
 .client-app .sl-bell-backdrop { position:fixed;inset:0;z-index:74;background:rgba(30,20,20,.18); }
 .client-app .sl-bell-panel { position:fixed;top:calc(var(--sl-bell-top) + 44px);right:calc(var(--sl-bell-right) - 7px);z-index:75;width:min(348px, calc(100vw - 20px));display:flex;flex-direction:column;max-height:min(520px, calc(100dvh - var(--sl-bell-top) - 150px));background:#FFF;border:1px solid #EADFDB;border-radius:20px;box-shadow:0 18px 48px rgba(46,36,34,.2);transform-origin:calc(100% - 24px) 0;outline:none; }
 .client-app .sl-bell-caret { position:absolute;top:-7px;right:19px;width:13px;height:13px;background:#FFF;border-left:1px solid #EADFDB;border-top:1px solid #EADFDB;transform:rotate(45deg);border-radius:3px 0 0 0; }

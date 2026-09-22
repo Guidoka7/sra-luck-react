@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJson } from "../lib/api";
 import { primeiroNome } from "../lib/utils";
 import { CelebracaoData } from "@/components/cliente/CelebracaoData";
@@ -12,6 +12,7 @@ import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { journeyInputFromProcess } from "@/lib/journeySteps";
 import { NotificationBell } from "@/components/cliente/nav/NotificationBell";
+import { MenuButton } from "@/components/cliente/nav/MenuButton";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 import { AgendaTab } from "@/pages/client/AgendaTab";
@@ -40,6 +41,7 @@ export function AgendaPage() {
   const [boletos, setBoletos] = useState<BoletosData | null>(cacheInicial?.boletos ?? null);
   const [aba, setAba] = useState<ClientTab>(abaSalva);
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
+  const abaAntesDoMais = useRef<ClientTab>("inicio");
   const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
   const [loading, setLoading] = useState(!cacheInicial);
   const [erro, setErro] = useState<string | null>(null);
@@ -162,6 +164,13 @@ export function AgendaPage() {
   const consumirMaisSubTela = useCallback(() => setMaisSubTelaInicial(null), []);
   // Estável: EscolherFormaPagamento o usa como dependência de efeito.
   const recarregarSilencioso = useCallback(() => carregar(true), [carregar]);
+
+  /** O botão de menu abre o Mais e, se ele já estiver aberto, volta à aba anterior. */
+  function alternarMais() {
+    if (aba === "mais") { selecionarAba(abaAntesDoMais.current); return; }
+    abaAntesDoMais.current = aba;
+    selecionarAba("mais");
+  }
 
   function selecionarAba(abaSelecionada: ClientTab) {
     setMaisSubTelaInicial(null);
@@ -295,6 +304,8 @@ export function AgendaPage() {
           />
         )}
       </div>
+
+      <MenuButton ativo={aba === "mais"} onClick={alternarMais} />
 
       <NotificationBell
         aberto={notificacoesAbertas}

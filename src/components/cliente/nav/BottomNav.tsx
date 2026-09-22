@@ -15,12 +15,12 @@ function Icone({ id }: { id: ClientTab }) {
   return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><path d="M4 7h14M4 11h14M4 15h9"/></svg>;
 }
 
+/** "mais" continua sendo uma tela, mas é aberta pelo botão fixo do topo (MenuButton). */
 const ITEMS: { id: ClientTab; label: string }[] = [
   { id: "inicio", label: "Início" },
   { id: "agenda", label: "Agenda" },
   { id: "premios", label: "Prêmios" },
   { id: "parcelas", label: "Financeiro" },
-  { id: "mais", label: "Mais" },
 ];
 
 export function BottomNav({ aba, onSelecionar }: BottomNavProps) {

@@ -34,8 +34,8 @@ export function ClubeScreen({ onVoltar, onIrParcelas }: ClubeScreenProps) {
   async function usarVoucher(){if(!voucher)return;setBusy(true);try{await usarBeneficio(voucher.id);toast.success("Voucher marcado como utilizado. Combine o horário com a equipe.");await carregar()}catch(e){toast.error(e instanceof Error?e.message:"Não foi possível usar o voucher.")}finally{setBusy(false)}}
 
   return <div className="sl-tab pb-6">
-    <div className="px-[18px] pt-[calc(max(env(safe-area-inset-top),0px)+18px)]">
-      <div className="flex items-center justify-between gap-3 pr-[44px]">
+    <div className="px-[18px] pt-[calc(max(env(safe-area-inset-top),0px)+11px)]">
+      <div className="flex items-center justify-between gap-3 pr-[86px]">
         {onVoltar ? <button type="button" onClick={onVoltar} className="flex min-w-0 items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[91px] object-contain" />}
         <div className="flex items-center gap-[7px]">
           <button type="button" onClick={()=>setSheet("carteira")} className="flex h-[34px] items-center gap-[6px] rounded-full border border-[#E8D9D5] bg-white pl-2 pr-[10px] text-[#6B1F2E] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7] text-[#9B741E]"><CoinIcon/></span><span className="font-heading text-[16px] font-semibold leading-none">{dados?.saldo??0}</span></button>

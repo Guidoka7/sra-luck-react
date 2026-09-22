@@ -30,8 +30,8 @@ export function ClientProfileHeader({
           <div className="flex min-h-[34px] items-center">
             <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="sl-home-logo" />
           </div>
-{/* Espaço do sininho fixo (NotificationBell), que fica sobre este ponto. */}
-          <span className="h-[34px] w-[34px] flex-none" aria-hidden="true" />
+{/* Espaço do menu e do sininho fixos (MenuButton + NotificationBell), que ficam sobre este ponto. */}
+          <span className="h-[34px] w-[76px] flex-none" aria-hidden="true" />
         </div>
 
         <div className="sl-profile-card">
