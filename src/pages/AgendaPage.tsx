@@ -6,6 +6,7 @@ import { MomentoEspecialCelebracao } from "@/components/cliente/MomentoEspecialC
 import { BottomNav, type ClientTab } from "@/components/cliente/nav/BottomNav";
 import { resolveHomeCampaignNavigation, type HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
 import { useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNotifications";
+import { subscribeAgendaSync } from "@/lib/agendaRealtime";
 import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
@@ -91,8 +92,42 @@ export function AgendaPage() {
 
   useEffect(() => {
     void carregar();
-    const timer = window.setInterval(() => void carregar(true), 30000);
-    return () => window.clearInterval(timer);
+
+    let realtimeDebounce: number | undefined;
+    const atualizarAgora = () => {
+      window.clearTimeout(realtimeDebounce);
+      realtimeDebounce = window.setTimeout(() => void carregar(true), 60);
+    };
+
+    // Realtime é o caminho principal: qualquer abertura/fechamento de data,
+    // alteração de capacidade ou novo agendamento dispara um novo GET
+    // autenticado. O sinal público não contém dados da cliente.
+    const unsubscribeRealtime = subscribeAgendaSync(() => atualizarAgora());
+
+    // Fallback de segurança caso WebSocket/realtime seja interrompido.
+    // Só consulta enquanto o app está visível para evitar tráfego inútil.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void carregar(true);
+    }, 5000);
+
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") void carregar(true);
+    };
+    const aoFoco = () => void carregar(true);
+    const aoOnline = () => void carregar(true);
+
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoFoco);
+    window.addEventListener("online", aoOnline);
+
+    return () => {
+      window.clearTimeout(realtimeDebounce);
+      window.clearInterval(timer);
+      unsubscribeRealtime();
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoFoco);
+      window.removeEventListener("online", aoOnline);
+    };
   }, [carregar]);
 
   async function sair() {
@@ -112,6 +147,9 @@ export function AgendaPage() {
       setCelebrando(resultado.data);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível confirmar essa data.");
+      // Se a data acabou de ser fechada/ocupada, remove imediatamente o
+      // estado visual obsoleto antes de a cliente tentar novamente.
+      await carregar(true);
     } finally {
       setConfirmando(false);
     }
