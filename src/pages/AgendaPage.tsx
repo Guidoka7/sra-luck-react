@@ -14,56 +14,34 @@ import { journeyInputFromProcess } from "@/lib/journeySteps";
 import { NotificationBell } from "@/components/cliente/nav/NotificationBell";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
+import { AgendaTab } from "@/pages/client/AgendaTab";
+import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtapa";
+import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 
-type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
-type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
+const CHAVE_ABA = "sra-luck-cliente-aba";
+const ABAS: ClientTab[] = ["inicio", "agenda", "premios", "parcelas", "mais"];
 
-type StatusComparecimento = "pendente" | "compareceu" | "nao_compareceu";
-type StatusQuitacao = "pendente" | "paga" | "nao_realizada";
+/** Recarregar a página mantém a aba em que a cliente estava. */
+function abaSalva(): ClientTab {
+  try {
+    const salva = sessionStorage.getItem(CHAVE_ABA) as ClientTab | null;
+    return salva && ABAS.includes(salva) ? salva : "inicio";
+  } catch {
+    return "inicio";
+  }
+}
 
-type AgendamentoAgenda = {
-  id: string;
-  data: string;
-  horario: string | null;
-  termosAssinadosEm: string | null;
-  comparecimentoStatus: StatusComparecimento;
-  quitacaoStatus: StatusQuitacao;
-  previsaoCirurgia: string | null;
-  dataCirurgia: string | null;
-  horarioCirurgia: string | null;
-  status?: string;
-};
-
-type AgendaData = {
-  cliente: { id: string; nome: string; procedimento: string | null };
-  elegibilidade: { elegivel: boolean; liberacaoFinanceiraSolicitada: boolean; liberacaoFinanceiraSolicitadaEm: string | null };
-  financeiro: { statusCirurgia: string | null };
-  solicitacaoLiberacaoFinanceira: { id: string; status: StatusCusteio } | null;
-  agendamentoAtivo: AgendamentoAgenda | null;
-  agendamentoConcluido: AgendamentoAgenda | null;
-  datasDisponiveis: { id: string; data: string; vagasRestantes: number }[];
-  agendaCirurgicaLiberada: boolean;
-  agendaCirurgicaLiberarEm: string | null;
-};
-
-type BoletosData = {
-  boletos: unknown[];
-  porcentagem_pagamento: number;
-  parcelas_pagas: number;
-  pode_agendar: boolean;
-  agenda_liberada: boolean;
-  status_revisao_financeira: StatusRevisaoFinanceira;
-  observacao_revisao_financeira?: string | null;
-  quantidade_parcelas: number | null;
-};
 
 export function AgendaPage() {
-  const [agenda, setAgenda] = useState<AgendaData | null>(null);
-  const [boletos, setBoletos] = useState<BoletosData | null>(null);
-  const [aba, setAba] = useState<ClientTab>("inicio");
+  // Último estado conhecido (cache local): a área abre na hora ao recarregar
+  // e é revalidada em silêncio logo em seguida.
+  const [cacheInicial] = useState(lerCacheCliente);
+  const [agenda, setAgenda] = useState<AgendaData | null>(cacheInicial?.agenda ?? null);
+  const [boletos, setBoletos] = useState<BoletosData | null>(cacheInicial?.boletos ?? null);
+  const [aba, setAba] = useState<ClientTab>(abaSalva);
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cacheInicial);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [celebrando, setCelebrando] = useState<string | null>(null);
@@ -79,9 +57,11 @@ export function AgendaPage() {
       ]);
       setAgenda(agendaData);
       setBoletos(boletosData);
+      salvarCacheCliente(agendaData, boletosData);
       setErro(null);
     } catch (error) {
       if (error instanceof Error && error.message === "Sessão expirada.") {
+        limparCacheCliente();
         window.history.pushState({}, "", "/login");
         window.dispatchEvent(new PopStateEvent("popstate"));
         return;
@@ -93,7 +73,11 @@ export function AgendaPage() {
   }, []);
 
   useEffect(() => {
-    void carregar();
+    try { sessionStorage.setItem(CHAVE_ABA, aba); } catch {}
+  }, [aba]);
+
+  useEffect(() => {
+    void carregar(Boolean(cacheInicial));
 
     let realtimeDebounce: number | undefined;
     const atualizarAgora = () => {
@@ -130,9 +114,11 @@ export function AgendaPage() {
       window.removeEventListener("focus", aoFoco);
       window.removeEventListener("online", aoOnline);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregar]);
 
   async function sair() {
+    limparCacheCliente();
     await fetch("/api/cliente/logout", { method: "POST", credentials: "same-origin" });
     window.history.pushState({}, "", "/login");
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -158,36 +144,24 @@ export function AgendaPage() {
   }
 
   function abrirNotificacao(notificacao: NotificacaoCliente) {
-    if (notificacao.destino === "agenda") setAba("inicio");
+    if (notificacao.destino === "agenda") setAba("agenda");
     else if (notificacao.destino === "parcelas") setAba("parcelas");
     else if (notificacao.destino === "clube") setAba("premios");
     else if (notificacao.destino === "jornada") { setMaisSubTelaInicial("jornada"); setAba("mais"); }
-  }
-
-  /** Abre a Home e rola até "Minha agenda" (AgendaHome), sem tocar na lógica da agenda. */
-  function abrirAgendaNaHome() {
-    setAba("inicio");
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        const secao = document.querySelector<HTMLElement>(".sl-agenda-section-title");
-        if (!secao) return;
-        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-        secao.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
-      });
-    });
   }
 
   /** CTAs do carrossel da Home → abas/subtelas já existentes do app. */
   function abrirDestinoCampanha(destino: HomeCampaignDestination) {
     const nav = resolveHomeCampaignNavigation(destino);
     if (!nav) return;
-    if (nav.scrollToAgenda) { abrirAgendaNaHome(); return; }
     setMaisSubTelaInicial(nav.maisSubTela ?? null);
     setAba(nav.tab);
     if (nav.openNotifications) setNotificacoesAbertas(true);
   }
 
   const consumirMaisSubTela = useCallback(() => setMaisSubTelaInicial(null), []);
+  // Estável: EscolherFormaPagamento o usa como dependência de efeito.
+  const recarregarSilencioso = useCallback(() => carregar(true), [carregar]);
 
   function selecionarAba(abaSelecionada: ClientTab) {
     setMaisSubTelaInicial(null);
@@ -222,7 +196,7 @@ export function AgendaPage() {
   }
 
   const agendaAtual = agenda.agendamentoAtivo ?? agenda.agendamentoConcluido;
-  const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
+  const custeioStatus = (agenda.solicitacaoLiberacaoFinanceira?.status ?? null) as StatusCusteio;
   const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
@@ -234,7 +208,7 @@ export function AgendaPage() {
           nome={primeiroNome(agenda.cliente.nome)}
           onFechar={() => {
             setCelebrando(null);
-            void carregar();
+            void carregar(true);
           }}
         />
       )}
@@ -250,11 +224,27 @@ export function AgendaPage() {
             procedimento={agenda.cliente.procedimento}
             quantidadeParcelas={boletos.quantidade_parcelas}
             porcentagemPagamento={boletos.porcentagem_pagamento ?? 0}
-            parcelasPagas={boletos.parcelas_pagas ?? 0}
             onCampaignAction={abrirDestinoCampanha}
+            resumoAgenda={resumoEtapa(etapaAgenda({
+              agendamentoAtivo: agenda.agendamentoAtivo,
+              agendamentoConcluido: agenda.agendamentoConcluido,
+              podeAgendar: boletos.pode_agendar,
+              agendaLiberada: boletos.agenda_liberada,
+              statusRevisaoFinanceira: boletos.status_revisao_financeira,
+              custeioAprovado,
+              liberacaoFinanceiraSolicitada: agenda.elegibilidade.liberacaoFinanceiraSolicitada,
+            }))}
+            onAbrirAgenda={() => setAba("agenda")}
+          />
+        )}
+
+        {aba === "agenda" && (
+          <AgendaTab
             agendamentoAtivo={agenda.agendamentoAtivo}
             agendamentoConcluido={agenda.agendamentoConcluido}
             datasDisponiveis={agenda.datasDisponiveis}
+            quantidadeParcelas={boletos.quantidade_parcelas}
+            parcelasPagas={boletos.parcelas_pagas ?? 0}
             podeAgendar={boletos.pode_agendar}
             agendaLiberada={boletos.agenda_liberada}
             statusRevisaoFinanceira={boletos.status_revisao_financeira}
@@ -263,9 +253,13 @@ export function AgendaPage() {
             custeioAprovado={custeioAprovado}
             confirmando={confirmando}
             onEscolherData={escolherData}
-            onCusteioSelecionado={() => carregar(true)}
-            onAgendaAtualizada={() => carregar(true)}
-            onLiberacaoSolicitada={() => carregar(true)}
+            onCusteioSelecionado={recarregarSilencioso}
+            onAgendaAtualizada={recarregarSilencioso}
+            onLiberacaoSolicitada={recarregarSilencioso}
+            snapshot={agenda}
+            parcelasNaoPagas={boletos.parcelas_nao_pagas ?? null}
+            onIrFinanceiro={() => setAba("parcelas")}
+            onFalarEquipe={() => { setMaisSubTelaInicial("atendimento"); setAba("mais"); }}
           />
         )}
 
