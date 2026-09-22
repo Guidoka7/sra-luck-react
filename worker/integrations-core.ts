@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
@@ -31,6 +32,20 @@ async function requireAdmin(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
   return session?.adminId ?? null;
+}
+
+async function requireAdminPermission(request: Request, env: Env, permission: string): Promise<{ adminId: string; colaboradorId: string } | Response> {
+  const adminId = await requireAdmin(request, env);
+  if (!adminId) return json({ erro: "Sessão administrativa expirada." }, 401);
+  try {
+    const colaborador = await buscarColaboradorAdminAtivo(adminId, env);
+    if (!colaborador || !temPermissaoAdmin(colaborador, permission)) {
+      return json({ erro: "Seu papel não tem permissão para executar esta operação." }, 403);
+    }
+    return { adminId, colaboradorId: colaborador.id };
+  } catch {
+    return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+  }
 }
 
 async function requireClient(request: Request, env: Env) {
@@ -201,8 +216,9 @@ async function contaAzulRequest(env: Env, path: string, init: RequestInit = {}) 
 }
 
 async function handleContaAzulAdmin(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO);
+  if (authorization instanceof Response) return authorization;
+  const { adminId: admin, colaboradorId } = authorization;
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "conta_azul.admin", provider: "conta_azul" });
   const url = new URL(request.url);
@@ -231,6 +247,13 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
     try {
       const result: any = await contaAzulRequest(env, "/v1/financeiro/eventos-financeiros/contas-a-receber", { method: "POST", body: JSON.stringify(payload) });
       await db.from("conta_azul_operacoes").update({ protocolo: result?.protocolo || null, status: result?.status === "ERROR" ? "erro" : "sucesso", response_payload: result, updated_at: new Date().toISOString() }).eq("id", op?.id);
+      await db.from("logs_alteracoes").insert({
+        usuario: colaboradorId,
+        acao: "criou_recebivel_conta_azul",
+        entidade: "boletos",
+        entidade_id: boletoId,
+        detalhes: { operacao_id: op?.id ?? null, protocolo: result?.protocolo ?? null },
+      });
       return json({ ok: true, resultado: result });
     } catch (error) {
       await db.from("conta_azul_operacoes").update({ status: "erro", erro: error instanceof Error ? error.message : "Erro Conta Azul", updated_at: new Date().toISOString() }).eq("id", op?.id);
@@ -247,6 +270,13 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
     Object.keys(patch).forEach((key) => (patch as any)[key] === undefined && delete (patch as any)[key]);
     try {
       const result = await contaAzulRequest(env, `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(externalId)}`, { method: "PATCH", body: JSON.stringify(patch) });
+      await db.from("logs_alteracoes").insert({
+        usuario: colaboradorId,
+        acao: "atualizou_parcela_conta_azul",
+        entidade: "integracoes",
+        entidade_id: externalId,
+        detalhes: { campos: Object.keys(patch) },
+      });
       return json({ ok: true, resultado: result });
     } catch (error) {
       log.error("Falha ao atualizar parcela no Conta Azul", { eventCode: "CONTA_AZUL_INSTALLMENT_UPDATE_FAILED", statusCode: 502, error });
@@ -258,8 +288,9 @@ async function handleContaAzulAdmin(request: Request, env: Env) {
 }
 
 async function testarConexao(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
+  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
+  if (authorization instanceof Response) return authorization;
+  const { adminId: admin, colaboradorId } = authorization;
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await request.json().catch(() => ({})) as { provedor?: string };
   const provedor = String(body.provedor || "");
@@ -280,7 +311,7 @@ async function testarConexao(request: Request, env: Env) {
     }
   } else return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
 
-  const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: `admin:${admin}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
+  const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: colaboradorId, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
   if (auditError) log.warn("Teste de integração concluído, mas auditoria não foi persistida", { eventCode: "INTEGRATION_TEST_AUDIT_FAILED", error: auditError });
   log.info("Teste de integração concluído", { eventCode: "INTEGRATION_TEST_COMPLETED", connected: resultado.conectado });
   return json(resultado);
