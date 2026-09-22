@@ -22,6 +22,7 @@ type ColaboradorAtivo = {
 };
 
 const CARGOS = new Set<Cargo>(["vendedora", "sdr", "financeiro", "gestao", "administrativo"]);
+const PERMISSOES_CONHECIDAS = new Set<string>(Object.values(PERMISSOES_ADMIN));
 const MAX_TENTATIVAS_LOGIN_EQUIPE_IP = 8;
 const MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL = 12;
 const JANELA_LOGIN_EQUIPE_SEGUNDOS = 15 * 60;
@@ -77,7 +78,12 @@ function cargoValido(value: unknown): Cargo | null {
 function permissoesValidas(value: unknown): string[] | null {
   if (value === undefined) return null;
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))].slice(0, 100);
+  return [...new Set(
+    value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => PERMISSOES_CONHECIDAS.has(item)),
+  )].slice(0, 100);
 }
 
 async function staffSessionAtiva(request: Request, env: Env): Promise<{ session: StaffSessionPayload; staff: ColaboradorAtivo } | null> {
@@ -115,7 +121,7 @@ async function staffSessionAtiva(request: Request, env: Env): Promise<{ session:
   };
 }
 
-async function adminEquipeAutorizado(request: Request, env: Env): Promise<{ adminId: string; colaboradorId: string } | Response> {
+async function adminEquipeAutorizado(request: Request, env: Env): Promise<{ adminId: string; colaboradorId: string; cargo: string } | Response> {
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
   if (!session) return json({ erro: "Sessão administrativa expirada." }, 401);
@@ -125,7 +131,7 @@ async function adminEquipeAutorizado(request: Request, env: Env): Promise<{ admi
     if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.EQUIPE_GERENCIAR)) {
       return json({ erro: "Seu papel não tem permissão para gerenciar a equipe." }, 403);
     }
-    return { adminId: session.adminId, colaboradorId: colaborador.id };
+    return { adminId: session.adminId, colaboradorId: colaborador.id, cargo: colaborador.cargo };
   } catch {
     return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
   }
@@ -307,7 +313,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
   if (path.startsWith("/api/admin/staff")) {
     const autorizacao = await adminEquipeAutorizado(request, env);
     if (autorizacao instanceof Response) return autorizacao;
-    const { adminId, colaboradorId: adminColaboradorId } = autorizacao;
+    const { adminId, colaboradorId: adminColaboradorId, cargo: adminCargo } = autorizacao;
     if (["POST", "PATCH", "DELETE"].includes(request.method) && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
 
     if (path === "/api/admin/staff" && request.method === "GET") {
@@ -324,7 +330,13 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
       const senhaTemporaria = String(b.senhaTemporaria ?? "");
       const permissoes = permissoesValidas(b.permissoes) ?? [];
       if (!nome || !email || !cargo) return json({ erro: "Nome, e-mail e cargo são obrigatórios." }, 400);
-      if (senhaTemporaria.length < 8) return json({ erro: "A senha temporária deve ter ao menos 8 caracteres." }, 400);
+      if (adminCargo !== "administrativo" && (cargo === "administrativo" || cargo === "gestao")) {
+        return json({ erro: "Somente o perfil administrativo pode criar acessos elevados." }, 403);
+      }
+      if (adminCargo !== "administrativo" && permissoes.length > 0) {
+        return json({ erro: "Somente o perfil administrativo pode conceder permissões administrativas." }, 403);
+      }
+      if (senhaTemporaria.length < 12) return json({ erro: "A senha temporária deve ter ao menos 12 caracteres." }, 400);
 
       const { data: auth, error: authError } = await db.auth.admin.createUser({
         email,
@@ -360,8 +372,16 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
     if (staffMatch && request.method === "PATCH") {
       const id = decodeURIComponent(staffMatch[1]);
       const b = await parseBody(request);
-      const { data: atual, error: atualError } = await db.from("colaboradores").select("id,auth_user_id,cargo,ativo").eq("id", id).maybeSingle();
+      const { data: atual, error: atualError } = await db.from("colaboradores").select("id,auth_user_id,cargo,ativo,permissoes").eq("id", id).maybeSingle();
       if (atualError || !atual) return json({ erro: "Colaborador não encontrado." }, 404);
+      if (adminCargo !== "administrativo") {
+        if (atual.cargo === "administrativo" || atual.cargo === "gestao") {
+          return json({ erro: "Somente o perfil administrativo pode alterar acessos elevados." }, 403);
+        }
+        if (b.cargo !== undefined || b.perfil !== undefined || b.permissoes !== undefined) {
+          return json({ erro: "Somente o perfil administrativo pode alterar cargo ou permissões." }, 403);
+        }
+      }
 
       const novoCargo = b.cargo !== undefined || b.perfil !== undefined ? cargoValido(b.cargo ?? b.perfil) : null;
       if ((b.cargo !== undefined || b.perfil !== undefined) && !novoCargo) return json({ erro: "Cargo inválido." }, 400);
