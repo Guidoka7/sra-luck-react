@@ -9,7 +9,7 @@ import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLibe
 import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
 import { etapaAgenda, passoDaTrilha, statusAgenda, termosJaAssinados, TRILHA_AGENDA, type EtapaAgenda } from "@/components/cliente/agenda/agendaEtapa";
-import type { AgendaData, StatusRevisaoFinanceira } from "@/lib/clienteAgenda";
+import type { AgendaData, FormaCusteio, StatusRevisaoFinanceira } from "@/lib/clienteAgenda";
 import { percentualNecessario } from "@/lib/utils";
 
 type Agendamento = { id: string; data: string; horario: string | null; dataCirurgia: string | null; termosAssinadosEm?: string | null } | null;
@@ -53,6 +53,17 @@ function brDate(value: string | null | undefined) {
   if (!value) return "—";
   const [y, m, d] = value.slice(0, 10).split("-");
   return y && m && d ? `${d}/${m}/${y}` : value;
+}
+
+function moeda(valor: number) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function rotuloForma(forma: FormaCusteio) {
+  if (forma === "cartao") return "Cartão de crédito";
+  if (forma === "pix") return "PIX";
+  if (forma === "cheques") return "Cheques";
+  return "100% boleto";
 }
 
 function dataLocal(iso: string) {
@@ -224,13 +235,15 @@ export function AgendaTab({
     : termosAssinados
       ? "Acompanhe a liberação da agenda para escolher a data da sua cirurgia."
       : agendamentoAtivo
-        ? "Você poderá escolher a data da sua cirurgia após a assinatura dos termos."
+        ? "Você poderá escolher a data da sua cirurgia após a assinatura dos termos e a quitação do saldo restante do contrato."
         : "Acompanhe as quatro etapas até a escolha da data.";
 
   // ── Cartão "Agora": o que a cliente precisa saber/fazer nesta etapa ──
   const pagas = Math.max(0, Math.floor(parcelasPagas));
   const faltam = parcelasNecessarias != null ? Math.max(0, parcelasNecessarias - pagas) : null;
   const cirurgiaLiberada = Boolean(snapshot?.agendaCirurgicaLiberada);
+  const saldoRestante = snapshot?.financeiro?.saldoRestante ?? null;
+  const formaCusteio = snapshot?.solicitacaoLiberacaoFinanceira?.forma_custeio ?? null;
   const liberarEm = snapshot?.agendaCirurgicaLiberarEm ?? null;
   const ajuda = onFalarEquipe ? <BotaoEtapa variante="leve" onClick={onFalarEquipe}>Falar com a equipe</BotaoEtapa> : null;
 
@@ -273,8 +286,14 @@ export function AgendaTab({
       break;
     case "termos_agendados":
       cartao = (
-        <CartaoEtapa tom="verde" etapa={etapa} rotulo="Agora · Assinatura marcada" titulo="Seu horário está reservado" texto="Compareça no dia marcado com um documento com foto. Depois da assinatura você escolhe a data da sua cirurgia.">
-          {agendamentoAtivo && <DataDestaque iso={agendamentoAtivo.data} horario={agendamentoAtivo.horario} rotulo="Assinatura dos termos" />}
+        <CartaoEtapa tom="verde" etapa={etapa} rotulo="Agora · Assinatura marcada" titulo="Seu horário está reservado" texto="Na data agendada para a assinatura dos termos será realizada a quitação do saldo restante do seu contrato. A escolha da data da sua cirurgia é liberada somente após a confirmação dessa quitação.">
+          {agendamentoAtivo && <DataDestaque iso={agendamentoAtivo.data} horario={agendamentoAtivo.horario} rotulo="Assinatura dos termos e quitação" />}
+          {saldoRestante != null && saldoRestante > 0 && (
+            <div className="mt-[10px] flex items-center justify-between gap-3 rounded-[13px] border border-[#EAD7AE] bg-[#FFF9EF] px-[14px] py-[10px]">
+              <span className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#A77A24]">Saldo a quitar</span>
+              <span className="text-right text-[13px] font-semibold text-[#7D2434]">{moeda(saldoRestante)}{formaCusteio ? <span className="block text-[10.5px] font-normal text-[#806F6A]">{rotuloForma(formaCusteio)}</span> : null}</span>
+            </div>
+          )}
         </CartaoEtapa>
       );
       break;
