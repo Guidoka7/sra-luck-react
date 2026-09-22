@@ -6,13 +6,18 @@ import { ptBR } from "date-fns/locale";
 import { subscribeAgendaSync } from "@/lib/agendaRealtime";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
-export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; }
+type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
+export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; formaCusteio?: FormaCusteio | null; }
 
 function parseDataLocal(iso: string) { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
 const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
 const HORARIOS_CIRURGIA = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"];
 
-export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao, termosAssinados = false }) => {
+export function deveExibirInformativoAnaliseCusteio(formaCusteio: FormaCusteio | null | undefined) {
+  return formaCusteio === "boleto_100" || formaCusteio === "cheques";
+}
+
+export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao, termosAssinados = false, formaCusteio = null }) => {
   const hoje = startOfDay(new Date());
   const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>([]);
   const [mesAtual, setMesAtual] = useState(() => startOfMonth(dataCirurgiaAtual ? parseDataLocal(dataCirurgiaAtual) : hoje));
@@ -148,10 +153,12 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
           <div className="pt-[9px] text-[8.5px] font-bold uppercase tracking-[.13em] text-[#A77A24]">Agenda cirúrgica</div>
           <h3 className="pt-[3px] font-heading text-[18px] font-semibold text-[#7D2434]">Aguardando liberação</h3>
           <p className="pt-[5px] text-[10.5px] font-light leading-[1.5] text-[#7A6B67]">Assim que a agenda for liberada, você poderá consultar as datas disponíveis e escolher quando realizar sua cirurgia.</p>
-          <details className="mt-3 text-[10px] leading-[1.5] text-[#7A6B67]">
-            <summary className="cursor-pointer rounded py-1 font-medium text-[#7D2434] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Como funciona a liberação?</summary>
-            <p className="pt-2">A liberação depende da confirmação da assinatura dos termos, da quitação e do prazo aplicável ao seu processo. Quando essas etapas forem concluídas e a agenda estiver liberada, o calendário ficará disponível aqui para você escolher a data.</p>
-          </details>
+          {deveExibirInformativoAnaliseCusteio(formaCusteio) && (
+            <details className="mt-3 text-[10px] leading-[1.5] text-[#7A6B67]">
+              <summary className="cursor-pointer rounded py-1 font-medium text-[#7D2434] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Como funciona a liberação?</summary>
+              <p className="pt-2">A liberação depende da confirmação da assinatura dos termos, da quitação e do prazo aplicável ao seu processo. Quando essas etapas forem concluídas e a agenda estiver liberada, o calendário ficará disponível aqui para você escolher a data.</p>
+            </details>
+          )}
           <button type="button" onClick={() => void carregar(true)} disabled={atualizando} className="mt-3 min-h-[40px] w-full rounded-[10px] border border-[#E9D4B2] bg-[#FFF9EF] px-3 py-2 text-[10px] font-medium text-[#7D2434] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
             {atualizando ? "Atualizando..." : "Atualizar status"}
           </button>
