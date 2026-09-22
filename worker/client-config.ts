@@ -52,7 +52,7 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
       .from("configuracoes")
       .select("whatsapp_contato")
       .maybeSingle();
-    if (error) return json({ erro: error.message }, 500);
+    if (error) { console.error("Falha ao carregar configuração pública:", error); return json({ erro: "Não foi possível carregar as informações de atendimento." }, 500); }
 
     return json({ whatsappContato: data?.whatsapp_contato || null });
   }
@@ -165,7 +165,7 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
     .from("configuracoes")
     .select("pix_chave,pix_qrcode_base64,pix_desconto_percentual,whatsapp_contato,telefone_contato")
     .maybeSingle();
-  if (error) return json({ erro: error.message }, 500);
+  if (error) { console.error("Falha ao carregar configuração da cliente:", error); return json({ erro: "Não foi possível carregar as configurações agora." }, 500); }
 
   return json({
     pixChave: data?.pix_chave || null,
