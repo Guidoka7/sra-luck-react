@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { formatarMoeda } from "@/lib/utils";
+import { calcularPrevisaoElegibilidade } from "../../../worker/eligibility-forecast";
 
 type Confianca = "alta" | "media" | "baixa";
 
@@ -286,10 +287,11 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
   const boletos = useMemo(() => [...(detail?.boletos ?? [])].sort((a, b) => Number(a.numero_parcela) - Number(b.numero_parcela)), [detail]);
   const cadastro = detail?.cadastro ?? null;
   const today = new Date().toISOString().slice(0, 10);
+  const previsaoLive = useMemo(() => calcularPrevisaoElegibilidade(boletos), [boletos]);
   const maxBoletoPlan = boletos.reduce((max, row) => Math.max(max, Number(row.total_parcelas ?? 0), Number(row.numero_parcela ?? 0)), 0);
-  const currentPlan = Number(cadastro?.quantidade_parcelas ?? 0) || maxBoletoPlan || client.totalParcelas || 0;
+  const currentPlan = previsaoLive.totalParcelas || Number(cadastro?.quantidade_parcelas ?? 0) || maxBoletoPlan || client.totalParcelas || 0;
   const currentRule = rules.find((rule) => rule.parcelas === currentPlan) ?? null;
-  const targetNumber = currentRule?.parcelasNecessarias ?? (currentPlan === client.totalParcelas ? client.parcelasNecessarias : null);
+  const targetNumber = previsaoLive.parcelasNecessarias ?? currentRule?.parcelasNecessarias ?? (currentPlan === client.totalParcelas ? client.parcelasNecessarias : null);
   const byNumber = useMemo(() => new Map(boletos.map((item) => [Number(item.numero_parcela), item])), [boletos]);
   const paid = boletos.filter((row) => row.status === "pago");
   const suspended = boletos.filter((row) => Boolean(row.suspensa) && row.status !== "pago");
@@ -298,10 +300,8 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
   const openNotSuspended = boletos.filter((row) => row.status !== "pago" && !row.suspensa);
   const allOpenSuspended = openNotSuspended.length === 0 && suspended.length > 0;
   const contractSuspended = cadastro?.ativo === false || allOpenSuspended;
-  const targetInstallment = targetNumber ? byNumber.get(targetNumber) : undefined;
-  const targetPaid = targetInstallment?.status === "pago" || (targetNumber != null && paid.length >= targetNumber);
-  const targetSuspended = Boolean(targetInstallment?.suspensa);
-  const targetDue = targetInstallment?.data_vencimento ?? (currentPlan === client.totalParcelas ? client.previsao : null);
+  const targetPaid = previsaoLive.atingida;
+  const targetDue = previsaoLive.data ?? (currentPlan === client.totalParcelas ? client.previsao : null);
   const valorCarta = cadastro?.valor_contrato ?? client.valorCarta ?? null;
   const targetMonthLabel = monthYearLabel(targetDue);
 
@@ -403,7 +403,7 @@ export function CompactClientForecastDrawer({ client, rules, onClose }: { client
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-burgundy text-white"><WalletCards className="h-4 w-4" /></span>
                   <p className="text-sm leading-5 text-[#5c4650]">
                     {currentRule ? <><strong className="text-burgundy">Plano {currentPlan}x · {currentRule.percentual}% pago = {targetNumber}ª parcela.</strong> Como a cliente paga 1 parcela por mês, a previsão de liberação é no vencimento da {targetNumber}ª parcela{targetDue ? `: ${dateLabel(targetDue)}` : "."}.</> : <>O plano atual de {currentPlan || "—"} parcelas não possui regra de liberação cadastrada.</>}
-                    {targetSuspended ? " A parcela-alvo está suspensa no financeiro." : null}
+                    {suspended.length ? " A previsão já considera as parcelas suspensas como realocadas para o final do cronograma." : null}
                   </p>
                 </div>
               </section>
