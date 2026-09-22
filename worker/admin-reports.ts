@@ -3,6 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { calcularLiberacaoCirurgica } from "./surgery-release";
+import { calcularPrevisaoElegibilidade, REGRAS_ELEGIBILIDADE_V46 } from "./eligibility-forecast";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -23,7 +24,6 @@ async function auth(request: Request, env: Env) {
 }
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-const REGRAS_ELEGIBILIDADE: Record<number, number> = { 12: 60, 18: 60, 24: 60, 36: 70, 48: 80, 60: 80, 72: 80 };
 const PAGE_SIZE = 1000;
 
 function cpfKey(value: unknown) {
@@ -34,18 +34,6 @@ function isoDate(value: unknown): string | null {
   if (typeof value !== "string" || !value) return null;
   const iso = value.slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
-}
-
-function addMonthsIso(iso: string, months: number) {
-  const [year, month, day] = iso.split("-").map(Number);
-  const base = new Date(Date.UTC(year, month - 1 + months, 1));
-  const lastDay = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
-  base.setUTCDate(Math.min(day, lastDay));
-  return base.toISOString().slice(0, 10);
-}
-
-function maxInstallments(rows: any[]) {
-  return rows.reduce((max, row) => Math.max(max, Number(row.total_parcelas ?? 0), Number(row.numero_parcela ?? 0)), rows.length);
 }
 
 function sortInstallments(rows: any[]) {
@@ -114,7 +102,7 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
     fetchAllRows(
       db,
       "boletos",
-      "id,cliente_id,numero_parcela,total_parcelas,status,data_vencimento,data_pagamento,created_at",
+      "id,cliente_id,numero_parcela,total_parcelas,status,data_vencimento,data_pagamento,suspensa,created_at",
       "created_at",
       true,
     ),
@@ -164,13 +152,14 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
 
   const clientesForecast = clientes.map((cliente: any) => {
     const parcelas = sortInstallments(boletosPorCliente.get(cliente.id) ?? []);
-    const totalParcelas = Math.max(Number(cliente.quantidade_parcelas ?? 0), maxInstallments(parcelas));
-    const percentual = REGRAS_ELEGIBILIDADE[totalParcelas] ?? null;
-    const parcelasNecessarias = percentual ? Math.ceil((totalParcelas * percentual) / 100) : null;
+    const calculada = calcularPrevisaoElegibilidade(parcelas, cliente.data_atingiu_percentual ?? null);
+    const totalParcelas = calculada.totalParcelas;
+    const percentual = calculada.percentual;
+    const parcelasNecessarias = calculada.parcelasNecessarias;
     const pagas = parcelas.filter((parcela) => parcela.status === "pago");
     const vencidas = parcelas.filter((parcela) => {
       const vencimento = isoDate(parcela.data_vencimento);
-      return Boolean(vencimento && vencimento < hoje && !["pago", "pendente_confirmacao"].includes(String(parcela.status)));
+      return Boolean(!parcela.suspensa && vencimento && vencimento < hoje && !["pago", "pendente_confirmacao"].includes(String(parcela.status)));
     });
 
     const contrato = contratoPorCliente.get(cliente.id);
@@ -179,38 +168,12 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
     const origem = contrato?.origem || entradaCrm?.origem || null;
     const responsavel = entradaCrm?.vendedor || cliente.consultora || null;
 
-    let previsao: string | null = null;
-    let fontePrevisao: "cronograma" | "projecao_mensal" | "sem_base" = "sem_base";
-    let confianca: "alta" | "media" | "baixa" = "baixa";
-
-    if (parcelasNecessarias) {
-      const parcelaAlvo = parcelas.find((parcela) => Number(parcela.numero_parcela) === parcelasNecessarias) ?? parcelas[parcelasNecessarias - 1];
-      const vencimentoAlvo = isoDate(parcelaAlvo?.data_vencimento);
-
-      if (vencimentoAlvo) {
-        previsao = vencimentoAlvo;
-        fontePrevisao = "cronograma";
-        confianca = "alta";
-      } else {
-        const primeiraComData = parcelas.find((parcela) => isoDate(parcela.data_vencimento));
-        const primeira = primeiraComData ?? parcelas[0];
-        const base = isoDate(primeira?.data_vencimento) ?? isoDate(primeira?.created_at);
-        if (base) {
-          const numeroBase = Math.max(1, Number(primeira?.numero_parcela ?? 1));
-          previsao = addMonthsIso(base, Math.max(0, parcelasNecessarias - numeroBase));
-          fontePrevisao = "projecao_mensal";
-          confianca = "media";
-        }
-      }
-    }
-
-    const atingiuEm = parcelasNecessarias && pagas.length >= parcelasNecessarias
-      ? isoDate(
-          [...pagas]
-            .sort((a, b) => String(a.data_pagamento ?? a.data_vencimento ?? "").localeCompare(String(b.data_pagamento ?? b.data_vencimento ?? "")))[parcelasNecessarias - 1]?.data_pagamento
-            ?? cliente.data_atingiu_percentual,
-        )
-      : null;
+    const previsao = calculada.data;
+    const fontePrevisao: "cronograma" | "projecao_mensal" | "sem_base" =
+      calculada.fonte === "cronograma" ? "cronograma" : calculada.fonte === "projecao" ? "projecao_mensal" : "sem_base";
+    const confianca: "alta" | "media" | "baixa" =
+      calculada.fonte === "cronograma" || calculada.fonte === "atingida" ? "alta" : calculada.fonte === "projecao" ? "media" : "baixa";
+    const atingiuEm = calculada.atingida ? calculada.data : null;
 
     const situacao = !percentual
       ? "sem_regra"
@@ -231,8 +194,8 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
       totalParcelas,
       percentual,
       parcelasNecessarias,
-      parcelasPagas: pagas.length,
-      parcelasRestantes: parcelasNecessarias == null ? null : Math.max(0, parcelasNecessarias - pagas.length),
+      parcelasPagas: calculada.parcelasPagas,
+      parcelasRestantes: calculada.parcelasRestantes,
       parcelasVencidas: vencidas.length,
       primeiroBoletoEm: isoDate(parcelas[0]?.created_at),
       primeiroVencimento: isoDate(parcelas.find((parcela) => isoDate(parcela.data_vencimento))?.data_vencimento),
@@ -254,6 +217,7 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
         status: String(parcela.status ?? ""),
         vencimento: isoDate(parcela.data_vencimento),
         pagamento: isoDate(parcela.data_pagamento),
+        suspensa: Boolean(parcela.suspensa),
       })),
     };
   });
@@ -280,7 +244,7 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
 
   return {
     geradoEm: new Date().toISOString(),
-    regras: Object.entries(REGRAS_ELEGIBILIDADE).map(([parcelas, percentual]) => ({
+    regras: Object.entries(REGRAS_ELEGIBILIDADE_V46).map(([parcelas, percentual]) => ({
       parcelas: Number(parcelas),
       percentual,
       parcelasNecessarias: Math.ceil((Number(parcelas) * percentual) / 100),
