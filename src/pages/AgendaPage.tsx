@@ -4,13 +4,14 @@ import { primeiroNome } from "../lib/utils";
 import { CelebracaoData } from "@/components/cliente/CelebracaoData";
 import { MomentoEspecialCelebracao } from "@/components/cliente/MomentoEspecialCelebracao";
 import { BottomNav, type ClientTab } from "@/components/cliente/nav/BottomNav";
+import { resolveHomeCampaignNavigation, type HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
 import { useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNotifications";
 import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
 import { journeyInputFromProcess } from "@/lib/journeySteps";
 import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
-import { MaisTab } from "@/pages/client/MaisTab";
+import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;
@@ -58,6 +59,7 @@ export function AgendaPage() {
   const [agenda, setAgenda] = useState<AgendaData | null>(null);
   const [boletos, setBoletos] = useState<BoletosData | null>(null);
   const [aba, setAba] = useState<ClientTab>("inicio");
+  const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
@@ -122,6 +124,35 @@ export function AgendaPage() {
     else if (notificacao.destino === "jornada") setAba("jornada");
   }
 
+  /** Abre a Home e rola até "Minha agenda" (AgendaHome), sem tocar na lógica da agenda. */
+  function abrirAgendaNaHome() {
+    setAba("inicio");
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const secao = document.querySelector<HTMLElement>(".sl-agenda-section-title");
+        if (!secao) return;
+        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+        secao.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+      });
+    });
+  }
+
+  /** CTAs do carrossel da Home → abas/subtelas já existentes do app. */
+  function abrirDestinoCampanha(destino: HomeCampaignDestination) {
+    const nav = resolveHomeCampaignNavigation(destino);
+    if (!nav) return;
+    if (nav.scrollToAgenda) { abrirAgendaNaHome(); return; }
+    setMaisSubTelaInicial(nav.maisSubTela ?? null);
+    setAba(nav.tab);
+  }
+
+  const consumirMaisSubTela = useCallback(() => setMaisSubTelaInicial(null), []);
+
+  function selecionarAba(abaSelecionada: ClientTab) {
+    setMaisSubTelaInicial(null);
+    setAba(abaSelecionada);
+  }
+
   if (loading) {
     return (
       <main className="client-app flex min-h-[100dvh] items-center justify-center">
@@ -180,6 +211,7 @@ export function AgendaPage() {
             parcelasPagas={boletos.parcelas_pagas ?? 0}
             naoLidas={notificacoesState.naoLidas}
             onAbrirNotificacoes={() => setAba("notificacoes")}
+            onCampaignAction={abrirDestinoCampanha}
             agendamentoAtivo={agenda.agendamentoAtivo}
             agendamentoConcluido={agenda.agendamentoConcluido}
             datasDisponiveis={agenda.datasDisponiveis}
@@ -229,11 +261,17 @@ export function AgendaPage() {
         )}
 
         {aba === "mais" && (
-          <MaisTab nomeCliente={agenda.cliente.nome} onSair={() => void sair()} onIrParcelas={() => setAba("parcelas")} />
+          <MaisTab
+            nomeCliente={agenda.cliente.nome}
+            onSair={() => void sair()}
+            onIrParcelas={() => setAba("parcelas")}
+            initialSubTela={maisSubTelaInicial}
+            onInitialSubTelaConsumed={consumirMaisSubTela}
+          />
         )}
       </div>
 
-      <BottomNav aba={aba} onSelecionar={setAba} naoLidas={notificacoesState.naoLidas} />
+      <BottomNav aba={aba} onSelecionar={selecionarAba} naoLidas={notificacoesState.naoLidas} />
     </main>
   );
 }

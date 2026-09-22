@@ -249,9 +249,13 @@ export const HOME_CAMPAIGN_SLIDES: HomeCampaignSlideConfig[] = [
  */
 export function resolveHomeCampaignSlides(
   slides: HomeCampaignSlideConfig[] = HOME_CAMPAIGN_SLIDES,
+  { campaignConfigAvailable = false }: { campaignConfigAvailable?: boolean } = {},
 ): ResolvedHomeCampaignSlide[] {
+  // Oferta comercial só aparece com configuração real de campanha persistida;
+  // enquanto ela não existe, nem um `active: true` acidental promete desconto/isenção.
   const activeSlides = slides
     .filter((slide) => slide.active)
+    .filter((slide) => slide.availability !== "requires-campaign-config" || campaignConfigAvailable)
     .slice()
     .sort((a, b) => a.order - b.order);
 
@@ -270,4 +274,30 @@ export function resolveHomeCampaignSlides(
       },
     };
   });
+}
+
+export type HomeCampaignTab = "inicio" | "parcelas" | "jornada" | "notificacoes" | "mais";
+
+export interface HomeCampaignNavigation {
+  tab: HomeCampaignTab;
+  /** Subtela do Mais aberta diretamente (Clube/Atendimento já existentes). */
+  maisSubTela?: "clube" | "atendimento";
+  /** Na Home, rola até a seção "Minha agenda" (AgendaHome) sem alterar sua lógica. */
+  scrollToAgenda?: boolean;
+}
+
+/**
+ * Destino de cada CTA no app atual. `campanhas` não tem runtime enquanto não
+ * existir configuração real de campanha — retorna `null` (nenhuma navegação).
+ */
+export function resolveHomeCampaignNavigation(destination: HomeCampaignDestination): HomeCampaignNavigation | null {
+  switch (destination) {
+    case "parcelas": return { tab: "parcelas" };
+    case "jornada": return { tab: "jornada" };
+    case "notificacoes": return { tab: "notificacoes" };
+    case "agenda": return { tab: "inicio", scrollToAgenda: true };
+    case "clube": return { tab: "mais", maisSubTela: "clube" };
+    case "atendimento": return { tab: "mais", maisSubTela: "atendimento" };
+    case "campanhas": return null;
+  }
 }
