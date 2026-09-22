@@ -233,6 +233,9 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
   }
 
   if (path.startsWith("/api/equipe/")) {
+    if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && jsonGrande(request, 131_072)) {
+      return json({ erro: "Requisição muito grande." }, 413);
+    }
     const active = await staffSessionAtiva(request, env);
     if (!active) return json({ erro: "Sessão da equipe expirada ou acesso desativado." }, 401);
     const { staff } = active;
