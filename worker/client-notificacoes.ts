@@ -51,7 +51,7 @@ export async function clientNotificacoesApi(request: Request, env: Env): Promise
       .eq("cliente_id", sessao.clienteId)
       .order("created_at", { ascending: false })
       .limit(100);
-    if (error) return json({ erro: error.message }, 500);
+    if (error) { console.error("Falha ao carregar notificações da cliente:", error); return json({ erro: "Não foi possível carregar as notificações agora." }, 500); }
     const notificacoes = data ?? [];
     const naoLidas = notificacoes.filter((item) => !item.lida).length;
     return json({ notificacoes, naoLidas });
@@ -63,7 +63,7 @@ export async function clientNotificacoesApi(request: Request, env: Env): Promise
       .update({ lida: true })
       .eq("cliente_id", sessao.clienteId)
       .eq("lida", false);
-    if (error) return json({ erro: error.message }, 400);
+    if (error) { console.error("Falha ao marcar notificações como lidas:", error); return json({ erro: "Não foi possível atualizar as notificações." }, 500); }
     return json({ ok: true });
   }
 
@@ -74,7 +74,7 @@ export async function clientNotificacoesApi(request: Request, env: Env): Promise
       .update({ lida: true })
       .eq("id", decodeURIComponent(lerMatch[1]))
       .eq("cliente_id", sessao.clienteId);
-    if (error) return json({ erro: error.message }, 400);
+    if (error) { console.error("Falha ao marcar notificação como lida:", error); return json({ erro: "Não foi possível atualizar a notificação." }, 500); }
     return json({ ok: true });
   }
 
