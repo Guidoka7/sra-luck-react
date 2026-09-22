@@ -4,6 +4,24 @@ import { registrarErro } from "@/lib/monitoramento";
 type Props = { children: ReactNode };
 type State = { erro: Error | null };
 
+const CHUNK_RELOAD_KEY = "sra_luck_chunk_recovery";
+const CHUNK_ERROR_RE = /(Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk .* failed|Failed to load module script)/i;
+
+function tentarRecuperarChunk(erro: Error) {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return false;
+  if (!CHUNK_ERROR_RE.test(erro.message || "")) return false;
+  if (navigator.onLine === false) return false;
+
+  const agora = Date.now();
+  const chave = `${CHUNK_RELOAD_KEY}:${window.location.pathname}`;
+  const ultimaTentativa = Number(sessionStorage.getItem(chave) || 0);
+  if (Number.isFinite(ultimaTentativa) && agora - ultimaTentativa < 60_000) return false;
+
+  sessionStorage.setItem(chave, String(agora));
+  window.location.reload();
+  return true;
+}
+
 export class AppErrorBoundary extends Component<Props, State> {
   state: State = { erro: null };
 
@@ -35,6 +53,12 @@ export class AppErrorBoundary extends Component<Props, State> {
     } catch {
       // Não impedir o fallback visual por causa do próprio monitoramento.
     }
+
+    // Vite usa arquivos com hash. Uma aba aberta durante um novo deploy pode
+    // tentar importar um chunk que já não existe mais no CDN. Recarregar uma
+    // única vez faz a página baixar o HTML e o manifesto de chunks atuais,
+    // sem entrar em loop caso o problema seja realmente de rede.
+    if (tentarRecuperarChunk(erro)) return;
   }
 
   render() {
