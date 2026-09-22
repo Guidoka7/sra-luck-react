@@ -224,6 +224,7 @@ export function AgendaPage() {
             confirmando={confirmando}
             onEscolherData={escolherData}
             onCusteioSelecionado={() => carregar(true)}
+            onAgendaAtualizada={() => carregar(true)}
             onLiberacaoSolicitada={() => carregar(true)}
           />
         )}

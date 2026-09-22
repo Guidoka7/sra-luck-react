@@ -71,3 +71,28 @@ describe("AgendaHome — após a assinatura", () => {
     expect(html).not.toContain("Assinatura confirmada");
   });
 });
+
+describe("AgendaHome — cirurgia confirmada", () => {
+  it.each(["agendamentoAtivo", "agendamentoConcluido"] as const)("mostra somente a cirurgia registrada em %s", (campo) => {
+    const html = renderToStaticMarkup(createElement(AgendaHome, {
+      ...base,
+      datasDisponiveis: [],
+      quantidadeParcelas: 12,
+      parcelasPagas: 12,
+      liberacaoFinanceiraSolicitada: true,
+      confirmando: false,
+      onEscolherData: () => {},
+      [campo]: { id: "termos-1", data: "2026-09-22", horario: "09:30", dataCirurgia: "2026-09-23", termosAssinadosEm: "2026-09-22T12:30:00Z" },
+    }));
+    expect(html).toContain("Seu grande dia já tem data!");
+    expect(html).toContain("Cirurgia confirmada");
+    expect(html).toMatch(/datetime="2026-09-23"/i);
+    expect(html).toContain("23 de setembro de 2026");
+    expect(html).not.toContain("Termos assinados");
+    expect(html).not.toContain("Assinatura confirmada");
+    expect(html).not.toContain("09:30");
+    expect(html).not.toContain("2026-09-22");
+    expect(html).not.toContain("Alterar data");
+    expect(html).not.toContain("<button");
+  });
+});

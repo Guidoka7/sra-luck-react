@@ -224,6 +224,8 @@ agenda cirúrgica liberada → cliente escolhe data disponível → confirmaçã
 
 A agenda deve manter histórico e evitar dupla ocupação/conflitos.
 
+Após a cliente confirmar a data da cirurgia, essa etapa do app passa a ser somente leitura: exibe apenas a data cirúrgica, sem resumo dos termos e sem ação ou solicitação de alteração da cirurgia pela cliente.
+
 ## 14. Forecast / carteira futura
 
 O sistema deve prever quando clientes tendem a atingir o percentual mínimo usando a sequência de vencimentos das parcelas e a quantidade necessária.

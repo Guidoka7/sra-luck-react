@@ -31,6 +31,7 @@ interface HomeTabProps {
   confirmando: boolean;
   onEscolherData: (dataId: string, horario: string) => void;
   onCusteioSelecionado?: () => void | Promise<void>;
+  onAgendaAtualizada?: () => void | Promise<void>;
   onLiberacaoSolicitada?: () => void | Promise<void>;
 }
 
@@ -55,6 +56,7 @@ export function HomeTab({
   confirmando,
   onEscolherData,
   onCusteioSelecionado,
+  onAgendaAtualizada,
   onLiberacaoSolicitada,
 }: HomeTabProps) {
   return (
@@ -85,6 +87,7 @@ export function HomeTab({
         confirmando={confirmando}
         onEscolherData={onEscolherData}
         onCusteioSelecionado={onCusteioSelecionado}
+        onAgendaAtualizada={onAgendaAtualizada}
         onLiberacaoSolicitada={onLiberacaoSolicitada}
       />
 

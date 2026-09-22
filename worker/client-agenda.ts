@@ -341,6 +341,11 @@ export async function remarcarAgendamento(request: Request, env: Env): Promise<R
   if (!s) return json({ erro: "Sessão expirada." }, 401);
   let body: any;
   try { body = await request.json(); } catch { return json({ erro: "Requisição inválida." }, 400); }
+  // A escolha cirúrgica confirmada é somente leitura no app da cliente.
+  // O endpoint anterior de remarcação não deve aceitar pedidos dessa etapa.
+  if (body?.tipo === "cirurgia") {
+    return json({ erro: "A data da sua cirurgia já foi confirmada e não pode ser alterada pelo aplicativo." }, 409);
+  }
   const tipo: "termos" | "cirurgia" = body?.tipo === "cirurgia" ? "cirurgia" : "termos";
   const dataId = typeof body?.dataId === "string" ? body.dataId : undefined;
   const dataEscolhida = typeof body?.data === "string" ? body.data : undefined;

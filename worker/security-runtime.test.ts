@@ -1,3 +1,4 @@
+import { remarcarAgendamento } from "./client-agenda";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { File } from "node:buffer";
 import worker from "./index";
@@ -301,4 +302,26 @@ it("telemetry persists sanitized metadata, discards supplied stacks and enforces
   expect(event.stack).toBeNull(); expect(JSON.stringify(event)).not.toMatch(/test@example|secret-test|sensitive-stack/);
   state.rpc.mockResolvedValue({ data: false, error: null });
   expect((await worker.fetch(req("/api/monitoramento/erro", "POST", { mensagem: "Test" }), env)).status).toBe(429);
+});
+
+describe("Client surgery date is read-only after confirmation", () => {
+  it("rejects surgery rescheduling without writing a request or invoking an RPC", async () => {
+    const response = await remarcarAgendamento(req("/api/cliente/remarcar-agendamento", "POST", { tipo: "cirurgia", data: "2026-09-25" }, await clientCookie()), env);
+    expect(response.status).toBe(409);
+    expect((await response.json() as { erro: string }).erro).toContain("não pode ser alterada pelo aplicativo");
+    expect(state.queries).toHaveLength(0);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it("still authenticates before reporting the surgery rule", async () => {
+    const response = await remarcarAgendamento(req("/api/cliente/remarcar-agendamento", "POST", { tipo: "cirurgia", data: "2026-09-25" }), env);
+    expect(response.status).toBe(401);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it("preserves validation of term rescheduling", async () => {
+    const response = await remarcarAgendamento(req("/api/cliente/remarcar-agendamento", "POST", { tipo: "termos" }, await clientCookie()), env);
+    expect(response.status).toBe(400);
+    expect((await response.json() as { erro: string }).erro).toContain("horário da assinatura");
+  });
 });
