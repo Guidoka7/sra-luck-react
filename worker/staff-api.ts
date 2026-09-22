@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import {
   clearStaffSessionCookie,
   criarTokenStaff,
@@ -21,6 +22,9 @@ type ColaboradorAtivo = {
 };
 
 const CARGOS = new Set<Cargo>(["vendedora", "sdr", "financeiro", "gestao", "administrativo"]);
+const MAX_TENTATIVAS_LOGIN_EQUIPE_IP = 8;
+const MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL = 12;
+const JANELA_LOGIN_EQUIPE_SEGUNDOS = 15 * 60;
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), {
@@ -37,6 +41,32 @@ function sameOrigin(request: Request) {
   const origin = request.headers.get("Origin");
   if (!origin) return true;
   try { return origin === new URL(request.url).origin; } catch { return false; }
+}
+
+async function hmacRateLimit(secret: string, material: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(material));
+  let binary = "";
+  for (const byte of new Uint8Array(signature)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function chavesRateLimitEquipe(request: Request, secret: string, email: string) {
+  const ip = request.headers.get("CF-Connecting-IP")?.trim()
+    || request.headers.get("x-real-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+  const [ipKey, emailKey] = await Promise.all([
+    hmacRateLimit(secret, `staff-login:ip:${ip}`),
+    hmacRateLimit(secret, `staff-login:email:${email}`),
+  ]);
+  return { ipKey, emailKey };
 }
 
 function cargoValido(value: unknown): Cargo | null {
@@ -85,10 +115,20 @@ async function staffSessionAtiva(request: Request, env: Env): Promise<{ session:
   };
 }
 
-async function adminAuthUserId(request: Request, env: Env): Promise<string | null> {
-  if (!env.CLIENTE_SESSION_SECRET) return null;
+async function adminEquipeAutorizado(request: Request, env: Env): Promise<{ adminId: string; colaboradorId: string } | Response> {
+  if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
-  return session?.adminId ?? null;
+  if (!session) return json({ erro: "Sessão administrativa expirada." }, 401);
+
+  try {
+    const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env);
+    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.EQUIPE_GERENCIAR)) {
+      return json({ erro: "Seu papel não tem permissão para gerenciar a equipe." }, 403);
+    }
+    return { adminId: session.adminId, colaboradorId: colaborador.id };
+  } catch {
+    return json({ erro: "Não foi possível validar sua permissão agora." }, 503);
+  }
 }
 
 function proximoMes(competencia: string) {
@@ -110,8 +150,32 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
     const password = String(b.senha ?? "");
     if (!email || !password || email.length > 320 || password.length > 1024) return json({ erro: "E-mail ou senha incorretos." }, 401);
 
+    const { ipKey, emailKey } = await chavesRateLimitEquipe(request, env.CLIENTE_SESSION_SECRET, email);
+    const [limiteIp, limiteEmail] = await Promise.all([
+      db.rpc("login_pode_tentar", {
+        p_chave: ipKey,
+        p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP,
+        p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS,
+      }),
+      db.rpc("login_pode_tentar", {
+        p_chave: emailKey,
+        p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL,
+        p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS,
+      }),
+    ]);
+    if (limiteIp.error || limiteEmail.error) return json({ erro: "Não foi possível validar o acesso agora." }, 503);
+    if (!Boolean(limiteIp.data) || !Boolean(limiteEmail.data)) {
+      return json({ erro: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente." }, 429);
+    }
+
     const { data: auth, error: authError } = await db.auth.signInWithPassword({ email, password });
-    if (authError || !auth.user) return json({ erro: "E-mail ou senha incorretos." }, 401);
+    if (authError || !auth.user) {
+      await Promise.all([
+        db.rpc("login_registrar_falha", { p_chave: ipKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
+        db.rpc("login_registrar_falha", { p_chave: emailKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
+      ]);
+      return json({ erro: "E-mail ou senha incorretos." }, 401);
+    }
 
     const { data: staff, error } = await db
       .from("colaboradores")
@@ -119,7 +183,18 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
       .eq("auth_user_id", auth.user.id)
       .maybeSingle();
     const cargo = cargoValido(staff?.cargo);
-    if (error || !staff || !staff.ativo || !cargo) return json({ erro: "Seu acesso ao portal da equipe não está ativo." }, 403);
+    if (error || !staff || !staff.ativo || !cargo) {
+      await Promise.all([
+        db.rpc("login_registrar_falha", { p_chave: ipKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_IP, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
+        db.rpc("login_registrar_falha", { p_chave: emailKey, p_max_falhas: MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL, p_janela_segundos: JANELA_LOGIN_EQUIPE_SEGUNDOS }),
+      ]);
+      return json({ erro: "Seu acesso ao portal da equipe não está ativo." }, 403);
+    }
+
+    await Promise.all([
+      db.rpc("login_limpar_rate_limit", { p_chave: ipKey }),
+      db.rpc("login_limpar_rate_limit", { p_chave: emailKey }),
+    ]);
 
     const token = await criarTokenStaff(String(staff.id), auth.user.id, cargo, env.CLIENTE_SESSION_SECRET);
     const secure = url.protocol === "https:";
@@ -230,8 +305,9 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
   }
 
   if (path.startsWith("/api/admin/staff")) {
-    const adminId = await adminAuthUserId(request, env);
-    if (!adminId) return json({ erro: "Sessão administrativa expirada." }, 401);
+    const autorizacao = await adminEquipeAutorizado(request, env);
+    if (autorizacao instanceof Response) return autorizacao;
+    const { adminId, colaboradorId: adminColaboradorId } = autorizacao;
     if (["POST", "PATCH", "DELETE"].includes(request.method) && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
 
     if (path === "/api/admin/staff" && request.method === "GET") {
@@ -270,6 +346,13 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
         await db.auth.admin.deleteUser(auth.user.id).catch(() => undefined);
         return json({ erro: error.message }, 400);
       }
+      await db.from("logs_alteracoes").insert({
+        usuario: adminColaboradorId,
+        acao: "criou_colaborador",
+        entidade: "colaboradores",
+        entidade_id: data.id,
+        detalhes: { cargo: data.cargo, ativo: data.ativo, permissoes: data.permissoes ?? [] },
+      });
       return json({ colaborador: data }, 201);
     }
 
@@ -300,6 +383,13 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
 
       const { data, error } = await db.from("colaboradores").update(patch).eq("id", id).select("id,nome,email,cargo,ativo,permissoes,created_at,updated_at").single();
       if (error) return json({ erro: error.message }, 400);
+      await db.from("logs_alteracoes").insert({
+        usuario: adminColaboradorId,
+        acao: "alterou_colaborador",
+        entidade: "colaboradores",
+        entidade_id: id,
+        detalhes: { campos: Object.keys(patch).filter((campo) => campo !== "updated_at"), cargo: data.cargo, ativo: data.ativo, permissoes: data.permissoes ?? [] },
+      });
       return json({ colaborador: data });
     }
 
