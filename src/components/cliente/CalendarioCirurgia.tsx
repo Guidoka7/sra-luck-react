@@ -3,6 +3,7 @@
 import { type FC, useEffect, useMemo, useRef, useState } from "react";
 import { addMonths, format, getDaysInMonth, isBefore, isToday, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { subscribeAgendaSync } from "@/lib/agendaRealtime";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
 export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; }
@@ -51,9 +52,46 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
     }
   }
 
-  useEffect(() => { void carregar(); const timer = setInterval(() => void carregar(), 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    void carregar();
+
+    const unsubscribeRealtime = subscribeAgendaSync((tipo) => {
+      if (tipo === "cirurgia") void carregar();
+    });
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void carregar();
+    }, 5000);
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") void carregar();
+    };
+    const aoFoco = () => void carregar();
+    const aoOnline = () => void carregar();
+
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoFoco);
+    window.addEventListener("online", aoOnline);
+
+    return () => {
+      unsubscribeRealtime();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoFoco);
+      window.removeEventListener("online", aoOnline);
+    };
+  }, []);
 
   const porData = useMemo(() => new Map(datas.map((item) => [item.data, item])), [datas]);
+
+  useEffect(() => {
+    if (!diaSelecionado) return;
+    if (modoAlteracao && diaSelecionado === dataCirurgiaAtual) return;
+    const atual = porData.get(diaSelecionado);
+    if (!atual || atual.vagasRestantes <= 0) {
+      setDiaSelecionado(null);
+      setErro("A data selecionada não está mais disponível. A agenda foi atualizada.");
+    }
+  }, [porData, diaSelecionado, modoAlteracao, dataCirurgiaAtual]);
+
   const celulas = Array.from({ length: mesAtual.getDay() + getDaysInMonth(mesAtual) }, (_, index) => index < mesAtual.getDay() ? null : index - mesAtual.getDay() + 1);
 
   function mudarMes(delta: 1 | -1) {
@@ -78,7 +116,11 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
     try {
       const res = await fetch("/api/cliente/agendar-cirurgia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: diaSelecionado, horario: horarioSelecionado }) });
       const resultado = await res.json();
-      if (!res.ok) { setErro(resultado.erro ?? "Não foi possível confirmar a data da cirurgia."); return; }
+      if (!res.ok) {
+        setErro(resultado.erro ?? "Não foi possível confirmar a data da cirurgia.");
+        await carregar();
+        return;
+      }
       onConfirmada?.(resultado.data);
       await carregar();
     } catch { setErro("Erro de conexão. Tente novamente."); }
