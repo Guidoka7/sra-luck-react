@@ -30,14 +30,6 @@ const FUNIL_NOTA: Record<FunilClienteBucket, string> = {
   cancelados: "Acesso ao app bloqueado. O histórico permanece disponível.",
 };
 
-const STATUS_DOCS: { nome: string; modo: string; desc: string; cls: string }[] = [
-  { nome: "Aguardando conferência", modo: "Automático", desc: "Existe comprovante aguardando análise.", cls: styles.statusProof },
-  { nome: "Ativo", modo: "Automático", desc: "Contrato operando normalmente.", cls: "" },
-  { nome: "Suspenso", modo: "Manual", desc: "Parcelas restantes suspensas no app. Pode ter período determinado ou indeterminado.", cls: styles.statusSuspensa },
-  { nome: "Negativado", modo: "Manual", desc: "Parcelas suspensas e pagamentos indisponíveis.", cls: styles.statusNegativada },
-  { nome: "Cancelado", modo: "Manual", desc: "Acesso ao app bloqueado e cliente movida para Cancelados.", cls: styles.statusCancelled },
-];
-
 type SortMode = "venc" | "saldo" | "az" | "za";
 
 const Svg = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={d} /></svg>;
@@ -196,16 +188,6 @@ export default function FinanceiroPage() {
               })}</tbody>
             </table>
           </div>}
-    </section>
-
-    <section className={`${styles.listCard} ${styles.legendCard}`} aria-label="Status do contrato">
-      <header className={styles.cardHead}><div className={styles.cardTitleLine}><span className={styles.cardTitle}>Status do contrato</span></div></header>
-      <div className={styles.legendGrid}>
-        {STATUS_DOCS.map((d) => <div key={d.nome} className={styles.legendItem}>
-          <span className={`${styles.statusPill} ${d.cls}`}><span className={styles.statusDot} />{d.nome}</span><span className={styles.legendMode}>{d.modo}</span>
-          <p>{d.desc}</p>
-        </div>)}
-      </div>
     </section>
 
     <div style={{ marginTop: 10, textAlign: "right" }}>
