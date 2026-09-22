@@ -357,7 +357,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
               parcelas={<div className={styles.root}><FinanceiroPanel cad={cad} modo="parcelas" /></div>} />
           </div>
         : <EstadoProcesso erro={erroCentral} onTentar={() => void carregarCentral()} />)}
-      {aba === "profile" && <PerfilPanel cad={cad} formId={formId} previsaoLiberacao={c?.agendaCirurgicaLiberadaEm ?? c?.prazoCirurgico ?? null} onPedirExclusao={() => cad.setConfirmarExclusao(true)} />}
+      {aba === "profile" && <PerfilPanel cad={cad} formId={formId} onPedirExclusao={() => cad.setConfirmarExclusao(true)} />}
       {aba === "finance" && !criando && <FinanceiroPanel ref={financeRef} cad={cad} />}
       {aba === "journey" && <JornadaPanel cartao={c} concluido={concluido} erro={erroCentral} onTentar={() => void carregarCentral()} />}
     </section>
