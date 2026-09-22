@@ -85,10 +85,6 @@ function sameOrigin(request: Request) {
   }
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 async function adminId(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return null;
   const session = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
@@ -229,7 +225,10 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         etapa: "forma_pagamento_liberada",
         updated_at: new Date().toISOString(),
       }).eq("id", contractId).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) {
+        console.error("Falha ao salvar escolha de pagamento da cliente:", error);
+        return json({ erro: "Não foi possível salvar sua escolha de pagamento agora." }, 500);
+      }
       return json({ contrato: data });
     }
 
@@ -286,7 +285,8 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
     try {
       contract = await activeContract(db, clienteId);
     } catch (error: unknown) {
-      return json({ erro: errorMessage(error, "Erro ao buscar contrato.") }, 500);
+      console.error("Falha ao buscar contrato da jornada da cliente:", error);
+      return json({ erro: "Não foi possível carregar sua jornada agora." }, 500);
     }
     if (!contract) return json({ contrato: null }, 404);
 
@@ -309,7 +309,8 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         }
         return json({ contrato: contract, ...progress });
       } catch (error: unknown) {
-        return json({ erro: errorMessage(error, "Erro ao calcular progresso.") }, 500);
+        console.error("Falha ao calcular progresso da jornada da cliente:", error);
+        return json({ erro: "Não foi possível calcular seu progresso agora." }, 500);
       }
     }
 
@@ -318,7 +319,8 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       try {
         progress = await financialProgress(db, contract);
       } catch (error: unknown) {
-        return json({ erro: errorMessage(error, "Erro ao calcular progresso.") }, 500);
+        console.error("Falha ao validar progresso para solicitação da cliente:", error);
+        return json({ erro: "Não foi possível validar seu progresso agora." }, 500);
       }
       if (progress.totalInstallments <= 0 || progress.percent + 0.0001 < Number(contract.percentual_minimo)) {
         return json({
@@ -338,7 +340,10 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         levantamento_prazo_ate: deadlineData || null,
         updated_at: new Date().toISOString(),
       }).eq("id", contract.id).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) {
+        console.error("Falha ao iniciar levantamento da cliente:", error);
+        return json({ erro: "Não foi possível iniciar o levantamento financeiro agora." }, 500);
+      }
       return json({ contrato: data, prazoAte: deadlineData });
     }
 
@@ -368,7 +373,10 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
         }
       }
       const { data: windowsData, error } = await db.from("agenda_janelas").select("*").eq("tipo", tipo).eq("status", "disponivel").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
-      if (error) return json({ erro: error.message }, 500);
+      if (error) {
+        console.error("Falha ao carregar janelas da agenda da cliente:", error);
+        return json({ erro: "Não foi possível carregar a agenda agora." }, 500);
+      }
       const windows = (windowsData ?? []) as unknown as AgendaWindowRow[];
       const ids = windows.map((window) => window.id);
       const bookingsResult = ids.length
