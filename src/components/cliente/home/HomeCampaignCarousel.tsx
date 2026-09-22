@@ -211,15 +211,21 @@ export function HomeCampaignCarousel({
     dragStartXRef.current = event.clientX;
     dragStartScrollRef.current = scroller.scrollLeft;
     dragMovedRef.current = false;
-    scroller.setPointerCapture(event.pointerId);
-    scroller.classList.add("is-dragging");
+    // A captura só começa quando o arraste passa do limiar (em handlePointerMove):
+    // capturar já no pointerdown redirecionava o click do mouse para o scroller e o
+    // CTA não respondia no desktop.
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const scroller = scrollerRef.current;
     if (!scroller || dragPointerRef.current !== event.pointerId) return;
     const delta = event.clientX - dragStartXRef.current;
-    if (Math.abs(delta) > 4) dragMovedRef.current = true;
+    if (!dragMovedRef.current && Math.abs(delta) > 4) {
+      dragMovedRef.current = true;
+      scroller.setPointerCapture(event.pointerId);
+      scroller.classList.add("is-dragging");
+    }
+    if (!dragMovedRef.current) return;
     scroller.scrollLeft = dragStartScrollRef.current - delta;
     if (dragMovedRef.current) event.preventDefault();
   };
@@ -230,6 +236,7 @@ export function HomeCampaignCarousel({
     if (scroller.hasPointerCapture(event.pointerId)) scroller.releasePointerCapture(event.pointerId);
     dragPointerRef.current = null;
     scroller.classList.remove("is-dragging");
+    if (!dragMovedRef.current) return;
     const nearest = getNearestVisualIndex();
     scrollToVisualIndex(nearest, "smooth");
     window.setTimeout(() => { dragMovedRef.current = false; }, 0);
