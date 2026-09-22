@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validarTransicaoStatusContrato } from "./admin-api";
+import { exclusaoClienteDeveArquivar, validarTransicaoStatusContrato } from "./admin-api";
 
 describe("validarTransicaoStatusContrato (Fase 1 — status de contrato)", () => {
   it("rejeita status desconhecido", () => {
@@ -57,5 +57,24 @@ describe("validarTransicaoStatusContrato (Fase 1 — status de contrato)", () =>
     const cancelado = validarTransicaoStatusContrato({ status: "cancelado" }, "ativo");
     if ("erro" in cancelado) throw new Error(`não deveria falhar: ${cancelado.erro}`);
     expect(cancelado.patch.suspensao_motivo).toBeNull();
+  });
+});
+
+
+describe("exclusão de cliente com histórico protegido", () => {
+  it("arquiva quando o banco bloqueia o DELETE por integridade referencial", () => {
+    expect(exclusaoClienteDeveArquivar({ code: "23503", message: "foreign key violation" })).toBe(true);
+  });
+
+  it("arquiva quando o gatilho de histórico financeiro protegido é acionado", () => {
+    expect(exclusaoClienteDeveArquivar({
+      code: "P0001",
+      constraint: "clientes_historico_financeiro_protegido",
+      message: "Esta cliente possui histórico financeiro ou operacional",
+    })).toBe(true);
+  });
+
+  it("não mascara erros de banco sem relação com histórico protegido", () => {
+    expect(exclusaoClienteDeveArquivar({ code: "42501", message: "permission denied" })).toBe(false);
   });
 });
