@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgendaBloqueadaShell } from "@/components/cliente/AgendaBloqueadaShell";
 import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
@@ -38,8 +39,8 @@ function label(forma: FormaCusteio) {
   return "100% boleto";
 }
 
-function extra(forma: FormaCusteio, taxaCartao: number | null) {
-  if (forma === "cartao") return taxaCartao ? `taxa de ${taxaCartao}%` : "taxa conforme contrato";
+function extra(forma: FormaCusteio) {
+  if (forma === "cartao") return "taxa da maquininha";
   if (forma === "pix") return "sem taxa adicional";
   if (forma === "cheques") return "conforme autorização do financeiro";
   return "conforme condições liberadas";
@@ -142,24 +143,26 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
         <AgendaEtapasInterativas atual="pagamento" onPagamentoClick={abrirModal} />
       </AgendaBloqueadaShell>
 
-      <AnimatePresence>
-        {modal && (
-          <>
+      {typeof document !== "undefined" ? createPortal(
+        <AnimatePresence>
+          {modal && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => !enviando && setModal(false)}
-              className="fixed inset-0 z-[80] bg-[rgba(38,23,25,.34)] backdrop-blur-[2px]"
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.2 }}
-              className="fixed bottom-0 left-1/2 z-[81] w-full max-w-[430px] -translate-x-1/2 px-[10px] pb-[max(12px,env(safe-area-inset-bottom))]"
+              onClick={(event) => {
+                if (event.target === event.currentTarget && !enviando) setModal(false);
+              }}
+              className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-[rgba(38,23,25,.34)] px-[10px] py-3 backdrop-blur-[2px] sm:items-center"
             >
-              <div className="max-h-[88dvh] overflow-y-auto rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_-16px_45px_rgba(48,26,30,.18)]">
+              <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.985 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-[430px]"
+              >
+              <div className="max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_18px_52px_rgba(48,26,30,.24)] sm:rounded-[24px]">
                 <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]" />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -198,7 +201,7 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
                         style={forma === item ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}
                       >
                         <span className="text-[11px] font-semibold">{label(item)}</span>
-                        <span className="text-right text-[9px] text-[#9A7771]">{extra(item, financeiro.taxaCartao)}</span>
+                        <span className="text-right text-[9px] text-[#9A7771]">{extra(item)}</span>
                       </button>
                     ))}
                     {formas.length === 0 && (
@@ -211,7 +214,7 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
 
                 {forma === "cartao" && saldo > 0 && (
                   <div className="mt-[9px] rounded-[11px] border border-[#E8DDD9] bg-[#FCF9F8] px-3 py-[9px] text-[9.5px] leading-[1.45] text-[#7A6B67]">
-                    No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>{financeiro.taxaCartao ? `, considerando a taxa de ${financeiro.taxaCartao}%.` : "."}
+                    No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>, considerando a taxa da maquininha.
                   </div>
                 )}
 
@@ -224,10 +227,12 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
                   {enviando ? "Confirmando..." : "Confirmar e liberar escolha da data"}
                 </button>
               </div>
+              </motion.div>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      ) : null}
     </>
   );
 }
