@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatarCpf } from "@/lib/cpf";
 import { dataNascimentoValida, getAppAccessRequirements } from "../../../../worker/app-access";
+import { calcularPrevisaoElegibilidade } from "../../../../worker/eligibility-forecast";
 import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { formatCurrency, formatDate, formatDateTime, descreverHistorico } from "./drawerFormat";
@@ -13,10 +14,9 @@ type Secao = "personal" | "procedure" | "sale" | "notes";
  * do hook compartilhado `useClienteCadastro`; "Concluir" fecha a edição da
  * seção e "Salvar alterações" (rodapé) grava tudo em `PATCH /clientes/:id`.
  */
-export function PerfilPanel({ cad, formId, previsaoLiberacao, onPedirExclusao }: {
+export function PerfilPanel({ cad, formId, onPedirExclusao }: {
   cad: ClienteCadastro;
   formId: string;
-  previsaoLiberacao: string | null;
   onPedirExclusao: () => void;
 }) {
   const criando = !cad.editando;
@@ -45,6 +45,11 @@ export function PerfilPanel({ cad, formId, previsaoLiberacao, onPedirExclusao }:
 
   const parcelas = cad.boletos.length || cad.quantidade || 0;
   const valorParcela = cad.boletos[0]?.valor ?? null;
+  const previsaoElegibilidade = calcularPrevisaoElegibilidade(
+    cad.boletos,
+    cad.cliente?.data_atingiu_percentual ?? null,
+  );
+  const previsaoLiberacao = previsaoElegibilidade.data;
 
   return <form id={formId} className={styles.stack} onSubmit={cad.salvarPerfil} noValidate>
     <article className={styles.card}>
