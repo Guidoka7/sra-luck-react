@@ -77,8 +77,16 @@ function campoDoProvedor(provedor: string, chave: string) {
 }
 
 async function derivarChave(segredo: string): Promise<CryptoKey> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(segredo));
+  // Separação de domínio: credenciais de integrações não reutilizam diretamente
+  // o mesmo material empregado para assinar sessões.
+  const material = new TextEncoder().encode(`sra-luck:integrations-credentials:v2:${segredo}`);
+  const digest = await crypto.subtle.digest("SHA-256", material);
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function derivarChaveLegada(segredo: string): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(segredo));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
 }
 
 function paraBase64(bytes: Uint8Array) {
@@ -99,9 +107,19 @@ async function cifrarValor(segredo: string, valor: string) {
 }
 
 async function decifrarValor(segredo: string, valorCifrado: string, iv: string) {
-  const chave = await derivarChave(segredo);
-  const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: deBase64(iv) }, chave, deBase64(valorCifrado));
-  return new TextDecoder().decode(bytes);
+  const ivBytes = deBase64(iv);
+  const cifra = deBase64(valorCifrado);
+  try {
+    const chave = await derivarChave(segredo);
+    const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, chave, cifra);
+    return new TextDecoder().decode(bytes);
+  } catch {
+    // Compatibilidade somente de leitura com registros cifrados antes da
+    // separação de domínio. Novas gravações usam exclusivamente a chave v2.
+    const chaveLegada = await derivarChaveLegada(segredo);
+    const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, chaveLegada, cifra);
+    return new TextDecoder().decode(bytes);
+  }
 }
 
 function mascarar(valor: string) {
@@ -220,7 +238,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
 
     if (body.remover) {
       await db.from("integracoes_credenciais").delete().eq("provedor", provedor).eq("chave", chave);
-      await db.from("logs_alteracoes").insert({ usuario: String(admin), acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
+      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
       return json({ ok: true });
     }
 
@@ -229,11 +247,11 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     if (valor.length > 4000) return json({ erro: "Valor de credencial excede o tamanho permitido." }, 400);
 
     try {
-      await salvarCredencialInterna(env, provedor, chave, valor, String(admin));
+      await salvarCredencialInterna(env, provedor, chave, valor, colaborador.id);
     } catch {
       return json({ erro: "Não foi possível salvar a credencial." }, 500);
     }
-    await db.from("logs_alteracoes").insert({ usuario: String(admin), acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
+    await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
     return json({ ok: true });
   }
 
