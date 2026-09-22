@@ -490,9 +490,9 @@ async function sincronizar(request: Request, env: Env, adminId: string) {
     await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "sincronizou_rd_station_somente_leitura", entidade: "integracoes", entidade_id: "rd_station", detalhes: resumo });
     return json(resumo, erros ? 207 : 200);
   } catch (error) {
-    const mensagem = error instanceof Error ? error.message : "Falha na sincronização";
-    await registrarEvento(db, { eventType: "sync_manual", status: "erro", erro: mensagem, payload: {} });
-    return json({ erro: "Falha ao sincronizar o RD Station em modo somente leitura.", detalhe: mensagem }, 502);
+    console.error("Falha ao sincronizar RD Station em modo somente leitura:", error);
+    await registrarEvento(db, { eventType: "sync_manual", status: "erro", erro: "Falha na sincronização RD Station", payload: {} });
+    return json({ erro: "Falha ao sincronizar o RD Station em modo somente leitura." }, 502);
   }
 }
 
@@ -505,7 +505,8 @@ async function testar(env: Env, adminId: string) {
     await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: "rd_station", detalhes: resultado });
     return json(resultado, conectado ? 200 : 502);
   } catch (error) {
-    const resultado = { conectado: false, detalhe: error instanceof Error ? error.message : "Falha ao consultar RD Station." };
+    console.error("Falha ao testar conexão com RD Station:", error);
+    const resultado = { conectado: false, detalhe: "Não foi possível validar a conexão com o RD Station agora." };
     await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: "rd_station", detalhes: resultado });
     return json(resultado, 502);
   }
