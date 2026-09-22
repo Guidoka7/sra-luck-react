@@ -6,7 +6,7 @@ import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente
 import { CalendarioCirurgia } from "@/components/cliente/CalendarioCirurgia";
 import { toast } from "sonner";
 
-interface Props { ativo?: boolean; }
+interface Props { ativo?: boolean; termosAssinados?: boolean; }
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
 type TipoAlteracao = "termos" | "cirurgia" | null;
 interface Financeiro { saldoRestante: number | null; taxaCartao: number; totalComTaxa: number | null; formasCusteio: string[]; }
@@ -26,7 +26,7 @@ function labelForma(forma: FormaCusteio) {
   return "100% boleto";
 }
 
-export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
+export function SolicitarLiberacaoFinanceira({ ativo = true, termosAssinados = false }: Props) {
   const [financeiro, setFinanceiro] = useState<Financeiro>({ saldoRestante: null, taxaCartao: 5.4, totalComTaxa: null, formasCusteio: [] });
   const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
   const [dataAssinaturaTermos, setDataAssinaturaTermos] = useState<string | null>(null);
@@ -160,6 +160,12 @@ export function SolicitarLiberacaoFinanceira({ ativo = true }: Props) {
       </section>
       {remarcacaoPendente && <div className="mt-[10px] rounded-[14px] border border-[#EFD9AA] bg-[#FFF9EF] px-[14px] py-3 text-[10px] font-light leading-[1.5] text-[#7A6B67]"><b className="font-semibold text-[#8E6420]">Solicitação de alteração enviada.</b> Prazo de até 5 dias úteis. Sua agenda atual permanece inalterada até a autorização administrativa.</div>}
     </>;
+  }
+
+  // Após a assinatura, a confirmação única fica em AgendaHome.
+  // O resumo do agendamento e da forma de custeio pertence à etapa anterior.
+  if (termosAssinados) {
+    return <CalendarioCirurgia dataAssinatura={dataAssinaturaTermos} onConfirmada={setDataCirurgia} termosAssinados />;
   }
 
   return <>

@@ -13,8 +13,8 @@ import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento"
 type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 
 interface AgendaHomeProps {
-  agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
+  agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null; termosAssinadosEm?: string | null } | null;
+  agendamentoConcluido: { id: string; data: string; horario: string | null; dataCirurgia: string | null; termosAssinadosEm?: string | null } | null;
   datasDisponiveis: DataDisponivel[];
   quantidadeParcelas: number | null;
   parcelasPagas: number;
@@ -82,23 +82,32 @@ export function AgendaHome({
   const parcelasNecessarias = quantidadeParcelas ? Math.ceil((quantidadeParcelas * percentualContrato) / 100) : null;
   const status = statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado });
 
-  const tituloAgenda = agendamentoConcluido
-    ? "Assinatura dos termos concluída"
+  const agendamentoAtual = agendamentoAtivo ?? agendamentoConcluido;
+  const termosAssinados = Boolean(agendamentoAtual?.termosAssinadosEm || (!agendamentoAtivo && agendamentoConcluido));
+  const assinaturaEm = agendamentoAtual?.termosAssinadosEm ? new Date(agendamentoAtual.termosAssinadosEm) : null;
+  const assinaturaValida = assinaturaEm && !Number.isNaN(assinaturaEm.getTime());
+  const dataAssinatura = assinaturaValida
+    ? assinaturaEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
+    : brDate(agendamentoAtual?.data);
+  const horaAssinatura = assinaturaValida
+    ? assinaturaEm.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
+    : agendamentoAtual?.horario;
+
+  const tituloAgenda = termosAssinados
+    ? "Agenda cirúrgica"
     : agendamentoAtivo
       ? "Assinatura dos termos agendada"
       : "Seu próximo grande passo";
 
-  const copyAgenda = agendamentoConcluido
-    ? "A assinatura foi concluída. Acompanhe agora a liberação da próxima etapa da sua cirurgia."
+  const copyAgenda = termosAssinados
+    ? agendamentoAtual?.dataCirurgia
+      ? "Confira a data escolhida para a sua cirurgia."
+      : "Acompanhe a liberação da agenda para escolher a data da sua cirurgia."
     : agendamentoAtivo
       ? "Você poderá escolher a data da sua cirurgia após a assinatura dos termos."
       : "Acompanhe as quatro etapas até a escolha da data.";
 
-  const conteudoLegado = agendamentoAtivo ? (
-    <div className="animate-fadeUp">
-      <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} />
-    </div>
-  ) : agendamentoConcluido ? (
+  const conteudoLegado = termosAssinados && agendamentoAtual ? (
     <div className="animate-fadeUp space-y-3">
       <Card className="rounded-[18px] border border-[#D5E8D9] bg-[#F3F9F4] p-[14px] shadow-[0_5px_18px_rgba(63,125,91,.055)]">
         <div className="flex items-center gap-2 text-[#3F7D5B]">
@@ -107,10 +116,14 @@ export function AgendaHome({
         </div>
         <h2 className="mt-2 font-heading text-[19px] font-semibold text-[#315F47]">Assinatura confirmada</h2>
         <p className="mt-1 text-[10.5px] font-light leading-[1.5] text-[#698273]">
-          Sua assinatura foi confirmada em {brDate(agendamentoConcluido.data)}{agendamentoConcluido.horario ? ` às ${agendamentoConcluido.horario}` : ""}.
-          {agendamentoConcluido.dataCirurgia ? ` Sua cirurgia está programada para ${brDate(agendamentoConcluido.dataCirurgia)}.` : " A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
+          Sua assinatura foi confirmada em {dataAssinatura}{horaAssinatura ? ` às ${horaAssinatura}` : ""}.
+          {agendamentoAtual.dataCirurgia ? ` Sua cirurgia está programada para ${brDate(agendamentoAtual.dataCirurgia)}.` : " A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
         </p>
       </Card>
+      <SolicitarLiberacaoFinanceira termosAssinados />
+    </div>
+  ) : agendamentoAtivo ? (
+    <div className="animate-fadeUp">
       <SolicitarLiberacaoFinanceira ativo={agendaLiberada || statusRevisaoFinanceira === "aprovada"} />
     </div>
   ) : (
@@ -158,7 +171,7 @@ export function AgendaHome({
           <div className="sl-agenda-title">{tituloAgenda}</div>
           <div className="sl-agenda-copy">{copyAgenda}</div>
         </div>
-        <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 999, background: status.bg, color: status.color, border: `1px solid ${status.border}`, fontSize: 8, fontWeight: 650, letterSpacing: ".06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{status.label}</span>
+        {!termosAssinados && <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 999, background: status.bg, color: status.color, border: `1px solid ${status.border}`, fontSize: 8, fontWeight: 650, letterSpacing: ".06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{status.label}</span>}
       </div>
 
       <div className="px-5 pt-[15px]">

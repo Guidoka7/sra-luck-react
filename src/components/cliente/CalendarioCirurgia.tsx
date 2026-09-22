@@ -1,18 +1,17 @@
 "use client";
 
-import { type FC, useEffect, useMemo, useState } from "react";
+import { type FC, useEffect, useMemo, useRef, useState } from "react";
 import { addMonths, format, getDaysInMonth, isBefore, isToday, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
-export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; }
+export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; }
 
 function parseDataLocal(iso: string) { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
-function formatarData(iso: string | null) { return iso ? format(parseDataLocal(iso), "dd/MM/yyyy") : "—"; }
 const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
 const HORARIOS_CIRURGIA = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"];
 
-export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao }) => {
+export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao, termosAssinados = false }) => {
   const hoje = startOfDay(new Date());
   const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>([]);
   const [mesAtual, setMesAtual] = useState(() => startOfMonth(dataCirurgiaAtual ? parseDataLocal(dataCirurgiaAtual) : hoje));
@@ -20,20 +19,36 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   const [horarioSelecionado, setHorarioSelecionado] = useState<string>(HORARIOS_CIRURGIA[0]);
   const [confirmando, setConfirmando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [agendaLiberarEm, setAgendaLiberarEm] = useState<string | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
+  const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
+  const consultaEmAndamento = useRef<Promise<void> | null>(null);
   const [agendaLiberada, setAgendaLiberada] = useState(false);
   const [custeioConfirmado, setCusteioConfirmado] = useState(false);
 
-  async function carregar() {
+  async function carregar(manual = false) {
+    if (manual) { setAtualizando(true); setAvisoAtualizacao(null); }
     try {
-      const res = await fetch("/api/cliente/agenda", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setDatas(data.datasCirurgiaDisponiveis ?? []);
-      setAgendaLiberarEm(data.agendaCirurgicaLiberarEm ?? null);
-      setAgendaLiberada(Boolean(data.agendaCirurgicaLiberada));
-      setCusteioConfirmado(Boolean(data.financeiro?.custeioConfirmadoEm));
-    } catch {}
+      if (!consultaEmAndamento.current) {
+        consultaEmAndamento.current = (async () => {
+          try {
+            const res = await fetch("/api/cliente/agenda", { cache: "no-store" });
+            if (!res.ok) throw new Error("Falha ao consultar a agenda.");
+            const data = await res.json();
+            setDatas(data.datasCirurgiaDisponiveis ?? []);
+            setAgendaLiberada(Boolean(data.agendaCirurgicaLiberada));
+            setCusteioConfirmado(Boolean(data.financeiro?.custeioConfirmadoEm));
+          } finally {
+            consultaEmAndamento.current = null;
+          }
+        })();
+      }
+      await consultaEmAndamento.current;
+      if (manual) setAvisoAtualizacao("Status atualizado.");
+    } catch {
+      if (manual) setAvisoAtualizacao("Não foi possível atualizar o status. Tente novamente.");
+    } finally {
+      if (manual) setAtualizando(false);
+    }
   }
 
   useEffect(() => { void carregar(); const timer = setInterval(() => void carregar(), 5000); return () => clearInterval(timer); }, []);
@@ -48,7 +63,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   function selecionarDia(dia: Date) {
-    if (isBefore(dia, hoje)) return;
+    if ((!modoAlteracao && !agendaLiberada) || isBefore(dia, hoje)) return;
     const chave = format(dia, "yyyy-MM-dd");
     const entrada = porData.get(chave);
     if (!entrada || entrada.vagasRestantes <= 0) return;
@@ -57,7 +72,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   async function confirmar() {
-    if (!diaSelecionado) return;
+    if (!diaSelecionado || confirmando || (!modoAlteracao && !agendaLiberada)) return;
     if (modoAlteracao) { onSolicitarAlteracao?.(diaSelecionado); return; }
     setConfirmando(true); setErro(null);
     try {
@@ -70,7 +85,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
     finally { setConfirmando(false); }
   }
 
-  if (!modoAlteracao && !custeioConfirmado) {
+  if (!modoAlteracao && !termosAssinados && !custeioConfirmado) {
     return <section className="relative min-h-[305px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white p-[13px]">
       <div className="pointer-events-none select-none opacity-[.36] blur-[4px]"><div className="pb-2 text-center font-heading text-[16px] font-semibold text-[#7D2434]">Escolha a data da sua cirurgia</div><CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado /></div>
       <div className="absolute inset-0 flex items-center justify-center p-5"><div className="rounded-[15px] border border-[#E9D4B2] bg-white/[.97] p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]"><svg width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="#8E3243" strokeWidth="1.25" className="mx-auto"><rect x="3.8" y="8" width="10.4" height="7" rx="1.8"/><path d="M6.2 8V5.9a2.8 2.8 0 0 1 5.6 0V8"/></svg><div className="pt-[7px] font-heading text-[18px] font-semibold text-[#7D2434]">Agenda cirúrgica bloqueada</div><div className="pt-[5px] text-[10px] font-light leading-[1.5] text-[#7A6B67]">A quitação do saldo precisa ser confirmada antes da escolha da data da cirurgia.</div></div></div>
@@ -78,7 +93,30 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   if (!modoAlteracao && !agendaLiberada) {
-    return <section className="rounded-[18px] border border-[#EFD9AA] bg-[#FFF9EF] p-[14px]"><div className="flex items-start gap-[10px]"><span className="flex h-[31px] w-[31px] flex-none items-center justify-center rounded-full bg-[#FBF1DD] text-[#A77A24]"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg></span><div><div className="text-[8.5px] font-bold uppercase tracking-[.13em] text-[#A77A24]">Agenda cirúrgica em preparação</div><div className="pt-[3px] font-heading text-[17px] font-semibold text-[#7D2434]">Estamos preparando sua agenda</div><div className="pt-[4px] text-[10px] font-light leading-[1.5] text-[#7A6B67]">{agendaLiberarEm ? <>A liberação está prevista para <b className="font-semibold text-[#7D2434]">{formatarData(agendaLiberarEm)}</b>, podendo ser antecipada pela nossa equipe.</> : <>Estamos aguardando a confirmação dos marcos necessários para liberar sua agenda.</>}</div></div></div></section>;
+    return <section aria-label="Agenda cirúrgica aguardando liberação" className="relative isolate grid min-h-[340px] overflow-hidden rounded-[18px] border border-[#EFE4E1] bg-white shadow-[0_10px_26px_rgba(70,42,44,.07)]">
+      <div aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 select-none p-[13px] opacity-[.36] blur-[4px]">
+        <div className="pb-2 text-center font-heading text-[16px] font-semibold text-[#7D2434]">Escolha a data da sua cirurgia</div>
+        <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado />
+      </div>
+      <div className="z-10 col-start-1 row-start-1 flex items-center justify-center p-5">
+        <div className="w-full rounded-[15px] border border-[#E9D4B2] bg-white/[.97] p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]">
+          <span className="mx-auto flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#FBF1DD] text-[#A77A24]">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg>
+          </span>
+          <div className="pt-[9px] text-[8.5px] font-bold uppercase tracking-[.13em] text-[#A77A24]">Agenda cirúrgica</div>
+          <h3 className="pt-[3px] font-heading text-[18px] font-semibold text-[#7D2434]">Aguardando liberação</h3>
+          <p className="pt-[5px] text-[10.5px] font-light leading-[1.5] text-[#7A6B67]">Assim que a agenda for liberada, você poderá consultar as datas disponíveis e escolher quando realizar sua cirurgia.</p>
+          <details className="mt-3 text-[10px] leading-[1.5] text-[#7A6B67]">
+            <summary className="cursor-pointer rounded py-1 font-medium text-[#7D2434] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Como funciona a liberação?</summary>
+            <p className="pt-2">A liberação depende da confirmação da assinatura dos termos, da quitação e do prazo aplicável ao seu processo. Quando essas etapas forem concluídas e a agenda estiver liberada, o calendário ficará disponível aqui para você escolher a data.</p>
+          </details>
+          <button type="button" onClick={() => void carregar(true)} disabled={atualizando} className="mt-3 min-h-[40px] w-full rounded-[10px] border border-[#E9D4B2] bg-[#FFF9EF] px-3 py-2 text-[10px] font-medium text-[#7D2434] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            {atualizando ? "Atualizando..." : "Atualizar status"}
+          </button>
+          <p role="status" aria-live="polite" className="pt-2 text-[9.5px] leading-[1.5] text-[#7A6B67]">{avisoAtualizacao}</p>
+        </div>
+      </div>
+    </section>;
   }
 
   if (!modoAlteracao && agendaLiberada && datas.length === 0) {
@@ -105,7 +143,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
 
 function CalendarGrid({ mesAtual, celulas, porData, hoje, selecionado, onSelecionar, mudarMes, bloqueado = false }: { mesAtual: Date; celulas: (number | null)[]; porData: Map<string, DataCirurgiaDisponivel>; hoje: Date; selecionado: string | null; onSelecionar: (dia: Date) => void; mudarMes: (delta: 1 | -1) => void; bloqueado?: boolean }) {
   return <>
-    <div className="mb-[11px] flex items-center justify-between"><button type="button" onClick={() => mudarMes(-1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">‹</button><div className="font-heading text-[15px] font-semibold capitalize text-[#7D2434]">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</div><button type="button" onClick={() => mudarMes(1)} className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">›</button></div>
+    <div className="mb-[11px] flex items-center justify-between"><button type="button" onClick={() => mudarMes(-1)} disabled={bloqueado} aria-label="Mês anterior" className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">‹</button><div className="font-heading text-[15px] font-semibold capitalize text-[#7D2434]">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</div><button type="button" onClick={() => mudarMes(1)} disabled={bloqueado} aria-label="Próximo mês" className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#FDF8F7] text-[19px] font-light leading-none text-[#7D2434]">›</button></div>
     <div className="grid grid-cols-7 gap-[5px] pb-[7px] text-center">{DIAS.map((dia, index) => <div key={`${dia}-${index}`} className="text-[8px] font-semibold uppercase text-[#B65B67]">{dia}</div>)}</div>
     <div className="grid grid-cols-7 gap-[5px]">{celulas.map((numero, index) => {
       if (numero === null) return <div key={`vazio-${index}`} className="aspect-square" />;
@@ -117,7 +155,7 @@ function CalendarGrid({ mesAtual, celulas, porData, hoje, selecionado, onSelecio
       const ativo = chave === selecionado;
       const ehHoje = isToday(dia);
       const estilo = ativo ? { background: "#6B1F2E", borderColor: "#6B1F2E", color: "#FFF", fontWeight: 600 } : disponivel ? { background: "#F3F8F4", borderColor: "#D5E8D9", color: "#3F7D5B", fontWeight: 500 } : { background: passado ? "transparent" : "#FAF5F4", borderColor: "transparent", color: passado ? "#D0C5C2" : "#B8AAA6", fontWeight: 400, textDecoration: passado ? "none" : "line-through" };
-      return <button type="button" key={chave} disabled={!disponivel || bloqueado} onClick={() => onSelecionar(dia)} className="relative aspect-square rounded-[9px] border text-[10.5px]" style={estilo}><span className="flex h-full w-full items-center justify-center">{numero}</span>{ehHoje && !ativo && <span className="absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-[#B65B67]" />}</button>;
+      return <button type="button" key={chave} aria-label={format(dia, "d 'de' MMMM 'de' yyyy", { locale: ptBR })} aria-pressed={ativo} disabled={!disponivel || bloqueado} onClick={() => onSelecionar(dia)} className="relative aspect-square rounded-[9px] border text-[10.5px]" style={estilo}><span className="flex h-full w-full items-center justify-center">{numero}</span>{ehHoje && !ativo && <span className="absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-[#B65B67]" />}</button>;
     })}</div>
   </>;
 }
