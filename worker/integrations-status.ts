@@ -38,6 +38,9 @@ async function exigirAdminAtivo(request: Request, env: Env) {
   if (!sessao) return { resposta: json({ erro: "Sessão administrativa expirada." }, 401), adminId: null };
   const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
   if (!colaborador) return { resposta: json({ erro: "Acesso administrativo inativo ou não autorizado." }, 403), adminId: null };
+  if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
+    return { resposta: json({ erro: "Seu papel não tem permissão para visualizar o painel de integrações." }, 403), adminId: null };
+  }
   return { resposta: null, adminId: sessao.adminId };
 }
 
@@ -73,7 +76,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   if (historico) {
     const { data, error } = await db.from("logs_alteracoes").select("id,usuario,acao,entidade_id,detalhes,created_at")
       .in("entidade", ["integracoes", "integracoes_credenciais"]).order("created_at", { ascending: false }).limit(100);
-    if (error) return json({ erro: error.message }, 500);
+    if (error) return json({ erro: "Não foi possível carregar o histórico de integrações." }, 500);
     return json({ eventos: data ?? [] });
   }
 
