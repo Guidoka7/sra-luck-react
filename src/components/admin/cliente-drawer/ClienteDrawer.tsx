@@ -410,7 +410,7 @@ function EstadoProcesso({ erro, onTentar }: { erro: string | null; onTentar: () 
 
 function ExclusaoModal({ cad }: { cad: ClienteCadastro }) {
   return <Shell titulo="Excluir perfil da cliente" onClose={() => { if (!cad.excluindo) cad.setConfirmarExclusao(false); }}>
-    <div className={styles.warning}>O perfil de <b>{cad.nome || "esta cliente"}</b> será excluído. A exclusão só é permitida pelo servidor quando não há pagamentos, agendamentos ou vínculos que precisem ser preservados.</div>
+    <div className={styles.warning}>O perfil de <b>{cad.nome || "esta cliente"}</b> será removido das áreas operacionais. Se houver histórico financeiro ou de agenda, ele será preservado para auditoria; sem histórico, o cadastro poderá ser excluído definitivamente.</div>
     <div className={styles.modalActions}>
       <button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => cad.setConfirmarExclusao(false)} disabled={cad.excluindo}>Cancelar</button>
       <button className={`${styles.modalBtn} ${styles.deleteBtn}`} type="button" onClick={() => void cad.excluirCliente()} disabled={cad.excluindo} aria-busy={cad.excluindo}>{cad.excluindo ? "Excluindo…" : "Excluir perfil"}</button>
