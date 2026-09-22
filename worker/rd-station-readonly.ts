@@ -533,8 +533,10 @@ async function oauthCallback(request: Request, env: Env) {
   const adminId = await validarState(state, env.CLIENTE_SESSION_SECRET);
   if (!code || !adminId) return json({ erro: "Retorno OAuth inválido ou expirado." }, 400);
 
-  const sessaoAtual = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
-  if (!sessaoAtual || sessaoAtual.adminId !== adminId) return json({ erro: "Sessão administrativa inválida para concluir a autorização." }, 401);
+  // O cookie administrativo usa Path=/api/admin e, por desenho, não é
+  // enviado ao callback OAuth em /api/integrations. O state assinado e
+  // expirável identifica quem iniciou o fluxo; aqui revalidamos que esse
+  // colaborador continua ativo e autorizado antes de persistir tokens.
   const colaborador = await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
   if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
     return json({ erro: "Sem permissão para concluir a autorização do RD Station." }, 403);
