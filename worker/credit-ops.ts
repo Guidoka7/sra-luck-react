@@ -224,7 +224,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
 
     if (path === "/api/cliente/credit-ops/summary" && request.method === "GET") {
       const { data: contrato, error } = await db.from("contratos_credito").select("*").eq("cliente_id", clienteId).neq("etapa", "cancelado").order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (error) return json({ erro: error.message }, 500);
+      if (error) { console.error("Falha ao carregar contrato da cliente:", error); return json({ erro: "Não foi possível carregar seu contrato agora." }, 500); }
       if (!contrato) return json({ contrato: null });
 
       const { data: parcelasData, error: parcelasError } = await db
@@ -232,7 +232,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         .select("id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,valor_recebido,comprovante_url,boleto_url,banco_emissor")
         .eq("cliente_id", clienteId)
         .order("numero_parcela");
-      if (parcelasError) return json({ erro: parcelasError.message }, 500);
+      if (parcelasError) { console.error("Falha ao carregar parcelas da cliente:", parcelasError); return json({ erro: "Não foi possível carregar suas parcelas agora." }, 500); }
 
       const parcelas = (parcelasData ?? []) as unknown as InstallmentSummaryRow[];
       const pagas = parcelas.filter((parcela) => parcela.status === "pago");
@@ -263,13 +263,23 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-      const [{ data: saldo }, { data: rewards }, { data: history }, { data: beneficios }, { data: indicacoes }] = await Promise.all([
+      const [saldoResult, rewardsResult, historyResult, beneficiosResult, indicacoesResult] = await Promise.all([
         db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
         db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
         db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
         db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
         db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
       ]);
+      const clubeError = saldoResult.error ?? rewardsResult.error ?? historyResult.error ?? beneficiosResult.error ?? indicacoesResult.error;
+      if (clubeError) {
+        console.error("Falha ao carregar Clube de Benefícios da cliente:", clubeError);
+        return json({ erro: "Não foi possível carregar o Clube de Benefícios agora." }, 500);
+      }
+      const saldo = saldoResult.data;
+      const rewards = rewardsResult.data;
+      const history = historyResult.data;
+      const beneficios = beneficiosResult.data;
+      const indicacoes = indicacoesResult.data;
       const listaIndicacoes = indicacoes ?? [];
       return json({
         saldo: Number(saldo?.saldo ?? 0),
@@ -287,13 +297,20 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
       const b = await body(request);
       const nome = String(b.nome ?? "").trim();
-      if (!nome) return json({ erro: "Informe o nome da pessoa indicada." }, 400);
+      const telefone = String(b.telefone ?? "").trim();
+      if (!nome || nome.length > 160) return json({ erro: "Informe um nome válido, com até 160 caracteres." }, 400);
+      if (telefone.length > 40) return json({ erro: "Informe um telefone válido." }, 400);
+      const digitosTelefone = telefone.replace(/\D/g, "");
+      if (telefone && (digitosTelefone.length < 8 || digitosTelefone.length > 20)) return json({ erro: "Informe um telefone válido." }, 400);
       const { data, error } = await db.from("indicacoes_clientes").insert({
         indicador_cliente_id: clienteId,
         nome_indicado: nome,
-        telefone_indicado: b.telefone || null,
-      }).select("*").single();
-      if (error) return json({ erro: error.message }, 400);
+        telefone_indicado: telefone || null,
+      }).select("id,nome_indicado,status,pontos_creditados,created_at").single();
+      if (error) {
+        console.error("Falha ao registrar indicação da cliente:", error);
+        return json({ erro: "Não foi possível enviar sua indicação agora." }, 500);
+      }
       return json({ indicacao: data }, 201);
     }
 
@@ -308,7 +325,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         .eq("status", "disponivel")
         .select("*")
         .maybeSingle();
-      if (error) return json({ erro: error.message }, 400);
+      if (error) { console.error("Falha ao utilizar benefício da cliente:", error); return json({ erro: "Não foi possível utilizar o benefício agora." }, 500); }
       if (!data) return json({ erro: "Benefício não encontrado ou já utilizado." }, 404);
       return json({ beneficio: data });
     }
@@ -324,7 +341,16 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         p_recompensa_id: rewardId,
         p_idempotency_key: idempotencyKey,
       });
-      if (error) return json({ erro: error.message }, 400);
+      if (error) {
+        const mensagem = String(error.message ?? "");
+        if (mensagem.includes("Saldo de pontos insuficiente")) return json({ erro: "Você não possui pontos suficientes para este resgate." }, 409);
+        if (mensagem.includes("Recompensa indisponivel")) return json({ erro: "Esta recompensa não está mais disponível." }, 409);
+        if (mensagem.includes("Recompensa sem estoque disponivel")) return json({ erro: "Esta recompensa está sem estoque no momento." }, 409);
+        if (mensagem.includes("Chave de idempotencia invalida")) return json({ erro: "Não foi possível validar esta solicitação. Tente novamente." }, 400);
+        if (mensagem.includes("Chave de idempotencia ja utilizada")) return json({ erro: "Esta solicitação já foi utilizada em outro resgate." }, 409);
+        console.error("Falha ao resgatar recompensa da cliente:", error);
+        return json({ erro: "Não foi possível concluir o resgate agora." }, 500);
+      }
       const { data: pontos } = await db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle();
       return json({ resgate, saldo: Number(pontos?.saldo ?? 0) }, 201);
     }
