@@ -9,6 +9,11 @@ type Props = {
   etapa: number;
   resumo: string;
   children: ReactNode;
+  /**
+   * Ação principal exibida centralizada sobre a agenda (ex.: solicitar a
+   * liberação financeira). Com ela, as etapas ficam ocultas até "Ver etapas".
+   */
+  destaque?: ReactNode;
 };
 
 function LockIcon({ size = 15 }: { size?: number }) {
@@ -20,7 +25,7 @@ function LockIcon({ size = 15 }: { size?: number }) {
   );
 }
 
-export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) {
+export function AgendaBloqueadaShell({ datas, etapa, resumo, children, destaque }: Props) {
   const [aberta, setAberta] = useState(false);
 
   return (
@@ -53,7 +58,26 @@ export function AgendaBloqueadaShell({ datas, etapa, resumo, children }: Props) 
         </div>
 
         <AnimatePresence initial={false}>
-          {!aberta ? (
+          {!aberta && destaque ? (
+            <motion.div
+              key="destaque"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center px-[18px] text-center"
+            >
+              <div className="w-full max-w-[300px] rounded-[16px] border border-[#DCEADF] bg-white/95 px-[18px] py-[18px] shadow-[0_16px_38px_rgba(63,125,91,.13)] backdrop-blur-[2px]">
+                {destaque}
+                <button
+                  type="button"
+                  onClick={() => setAberta(true)}
+                  className="mt-[10px] inline-flex items-center gap-[5px] rounded-full px-[10px] py-[5px] text-[8.8px] font-semibold text-[#9E4353] underline-offset-2 hover:underline"
+                >
+                  Ver etapas da liberação
+                </button>
+              </div>
+            </motion.div>
+          ) : !aberta ? (
             <motion.button
               key="bloqueio"
               type="button"
