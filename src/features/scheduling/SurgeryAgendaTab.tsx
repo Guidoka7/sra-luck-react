@@ -1,114 +1,172 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { centralApi, dataBr, moeda } from "./api";
-import { MonthCalendar, estadoDia } from "./MonthCalendar";
-import type { AgendaCirurgiaResponse } from "./types";
+import { centralApi, dataBr, mesAno, moeda, somarMeses } from "./api";
+import { AgendaCalendar, AppointmentRow, DayPanel, statusDoDia } from "./AgendaCalendar";
+import type { AgendaCirurgiaResponse, CartaoCliente } from "./types";
+import { AgendarCirurgiaModal } from "./DrawerModals";
+import { ConfirmModal } from "./V46Modal";
 
-function hojeIso() { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`; }
+const VAGAS_PADRAO_CIRURGIA = 4;
 
-export function SurgeryAgendaTab({ onAbrirCliente, onConsultarProcesso }: { onAbrirCliente: (clienteId: string) => void; onConsultarProcesso: (clienteId: string) => void }) {
-  const hoje = hojeIso();
-  const [ano, setAno] = useState(Number(hoje.slice(0, 4)));
-  const [mes, setMes] = useState(Number(hoje.slice(5, 7)));
+/**
+ * Agenda Cirúrgica V46: calendário, painel do dia com teto financeiro do
+ * mês (`agenda_comprometimento_mes`), "＋ Nova cirurgia" e mapa cirúrgico.
+ * Toda validação de teto/vaga é do banco (`agenda_reservar_cirurgia`).
+ */
+export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas, cartoes, onAbrirCliente, onConsultarProcesso, onMudou }: {
+  hoje: string; data: string; onData: (iso: string) => void; recarregarKey: number;
+  liberadas: CartaoCliente[]; cartoes: Map<string, CartaoCliente>;
+  onAbrirCliente: (clienteId: string) => void; onConsultarProcesso: (clienteId: string) => void; onMudou: () => void | Promise<void>;
+}) {
   const [dados, setDados] = useState<AgendaCirurgiaResponse | null>(null);
-  const [selecionado, setSelecionado] = useState(hoje);
-  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [confirmarBloqueio, setConfirmarBloqueio] = useState<number | null>(null);
+  const [pagamento, setPagamento] = useState<{ agendamentoId: string; nome: string } | null>(null);
+  const [novaCirurgia, setNovaCirurgia] = useState(false);
+  const ano = Number(data.slice(0, 4)), mes = Number(data.slice(5, 7));
 
-  async function carregar() {
-    try { setDados(await centralApi.agendaCirurgia(ano, mes)); } catch (e: any) { toast.error(e.message); }
-  }
-  useEffect(() => { void carregar(); }, [ano, mes]);
+  const carregar = useCallback(async () => {
+    try { setDados(await centralApi.agendaCirurgia(ano, mes)); setErro(null); }
+    catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível carregar a Agenda Cirúrgica."); }
+  }, [ano, mes]);
+  useEffect(() => { void carregar(); }, [carregar, recarregarKey]);
 
-  function mudarMes(delta: number) {
-    let m = mes + delta, a = ano;
-    if (m > 12) { m = 1; a++; } else if (m < 1) { m = 12; a--; }
-    setMes(m); setAno(a);
-  }
-
-  async function abrir() {
-    setSalvando(true);
-    try { await centralApi.abrirBloquearCirurgia(selecionado, "liberar", 1); toast.success("Data cirúrgica aberta."); await carregar(); }
-    catch (e: any) { toast.error(e.message); } finally { setSalvando(false); }
-  }
-  async function bloquear() {
-    setSalvando(true);
-    try { await centralApi.abrirBloquearCirurgia(selecionado, "bloquear"); toast.success("Data bloqueada."); await carregar(); }
-    catch (e: any) { toast.error(e.message); } finally { setSalvando(false); }
-  }
-  async function confirmarPagamento(agendamentoId: string) {
-    if (!window.confirm("Confirmar pagamento da cirurgia? O processo será concluído e sairá das filas operacionais.")) return;
-    try { await centralApi.confirmarPagamentoCirurgia(agendamentoId); toast.success("Pagamento confirmado. Processo concluído."); await carregar(); }
-    catch (e: any) { toast.error(e.message); }
+  async function acaoDia(acao: "liberar" | "bloquear", vagas?: number, msg?: string) {
+    if (ocupado) return false;
+    setOcupado(true);
+    try {
+      await centralApi.abrirBloquearCirurgia(data, acao, vagas);
+      toast.success(msg ?? (acao === "liberar" ? "Data cirúrgica aberta. O sistema ainda validará o teto financeiro de cada cliente." : "Data bloqueada."));
+      await carregar(); await onMudou();
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível atualizar a data."); return false; }
+    finally { setOcupado(false); }
   }
 
-  if (!dados) return <div style={{ padding: 24, textAlign: "center", color: "var(--soft)" }}>Carregando…</div>;
+  if (erro && !dados) return <div className="panel panel-pad"><div className="callout danger" role="alert">{erro}</div><div className="inline-actions" style={{ marginTop: 10 }}><button type="button" className="secondary-btn" onClick={() => void carregar()}>Tentar novamente</button></div></div>;
 
-  const diaSel = dados.calendario.find((d) => d.data === selecionado);
-  const estado = estadoDia(diaSel, hoje, selecionado);
-  const disponivelTeto = Math.max(0, dados.tetoMensal - dados.comprometidoMensal);
+  const atual = dados && dados.ano === ano && dados.mes === mes ? dados : null;
+  const calendario = atual?.calendario ?? null;
+  const dia = calendario?.find((d) => d.data === data);
+  const mapa = [...(atual?.mapaCirurgico ?? [])].sort((a, b) => `${a.data} ${a.horario ?? ""}`.localeCompare(`${b.data} ${b.horario ?? ""}`));
+  const concluidos = mapa.filter((m) => m.processoConcluido).length;
+  const pendentes = mapa.length - concluidos;
+  const abertos = (calendario ?? []).filter((d) => d.status === "disponivel");
+  const datasAbertas = abertos.filter((d) => d.vagasOcupadas < d.vagasTotais).length;
+  const capacidade = abertos.reduce((s, d) => s + (d.vagasTotais || 0), 0);
+  const usadasAbertas = abertos.reduce((s, d) => s + d.vagasOcupadas, 0);
+  const ocupacao = capacidade ? Math.round((usadasAbertas / capacidade) * 100) : 0;
+  const teto = atual?.tetoMensal ?? 0, usado = atual?.comprometidoMensal ?? 0;
+  const restante = Math.max(0, teto - usado), excedido = Math.max(0, usado - teto);
+  const pct = teto ? Math.round((usado / teto) * 100) : 0;
+  const tetoAtingido = Boolean(atual) && restante <= 0;
+  const st = usado >= teto && teto > 0 ? { rotulo: excedido > 0 ? "Teto excedido" : "Teto atingido", cls: "danger" } : pct >= 80 ? { rotulo: "Atenção ao limite", cls: "wait" } : { rotulo: "Limite disponível", cls: "success" };
+  const doDia = mapa.filter((m) => m.data === data);
+  const candidatas = liberadas.filter((c) => c.cartaDeCredito <= restante);
 
-  return <div>
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16, fontSize: 10.5, color: "var(--soft)" }}>
-      <span><b style={{ color: "var(--ink)" }}>{dados.mapaCirurgico.filter((c) => !c.processoConcluido).length}</b> aguardando pagamento</span>
-      <span><b style={{ color: "var(--ink)" }}>{dados.mapaCirurgico.filter((c) => c.processoConcluido).length}</b> processos concluídos</span>
-      <span style={{ marginLeft: "auto" }}>Novas escolhas também respeitam o teto financeiro mensal de {moeda(dados.tetoMensal)}</span>
+  function abrirNovaCirurgia() {
+    const s = statusDoDia(dia);
+    if (!(s.kind === "available" || s.kind === "partial")) { toast.warning("A data selecionada não está disponível."); return; }
+    if (tetoAtingido) { toast.warning(`O teto financeiro deste mês já foi atingido (${moeda(teto)}).`); return; }
+    if (!candidatas.length) { toast.warning(`Nenhuma cliente liberada cabe no saldo mensal disponível de ${moeda(restante)}.`); return; }
+    setNovaCirurgia(true);
+  }
+
+  function exportarCsv() {
+    const linhas = [
+      ["Data", "Horário", "Cliente", "Procedimento", "Carta de crédito", "Parcelamento", "Quitação do contrato", "Status do processo"],
+      ...mapa.map((m) => {
+        const c = cartoes.get(m.clienteId);
+        return [dataBr(m.data), m.horario ?? "", m.nome, m.procedimento ?? "", moeda(m.cartaDeCredito), c ? `${c.totalParcelas}x · ${c.parcelasPagas} pagas` : "", m.quitada ? "Quitada" : "Pendente", m.processoConcluido ? "Processo concluído" : "Aguardando pagamento da cirurgia"];
+      }),
+    ];
+    const csv = linhas.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `mapa-cirurgico-${data.slice(0, 7)}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+    toast.success("CSV exportado.");
+  }
+
+  return <div className="calendar-page surgery-agenda">
+    <div className="agenda-meta-line" aria-label="Resumo da Agenda Cirúrgica">
+      <span><b>{datasAbertas}</b> datas cirúrgicas abertas</span>
+      <span><b>{pendentes}</b> aguardando pagamento</span>
+      <span><b>{concluidos}</b> processos concluídos</span>
+      <span><b>{Math.max(0, capacidade - usadasAbertas)}</b> vagas disponíveis</span>
+      <span><b>{ocupacao}%</b> ocupação</span>
+      <span className="agenda-rule">Agenda cirúrgica · novas escolhas também respeitam o teto financeiro mensal de {moeda(teto || 100000)}</span>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(360px,1.2fr) minmax(300px,1fr)", gap: 16 }}>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", padding: 14 }}>
-        <MonthCalendar ano={ano} mes={mes} hoje={hoje} calendario={dados.calendario} selecionado={selecionado} onSelecionar={setSelecionado} onMudarMes={mudarMes} />
+    <div className="calendar-workspace">
+      <div className="panel panel-pad v46-surgery-calendar-panel">
+        <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
-
-      <div style={{ border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", padding: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{dataBr(selecionado)}</div>
-
-        <div style={{ marginTop: 10, border: "1px solid var(--line)", borderRadius: 10, padding: 10, background: "var(--s1, var(--s0))" }}>
-          <div style={{ fontSize: 9.5, color: "var(--soft)" }}>Teto financeiro do mês</div>
-          <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2 }}>{moeda(dados.comprometidoMensal)} <span style={{ fontSize: 10, fontWeight: 500, color: "var(--soft)" }}>de {moeda(dados.tetoMensal)}</span></div>
-          <div style={{ fontSize: 10, color: "var(--soft)", marginTop: 4 }}>{disponivelTeto > 0 ? <>Ainda há <b style={{ color: "var(--ink)" }}>{moeda(disponivelTeto)}</b> disponíveis este mês.</> : "O teto mensal foi atingido. Novas escolhas deste mês ficam bloqueadas."}</div>
-        </div>
-
-        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <button disabled={salvando} onClick={abrir} style={{ height: 32, borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--ok)", fontSize: 11.5, fontWeight: 700 }}>Abrir data cirúrgica</button>
-          <button disabled={salvando} onClick={bloquear} style={{ height: 32, borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--bad)", fontSize: 11.5, fontWeight: 700 }}>Bloquear</button>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 11, color: "var(--soft)" }}>
-          {diaSel ? <>Capacidade: <b style={{ color: "var(--ink)" }}>{Math.max(0, diaSel.vagasTotais - diaSel.vagasOcupadas)} de {diaSel.vagasTotais}</b> ({estado})</> : "Sem liberação para esta data."}
-        </div>
-      </div>
+      <DayPanel tipo="surgery" data={data} dia={dia} ocupado={ocupado || !calendario} tetoAtingido={tetoAtingido}
+        antesDaLista={atual && <div className={`surgery-financial-cap ${st.cls}`}>
+          <div className="surgery-financial-cap-head">
+            <div><small>Teto financeiro para cirurgias · {mesAno(data).replace(/^./, (x) => x.toUpperCase())}</small><strong>{moeda(teto)}</strong></div>
+            <span className={`badge ${st.cls}`}>{st.rotulo}</span>
+          </div>
+          <div className="surgery-financial-numbers">
+            <div><span>Comprometido</span><b>{moeda(usado)}</b></div>
+            <div><span>Disponível</span><b>{moeda(restante)}</b></div>
+            <div><span>Cirurgias no mês</span><b>{mapa.length}</b></div>
+          </div>
+          <div className="surgery-financial-track" role="progressbar" aria-valuenow={Math.min(100, pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Teto financeiro comprometido"><span style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div>
+          <p>{excedido > 0 ? <>O teto foi ultrapassado em <b>{moeda(excedido)}</b>. Novas escolhas deste mês ficam bloqueadas.</> : restante === 0 ? "O teto mensal foi atingido. Novas escolhas deste mês ficam bloqueadas." : <>Ainda há <b>{moeda(restante)}</b> disponíveis para novas liberações neste mês.</>}</p>
+        </div>}
+        acaoLista={<button type="button" className="primary-btn" onClick={abrirNovaCirurgia} disabled={ocupado || !calendario}>＋ Nova cirurgia</button>}
+        onAbrir={() => void acaoDia("liberar", dia?.vagasTotais || VAGAS_PADRAO_CIRURGIA)}
+        onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
+        onCapacidade={(n) => void acaoDia("liberar", n, "Capacidade atualizada.")}
+        itens={doDia.map((m) => <AppointmentRow key={m.agendamentoId} tipo="surgery" horario={m.horario} nome={m.nome} detalhe={m.procedimento ?? "—"}
+          badge={m.processoConcluido ? <span className="badge success">Processo concluído</span> : <span className="badge wait">Aguardando pagamento</span>}
+          onAbrir={() => (m.processoConcluido ? onConsultarProcesso : onAbrirCliente)(m.clienteId)} />)} />
     </div>
 
-    <div style={{ marginTop: 16, border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", overflow: "hidden" }}>
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-        <h3 style={{ fontSize: 14, margin: 0 }}>Mapa cirúrgico do mês</h3>
-        <span style={{ fontSize: 10.5, color: "var(--soft)" }}>Processos concluídos permanecem arquivados no mês e na data escolhida.</span>
+    <div className="panel bottom-table surgery-table">
+      <div className="table-toolbar">
+        <div><h3>Mapa cirúrgico do mês</h3><small>Registro mensal das cirurgias agendadas. Processos concluídos permanecem arquivados somente no mês e na data escolhida.</small></div>
+        <button type="button" className="secondary-btn" onClick={exportarCsv} disabled={!mapa.length}>Exportar CSV</button>
       </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
-          <thead><tr>{["Data", "Cliente", "Procedimento", "Carta de crédito", "Parcelamento", "Status", "Ações"].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 9, textTransform: "uppercase", color: "var(--soft)", padding: "8px 10px", borderBottom: "1px solid var(--line)" }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {dados.mapaCirurgico.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: "center", color: "var(--soft)", fontSize: 11 }}>Nenhuma cirurgia no mês selecionado.</td></tr>}
-            {dados.mapaCirurgico.map((c) => <tr key={c.agendamentoId}>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}><b>{dataBr(c.data)}</b></td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{c.nome}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{c.procedimento}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)", fontWeight: 700 }}>{moeda(c.cartaDeCredito)}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{c.quitada ? <span style={{ color: "var(--ok)", fontWeight: 700 }}>Quitada</span> : "—"}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>
-                <span style={{ borderRadius: 999, padding: "3px 8px", fontSize: 9.5, fontWeight: 700, background: c.processoConcluido ? "#e5f5ec" : "#fff1db", color: c.processoConcluido ? "#0d754a" : "#915e0d" }}>{c.processoConcluido ? "Processo concluído" : "Aguardando pagamento"}</span>
-              </td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>
-                {c.processoConcluido
-                  ? <button onClick={() => onConsultarProcesso(c.clienteId)} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>Consultar processo</button>
-                  : <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => onAbrirCliente(c.clienteId)} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>Abrir cliente</button>
-                      <button onClick={() => confirmarPagamento(c.agendamentoId)} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>Confirmar pagamento</button>
-                    </div>}
-              </td>
-            </tr>)}
-          </tbody>
-        </table>
-      </div>
+      <div className="table-wrap"><table className="data-table">
+        <thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Procedimento</th><th>Carta de crédito</th><th>Parcelamento</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>
+          {!atual && <tr><td colSpan={8}>Carregando…</td></tr>}
+          {atual && mapa.length === 0 && <tr><td colSpan={8}>Nenhuma cirurgia no mês selecionado.</td></tr>}
+          {mapa.map((m) => {
+            const c = cartoes.get(m.clienteId);
+            return <tr key={m.agendamentoId}>
+              <td><b>{dataBr(m.data)}</b></td><td>{m.horario ?? "—"}</td><td>{m.nome}</td><td>{m.procedimento ?? "—"}</td>
+              <td><b>{moeda(m.cartaDeCredito)}</b></td>
+              <td>{m.quitada ? <span className="paid-off-label">Quitada</span> : c ? `${c.totalParcelas}x · ${c.parcelasPagas} pagas` : "—"}</td>
+              <td>{m.processoConcluido ? <span className="badge success">Processo concluído</span> : <span className="badge wait">Aguardando pagamento</span>}</td>
+              <td><div className="table-actions-stack">
+                {m.processoConcluido
+                  ? <button type="button" className="mini-link consult-process-btn" onClick={() => onConsultarProcesso(m.clienteId)}>Consultar processo</button>
+                  : <>
+                      <button type="button" className="mini-link" onClick={() => onAbrirCliente(m.clienteId)}>Abrir cliente</button>
+                      <button type="button" className="mini-link" onClick={() => setPagamento({ agendamentoId: m.agendamentoId, nome: m.nome })}>Confirmar pagamento</button>
+                    </>}
+              </div></td>
+            </tr>;
+          })}
+        </tbody>
+      </table></div>
     </div>
+
+    {confirmarBloqueio != null && <ConfirmModal titulo="Bloquear data" perigo rotuloConfirmar="Bloquear"
+      mensagem={`Esta data possui ${confirmarBloqueio} agendamento(s). O bloqueio não apagará os agendamentos existentes. Deseja continuar?`}
+      onConfirmar={() => acaoDia("bloquear")} onClose={() => setConfirmarBloqueio(null)} />}
+    {pagamento && <ConfirmModal titulo="Confirmar pagamento da cirurgia" rotuloConfirmar="Confirmar pagamento"
+      mensagem={`Confirmar o pagamento da cirurgia de ${pagamento.nome}? O processo será concluído e ficará arquivado nesta data cirúrgica.`}
+      onConfirmar={async () => {
+        try { await centralApi.confirmarPagamentoCirurgia(pagamento.agendamentoId); toast.success("Pagamento confirmado. Processo concluído e arquivado na Agenda Cirúrgica."); await carregar(); await onMudou(); return true; }
+        catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível confirmar o pagamento."); return false; }
+      }}
+      onClose={() => setPagamento(null)} />}
+    {novaCirurgia && <AgendarCirurgiaModal clientes={candidatas} dataFixa={data} hoje={hoje} onClose={() => setNovaCirurgia(false)} onAgendado={async () => { await carregar(); await onMudou(); }} />}
   </div>;
 }

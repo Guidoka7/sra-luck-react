@@ -26,6 +26,11 @@ const PARCELAS_MINIMAS: Record<number, number> = {
   72: 58,
 };
 
+/** Percentual mínimo da modalidade (somente exibição). */
+export function percentualElegibilidade(totalParcelas: number): number {
+  return percentualParaModalidade(totalParcelas);
+}
+
 function percentualParaModalidade(totalParcelas: number): number {
   if (PERCENTUAL_ELEGIBILIDADE[totalParcelas] != null) return PERCENTUAL_ELEGIBILIDADE[totalParcelas];
   return [12, 18, 24].includes(totalParcelas) ? 60 : totalParcelas === 36 ? 70 : 80;

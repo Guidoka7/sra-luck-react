@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missingToEligibility, requiredPaid } from "./agenda-elegibilidade";
+import { missingToEligibility, percentualElegibilidade, requiredPaid } from "./agenda-elegibilidade";
 
 /**
  * V46 — tabela de elegibilidade. Espelha public.pode_agendar
@@ -61,5 +61,11 @@ describe("missingToEligibility — casos A) abaixo do threshold / C) exatamente 
   });
   it("zero parcelas pagas nunca retorna negativo mesmo com total inválido", () => {
     expect(missingToEligibility(12, -5)).toBe(8);
+  });
+});
+
+describe("percentualElegibilidade (exibição na Central V46)", () => {
+  it("espelha a tabela da modalidade", () => {
+    expect([12, 18, 24, 36, 48, 60, 72].map(percentualElegibilidade)).toEqual([60, 60, 60, 70, 80, 80, 80]);
   });
 });

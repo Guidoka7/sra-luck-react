@@ -1,89 +1,152 @@
-import { useEffect, useMemo, useState } from "react";
-import { centralApi, dataBr, moeda } from "./api";
+import { useMemo, useState, type KeyboardEvent } from "react";
+import { dataBr, moeda } from "./api";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
+import { ChosenDate, faltamTexto, rotuloLevantamento, rotuloLiberacao } from "./v46Cards";
 
-const LANES: { id: EstagioCentral; titulo: string; desc: string; cor: string }[] = [
-  { id: "preEligibility", titulo: "Elegibilidade e solicitação", desc: "Quem está próxima do percentual mínimo e quem já pode solicitar a liberação financeira pelo app.", cor: "#8b3141" },
-  { id: "financialReview", titulo: "Levantamentos", desc: "Já solicitaram a liberação financeira e estão em análise.", cor: "#a97927" },
-  { id: "termsConfirmed", titulo: "Agendamentos confirmados", desc: "Assinatura dos termos agendada, ordenada pela data mais próxima.", cor: "#397b60" },
-  { id: "financialRelease", titulo: "Liberações financeiras", desc: "No dia dos termos: conferir comparecimento e quitação. Depois, acompanhar o prazo de 5 dias úteis.", cor: "#b56f2a" },
-  { id: "surgeryConfirmed", titulo: "Cirurgias confirmadas", desc: "Aguardando confirmação do pagamento da cirurgia.", cor: "#246b50" },
+type Ordem = "upcoming" | "nameAsc" | "nameDesc";
+
+const COLUNAS: { id: EstagioCentral; titulo: string; desc: string }[] = [
+  { id: "preEligibility", titulo: "Elegibilidade e solicitação", desc: "Acompanhe quem está próxima do percentual e quem já pode solicitar a liberação financeira pelo app." },
+  { id: "financialReview", titulo: "Levantamentos", desc: "Já atingiram o percentual mínimo e estão prontas para análise financeira." },
+  { id: "termsConfirmed", titulo: "Agendamentos confirmados", desc: "Próximos atendimentos para assinatura dos termos, ordenados pela data mais próxima." },
+  { id: "financialRelease", titulo: "Liberações financeiras", desc: "No dia dos termos: conferir presença + quitação. Depois, acompanhar os 5 dias úteis até liberar a Agenda Cirúrgica." },
+  { id: "surgeryConfirmed", titulo: "Cirurgias confirmadas", desc: "Aguardando confirmação do pagamento da cirurgia. Após a confirmação, o processo sai desta lista e fica arquivado na Agenda Cirúrgica." },
 ];
 
-function laneMeta(estagio: EstagioCentral, c: CartaoCliente): { texto: string; tom: "ok" | "warn" | "bad" | "info" } {
-  if (estagio === "preEligibility") {
-    return c.parcelasFaltantes === 0
-      ? { texto: "Elegível · aguardando solicitação no app", tom: "ok" }
-      : { texto: `Falta${c.parcelasFaltantes === 1 ? "" : "m"} ${c.parcelasFaltantes} parcela${c.parcelasFaltantes === 1 ? "" : "s"}`, tom: "bad" };
-  }
-  if (estagio === "financialReview") return { texto: `${c.parcelasPagas}/${c.totalParcelas} parcelas pagas`, tom: "info" };
-  if (estagio === "termsConfirmed") {
-    return { texto: `${dataBr(c.dataTermos)} ${c.horarioTermos ?? ""}`, tom: "ok" };
-  }
-  if (estagio === "financialRelease") {
-    const compareceu = c.comparecimentoStatus === "compareceu";
-    const quitada = c.quitacaoStatus === "paga";
-    if (!c.previsaoConfirmadaEm) return { texto: "Confirmar previsão cirúrgica", tom: "warn" };
-    if (compareceu && quitada) {
-      return c.agendaCirurgicaLiberadaEm ? { texto: "Agenda cirúrgica liberada", tom: "ok" } : { texto: `Prazo até ${dataBr(c.prazoCirurgico)}`, tom: "warn" };
-    }
-    if (compareceu) return { texto: "Compareceu · falta quitação", tom: "info" };
-    if (quitada) return { texto: "Quitação confirmada · falta presença", tom: "info" };
-    return { texto: "Hoje · conferir atendimento", tom: "warn" };
-  }
-  return { texto: `Cirurgia em ${dataBr(c.dataCirurgia)}`, tom: "ok" };
-}
-
-const TOM_COR: Record<string, string> = { ok: "#0d754a", warn: "#915e0d", bad: "#ad2d40", info: "#7a2632" };
-const TOM_BG: Record<string, string> = { ok: "#e5f5ec", warn: "#fff1db", bad: "#fde8ec", info: "#f5e7e9" };
-
-export function OverviewBoard({ onAbrirCliente }: { onAbrirCliente: (clienteId: string, estagio: EstagioCentral) => void }) {
-  const [dados, setDados] = useState<VisaoGeralResponse | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+/**
+ * Visão geral V46: 5 filas com identidade própria (`stage-column stage-*`),
+ * cards específicos por etapa e filtro "Faltam" na Etapa 1. Dados reais de
+ * `/api/admin/central/visao-geral`; nenhuma fila é calculada no navegador —
+ * aqui só há filtro/ordenação de exibição.
+ */
+export function OverviewBoard({ dados, selecionadoId, onAbrirCliente }: {
+  dados: VisaoGeralResponse;
+  selecionadoId: string | null;
+  onAbrirCliente: (clienteId: string, estagio: EstagioCentral) => void;
+}) {
   const [busca, setBusca] = useState("");
+  const [ordem, setOrdem] = useState<Ordem>("upcoming");
+  const [faltam, setFaltam] = useState(1);
 
-  async function carregar() {
-    try { setDados(await centralApi.visaoGeral()); setErro(null); } catch (e: any) { setErro(e.message); }
-  }
-  useEffect(() => { void carregar(); }, []);
+  const contagemFaltam = useMemo(() => {
+    const c: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const x of dados.filas.preEligibility) if (c[x.parcelasFaltantes] !== undefined) c[x.parcelasFaltantes]++;
+    return c;
+  }, [dados]);
 
   const filas = useMemo(() => {
-    if (!dados) return null;
-    const q = busca.trim().toLowerCase();
-    const filtra = (lista: CartaoCliente[]) => !q ? lista : lista.filter((c) => `${c.nome} ${c.cpf ?? ""}`.toLowerCase().includes(q));
-    return { preEligibility: filtra(dados.filas.preEligibility), financialReview: filtra(dados.filas.financialReview), termsConfirmed: filtra(dados.filas.termsConfirmed), financialRelease: filtra(dados.filas.financialRelease), surgeryConfirmed: filtra(dados.filas.surgeryConfirmed) };
-  }, [dados, busca]);
+    const q = busca.trim().toLocaleLowerCase("pt-BR");
+    const filtra = (l: CartaoCliente[]) => !q ? l : l.filter((c) => `${c.nome} ${c.cpf ?? ""} ${c.procedimento ?? ""}`.toLocaleLowerCase("pt-BR").includes(q));
+    const ordena = (id: EstagioCentral, l: CartaoCliente[]) => {
+      const lista = [...l];
+      if (id !== "termsConfirmed" && id !== "surgeryConfirmed") {
+        if (ordem === "nameAsc") lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+        if (ordem === "nameDesc") lista.sort((a, b) => b.nome.localeCompare(a.nome, "pt-BR"));
+      }
+      return lista;
+    };
+    const out = {} as Record<EstagioCentral, CartaoCliente[]>;
+    for (const col of COLUNAS) {
+      let lista = dados.filas[col.id];
+      if (col.id === "preEligibility") lista = lista.filter((c) => c.parcelasFaltantes === faltam);
+      out[col.id] = filtra(ordena(col.id, lista));
+    }
+    return out;
+  }, [dados, busca, ordem, faltam]);
 
-  if (erro) return <div style={{ padding: 24, textAlign: "center", color: "var(--bad)" }}>{erro}</div>;
-  if (!dados || !filas) return <div style={{ padding: 24, textAlign: "center", color: "var(--soft)" }}>Carregando…</div>;
-
-  return <div>
-    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
-      <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou CPF…" style={{ height: 36, minWidth: 260, borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink)", padding: "0 12px", fontSize: 12.5 }} />
+  return <>
+    <div className="filters">
+      <div className="search-field"><span aria-hidden="true">⌕</span><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou CPF..." aria-label="Buscar por nome ou CPF" /></div>
+      <label className="push">Ordenar por: <select className="select" value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)}>
+        <option value="upcoming">Próximas</option><option value="nameAsc">Nome A-Z</option><option value="nameDesc">Nome Z-A</option>
+      </select></label>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 14, overflowX: "auto" }}>
-      {LANES.map((lane) => {
-        const lista = filas[lane.id];
-        return <section key={lane.id} style={{ borderTop: `3px solid ${lane.cor}`, paddingTop: 10, minWidth: 220 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, paddingBottom: 7, borderBottom: `1px solid ${lane.cor}33` }}>
-            <span style={{ fontSize: 12, fontWeight: 850, color: lane.cor }}>{lane.titulo}</span>
-            <span style={{ minWidth: 24, height: 22, padding: "0 7px", borderRadius: 999, background: lane.cor, color: "#fff", fontSize: 11, fontWeight: 900, display: "grid", placeItems: "center" }}>{lista.length}</span>
+
+    <div className="board-wrap"><div className="board">
+      {COLUNAS.map((col) => {
+        const lista = filas[col.id];
+        return <section key={col.id} className={`stage-column stage-${col.id}`} aria-label={col.titulo}>
+          <div className="stage-head">
+            <div className="stage-title">{col.titulo}</div>
+            <span className="stage-count" title={`${lista.length} cliente(s) neste filtro`}>
+              <span className="stage-count-number">{lista.length}</span>
+              <span className="stage-count-label">{lista.length === 1 ? "cliente" : "clientes"}</span>
+            </span>
           </div>
-          <p style={{ fontSize: 9.5, color: "var(--soft)", minHeight: 40, margin: "7px 0 9px" }}>{lane.desc}</p>
-          <div style={{ display: "grid", gap: 8 }}>
-            {lista.length === 0 && <div style={{ border: "1px dashed var(--line)", borderRadius: 11, padding: 16, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhuma cliente neste filtro.</div>}
-            {lista.map((c) => {
-              const meta = laneMeta(lane.id, c);
-              return <button key={c.id} onClick={() => onAbrirCliente(c.id, lane.id)} style={{ textAlign: "left", border: "1px solid var(--line)", borderLeft: `3px solid ${lane.cor}`, background: "var(--panel)", borderRadius: 11, padding: 10, cursor: "pointer" }}>
-                <div style={{ fontWeight: 800, fontSize: 12, color: "var(--ink)" }}>{c.nome}</div>
-                <div style={{ fontSize: 10, color: "var(--soft)", marginTop: 2 }}>{c.procedimento ?? "—"}</div>
-                <div style={{ marginTop: 8 }}><span style={{ display: "inline-flex", borderRadius: 999, padding: "4px 8px", fontSize: 9.5, fontWeight: 750, background: TOM_BG[meta.tom], color: TOM_COR[meta.tom] }}>{meta.texto}</span></div>
-                {lane.id === "surgeryConfirmed" && <div style={{ marginTop: 6, fontSize: 10, color: "var(--soft)" }}>Carta de crédito: <b style={{ color: "var(--ink)" }}>{moeda(c.cartaDeCredito)}</b></div>}
-              </button>;
-            })}
+          <div className="stage-desc">{col.desc}</div>
+          {col.id === "preEligibility" && <div className="missing-filter">
+            <span className="missing-filter-label">Faltam</span>
+            <select className="missing-filter-select" value={faltam} onChange={(e) => setFaltam(Number(e.target.value))} aria-label="Filtrar por parcelas restantes">
+              <option value={0}>Aguardando solicitação · {contagemFaltam[0]} {contagemFaltam[0] === 1 ? "cliente" : "clientes"}</option>
+              {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{faltamTexto(n)} · {contagemFaltam[n]} {contagemFaltam[n] === 1 ? "cliente" : "clientes"}</option>)}
+            </select>
+          </div>}
+          {col.id === "financialRelease" && <div className="release-state-legend"><span>Comparecimento</span><span>Quitação</span><span>5 dias úteis</span><span>Agenda liberada</span></div>}
+          <div className="client-stack">
+            {lista.length === 0
+              ? <div className="empty-card">Nenhuma cliente neste filtro.</div>
+              : lista.map((c, i) => <ClientCard key={c.id} c={c} estagio={col.id} indice={i} hoje={dados.hoje} selecionado={selecionadoId === c.id} onAbrir={() => onAbrirCliente(c.id, col.id)} />)}
           </div>
         </section>;
       })}
+    </div></div>
+  </>;
+}
+
+function ClientCard({ c, estagio, indice, hoje, selecionado, onAbrir }: { c: CartaoCliente; estagio: EstagioCentral; indice: number; hoje: string; selecionado: boolean; onAbrir: () => void }) {
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAbrir(); }
+  }
+  return <article className={`client-card${selecionado ? " selected" : ""}`} tabIndex={0} role="button" aria-label={`Abrir ${c.nome}`} onClick={onAbrir} onKeyDown={onKey}>
+    <div className="card-top">
+      <div className="client-identification"><div className="client-name">{c.nome}</div><div className="client-procedure">{c.procedimento || "—"}</div></div>
+      <span className="more" aria-hidden="true">⋮</span>
     </div>
+    <CardMeta c={c} estagio={estagio} indice={indice} hoje={hoje} />
+  </article>;
+}
+
+function CardMeta({ c, estagio, indice, hoje }: { c: CartaoCliente; estagio: EstagioCentral; indice: number; hoje: string }) {
+  if (estagio === "preEligibility") {
+    const pct = Math.min(100, Math.round((c.parcelasPagas / Math.max(1, c.parcelasNecessarias)) * 100));
+    if (c.parcelasFaltantes === 0) {
+      return <div className="card-meta"><div><b>{c.parcelasPagas} de {c.totalParcelas} parcelas</b></div><div className="progress"><span style={{ width: "100%" }} /></div><span className="badge success">Elegível · aguardando solicitação no app</span></div>;
+    }
+    return <div className="card-meta">
+      <div><b>{c.parcelasPagas} de {c.totalParcelas} parcelas</b></div>
+      <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progresso para a elegibilidade"><span style={{ width: `${pct}%` }} /></div>
+      {c.proximaParcelaEm && <div className="meta-row">▣ Próxima parcela: {dataBr(c.proximaParcelaEm)}</div>}
+      <span className="badge danger">{faltamTexto(c.parcelasFaltantes)}</span>
+    </div>;
+  }
+  if (estagio === "financialReview") {
+    const r = rotuloLevantamento(c);
+    return <div className="card-meta"><div className="meta-row">✓ {c.parcelasPagas}/{c.totalParcelas} pagas · mínimo {c.parcelasNecessarias}</div><span className={`badge ${r.tom}`}>{r.texto}</span></div>;
+  }
+  if (estagio === "termsConfirmed") {
+    return <div className="card-meta">
+      {indice === 0 && <span className="badge info">● Mais próximo</span>}
+      <ChosenDate iso={c.dataTermos} horario={c.horarioTermos} rotulo="Assinatura dos termos" />
+      <span className="badge success">Termos confirmados</span>
+    </div>;
+  }
+  if (estagio === "financialRelease") {
+    const r = rotuloLiberacao(c, hoje);
+    return <div className="card-meta">
+      <div className="meta-row">▣ Termos: {dataBr(c.dataTermos)} {c.horarioTermos ?? ""}</div>
+      <span className={`badge ${r.tom}`}>{r.texto}</span>
+      <div className="release-mini-progress" aria-hidden="true">
+        <i className={r.passo >= 1 ? "done" : r.passo === 0 ? "current" : ""} />
+        <i className={c.quitacaoStatus === "paga" ? "done" : c.comparecimentoStatus === "compareceu" ? "current" : ""} />
+        <i className={r.passo >= 4 ? "done" : r.passo === 3 ? "current" : ""} />
+        <i className={r.passo >= 4 ? "done" : ""} />
+      </div>
+    </div>;
+  }
+  return <div className="card-meta">
+    <ChosenDate iso={c.dataCirurgia} horario={c.horarioCirurgia} rotulo="Data da cirurgia" />
+    <div className="meta-row">◇ Carta de crédito: <b>{moeda(c.cartaDeCredito)}</b></div>
+    <div className="meta-row">▤ {c.totalParcelas} parcelas · {c.parcelasPagas} pagas</div>
+    {c.pagamentoCirurgiaConfirmadoEm ? <span className="status-completed">✓ Processo concluído</span> : <span className="badge success">Cirurgia confirmada</span>}
   </div>;
 }

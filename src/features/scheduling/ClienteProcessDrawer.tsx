@@ -1,227 +1,339 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { deriveJourneySteps } from "@/lib/journeySteps";
-import { centralApi, dataBr, moeda } from "./api";
-import type { CartaoCliente, EstagioDrawer } from "./types";
+import type { Cliente, StatusContratoCliente } from "@/types/database";
+import { STATUS_CONTRATO_LABEL } from "@/types/database";
+import { deriveJourneySteps, journeyInputFromProcess } from "@/lib/journeySteps";
+import { JourneyStepsView } from "@/components/journey/JourneyStepsView";
+import { useClienteCadastro, type ClienteCadastro } from "@/components/admin-zip/cliente/useClienteCadastro";
+import { ClienteProfilePanel } from "@/components/admin-zip/cliente/ClienteProfilePanel";
+import { ClienteFinancePanel } from "@/components/admin-zip/cliente/ClienteFinancePanel";
+import { ClienteCadastroModals } from "@/components/admin-zip/cliente/ClienteCadastroModals";
+import { centralApi, iniciais, type FormaCusteio } from "./api";
+import type { CartaoCliente, EstagioCentral, EstagioDrawer } from "./types";
+import { ProcessoTab, ordemEstagio, type ModalDrawer, type FormLevantamento, eventosDoProcesso } from "./ProcessoTab";
+import { AgendarCirurgiaModal, LiberacaoModal, QuitacaoModal, ResponsavelModal } from "./DrawerModals";
+import { TermsRescheduleModal } from "./TermsRescheduleModal";
+import { ConfirmModal } from "./V46Modal";
+import { estadoLiberacao, faltamTexto } from "./v46Cards";
 
-type Aba = "processo" | "perfil" | "financeiro" | "jornada";
+type Aba = "process" | "profile" | "finance" | "journey";
 
-const TITULO_ESTAGIO: Record<EstagioDrawer, string> = {
-  preEligibility: "Elegibilidade e solicitação",
-  financialReview: "Levantamento financeiro",
-  termsConfirmed: "Agenda de termos",
-  financialRelease: "Liberação financeira",
-  surgeryConfirmed: "Cirurgia confirmada",
-  concluido: "Processo concluído",
-};
+export interface DrawerProps {
+  clienteId: string;
+  estagioOrigem: EstagioCentral | null;
+  hoje: string;
+  sugestoesResponsavel: string[];
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+  onIrParaAgenda: (tipo: "terms" | "surgery", data: string | null) => void;
+}
 
-export function ClienteProcessDrawer({ clienteId, onClose, onChanged }: { clienteId: string; onClose: () => void; onChanged: () => void }) {
-  const [aba, setAba] = useState<Aba>("processo");
-  const [estagio, setEstagio] = useState<EstagioDrawer | null>(null);
-  const [cartao, setCartao] = useState<CartaoCliente | null>(null);
+/**
+ * Drawer V46 (`.client-drawer`): cabeçalho, abas segmentadas
+ * Processo/Perfil/Financeiro/Jornada e barra de ações. Perfil e Financeiro
+ * são os painéis reais compartilhados com Clientes e Financeiro
+ * (`components/admin-zip/cliente/*`); Jornada usa o mesmo adaptador do app.
+ */
+export function ClienteProcessDrawer(props: DrawerProps) {
+  const { clienteId, onClose } = props;
+  const [central, setCentral] = useState<{ estagio: EstagioDrawer; cartao: CartaoCliente } | null>(null);
+  const [cadastro, setCadastro] = useState<Cliente | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [ocupado, setOcupado] = useState(false);
+  const [aberto, setAberto] = useState(false);
 
-  async function carregar() {
+  const carregar = useCallback(async () => {
     try {
-      const r = await centralApi.cliente(clienteId);
-      setEstagio(r.estagio);
-      setCartao(r.cartao);
-      setErro(null);
-    } catch (e: any) {
-      setErro(e.message ?? "Não foi possível carregar este processo.");
+      const [r, cli] = await Promise.all([centralApi.cliente(clienteId), centralApi.clienteCadastro(clienteId)]);
+      if (!cli) throw new Error("Cadastro da cliente não encontrado.");
+      setCentral(r); setCadastro(cli); setErro(null);
+      return r;
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível carregar este processo.");
+      return null;
     }
-  }
-  useEffect(() => { setAba("processo"); void carregar(); }, [clienteId]);
+  }, [clienteId]);
 
-  async function acao(fn: () => Promise<any>, mensagem: string) {
-    setOcupado(true);
-    try { await fn(); toast.success(mensagem); await carregar(); onChanged(); }
-    catch (e: any) { toast.error(e.message ?? "Não foi possível concluir a ação."); }
-    finally { setOcupado(false); }
-  }
+  useEffect(() => { void carregar(); }, [carregar]);
+  useEffect(() => { const id = requestAnimationFrame(() => setAberto(true)); return () => cancelAnimationFrame(id); }, []);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 40 }}>
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(24,18,20,.22)" }} />
-    <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "min(640px,96vw)", background: "var(--panel)", boxShadow: "-24px 0 55px rgba(40,22,27,.16)", display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "18px 18px 0", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "var(--s0)", display: "grid", placeItems: "center", fontWeight: 800, color: "var(--bg)" }}>{(cartao?.nome ?? "?").trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase()}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>{cartao?.nome ?? "Carregando…"}</h2>
-            <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--soft)" }}>{cartao?.procedimento ?? "—"} {estagio ? `· ${TITULO_ESTAGIO[estagio]}` : ""}</p>
-          </div>
-          <button onClick={onClose} style={{ border: 0, background: "transparent", fontSize: 18, cursor: "pointer" }}>✕</button>
-        </div>
-        <div style={{ display: "flex", gap: 4, marginTop: 14, padding: 4, border: "1px solid var(--line)", borderRadius: 11, background: "var(--s0)" }}>
-          {(["processo", "perfil", "financeiro", "jornada"] as Aba[]).map((a) => <button key={a} onClick={() => setAba(a)} style={{ flex: 1, height: 32, borderRadius: 8, border: 0, background: aba === a ? "var(--bg)" : "transparent", color: aba === a ? "#FFFDFC" : "var(--soft)", fontWeight: 800, fontSize: 10.5, textTransform: "uppercase" }}>{a}</button>)}
-        </div>
-      </div>
+  return <>
+    <div className="drawer-backdrop" onClick={onClose} />
+    <aside className={`client-drawer${aberto ? " open" : ""}`} aria-label="Detalhes da cliente" aria-hidden={false} role="dialog" aria-modal="true">
+      {erro && !central
+        ? <DrawerFallback mensagem={erro} onTentar={() => { setErro(null); void carregar(); }} onClose={onClose} />
+        : !central || !cadastro
+          ? <DrawerFallback carregando onClose={onClose} />
+          : <DrawerErrorBoundary onClose={onClose}>
+              <DrawerCarregado key={cadastro.id} {...props} central={central} cadastroInicial={cadastro} recarregarBase={carregar} setCadastro={setCadastro} cadastroAtual={cadastro} />
+            </DrawerErrorBoundary>}
+    </aside>
+  </>;
+}
 
-      <div style={{ padding: "14px 18px 100px", overflowY: "auto", flex: 1 }}>
-        {erro && <div style={{ padding: 16, borderRadius: 12, background: "#fff0f2", color: "#9c2435", fontSize: 12 }}>{erro} <button onClick={() => void carregar()} style={{ marginLeft: 8, textDecoration: "underline", background: "transparent", border: 0, color: "inherit", cursor: "pointer" }}>Tentar novamente</button></div>}
-        {!erro && !cartao && <div style={{ padding: 24, textAlign: "center", color: "var(--soft)" }}>Carregando…</div>}
-        {!erro && cartao && estagio && <>
-          {aba === "processo" && <ProcessoTab estagio={estagio} c={cartao} ocupado={ocupado} acao={acao} />}
-          {aba === "perfil" && <PerfilTab c={cartao} />}
-          {aba === "financeiro" && <FinanceiroTab c={cartao} />}
-          {aba === "jornada" && <JornadaTab estagio={estagio} c={cartao} />}
-        </>}
-      </div>
+function DrawerFallback({ mensagem, carregando, onTentar, onClose }: { mensagem?: string; carregando?: boolean; onTentar?: () => void; onClose: () => void }) {
+  return <>
+    <div className="drawer-header"><div className="drawer-title-row">
+      <div className="avatar" aria-hidden="true">…</div>
+      <div className="drawer-head-copy"><h2>{carregando ? "Carregando processo…" : "Processo indisponível"}</h2><p>{carregando ? "Buscando dados reais da cliente." : mensagem}</p></div>
+      <div className="drawer-head-controls"><button type="button" className="icon-btn drawer-close" aria-label="Fechar drawer" onClick={onClose}>✕</button></div>
+    </div></div>
+    <div className="drawer-body">
+      {carregando ? <div className="empty-card">Carregando…</div> : <div className="callout danger" role="alert">{mensagem}</div>}
     </div>
-  </div>;
+    {!carregando && onTentar && <div className="drawer-actions"><button type="button" className="secondary-btn" onClick={onClose}>Fechar</button><button type="button" className="primary-btn" onClick={onTentar}>Tentar novamente</button></div>}
+  </>;
 }
 
-function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
-  return <section style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 10, background: "var(--panel)" }}>
-    <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)", fontSize: 11.5, fontWeight: 800 }}>{titulo}</div>
-    <div style={{ padding: 12 }}>{children}</div>
-  </section>;
-}
-
-function BotaoPrimario({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
-  return <button disabled={disabled} onClick={onClick} style={{ height: 34, padding: "0 14px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontWeight: 700, fontSize: 11.5, opacity: disabled ? 0.6 : 1 }}>{children}</button>;
-}
-function BotaoSecundario({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
-  return <button disabled={disabled} onClick={onClick} style={{ height: 34, padding: "0 14px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink)", fontWeight: 700, fontSize: 11.5, opacity: disabled ? 0.6 : 1 }}>{children}</button>;
-}
-
-function ProcessoTab({ estagio, c, ocupado, acao }: { estagio: EstagioDrawer; c: CartaoCliente; ocupado: boolean; acao: (fn: () => Promise<any>, msg: string) => void }) {
-  // Hooks sempre no topo, incondicionais: este componente tem vários
-  // `return` antecipados por estágio, então um useState dentro de um ramo
-  // condicional violaria as Rules of Hooks ao trocar de estágio sem
-  // remontar o componente.
-  const [previsaoInput, setPrevisaoInput] = useState(c.previsaoCirurgia ?? "");
-
-  if (estagio === "preEligibility") {
-    return <Secao titulo="Elegibilidade e solicitação">
-      <p style={{ fontSize: 11.5, color: "var(--soft)" }}>{c.parcelasPagas} de {c.totalParcelas} parcelas pagas.</p>
-      {c.parcelasFaltantes === 0
-        ? <p style={{ fontSize: 11.5 }}>Cliente elegível. O botão <b>Solicitar liberação financeira</b> está disponível no app dela — a solicitação real precisa partir da cliente.</p>
-        : <p style={{ fontSize: 11.5 }}>Falta{c.parcelasFaltantes === 1 ? "" : "m"} {c.parcelasFaltantes} parcela{c.parcelasFaltantes === 1 ? "" : "s"} para atingir o percentual mínimo.</p>}
-    </Secao>;
+class DrawerErrorBoundary extends Component<{ children: ReactNode; onClose: () => void }, { erro: Error | null }> {
+  state = { erro: null as Error | null };
+  static getDerivedStateFromError(erro: Error) { return { erro }; }
+  render() {
+    if (this.state.erro) return <DrawerFallback mensagem="Não foi possível exibir este processo. Recarregue a página ou tente novamente." onTentar={() => this.setState({ erro: null })} onClose={this.props.onClose} />;
+    return this.props.children;
   }
-  if (estagio === "financialReview") {
-    return <Secao titulo="Levantamento financeiro">
-      <p style={{ fontSize: 11.5, color: "var(--soft)" }}>Solicitação recebida. Conclua o levantamento (carta de crédito, saldo restante, formas de custeio) na aba "Levantamentos" da Visão geral — o formulário completo continua no painel de Revisão financeira existente.</p>
-    </Secao>;
-  }
-  if (estagio === "termsConfirmed") {
-    return <Secao titulo="Agenda de termos">
-      <p style={{ fontSize: 11.5 }}>Assinatura marcada para <b>{dataBr(c.dataTermos)} {c.horarioTermos}</b>{c.termosResponsavel ? ` · responsável: ${c.termosResponsavel}` : ""}.</p>
-      <p style={{ fontSize: 10.5, color: "var(--soft)" }}>No dia agendado, confirme comparecimento e quitação na aba "Liberação financeira" da Visão geral (fila desta cliente após a data chegar).</p>
-    </Secao>;
-  }
-  if (estagio === "financialRelease") {
-    const previsaoConfirmada = Boolean(c.previsaoConfirmadaEm);
-    const compareceu = c.comparecimentoStatus === "compareceu";
-    const naoCompareceu = c.comparecimentoStatus === "nao_compareceu";
-    const quitada = c.quitacaoStatus === "paga";
-    const naoQuitada = c.quitacaoStatus === "nao_realizada";
-    const ambosConfirmados = compareceu && quitada;
+}
 
-    if (!previsaoConfirmada) {
-      return <Secao titulo="Previsão cirúrgica">
-        <p style={{ fontSize: 11.5, color: "var(--soft)" }}>Confirme a previsão da agenda cirúrgica (data-alvo, respeita o teto mensal de R$ 100.000,00 em carta de crédito). Comparecimento e quitação só ficam disponíveis depois disso.</p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-          <input type="date" value={previsaoInput} onChange={(e) => setPrevisaoInput(e.target.value)} style={{ height: 34, borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink)", padding: "0 10px" }} />
-          <BotaoPrimario disabled={ocupado || !previsaoInput} onClick={() => acao(() => centralApi.confirmarPrevisao(c.agendamentoId!, previsaoInput), "Previsão cirúrgica confirmada.")}>Confirmar previsão</BotaoPrimario>
-        </div>
-      </Secao>;
+function realDe(estagio: EstagioDrawer): EstagioCentral {
+  return estagio === "concluido" ? "surgeryConfirmed" : estagio;
+}
+
+function DrawerCarregado({ central, cadastroInicial, cadastroAtual, setCadastro, recarregarBase, estagioOrigem, hoje, sugestoesResponsavel, onClose, onChanged, onIrParaAgenda }: DrawerProps & {
+  central: { estagio: EstagioDrawer; cartao: CartaoCliente };
+  cadastroInicial: Cliente;
+  cadastroAtual: Cliente;
+  setCadastro: (c: Cliente) => void;
+  recarregarBase: () => Promise<{ estagio: EstagioDrawer; cartao: CartaoCliente } | null>;
+}) {
+  const c = central.cartao;
+  const real = realDe(central.estagio);
+  const concluido = central.estagio === "concluido" || Boolean(c.processoConcluidoEm);
+  const [aba, setAba] = useState<Aba>("process");
+  const [estagio, setEstagio] = useState<EstagioCentral>(() => estagioOrigem && ordemEstagio(estagioOrigem) <= ordemEstagio(real) ? estagioOrigem : real);
+  const [modal, setModal] = useState<ModalDrawer>(null);
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const ocupadoRef = useRef<string | null>(null);
+
+  const recarregar = useCallback(async () => {
+    const r = await recarregarBase();
+    if (r) setEstagio(realDe(r.estagio));
+    await onChanged();
+  }, [recarregarBase, onChanged]);
+
+  const cad = useClienteCadastro(cadastroInicial, { onSalvo: () => { void recarregar(); }, onClose });
+
+  const executar = useCallback(async (chave: string, fn: () => Promise<unknown>, sucesso: string) => {
+    if (ocupadoRef.current) return false;
+    ocupadoRef.current = chave; setOcupado(chave);
+    try { await fn(); toast.success(sucesso); await recarregar(); return true; }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível concluir a ação."); return false; }
+    finally { ocupadoRef.current = null; setOcupado(null); }
+  }, [recarregar]);
+
+  const form = useFormLevantamento(cadastroAtual, cad);
+
+  async function concluirLevantamento(decisao: "aprovada" | "recusada", observacao?: string) {
+    if (decisao === "aprovada") {
+      const saldo = Number(String(form.saldo).replace(/\./g, "").replace(",", "."));
+      const taxa = Number(String(form.taxa).replace(",", "."));
+      if (!Number.isFinite(saldo) || saldo < 0) { toast.error("Informe um saldo restante válido."); return false; }
+      if (!Number.isFinite(taxa) || taxa < 0) { toast.error("Informe uma taxa de cartão válida."); return false; }
+      if (!form.formas.length) { toast.error("Selecione ao menos uma forma de quitação."); return false; }
+      return executar("levantamento", async () => {
+        const r = await centralApi.concluirLevantamento(c.id, { decisao, saldoRestante: saldo, taxaCartao: taxa, formasCusteio: form.formas });
+        if (r?.cliente) setCadastro({ ...cadastroAtual, ...r.cliente });
+      }, "Levantamento concluído. Agenda de termos disponível no app.");
     }
-
-    return <Secao titulo="Liberação cirúrgica">
-      <p style={{ fontSize: 10.5, color: "var(--soft)", marginBottom: 8 }}>Previsão confirmada: {dataBr(c.previsaoCirurgia)}</p>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <span style={{ flex: 1, borderRadius: 10, padding: 8, textAlign: "center", background: compareceu ? "#e5f5ec" : naoCompareceu ? "#fde8ec" : "#f5f1f2", color: compareceu ? "#0d754a" : naoCompareceu ? "#ad2d40" : "var(--soft)", fontSize: 10.5, fontWeight: 700 }}>{compareceu ? "✓ Comparecimento" : naoCompareceu ? "✕ Não compareceu" : "Comparecimento pendente"}</span>
-        <span style={{ flex: 1, borderRadius: 10, padding: 8, textAlign: "center", background: quitada ? "#e5f5ec" : naoQuitada ? "#fde8ec" : "#f5f1f2", color: quitada ? "#0d754a" : naoQuitada ? "#ad2d40" : "var(--soft)", fontSize: 10.5, fontWeight: 700 }}>{quitada ? "✓ Quitação" : naoQuitada ? "✕ Não quitado" : "Quitação pendente"}</span>
-      </div>
-
-      {c.comparecimentoStatus === "pendente" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <BotaoPrimario disabled={ocupado} onClick={() => acao(() => centralApi.registrarComparecimento(c.agendamentoId!, true), "Comparecimento confirmado.")}>Confirmar comparecimento</BotaoPrimario>
-        <BotaoSecundario disabled={ocupado} onClick={() => acao(() => centralApi.registrarComparecimento(c.agendamentoId!, false), "Ausência registrada. Termos reabertos para nova escolha.")}>Não compareceu</BotaoSecundario>
-      </div>}
-      {c.quitacaoStatus === "pendente" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <BotaoPrimario disabled={ocupado} onClick={() => acao(() => centralApi.registrarQuitacao(c.agendamentoId!, true), "Quitação confirmada.")}>Confirmar quitação</BotaoPrimario>
-        <BotaoSecundario disabled={ocupado} onClick={() => acao(() => centralApi.registrarQuitacao(c.agendamentoId!, false), "Pendência de pagamento registrada. Termos reabertos para nova escolha.")}>Não quitado</BotaoSecundario>
-      </div>}
-
-      {ambosConfirmados && !c.agendaCirurgicaLiberadaEm && c.agendamentoId && <div style={{ marginTop: 14, border: "1px solid #ead7b2", borderRadius: 12, padding: 12, background: "#fffaf0" }}>
-        <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#9b7b43" }}>Prazo automático</div>
-        <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>Liberação prevista para {dataBr(c.prazoCirurgico)}</div>
-        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-          <BotaoSecundario disabled={ocupado} onClick={() => acao(() => centralApi.ajustarPrazo(c.agendamentoId!, 1), "Prazo ajustado (+1 dia útil).")}>+1 dia útil</BotaoSecundario>
-          <BotaoSecundario disabled={ocupado} onClick={() => acao(() => centralApi.ajustarPrazo(c.agendamentoId!, 3), "Prazo ajustado (+3 dias úteis).")}>+3 dias úteis</BotaoSecundario>
-          <BotaoSecundario disabled={ocupado} onClick={() => acao(() => centralApi.ajustarPrazo(c.agendamentoId!, 5), "Prazo ajustado (+5 dias úteis).")}>+5 dias úteis</BotaoSecundario>
-          <BotaoPrimario disabled={ocupado} onClick={() => acao(() => centralApi.liberarAgendaCirurgicaAgora(c.agendamentoId!), "Agenda cirúrgica liberada no app da cliente.")}>Liberar agenda cirúrgica agora</BotaoPrimario>
-        </div>
-      </div>}
-      {ambosConfirmados && c.agendaCirurgicaLiberadaEm && <p style={{ marginTop: 12, fontSize: 11.5, color: "var(--ok)", fontWeight: 700 }}>✓ Agenda cirúrgica liberada — disponível no app da cliente.</p>}
-    </Secao>;
+    return executar("divergencia", async () => {
+      const r = await centralApi.concluirLevantamento(c.id, { decisao, observacao: observacao || undefined });
+      if (r?.cliente) setCadastro({ ...cadastroAtual, ...r.cliente });
+    }, "Divergência registrada e cliente notificada.");
   }
-  if (estagio === "surgeryConfirmed" || estagio === "concluido") {
-    return <Secao titulo={estagio === "concluido" ? "Cirurgia confirmada / processo concluído" : "Cirurgia confirmada"}>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: c.pagamentoCirurgiaConfirmadoEm ? "#f5fbf7" : "var(--s0)" }}>
-        <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "var(--soft)" }}>{c.pagamentoCirurgiaConfirmadoEm ? "Cirurgia confirmada · processo concluído" : "Cirurgia confirmada"}</div>
-        <div style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{dataBr(c.dataCirurgia)}</div>
-        <div style={{ fontSize: 11, color: "var(--soft)", marginTop: 3 }}>Carta de crédito: {moeda(c.cartaDeCredito)}</div>
-      </div>
-      {!c.pagamentoCirurgiaConfirmadoEm && c.agendamentoId && <div style={{ marginTop: 10 }}>
-        <BotaoPrimario disabled={ocupado} onClick={() => acao(() => centralApi.confirmarPagamentoCirurgia(c.agendamentoId!), "Pagamento confirmado. Processo concluído.")}>Confirmar pagamento da cirurgia</BotaoPrimario>
-      </div>}
-      {c.pagamentoCirurgiaConfirmadoEm && <p style={{ marginTop: 10, fontSize: 11.5, color: "var(--ok)", fontWeight: 700 }}>✓ Pagamento confirmado em {dataBr(c.pagamentoCirurgiaConfirmadoEm)}. Processo arquivado na Agenda Cirúrgica.</p>}
-    </Secao>;
+
+  const eLib = estadoLiberacao(c, hoje);
+  const historico = estagio !== real && ordemEstagio(estagio) < ordemEstagio(real);
+  const statusBadge = estagio === "surgeryConfirmed" || eLib.liberada ? "success" : estagio === "preEligibility" ? "danger" : estagio === "financialRelease" ? "wait" : "info";
+  const pagoBadge = c.quitacaoStatus === "paga" ? "Contrato quitado" : `${c.parcelasPagas}/${c.totalParcelas} parcelas`;
+  const proximoBoleto = useMemo(() => [...cad.boletos].filter((b) => b.status !== "pago" && !b.suspensa).sort((a, b) => a.numero_parcela - b.numero_parcela)[0] ?? null, [cad.boletos]);
+
+  function registrarParcela() {
+    if (!proximoBoleto) { toast.warning("Não há parcela em aberto para registrar."); return; }
+    cad.abrirBaixaManual(proximoBoleto);
   }
-  return null;
-}
 
-function PerfilTab({ c }: { c: CartaoCliente }) {
-  return <Secao titulo="Perfil">
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-      <div><label style={{ display: "block", fontSize: 9, color: "var(--soft)" }}>Nome</label><strong style={{ fontSize: 11.5 }}>{c.nome}</strong></div>
-      <div><label style={{ display: "block", fontSize: 9, color: "var(--soft)" }}>CPF</label><strong style={{ fontSize: 11.5 }}>{c.cpf ?? "—"}</strong></div>
-      <div><label style={{ display: "block", fontSize: 9, color: "var(--soft)" }}>Procedimento</label><strong style={{ fontSize: 11.5 }}>{c.procedimento ?? "—"}</strong></div>
-      <div><label style={{ display: "block", fontSize: 9, color: "var(--soft)" }}>Carta de crédito</label><strong style={{ fontSize: 11.5 }}>{moeda(c.cartaDeCredito)}</strong></div>
-    </div>
-  </Secao>;
-}
+  function alterarStatus(novo: StatusContratoCliente) {
+    if (novo === "suspenso") {
+      setAba("profile");
+      cad.setStatusMenuAberto(true);
+      toast.info("Informe o período e o motivo da suspensão no Perfil.");
+      return;
+    }
+    void cad.aplicarStatusContrato(novo);
+  }
 
-function FinanceiroTab({ c }: { c: CartaoCliente }) {
-  const quitacaoLabel = c.quitacaoStatus === "paga" ? "Confirmada" : c.quitacaoStatus === "nao_realizada" ? "Não realizada" : "Pendente";
-  return <Secao titulo="Financeiro">
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9, background: "var(--s0)" }}><label style={{ display: "block", fontSize: 8, color: "var(--soft)" }}>Parcelas pagas</label><strong style={{ fontSize: 12 }}>{c.parcelasPagas} de {c.totalParcelas}</strong></div>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9, background: "var(--s0)" }}><label style={{ display: "block", fontSize: 8, color: "var(--soft)" }}>Carta de crédito</label><strong style={{ fontSize: 12 }}>{moeda(c.cartaDeCredito)}</strong></div>
-    </div>
-    <div style={{ fontSize: 11.5 }}>Quitação: <span style={{ color: c.quitacaoStatus === "paga" ? "var(--ok)" : "var(--soft)", fontWeight: 700 }}>{quitacaoLabel}</span></div>
-    <p style={{ marginTop: 8, fontSize: 10, color: "var(--soft)" }}>A lista completa de parcelas (envio de comprovantes, aprovação/rejeição) continua na área Financeiro do painel administrativo.</p>
-  </Secao>;
-}
-
-function JornadaTab({ estagio, c }: { estagio: EstagioDrawer; c: CartaoCliente }) {
-  const percentual = c.totalParcelas > 0 ? Math.round((c.parcelasPagas / c.totalParcelas) * 100) : 0;
-  const passos = deriveJourneySteps({
-    percentualPagamento: percentual,
+  const snapshot = journeyInputFromProcess({
+    percentualPagamento: c.totalParcelas ? (c.parcelasPagas / c.totalParcelas) * 100 : 0,
     percentualAtingido: c.parcelasFaltantes === 0,
-    statusRevisao: estagio === "preEligibility" ? null : "aprovada",
-    custeioStatus: c.quitacaoStatus === "paga" ? "aprovada" : estagio === "financialReview" || estagio === "preEligibility" ? null : "pendente",
-    agendada: Boolean(c.dataTermos),
-    termosAssinados: c.comparecimentoStatus === "compareceu",
-    agendaCirurgicaLiberada: Boolean(c.agendaCirurgicaLiberadaEm),
-    cirurgiaAgendada: Boolean(c.dataCirurgia),
-    cirurgiaRealizada: Boolean(c.pagamentoCirurgiaConfirmadoEm),
-    previsaoLiberacaoFinanceira: c.dataCirurgia,
-    agendaCirurgicaLiberarEm: c.prazoCirurgico,
+    statusRevisao: c.statusRevisaoFinanceira,
+    custeioStatus: c.custeioStatus,
+    temAgendamentoTermos: Boolean(c.dataTermos),
+    comparecimentoConfirmado: c.comparecimentoStatus === "compareceu",
+    processoConcluido: concluido,
+    agendaCirurgicaLiberadaEm: c.agendaCirurgicaLiberadaEm,
+    dataCirurgia: c.dataCirurgia,
+    cirurgiaRealizada: c.statusCirurgia === "realizada",
   });
-  return <Secao titulo="Jornada">
-    <div style={{ display: "grid", gap: 8 }}>
-      {passos.map((p) => <div key={p.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr", gap: 8 }}>
-        <div style={{ width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center", background: p.status === "done" ? "#e5f5ec" : p.status === "current" ? "var(--bg)" : "#f2ecee", color: p.status === "done" ? "#0d754a" : p.status === "current" ? "#fff" : "var(--soft)", fontSize: 10, fontWeight: 800 }}>{p.status === "done" ? "✓" : ""}</div>
-        <div>
-          <b style={{ fontSize: 11 }}>{p.title}</b>
-          <p style={{ margin: "2px 0 0", fontSize: 9.5, color: "var(--soft)" }}>{p.description}</p>
+  const passos = deriveJourneySteps(snapshot);
+  const eventos = eventosDoProcesso(c, cad);
+
+  const acoes = acoesDaBarra();
+  function acoesDaBarra(): ReactNode {
+    const btn = (rotulo: string, onClick: () => void, cls = "secondary-btn", disabled = false) => <button key={rotulo} type="button" className={cls} onClick={onClick} disabled={disabled || Boolean(ocupado)}>{rotulo}</button>;
+    if (historico) return btn("Voltar à etapa atual", () => { setEstagio(real); setAba("process"); }, "primary-btn");
+    if (aba === "process") {
+      if (estagio === "preEligibility") return c.parcelasFaltantes === 0
+        ? btn("Ver Financeiro", () => setAba("finance"))
+        : <>{btn("Ver Financeiro", () => setAba("finance"))}{btn("Registrar parcela paga", registrarParcela, "primary-btn", !proximoBoleto)}</>;
+      if (estagio === "financialReview") return c.statusRevisaoFinanceira === "aprovada"
+        ? btn("Ver levantamento", () => setAba("finance"))
+        : <>{btn("Conferir Financeiro", () => setAba("finance"))}{btn(ocupado === "levantamento" ? "Salvando…" : "Concluir levantamento", () => void concluirLevantamento("aprovada"), "primary-btn")}</>;
+      if (estagio === "termsConfirmed") return <>{btn("Ver Agenda de Termos", () => { onClose(); onIrParaAgenda("terms", c.dataTermos); })}{btn("Reagendar", () => setModal({ tipo: "reagendar" }), "primary-btn", !c.agendamentoId)}</>;
+      if (estagio === "financialRelease") {
+        if (!c.previsaoConfirmadaEm) return btn("Ver Jornada completa", () => setAba("journey"));
+        if (eLib.liberada && !c.dataCirurgia) return btn("Agendar cirurgia", () => setModal({ tipo: "agendarCirurgia" }), "success-btn");
+        if (!eLib.compareceu) return btn("Confirmar comparecimento", () => setModal({ tipo: "comparecimento", compareceu: true }), "primary-btn");
+        if (!eLib.quitada) return btn("Confirmar quitação", () => setModal({ tipo: "quitacao" }), "primary-btn");
+        return btn("Ver Jornada completa", () => setAba("journey"));
+      }
+      return <>{btn("Ver na Agenda Cirúrgica", () => { onClose(); onIrParaAgenda("surgery", c.dataCirurgia); }, "primary-btn")}{btn("Ver Jornada", () => setAba("journey"))}</>;
+    }
+    if (aba === "finance") {
+      if (estagio === "preEligibility" && c.parcelasFaltantes > 0) return <>{btn("Voltar ao Processo", () => setAba("process"))}{btn("Registrar próxima parcela", registrarParcela, "primary-btn", !proximoBoleto)}</>;
+      if (estagio === "financialRelease" && c.previsaoConfirmadaEm && !eLib.quitada) return <>{btn("Voltar ao Processo", () => setAba("process"))}{btn("Registrar quitação", () => setModal({ tipo: "quitacao" }), "primary-btn")}</>;
+      return btn("Voltar ao Processo", () => setAba("process"));
+    }
+    if (aba === "journey") return btn("Voltar ao Processo", () => setAba("process"), "primary-btn");
+    return <>{btn("Voltar ao Processo", () => setAba("process"))}<button type="submit" form="central-drawer-perfil" className="primary-btn" disabled={cad.salvandoPerfil}>{cad.salvandoPerfil ? "Salvando…" : "Salvar perfil"}</button></>;
+  }
+
+  return <>
+    <div className="drawer-header">
+      <div className="drawer-title-row">
+        <div className="avatar" aria-hidden="true">{iniciais(c.nome)}</div>
+        <div className="drawer-head-copy">
+          <h2>{c.nome}</h2>
+          <p>{c.procedimento || "—"}</p>
+          <div className="drawer-head-meta">
+            <span className={`badge ${statusBadge}`}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>
+            <span className="subtle-pill">{pagoBadge}</span>
+          </div>
         </div>
-      </div>)}
+        <div className="drawer-head-controls">
+          <label className="status-control" title="Status do contrato">
+            <span>Status</span>
+            <select value={cad.statusContrato} onChange={(e) => alterarStatus(e.target.value as StatusContratoCliente)} disabled={cad.salvandoStatus} aria-label="Status do contrato">
+              {(Object.keys(STATUS_CONTRATO_LABEL) as StatusContratoCliente[]).map((s) => <option key={s} value={s}>{STATUS_CONTRATO_LABEL[s]}</option>)}
+            </select>
+          </label>
+          <button type="button" className="icon-btn drawer-close" aria-label="Fechar drawer" onClick={onClose}>✕</button>
+        </div>
+      </div>
+      <div className="drawer-tabs" role="tablist" aria-label="Seções da cliente">
+        {([["process", "Processo"], ["profile", "Perfil"], ["finance", "Financeiro"], ["journey", "Jornada"]] as [Aba, string][]).map(([id, rotulo]) => <button key={id} type="button" role="tab" aria-selected={aba === id} className={`drawer-tab${aba === id ? " active" : ""}`} onClick={() => setAba(id)}>
+          {rotulo}{id === "finance" && <> <span className="tab-count">{cad.boletos.length || c.totalParcelas}</span></>}
+        </button>)}
+      </div>
     </div>
-  </Secao>;
+
+    <div className="drawer-body" role="tabpanel">
+      {aba === "process" && <ProcessoTab c={c} cad={cad} cadastro={cadastroAtual} real={real} estagio={estagio} concluido={concluido} hoje={hoje} ocupado={ocupado} form={form}
+        eventos={eventos} executar={executar} abrirModal={setModal} irParaEstagio={(s) => { setEstagio(s); setAba("process"); }}
+        registrarParcela={registrarParcela} temParcelaAberta={Boolean(proximoBoleto)} concluirLevantamento={concluirLevantamento}
+        irParaAgenda={(tipo, data) => { onClose(); onIrParaAgenda(tipo, data); }} />}
+      {aba === "profile" && <div className="zip-admin v46-embed"><ClienteProfilePanel cad={cad} formId="central-drawer-perfil" /></div>}
+      {aba === "finance" && <div className="zip-admin v46-embed"><ClienteFinancePanel cad={cad} /></div>}
+      {aba === "journey" && <div className="process-page">
+        <section className="process-map-card">
+          <div className="process-map-head"><div><b>Jornada completa</b><small>Mesma lógica de evolução refletida no app da cliente</small></div><span className="subtle-pill">{passos.length} marcos</span></div>
+        </section>
+        <section className="drawer-section">
+          <div className="drawer-section-head"><span>Jornada da cliente</span><span className="subtle-pill">Espelhada no app</span></div>
+          <div className="drawer-section-body"><JourneyStepsView passos={passos} variant="compact" /></div>
+        </section>
+        <details className="drawer-accordion"><summary>Histórico operacional <span>{eventos.length}</span></summary><div className="accordion-body"><div className="history-list">
+          {eventos.length ? eventos.slice(0, 30).map((ev) => <div key={ev.id} className="history-item"><b>{ev.texto}</b><small>{new Date(ev.em).toLocaleString("pt-BR")}</small></div>) : <div className="empty-card">Sem eventos registrados.</div>}
+        </div></div></details>
+      </div>}
+    </div>
+
+    <div className="drawer-actions">{acoes}</div>
+
+    <div className="zip-admin"><ClienteCadastroModals cad={cad} /></div>
+
+    {modal?.tipo === "responsavel" && c.agendamentoId && <ResponsavelModal agendamentoId={c.agendamentoId} atual={c.termosResponsavel} sugestoes={sugestoesResponsavel} onClose={() => setModal(null)} onSalvo={recarregar} />}
+    {modal?.tipo === "reagendar" && c.agendamentoId && <TermsRescheduleModal agendamentoId={c.agendamentoId} nome={c.nome} dataAtual={c.dataTermos} horarioAtual={c.horarioTermos} hoje={hoje} onClose={() => setModal(null)} onDone={recarregar} />}
+    {modal?.tipo === "quitacao" && c.agendamentoId && <QuitacaoModal c={c} saldo={c.custeioSaldo ?? cadastroAtual.financeiro_saldo_restante ?? null} onClose={() => setModal(null)} executar={executar} />}
+    {modal?.tipo === "liberacao" && c.agendamentoId && <LiberacaoModal c={c} estado={eLib} onClose={() => setModal(null)} executar={executar} />}
+    {modal?.tipo === "agendarCirurgia" && <AgendarCirurgiaModal clientes={[c]} hoje={hoje} onClose={() => setModal(null)} onAgendado={recarregar} />}
+    {modal?.tipo === "comparecimento" && c.agendamentoId && <ConfirmModal
+      titulo={modal.compareceu ? "Confirmar comparecimento" : "Registrar ausência"}
+      mensagem={modal.compareceu ? `Confirmar que ${c.nome} compareceu para a assinatura dos termos?` : "A cliente não compareceu. O agendamento será cancelado, a vaga volta para a agenda e a cliente poderá escolher uma nova data no app. A contagem do prazo não começa."}
+      rotuloConfirmar={modal.compareceu ? "Confirmar comparecimento" : "Registrar ausência"} perigo={!modal.compareceu}
+      onConfirmar={() => executar("comparecimento", () => centralApi.registrarComparecimento(c.agendamentoId!, modal.compareceu), modal.compareceu ? "Comparecimento confirmado." : "Ausência registrada. Agenda de Termos reaberta para a cliente.")}
+      onClose={() => setModal(null)} />}
+    {modal?.tipo === "naoQuitado" && c.agendamentoId && <ConfirmModal titulo="Saldo não quitado"
+      mensagem="O saldo não foi quitado no dia da assinatura. O agendamento será cancelado, a Agenda Cirúrgica permanece bloqueada e a cliente poderá escolher uma nova data dos termos no app."
+      rotuloConfirmar="Registrar pendência" perigo
+      onConfirmar={() => executar("quitacao", () => centralApi.registrarQuitacao(c.agendamentoId!, false), "Pendência de pagamento registrada.")}
+      onClose={() => setModal(null)} />}
+    {modal?.tipo === "pagamentoCirurgia" && c.agendamentoId && <ConfirmModal titulo="Confirmar pagamento da cirurgia"
+      mensagem="O processo será concluído, sairá das filas operacionais e ficará arquivado na data cirúrgica."
+      rotuloConfirmar="Confirmar pagamento"
+      onConfirmar={async () => { const ok = await executar("pagamentoCirurgia", () => centralApi.confirmarPagamentoCirurgia(c.agendamentoId!), "Pagamento confirmado. Processo concluído e arquivado na Agenda Cirúrgica."); if (ok) onClose(); return ok; }}
+      onClose={() => setModal(null)} />}
+    {modal?.tipo === "divergencia" && <DivergenciaModal onClose={() => setModal(null)} onConfirmar={(obs) => concluirLevantamento("recusada", obs)} />}
+  </>;
+}
+
+function statusDoDrawer(c: CartaoCliente, estagio: EstagioCentral, concluido: boolean, hoje: string): string {
+  if (estagio === "preEligibility") return c.parcelasFaltantes === 0 ? "Etapa 1 · Aguardando solicitação" : `Etapa 1 · ${faltamTexto(c.parcelasFaltantes)}`;
+  if (estagio === "financialReview") return c.statusRevisaoFinanceira === "aprovada" ? "Etapa 2 · Aguardando escolha dos termos" : "Etapa 2 · Levantamento";
+  if (estagio === "termsConfirmed") return "Etapa 3 · Próximos termos";
+  if (estagio === "financialRelease") {
+    const e = estadoLiberacao(c, hoje);
+    if (e.liberada) return "Etapa 4 · Agenda cirúrgica liberada";
+    if (e.ambos) return e.decorridos === 0 ? `Etapa 4 · Aguardando prazo de ${e.totalDias} dias úteis` : `Etapa 4 · ${e.decorridos} de ${e.totalDias} dias úteis`;
+    return "Etapa 4 · Conferência presencial";
+  }
+  return concluido ? "Etapa 5 · Processo concluído" : "Etapa 5 · Cirurgia confirmada";
+}
+
+function useFormLevantamento(cliente: Cliente, cad: ClienteCadastro): FormLevantamento {
+  const formasIniciais = (cliente.financeiro_formas_custeio?.length ? cliente.financeiro_formas_custeio : ["cartao", "pix", "cheques", "boleto_100"]) as FormaCusteio[];
+  const [saldo, setSaldoState] = useState(cliente.financeiro_saldo_restante != null ? String(cliente.financeiro_saldo_restante) : "");
+  const [editado, setEditado] = useState(cliente.financeiro_saldo_restante != null);
+  const [taxa, setTaxa] = useState(cliente.financeiro_taxa_cartao != null ? String(cliente.financeiro_taxa_cartao) : "5.4");
+  const [formas, setFormas] = useState<FormaCusteio[]>(formasIniciais);
+  const emAberto = useMemo(() => cad.boletos.filter((b) => b.status !== "pago").reduce((s, b) => s + Number(b.valor || 0), 0), [cad.boletos]);
+  useEffect(() => { if (!editado && cad.boletos.length) setSaldoState(emAberto.toFixed(2)); }, [editado, emAberto, cad.boletos.length]);
+  return {
+    saldo, setSaldo: (v: string) => { setEditado(true); setSaldoState(v); }, taxa, setTaxa, formas,
+    alternarForma: (f: FormaCusteio) => setFormas((a) => a.includes(f) ? a.filter((x) => x !== f) : [...a, f]),
+    emAberto,
+  };
+}
+
+function DivergenciaModal({ onClose, onConfirmar }: { onClose: () => void; onConfirmar: (obs: string) => Promise<boolean> }) {
+  const [obs, setObs] = useState("");
+  return <ConfirmModal titulo="Registrar divergência no levantamento" rotuloConfirmar="Registrar divergência" perigo
+    mensagem={<span className="field" style={{ display: "block" }}>
+      <label htmlFor="central-divergencia">Descreva a divergência encontrada (opcional)</label>
+      <textarea id="central-divergencia" value={obs} onChange={(e) => setObs(e.target.value)} rows={3} maxLength={500} />
+      <small>A cliente é notificada para regularizar e o levantamento poderá ser refeito.</small>
+    </span>}
+    onConfirmar={() => onConfirmar(obs.trim())} onClose={onClose} />;
 }

@@ -56,6 +56,9 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
   const [perfil, setPerfil] = useState<{ nome: string; cargo: string } | null>(null);
+  // Em telas estreitas (≤760px) a sidebar vira um painel sobreposto.
+  const [menuAberto, setMenuAberto] = useState(false);
+  useEffect(() => { setMenuAberto(false); }, [pathname]);
 
   useEffect(() => {
     let ativo = true;
@@ -73,8 +76,12 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const ativo = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <div className={`zip-admin${dark ? " dark" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>
-      <aside style={{ width: 212, flex: "none", position: "sticky", top: 16, border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 16, padding: "14px 11px", boxShadow: "var(--sh)", backdropFilter: "blur(18px)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 32px)" }}>
+    <div className={`zip-admin zip-shell${dark ? " dark" : ""}${menuAberto ? " zip-shell-menu-open" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <button type="button" className="zip-shell-menu-btn" aria-expanded={menuAberto} aria-controls="zip-shell-aside" onClick={() => setMenuAberto((v) => !v)}>
+        <span aria-hidden="true">☰</span> Menu
+      </button>
+      {menuAberto && <div className="zip-shell-scrim" onClick={() => setMenuAberto(false)} />}
+      <aside id="zip-shell-aside" className="zip-shell-aside" style={{ width: 212, flex: "none", position: "sticky", top: 16, border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 16, padding: "14px 11px", boxShadow: "var(--sh)", backdropFilter: "blur(18px)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 32px)" }}>
         <div>
           <div style={{ padding: "2px 6px 16px" }}>
             <div style={{ fontFamily: "Fraunces,Georgia,serif", fontSize: 19, color: "var(--bg)" }}>Sra. Luck</div>

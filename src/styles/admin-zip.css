@@ -92,3 +92,21 @@
 .zip-mono { font-variant-numeric: tabular-nums; }
 
 .zip-row-hover:hover { background: var(--hov); }
+
+/* Shell em telas estreitas: sidebar vira painel sobreposto (desktop inalterado). */
+.zip-shell-menu-btn, .zip-shell-scrim { display: none; }
+@media (max-width: 760px) {
+  .zip-shell { flex-direction: column; padding: 10px !important; gap: 10px !important; }
+  .zip-shell-menu-btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--bg);
+    font-size: 12px; font-weight: 700;
+  }
+  .zip-shell-aside { display: none !important; }
+  .zip-shell-menu-open .zip-shell-aside {
+    display: flex !important; position: fixed !important; top: 10px !important; left: 10px; bottom: 10px;
+    z-index: 70; min-height: 0 !important; overflow-y: auto; background: var(--s0) !important;
+  }
+  .zip-shell-menu-open .zip-shell-scrim { display: block; position: fixed; inset: 0; z-index: 69; background: rgba(30, 12, 16, .42); }
+  .zip-shell > main { width: 100%; }
+}

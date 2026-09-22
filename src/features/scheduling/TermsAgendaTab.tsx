@@ -1,125 +1,112 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { centralApi, dataBr } from "./api";
-import { MonthCalendar, estadoDia } from "./MonthCalendar";
+import { centralApi, dataBr, somarMeses } from "./api";
+import { AgendaCalendar, AppointmentRow, DayPanel, statusDoDia } from "./AgendaCalendar";
 import type { AgendaTermosResponse } from "./types";
+import { ResponsavelModal } from "./DrawerModals";
 import { TermsRescheduleModal } from "./TermsRescheduleModal";
+import { ConfirmModal } from "./V46Modal";
 
-function hojeIso() { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`; }
+const VAGAS_PADRAO_TERMOS = 3;
 
-export function TermsAgendaTab({ onAbrirCliente }: { onAbrirCliente: (clienteId: string) => void }) {
-  const hoje = hojeIso();
-  const [ano, setAno] = useState(Number(hoje.slice(0, 4)));
-  const [mes, setMes] = useState(Number(hoje.slice(5, 7)));
+/**
+ * Agenda de Termos V46: calendário + painel do dia + "Próximas assinaturas".
+ * Dados de `/api/admin/central/termos`; abrir/bloquear/vagas via
+ * `/termos/data`, responsável via `/termos/responsavel`.
+ */
+export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recarregarKey, onAbrirCliente, onMudou }: {
+  hoje: string; data: string; onData: (iso: string) => void; sugestoesResponsavel: string[]; recarregarKey: number;
+  onAbrirCliente: (clienteId: string) => void; onMudou: () => void | Promise<void>;
+}) {
   const [dados, setDados] = useState<AgendaTermosResponse | null>(null);
-  const [selecionado, setSelecionado] = useState(hoje);
-  const [reagendar, setReagendar] = useState<{ agendamentoId: string; nome: string } | null>(null);
-  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [responsavel, setResponsavel] = useState<{ agendamentoId: string; atual: string | null } | null>(null);
+  const [reagendar, setReagendar] = useState<{ agendamentoId: string; nome: string; data: string; horario: string | null } | null>(null);
+  const [confirmarBloqueio, setConfirmarBloqueio] = useState<number | null>(null);
+  const ano = Number(data.slice(0, 4)), mes = Number(data.slice(5, 7));
 
-  async function carregar() {
-    try { setDados(await centralApi.agendaTermos(ano, mes)); } catch (e: any) { toast.error(e.message); }
-  }
-  useEffect(() => { void carregar(); }, [ano, mes]);
+  const carregar = useCallback(async () => {
+    try { setDados(await centralApi.agendaTermos(ano, mes)); setErro(null); }
+    catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível carregar a Agenda de Termos."); }
+  }, [ano, mes]);
+  useEffect(() => { void carregar(); }, [carregar, recarregarKey]);
 
-  function mudarMes(delta: number) {
-    let m = mes + delta, a = ano;
-    if (m > 12) { m = 1; a++; } else if (m < 1) { m = 12; a--; }
-    setMes(m); setAno(a);
-  }
-
-  async function liberar() {
-    setSalvando(true);
-    try { await centralApi.abrirBloquearTermos(selecionado, "liberar", 3); toast.success("Data liberada para termos."); await carregar(); }
-    catch (e: any) { toast.error(e.message); } finally { setSalvando(false); }
-  }
-  async function bloquear() {
-    setSalvando(true);
-    try { await centralApi.abrirBloquearTermos(selecionado, "bloquear"); toast.success("Data bloqueada."); await carregar(); }
-    catch (e: any) { toast.error(e.message); } finally { setSalvando(false); }
-  }
-  async function definirResponsavel(agendamentoId: string, atual: string | null) {
-    const nome = window.prompt("Responsável administrativo pelo atendimento:", atual ?? "");
-    if (!nome || !nome.trim()) return;
-    try { await centralApi.definirResponsavelTermos(agendamentoId, nome.trim()); toast.success("Responsável definido."); await carregar(); }
-    catch (e: any) { toast.error(e.message); }
-  }
-  async function marcarAusencia(agendamentoId: string) {
-    if (!window.confirm("Confirmar ausência? A vaga desta cliente será liberada e ela poderá escolher uma nova data no app.")) return;
-    try { await centralApi.registrarComparecimento(agendamentoId, false); toast.success("Ausência registrada. Agenda de Termos reaberta para a cliente."); await carregar(); }
-    catch (e: any) { toast.error(e.message); }
+  async function acaoDia(acao: "liberar" | "bloquear", vagas?: number, msg?: string) {
+    if (ocupado) return false;
+    setOcupado(true);
+    try {
+      await centralApi.abrirBloquearTermos(data, acao, vagas);
+      toast.success(msg ?? (acao === "liberar" ? "Data disponível para novos agendamentos." : "Data bloqueada."));
+      await carregar(); await onMudou();
+      return true;
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível atualizar a data."); return false; }
+    finally { setOcupado(false); }
   }
 
-  if (!dados) return <div style={{ padding: 24, textAlign: "center", color: "var(--soft)" }}>Carregando…</div>;
+  if (erro && !dados) return <div className="panel panel-pad"><div className="callout danger" role="alert">{erro}</div><div className="inline-actions" style={{ marginTop: 10 }}><button type="button" className="secondary-btn" onClick={() => void carregar()}>Tentar novamente</button></div></div>;
 
-  const diaSel = dados.calendario.find((d) => d.data === selecionado);
-  const estado = estadoDia(diaSel, hoje, selecionado);
-  const assinaturasDoDia = dados.proximasAssinaturas.filter((a) => a.data === selecionado);
+  const calendario = dados && dados.ano === ano && dados.mes === mes ? dados.calendario : null;
+  const dia = calendario?.find((d) => d.data === data);
+  const prefixo = data.slice(0, 7);
+  const doMes = (dados?.proximasAssinaturas ?? []).filter((a) => a.data.startsWith(prefixo));
+  const abertas = (calendario ?? []).filter((d) => d.status === "disponivel").length;
+  const bloqueadas = (calendario ?? []).filter((d) => d.status !== "disponivel").length;
+  const cap = (calendario ?? []).filter((d) => d.status === "disponivel").reduce((s, d) => s + (d.vagasTotais || 0), 0);
+  const usadas = (calendario ?? []).filter((d) => d.status === "disponivel").reduce((s, d) => s + d.vagasOcupadas, 0);
+  const ocupacao = cap ? Math.round((usadas / cap) * 100) : 0;
+  const futuras = (dados?.proximasAssinaturas ?? []).filter((a) => a.data >= hoje);
+  const doDia = (dados?.proximasAssinaturas ?? []).filter((a) => a.data === data);
 
-  return <div>
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16, fontSize: 10.5, color: "var(--soft)" }}>
-      <span><b style={{ color: "var(--ink)" }}>{dados.proximasAssinaturas.length}</b> agendamentos no mês</span>
-      <span><b style={{ color: "var(--ink)" }}>{dados.calendario.filter((d) => d.status === "disponivel").length}</b> datas abertas</span>
-      <span style={{ marginLeft: "auto" }}>Assinatura de termos · agenda administrativa com vagas e horários visíveis no app</span>
+  return <div className="calendar-page terms-agenda">
+    <div className="agenda-meta-line" aria-label="Resumo da Agenda de Termos">
+      <span><b>{doMes.length}</b> agendamentos no mês</span>
+      <span><b>{abertas}</b> datas abertas</span>
+      <span><b>{bloqueadas}</b> bloqueadas</span>
+      <span><b>{ocupacao}%</b> ocupação</span>
+      <span className="agenda-rule">Assinatura de termos · agenda administrativa com vagas e horários liberados para o app</span>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(360px,1.2fr) minmax(300px,1fr)", gap: 16 }}>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", padding: 14 }}>
-        <MonthCalendar ano={ano} mes={mes} hoje={hoje} calendario={dados.calendario} selecionado={selecionado} onSelecionar={setSelecionado} onMudarMes={mudarMes} />
+    <div className="calendar-workspace">
+      <div className="panel panel-pad v46-terms-calendar-panel">
+        <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
-
-      <div style={{ border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", padding: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{dataBr(selecionado)}</div>
-        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <button disabled={salvando} onClick={liberar} style={{ height: 32, borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--ok)", fontSize: 11.5, fontWeight: 700 }}>Liberar para termos</button>
-          <button disabled={salvando} onClick={bloquear} style={{ height: 32, borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--bad)", fontSize: 11.5, fontWeight: 700 }}>Bloquear</button>
-        </div>
-        <div style={{ marginTop: 12, fontSize: 11, color: "var(--soft)" }}>
-          {diaSel ? <>Vagas: <b style={{ color: "var(--ink)" }}>{Math.max(0, diaSel.vagasTotais - diaSel.vagasOcupadas)} de {diaSel.vagasTotais}</b> ({estado})</> : "Sem liberação para esta data."}
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Assinaturas do dia ({assinaturasDoDia.length})</div>
-          {assinaturasDoDia.length === 0 && <div style={{ fontSize: 11, color: "var(--soft)" }}>Nenhum agendamento neste dia.</div>}
-          {assinaturasDoDia.map((a) => <div key={a.agendamentoId} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--line2)" }}>
-            <button onClick={() => onAbrirCliente(a.clienteId)} style={{ textAlign: "left", background: "transparent", border: 0, cursor: "pointer" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700 }}>{a.horario} · {a.nome}</div>
-              <div style={{ fontSize: 10, color: "var(--soft)" }}>{a.procedimento ?? "—"}{a.responsavel ? ` · ${a.responsavel}` : ""}</div>
-            </button>
-            {a.data === hoje && <button onClick={() => marcarAusencia(a.agendamentoId)} style={{ fontSize: 10, color: "var(--bad)", background: "transparent", border: 0, cursor: "pointer" }}>Não compareceu</button>}
-          </div>)}
-        </div>
-      </div>
+      <DayPanel tipo="terms" data={data} dia={dia} ocupado={ocupado || !calendario}
+        onAbrir={() => void acaoDia("liberar", dia?.vagasTotais || VAGAS_PADRAO_TERMOS)}
+        onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
+        onCapacidade={(n) => void acaoDia("liberar", n, "Vagas atualizadas.")}
+        itens={doDia.map((a) => <AppointmentRow key={a.agendamentoId} tipo="terms" horario={a.horario} nome={a.nome}
+          detalhe={`${a.procedimento ?? "—"}${a.responsavel ? ` · ${a.responsavel}` : ""}`}
+          badge={<span className="badge success">Confirmado</span>} onAbrir={() => onAbrirCliente(a.clienteId)} />)} />
     </div>
 
-    <div style={{ marginTop: 16, border: "1px solid var(--line)", borderRadius: 14, background: "var(--panel)", overflow: "hidden" }}>
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-        <h3 style={{ fontSize: 14, margin: 0 }}>Próximas assinaturas de termos</h3>
-        <span style={{ fontSize: 10.5, color: "var(--soft)" }}>Fila operacional em ordem de atendimento.</span>
+    <div className="panel bottom-table terms-table">
+      <div className="table-toolbar">
+        <div><h3>Próximas assinaturas de termos</h3><small>Fila operacional em ordem de atendimento: data e horário mais próximos primeiro.</small></div>
       </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-          <thead><tr>{["Data", "Horário", "Cliente", "CPF", "Procedimento", "Responsável", "Ações"].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 9, textTransform: "uppercase", color: "var(--soft)", padding: "8px 10px", borderBottom: "1px solid var(--line)" }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {dados.proximasAssinaturas.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: "center", color: "var(--soft)", fontSize: 11 }}>Nenhuma assinatura futura.</td></tr>}
-            {dados.proximasAssinaturas.map((a) => <tr key={a.agendamentoId}>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}><b>{dataBr(a.data)}</b></td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{a.horario}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{a.nome}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{a.cpf}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{a.procedimento}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>{a.responsavel ?? <span style={{ color: "var(--soft)" }}>Não definido</span>}</td>
-              <td style={{ padding: "8px 10px", fontSize: 11, borderBottom: "1px solid var(--line2)" }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => onAbrirCliente(a.clienteId)} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>Abrir cliente</button>
-                  <button onClick={() => definirResponsavel(a.agendamentoId, a.responsavel)} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>{a.responsavel ? "Alterar" : "Definir"} responsável</button>
-                  <button onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome })} style={{ background: "transparent", border: 0, color: "var(--bg)", fontWeight: 700, fontSize: 10.5, cursor: "pointer" }}>Reagendar</button>
-                </div>
-              </td>
-            </tr>)}
-          </tbody>
-        </table>
-      </div>
+      <div className="table-wrap"><table className="data-table">
+        <thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>CPF</th><th>Procedimento</th><th>Responsável</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>
+          {!dados && <tr><td colSpan={8}>Carregando…</td></tr>}
+          {dados && futuras.length === 0 && <tr><td colSpan={8}>Nenhuma assinatura futura.</td></tr>}
+          {futuras.map((a) => <tr key={a.agendamentoId}>
+            <td><b>{dataBr(a.data)}</b></td><td>{a.horario ?? "—"}</td><td>{a.nome}</td><td>{a.cpf ?? "—"}</td><td>{a.procedimento ?? "—"}</td>
+            <td>{a.responsavel ? <span className="responsible-name">{a.responsavel}</span> : <span className="muted-text">Não definido</span>}</td>
+            <td><span className="badge success">Termos confirmados</span></td>
+            <td><div className="table-actions-stack">
+              <button type="button" className="mini-link" onClick={() => onAbrirCliente(a.clienteId)}>Abrir cliente</button>
+              <button type="button" className="mini-link" onClick={() => setResponsavel({ agendamentoId: a.agendamentoId, atual: a.responsavel })}>{a.responsavel ? "Alterar responsável" : "Definir responsável"}</button>
+              <button type="button" className="mini-link" onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome, data: a.data, horario: a.horario })}>Reagendar</button>
+            </div></td>
+          </tr>)}
+        </tbody>
+      </table></div>
     </div>
 
-    {reagendar && <TermsRescheduleModal agendamentoId={reagendar.agendamentoId} nome={reagendar.nome} onClose={() => setReagendar(null)} onDone={() => { setReagendar(null); void carregar(); }} />}
+    {responsavel && <ResponsavelModal agendamentoId={responsavel.agendamentoId} atual={responsavel.atual} sugestoes={sugestoesResponsavel} onClose={() => setResponsavel(null)} onSalvo={async () => { await carregar(); await onMudou(); }} />}
+    {reagendar && <TermsRescheduleModal agendamentoId={reagendar.agendamentoId} nome={reagendar.nome} dataAtual={reagendar.data} horarioAtual={reagendar.horario} hoje={hoje} onClose={() => setReagendar(null)} onDone={async () => { await carregar(); await onMudou(); }} />}
+    {confirmarBloqueio != null && <ConfirmModal titulo="Bloquear data" perigo rotuloConfirmar="Bloquear"
+      mensagem={`Esta data possui ${confirmarBloqueio} agendamento(s). O bloqueio não apagará os agendamentos existentes. Deseja continuar?`}
+      onConfirmar={() => acaoDia("bloquear")} onClose={() => setConfirmarBloqueio(null)} />}
   </div>;
 }

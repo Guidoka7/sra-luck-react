@@ -3,7 +3,7 @@ import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissa
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { agoraSaoPaulo } from "./surgery-release";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
-import { requiredPaid } from "./agenda-elegibilidade";
+import { percentualElegibilidade, requiredPaid } from "./agenda-elegibilidade";
 import { getAppAccessRequirements } from "./app-access";
 
 /**
@@ -125,6 +125,31 @@ function adicionarDiasUteis(dataIso: string, dias: number): string {
   return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`;
 }
 
+// Campos somente leitura expostos para a Central V46 (já persistidos; nenhum
+// deles participa de regra — as regras continuam nas funções SQL).
+function camposLeitura(cliente: any, agendamento: any, proximaParcelaEm: string | null, solicitacao: any, totalParcelas: number) {
+  return {
+    parcelasNecessarias: requiredPaid(totalParcelas || 12),
+    percentualRegra: percentualElegibilidade(totalParcelas || 12),
+    statusCirurgia: cliente.status_cirurgia ?? null,
+    custeioStatus: solicitacao?.status ?? null,
+    custeioForma: solicitacao?.forma_custeio ?? null,
+    custeioSaldo: solicitacao?.saldo_restante != null ? Number(solicitacao.saldo_restante) : null,
+    statusRevisaoFinanceira: cliente.status_revisao_financeira ?? null,
+    financeiroConfirmadoEm: cliente.financeiro_confirmado_em ?? null,
+    custeioConfirmadoEm: cliente.custeio_confirmado_em ?? null,
+    proximaParcelaEm,
+    termosAssinadosEm: agendamento?.termos_assinados_em ?? null,
+    comparecimentoEm: agendamento?.comparecimento_em ?? null,
+    quitacaoEm: agendamento?.quitacao_em ?? null,
+    prazoAjusteDias: Number(agendamento?.agenda_cirurgica_prazo_ajuste_dias ?? 0),
+    agendaCirurgicaLiberadaManualmente: agendamento?.agenda_cirurgica_liberada_manualmente === true,
+    horarioCirurgia: agendamento?.horario_cirurgia ? String(agendamento.horario_cirurgia).slice(0, 5) : null,
+    cirurgiaEscolhidaEm: agendamento?.cirurgia_escolhida_em ?? null,
+    processoConcluidoEm: agendamento?.processo_concluido_em ?? null,
+  };
+}
+
 // A liberação automática após o prazo V46 é processada pelo cron do banco
 // (migration_065). GETs desta API são somente leitura: visualizar a Central
 // nunca deve causar mutação de estado.
@@ -144,15 +169,18 @@ async function visaoGeral(env: Env) {
 
   const clienteIds = (clientes ?? []).map((c: any) => c.id);
   const safeIds = clienteIds.length ? clienteIds : ["00000000-0000-0000-0000-000000000000"];
-  const [{ data: agendamentosBrutos, error: erroAgendamentos }, { data: boletos }] = await Promise.all([
+  const [{ data: agendamentosBrutos, error: erroAgendamentos }, { data: boletos }, { data: solicitacoes }] = await Promise.all([
     db.from("agendamentos")
-      .select("id,cliente_id,status,horario_termos,termos_assinados_em,termos_responsavel,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,agenda_cirurgica_liberada_em,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,created_at,datas(data)")
+      .select("id,cliente_id,status,horario_termos,termos_assinados_em,termos_responsavel,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,agenda_cirurgica_liberada_em,agenda_cirurgica_liberada_manualmente,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,horario_cirurgia,cirurgia_escolhida_em,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,created_at,datas(data)")
       .in("cliente_id", safeIds)
       .in("status", ["confirmado", "realizado"])
       .order("created_at", { ascending: false }),
-    db.from("boletos").select("cliente_id,status").in("cliente_id", safeIds),
+    db.from("boletos").select("cliente_id,status,data_vencimento").in("cliente_id", safeIds),
+    db.from("solicitacoes_liberacao_financeira").select("cliente_id,status,forma_custeio,saldo_restante,created_at").in("cliente_id", safeIds).order("created_at", { ascending: false }),
   ]);
   if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
+  const solicitacaoPorCliente = new Map<string, any>();
+  for (const sl of solicitacoes ?? []) if (!solicitacaoPorCliente.has(sl.cliente_id)) solicitacaoPorCliente.set(sl.cliente_id, sl);
 
   const agendamentos = agendamentosBrutos ?? [];
 
@@ -160,11 +188,12 @@ async function visaoGeral(env: Env) {
   for (const a of agendamentos ?? []) {
     if (!agendamentoPorCliente.has(a.cliente_id)) agendamentoPorCliente.set(a.cliente_id, a);
   }
-  const parcelasPorCliente = new Map<string, { total: number; pagas: number }>();
+  const parcelasPorCliente = new Map<string, { total: number; pagas: number; proxima: string | null }>();
   for (const b of boletos ?? []) {
-    const atual = parcelasPorCliente.get(b.cliente_id) ?? { total: 0, pagas: 0 };
+    const atual = parcelasPorCliente.get(b.cliente_id) ?? { total: 0, pagas: 0, proxima: null };
     atual.total += 1;
     if (b.status === "pago") atual.pagas += 1;
+    else if (b.data_vencimento && (!atual.proxima || b.data_vencimento < atual.proxima)) atual.proxima = b.data_vencimento;
     parcelasPorCliente.set(b.cliente_id, atual);
   }
 
@@ -173,7 +202,7 @@ async function visaoGeral(env: Env) {
   for (const cliente of clientes ?? []) {
     const agendamento = agendamentoPorCliente.get(cliente.id) ?? null;
     const dataTermos = agendamento ? one(agendamento.datas)?.data ?? null : null;
-    const parcelas = parcelasPorCliente.get(cliente.id) ?? { total: cliente.quantidade_parcelas ?? 0, pagas: 0 };
+    const parcelas = parcelasPorCliente.get(cliente.id) ?? { total: cliente.quantidade_parcelas ?? 0, pagas: 0, proxima: null };
     const minimo = requiredPaid(parcelas.total || cliente.quantidade_parcelas || 12);
     const faltam = Math.max(0, minimo - parcelas.pagas);
     const appAccess = getAppAccessRequirements({
@@ -228,6 +257,7 @@ async function visaoGeral(env: Env) {
       dataCirurgia: agendamento?.data_cirurgia ?? null,
       pagamentoCirurgiaConfirmadoEm: agendamento?.pagamento_cirurgia_confirmado_em ?? null,
       prazoCirurgico: agendamento ? prazoCirurgico(agendamento.comparecimento_em, agendamento.quitacao_em, agendamento.agenda_cirurgica_prazo_ajuste_dias ?? 0) : null,
+      ...camposLeitura(cliente, agendamento, parcelas.proxima, solicitacaoPorCliente.get(cliente.id) ?? null, parcelas.total || cliente.quantidade_parcelas || 0),
     };
     filas[estagio].push(cartao);
   }
@@ -248,19 +278,21 @@ async function clienteCentral(env: Env, clienteId: string) {
   if (erroCliente) return json({ erro: publicError(erroCliente) }, 500);
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
-  const [{ data: agendamentos }, { data: boletos }] = await Promise.all([
+  const [{ data: agendamentos }, { data: boletos }, { data: solicitacao }] = await Promise.all([
     db.from("agendamentos")
-      .select("id,status,horario_termos,termos_assinados_em,termos_responsavel,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,agenda_cirurgica_liberada_em,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,created_at,datas(data)")
+      .select("id,status,horario_termos,termos_assinados_em,termos_responsavel,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,agenda_cirurgica_liberada_em,agenda_cirurgica_liberada_manualmente,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,horario_cirurgia,cirurgia_escolhida_em,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,created_at,datas(data)")
       .eq("cliente_id", clienteId)
       .in("status", ["confirmado", "realizado"])
       .order("created_at", { ascending: false })
       .limit(1),
-    db.from("boletos").select("status").eq("cliente_id", clienteId),
+    db.from("boletos").select("status,data_vencimento").eq("cliente_id", clienteId),
+    db.from("solicitacoes_liberacao_financeira").select("status,forma_custeio,saldo_restante,created_at").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   const agendamento: any = (agendamentos ?? [])[0] ?? null;
   const dataTermos = agendamento ? one(agendamento.datas)?.data ?? null : null;
   const total = (boletos ?? []).length || cliente.quantidade_parcelas || 0;
   const pagas = (boletos ?? []).filter((b: any) => b.status === "pago").length;
+  const proximaParcela = (boletos ?? []).filter((b: any) => b.status !== "pago" && b.data_vencimento).map((b: any) => b.data_vencimento as string).sort()[0] ?? null;
   const minimo = requiredPaid(total || 12);
 
   const appAccess = getAppAccessRequirements({
@@ -302,6 +334,7 @@ async function clienteCentral(env: Env, clienteId: string) {
       dataCirurgia: agendamento?.data_cirurgia ?? null,
       pagamentoCirurgiaConfirmadoEm: agendamento?.pagamento_cirurgia_confirmado_em ?? null,
       prazoCirurgico: agendamento ? prazoCirurgico(agendamento.comparecimento_em, agendamento.quitacao_em, agendamento.agenda_cirurgica_prazo_ajuste_dias ?? 0) : null,
+      ...camposLeitura(cliente, agendamento, proximaParcela, solicitacao ?? null, total),
     },
   });
 }
@@ -376,7 +409,7 @@ async function agendaCirurgia(url: URL, env: Env) {
   const [{ data: datas, error: erroDatas }, { data: agendamentos, error: erroAgendamentos }, { data: comprometido, error: erroComprometido }] = await Promise.all([
     db.from("datas_liberacao_financeira").select("id,data,vagas_totais,status,fechamento_manual").gte("data", inicio).lt("data", proximo).order("data", { ascending: true }),
     db.from("agendamentos")
-      .select("id,cliente_id,data_cirurgia,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,clientes(nome_completo,procedimento,custeio_confirmado_em)")
+      .select("id,cliente_id,data_cirurgia,horario_cirurgia,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,clientes(nome_completo,procedimento,custeio_confirmado_em)")
       .in("status", ["confirmado", "realizado"])
       .gte("data_cirurgia", inicio)
       .lt("data_cirurgia", proximo)
@@ -408,6 +441,7 @@ async function agendaCirurgia(url: URL, env: Env) {
       nome: cliente?.nome_completo ?? "Cliente",
       procedimento: cliente?.procedimento ?? null,
       data: a.data_cirurgia,
+      horario: a.horario_cirurgia ? String(a.horario_cirurgia).slice(0, 5) : null,
       cartaDeCredito: Number(a.valor_contrato ?? 0),
       quitada: Boolean(cliente?.custeio_confirmado_em),
       processoConcluido: Boolean(a.processo_concluido_em),

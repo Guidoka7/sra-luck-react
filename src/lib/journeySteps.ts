@@ -27,6 +27,42 @@ export interface JourneyStepsInput {
 }
 
 /**
+ * Estado real do processo, independente de quem está olhando. O app da
+ * cliente e o drawer administrativo montam este snapshot a partir das suas
+ * APIs e passam pelo mesmo `journeyInputFromProcess`, para que a Jornada seja
+ * exatamente a mesma nos dois lados.
+ */
+export interface JourneyProcessSnapshot {
+  percentualPagamento: number;
+  percentualAtingido: boolean;
+  statusRevisao: JourneyStepsInput["statusRevisao"];
+  custeioStatus: JourneyStepsInput["custeioStatus"];
+  temAgendamentoTermos: boolean;
+  comparecimentoConfirmado: boolean;
+  processoConcluido: boolean;
+  agendaCirurgicaLiberadaEm: string | null;
+  dataCirurgia: string | null;
+  cirurgiaRealizada: boolean;
+}
+
+export function journeyInputFromProcess(s: JourneyProcessSnapshot): JourneyStepsInput {
+  return {
+    percentualPagamento: s.percentualPagamento,
+    percentualAtingido: s.percentualAtingido,
+    statusRevisao: s.statusRevisao,
+    custeioStatus: s.custeioStatus,
+    agendada: s.temAgendamentoTermos,
+    termosAssinados: s.comparecimentoConfirmado || s.processoConcluido,
+    // Depois de escolhida a data da cirurgia a agenda continua liberada.
+    agendaCirurgicaLiberada: Boolean(s.agendaCirurgicaLiberadaEm) || Boolean(s.dataCirurgia),
+    cirurgiaAgendada: Boolean(s.dataCirurgia),
+    cirurgiaRealizada: s.cirurgiaRealizada,
+    previsaoLiberacaoFinanceira: s.dataCirurgia,
+    agendaCirurgicaLiberarEm: s.agendaCirurgicaLiberadaEm,
+  };
+}
+
+/**
  * As 8 etapas fixas da Jornada, derivadas do estado real do contrato.
  * Extraído de `JourneyTracker.tsx` (o widget horizontal antigo, removido da
  * Home) para ser reaproveitado pela nova timeline vertical da aba Jornada —

@@ -8,6 +8,7 @@ import { useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNot
 import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
 import { JornadaTab } from "@/pages/client/JornadaTab";
+import { journeyInputFromProcess } from "@/lib/journeySteps";
 import { NotificacoesTab } from "@/pages/client/NotificacoesTab";
 import { MaisTab } from "@/pages/client/MaisTab";
 
@@ -150,8 +151,6 @@ export function AgendaPage() {
   const agendaAtual = agenda.agendamentoAtivo ?? agenda.agendamentoConcluido;
   const custeioStatus: StatusCusteio = agenda.solicitacaoLiberacaoFinanceira?.status ?? null;
   const custeioAprovado = Boolean(custeioStatus && custeioStatus !== "recusada");
-  const termosAssinados = agendaAtual?.comparecimentoStatus === "compareceu" || Boolean(agenda.agendamentoConcluido);
-  const cirurgiaAgendada = Boolean(agendaAtual?.dataCirurgia);
   const cirurgiaRealizada = agenda.financeiro.statusCirurgia === "realizada";
 
   return (
@@ -201,17 +200,18 @@ export function AgendaPage() {
 
         {aba === "jornada" && (
           <JornadaTab
-            percentualPagamento={boletos.porcentagem_pagamento ?? 0}
-            percentualAtingido={boletos.pode_agendar}
-            statusRevisao={boletos.status_revisao_financeira}
-            custeioStatus={custeioStatus}
-            agendada={Boolean(agendaAtual)}
-            termosAssinados={termosAssinados}
-            agendaCirurgicaLiberada={agenda.agendaCirurgicaLiberada}
-            cirurgiaAgendada={cirurgiaAgendada}
-            cirurgiaRealizada={cirurgiaRealizada}
-            previsaoLiberacaoFinanceira={agendaAtual?.dataCirurgia ?? null}
-            agendaCirurgicaLiberarEm={agenda.agendaCirurgicaLiberarEm}
+            {...journeyInputFromProcess({
+              percentualPagamento: boletos.porcentagem_pagamento ?? 0,
+              percentualAtingido: boletos.pode_agendar,
+              statusRevisao: boletos.status_revisao_financeira,
+              custeioStatus,
+              temAgendamentoTermos: Boolean(agendaAtual),
+              comparecimentoConfirmado: agendaAtual?.comparecimentoStatus === "compareceu",
+              processoConcluido: Boolean(agenda.agendamentoConcluido),
+              agendaCirurgicaLiberadaEm: agenda.agendaCirurgicaLiberarEm,
+              dataCirurgia: agendaAtual?.dataCirurgia ?? null,
+              cirurgiaRealizada,
+            })}
             notificacoesCompactas={notificacoesState.notificacoes}
             onVerNotificacoes={() => setAba("notificacoes")}
           />

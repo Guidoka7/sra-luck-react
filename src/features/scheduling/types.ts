@@ -25,6 +25,26 @@ export interface CartaoCliente {
   dataCirurgia: string | null;
   pagamentoCirurgiaConfirmadoEm: string | null;
   prazoCirurgico?: string | null;
+  liberacaoFinanceiraSolicitadaEm?: string | null;
+  // Campos somente leitura (já persistidos) usados pela Central V46.
+  parcelasNecessarias: number;
+  percentualRegra: number;
+  statusCirurgia: string | null;
+  custeioStatus: "pendente" | "em_analise" | "aprovada" | "recusada" | null;
+  custeioForma: string | null;
+  custeioSaldo: number | null;
+  statusRevisaoFinanceira: "pendente" | "aprovada" | "recusada" | null;
+  financeiroConfirmadoEm: string | null;
+  custeioConfirmadoEm: string | null;
+  proximaParcelaEm: string | null;
+  termosAssinadosEm: string | null;
+  comparecimentoEm: string | null;
+  quitacaoEm: string | null;
+  prazoAjusteDias: number;
+  agendaCirurgicaLiberadaManualmente: boolean;
+  horarioCirurgia: string | null;
+  cirurgiaEscolhidaEm: string | null;
+  processoConcluidoEm: string | null;
 }
 
 export interface VisaoGeralResponse {
@@ -64,6 +84,7 @@ export interface ItemMapaCirurgico {
   nome: string;
   procedimento: string | null;
   data: string;
+  horario: string | null;
   cartaDeCredito: number;
   quitada: boolean;
   processoConcluido: boolean;

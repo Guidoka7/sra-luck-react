@@ -1,91 +1,123 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { centralApi, dataBr } from "./api";
-import { MonthCalendar } from "./MonthCalendar";
-import type { AgendaTermosResponse } from "./types";
+import { celulasDoMes, centralApi, dataBr, HORARIOS_TERMOS, mesAno, somarMeses } from "./api";
+import type { DiaCalendario } from "./types";
+import { V46Modal } from "./V46Modal";
 
-const HORARIOS = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"];
+type Status = { kind: "available" | "booked" | "closed"; remaining: number; selectable: boolean };
 
-function hojeIso() { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`; }
-
-export function TermsRescheduleModal({ agendamentoId, nome, onClose, onDone }: { agendamentoId: string; nome: string; onClose: () => void; onDone: () => void }) {
-  const hoje = hojeIso();
-  const [modo, setModo] = useState<"admin" | "cliente">("admin");
-  const [ano, setAno] = useState(Number(hoje.slice(0, 4)));
-  const [mes, setMes] = useState(Number(hoje.slice(5, 7)));
-  const [dados, setDados] = useState<AgendaTermosResponse | null>(null);
+/**
+ * V46 `showTermsRescheduleModal`: dois modos — escolher nova data agora
+ * (`/termos/reagendar`, vaga validada no banco) ou devolver a escolha para a
+ * cliente no app (`/termos/devolver-escolha`). Usa a mesma disponibilidade
+ * real da Agenda de Termos.
+ */
+export function TermsRescheduleModal({ agendamentoId, nome, dataAtual, horarioAtual, hoje, onClose, onDone }: {
+  agendamentoId: string; nome: string; dataAtual: string | null; horarioAtual: string | null; hoje: string;
+  onClose: () => void; onDone: () => void | Promise<void>;
+}) {
+  const [modo, setModo] = useState<"admin" | "client">("admin");
+  const [mes, setMes] = useState(`${(dataAtual && dataAtual >= hoje ? dataAtual : hoje).slice(0, 7)}-01`);
+  const [calendario, setCalendario] = useState<DiaCalendario[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
   const [selecionado, setSelecionado] = useState<string | null>(null);
-  const [horario, setHorario] = useState(HORARIOS[0]);
-  const [salvando, setSalvando] = useState(false);
+  const [horario, setHorario] = useState(horarioAtual && HORARIOS_TERMOS.includes(horarioAtual) ? horarioAtual : HORARIOS_TERMOS[0]);
+  const [enviando, setEnviando] = useState(false);
 
-  useEffect(() => { void centralApi.agendaTermos(ano, mes).then(setDados).catch((e) => toast.error(e.message)); }, [ano, mes]);
+  useEffect(() => {
+    let vivo = true;
+    setCalendario(null); setErro(null);
+    centralApi.agendaTermos(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)))
+      .then((r) => { if (vivo) setCalendario(r.calendario); })
+      .catch((e) => { if (vivo) setErro(e instanceof Error ? e.message : "Não foi possível carregar a agenda."); });
+    return () => { vivo = false; };
+  }, [mes]);
 
-  function mudarMes(delta: number) {
-    let m = mes + delta, a = ano;
-    if (m > 12) { m = 1; a++; } else if (m < 1) { m = 12; a--; }
-    setMes(m); setAno(a);
+  function status(iso: string): Status {
+    const dia = calendario?.find((d) => d.data === iso);
+    if (!dia || dia.status !== "disponivel" || iso < hoje) return { kind: "closed", remaining: 0, selectable: false };
+    const usadas = Math.max(0, dia.vagasOcupadas - (iso === dataAtual ? 1 : 0));
+    const restantes = Math.max(0, dia.vagasTotais - usadas);
+    if (dia.vagasTotais <= 0 || restantes <= 0) return { kind: "closed", remaining: 0, selectable: false };
+    return { kind: usadas > 0 ? "booked" : "available", remaining: restantes, selectable: true };
   }
+
+  useEffect(() => {
+    if (!calendario) return;
+    if (selecionado && selecionado.slice(0, 7) === mes.slice(0, 7) && status(selecionado).selectable) return;
+    const primeiro = celulasDoMes(mes).find((d) => !d.outroMes && status(d.iso).selectable);
+    setSelecionado(dataAtual && dataAtual.slice(0, 7) === mes.slice(0, 7) && status(dataAtual).selectable ? dataAtual : primeiro?.iso ?? null);
+  }, [calendario]);
 
   async function confirmar() {
-    setSalvando(true);
-    try {
-      if (modo === "cliente") {
-        await centralApi.devolverEscolhaTermos(agendamentoId);
-        toast.success("Reagendamento liberado. A cliente poderá escolher uma nova data no app.");
-      } else {
-        if (!selecionado) { toast.warning("Selecione uma data disponível."); setSalvando(false); return; }
-        const dia = dados?.calendario.find((d) => d.data === selecionado);
-        if (!dia) { toast.warning("Selecione uma data disponível."); setSalvando(false); return; }
+    if (enviando) return;
+    if (modo === "admin") {
+      const dia = selecionado ? calendario?.find((d) => d.data === selecionado) : null;
+      if (!selecionado || !dia || !status(selecionado).selectable) { toast.warning("Selecione uma data disponível na Agenda de Termos."); return; }
+      setEnviando(true);
+      try {
         await centralApi.reagendarTermosAgora(agendamentoId, dia.id, horario);
         toast.success("Reagendamento confirmado.");
-      }
-      onDone();
-    } catch (e: any) { toast.error(e.message); } finally { setSalvando(false); }
+        await onDone(); onClose();
+      } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível reagendar."); }
+      finally { setEnviando(false); }
+      return;
+    }
+    setEnviando(true);
+    try {
+      await centralApi.devolverEscolhaTermos(agendamentoId);
+      toast.success("Reagendamento liberado. A cliente poderá escolher uma nova data no app.");
+      await onDone(); onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível liberar a escolha no app."); }
+    finally { setEnviando(false); }
   }
 
-  return <div style={{ position: "fixed", inset: 0, background: "rgba(24,18,20,.4)", zIndex: 60, display: "grid", placeItems: "center", padding: 16 }} onClick={onClose}>
-    <div onClick={(e) => e.stopPropagation()} style={{ width: "min(600px,96vw)", maxHeight: "90vh", overflow: "auto", background: "var(--panel)", borderRadius: 16, padding: 18 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 17 }}>Reagendar assinatura dos termos</h2>
-          <small style={{ color: "var(--soft)" }}>{nome} · usa a mesma disponibilidade da Agenda de Termos principal.</small>
-        </div>
-        <button onClick={onClose} style={{ border: 0, background: "transparent", fontSize: 16, cursor: "pointer" }}>✕</button>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, margin: "14px 0" }}>
-        <button onClick={() => setModo("admin")} style={{ textAlign: "left", padding: 10, borderRadius: 10, border: `1px solid ${modo === "admin" ? "var(--bg)" : "var(--line)"}`, background: modo === "admin" ? "var(--robg, var(--s0))" : "var(--panel)" }}>
-          <b style={{ fontSize: 11 }}>Escolher nova data agora</b>
-          <div style={{ fontSize: 9.5, color: "var(--soft)", marginTop: 4 }}>Você seleciona uma data com vaga real disponível.</div>
-        </button>
-        <button onClick={() => setModo("cliente")} style={{ textAlign: "left", padding: 10, borderRadius: 10, border: `1px solid ${modo === "cliente" ? "var(--bg)" : "var(--line)"}`, background: modo === "cliente" ? "var(--robg, var(--s0))" : "var(--panel)" }}>
-          <b style={{ fontSize: 11 }}>Deixar a cliente escolher no app</b>
-          <div style={{ fontSize: 9.5, color: "var(--soft)", marginTop: 4 }}>Libera a Agenda de Termos novamente; a cliente vê só datas abertas com vaga.</div>
-        </button>
-      </div>
-
-      {modo === "admin" ? (
-        dados ? <>
-          <MonthCalendar ano={ano} mes={mes} hoje={hoje} calendario={dados.calendario} selecionado={selecionado} onSelecionar={setSelecionado} onMudarMes={mudarMes} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, gap: 10 }}>
-            <div style={{ fontSize: 11 }}>Nova data: <b>{selecionado ? dataBr(selecionado) : "selecione uma data disponível"}</b></div>
-            <select value={horario} onChange={(e) => setHorario(e.target.value)} style={{ height: 32, borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink)" }}>
-              {HORARIOS.map((h) => <option key={h} value={h}>{h}</option>)}
-            </select>
-          </div>
-        </> : <div style={{ padding: 20, textAlign: "center", color: "var(--soft)" }}>Carregando calendário…</div>
-      ) : (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14, fontSize: 11, color: "var(--soft)" }}>
-          A data atual será liberada. A cliente verá, no app, somente datas realmente abertas e com vaga na Agenda de Termos.
-        </div>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} style={{ height: 34, padding: "0 14px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)" }}>Cancelar</button>
-        <button disabled={salvando} onClick={confirmar} style={{ height: 34, padding: "0 14px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontWeight: 700 }}>
-          {modo === "admin" ? "Confirmar nova data" : "Liberar escolha no app"}
-        </button>
-      </div>
+  return <V46Modal titulo="Reagendar assinatura dos termos" subtitulo={`${nome} · usa a mesma disponibilidade da Agenda de Termos principal.`} onClose={onClose} bloqueado={enviando} footer={<>
+    <button type="button" className="secondary-btn" onClick={onClose} disabled={enviando}>Cancelar</button>
+    <button type="button" className="primary-btn" onClick={confirmar} disabled={enviando || (modo === "admin" && !selecionado)} aria-busy={enviando}>{enviando ? "Salvando…" : modo === "admin" ? "Confirmar nova data" : "Liberar escolha no app"}</button>
+  </>}>
+    <div className="rebook-mode-grid" role="radiogroup" aria-label="Forma de reagendamento">
+      <button type="button" role="radio" aria-checked={modo === "admin"} className={`rebook-mode${modo === "admin" ? " active" : ""}`} onClick={() => setModo("admin")}>
+        <b>Escolher nova data agora</b><small>Você seleciona uma data disponível pelo administrativo.</small>
+      </button>
+      <button type="button" role="radio" aria-checked={modo === "client"} className={`rebook-mode${modo === "client" ? " active" : ""}`} onClick={() => setModo("client")}>
+        <b>Deixar a cliente escolher no app</b><small>Libera novamente a Agenda de Termos e remove a data atual.</small>
+      </button>
     </div>
-  </div>;
+
+    {modo === "admin" ? <>
+      <div className="rebook-current"><small>Agendamento atual</small><b>{dataAtual ? `${dataBr(dataAtual)} às ${horarioAtual || "—"}` : "Sem data definida"}</b></div>
+      <div className="rebook-calendar">
+        <div className="rebook-calendar-head">
+          <button type="button" className="circle-btn" aria-label="Mês anterior" onClick={() => setMes(somarMeses(mes, -1))}>‹</button>
+          <b>{mesAno(mes)}</b>
+          <button type="button" className="circle-btn" aria-label="Próximo mês" onClick={() => setMes(somarMeses(mes, 1))}>›</button>
+        </div>
+        <div className="rebook-weekdays">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((x) => <span key={x}>{x}</span>)}</div>
+        {erro ? <div className="callout danger" role="alert">{erro}</div>
+          : !calendario ? <div className="process-note">Carregando datas…</div>
+          : <div className="rebook-grid">
+              {celulasDoMes(mes).map((d) => {
+                const s = status(d.iso);
+                return <button key={d.iso} type="button" className={`rebook-day rebook-${s.kind}${d.outroMes ? " other" : ""}${d.iso === selecionado ? " selected" : ""}`}
+                  disabled={!s.selectable} aria-pressed={d.iso === selecionado}
+                  aria-label={s.selectable ? `Selecionar ${dataBr(d.iso)}, ${s.remaining} vaga(s)` : `${dataBr(d.iso)} indisponível`}
+                  onClick={() => setSelecionado(d.iso)}>
+                  <span>{d.dia}</span>
+                  <small>{s.selectable ? `${s.remaining} vaga${s.remaining === 1 ? "" : "s"}` : "—"}</small>
+                </button>;
+              })}
+            </div>}
+      </div>
+      <div className="rebook-selection">
+        <div><small>Nova data</small><b>{selecionado ? dataBr(selecionado) : "Selecione uma data disponível"}</b></div>
+        <label><span>Horário</span>
+          <select value={horario} onChange={(e) => setHorario(e.target.value)}>{HORARIOS_TERMOS.map((h) => <option key={h}>{h}</option>)}</select>
+        </label>
+      </div>
+    </> : <div className="rebook-client-choice">
+      <span className="app-request-icon" aria-hidden="true">▣</span>
+      <div><b>Escolha livre no app</b><p>A data atual será liberada. A cliente verá somente datas abertas e com vagas cadastradas na Agenda de Termos principal.</p></div>
+    </div>}
+  </V46Modal>;
 }

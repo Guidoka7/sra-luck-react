@@ -1,55 +1,117 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ClienteZipDrawer } from "@/components/admin-zip/ClienteZipDrawer";
+import "./central-v46.css";
+import { centralApi, dataBr, diaSemana } from "./api";
+import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 import { OverviewBoard } from "./OverviewBoard";
 import { TermsAgendaTab } from "./TermsAgendaTab";
 import { SurgeryAgendaTab } from "./SurgeryAgendaTab";
 import { ClienteProcessDrawer } from "./ClienteProcessDrawer";
+import { SystemDateModal } from "./SystemDateModal";
 
 type Aba = "overview" | "terms" | "surgery";
 
+const CABECALHO: Record<Aba, { titulo: string; subtitulo: string }> = {
+  overview: { titulo: "Central de acompanhamento", subtitulo: "Acompanhe todo o fluxo das clientes, desde o progresso financeiro até os termos e a cirurgia." },
+  terms: { titulo: "Agenda de termos", subtitulo: "Controle as datas disponíveis para agendamentos de assinatura de termos." },
+  surgery: { titulo: "Agenda cirúrgica", subtitulo: "Gerencie as datas cirúrgicas, a capacidade e as cirurgias confirmadas." },
+};
+
 /**
- * Central de acompanhamento (handoff V46). Três áreas: Visão geral (5 filas
- * operacionais), Termos e Cirurgia. Cada card/linha abre o mesmo drawer de
- * cliente (Processo/Perfil/Financeiro/Jornada). Dados reais via
- * `/api/admin/central/*` (worker/admin-agenda-central.ts) — nada aqui é
- * mock; regra de prazo/teto vive no backend (worker/surgery-release.ts +
- * migration_052_agenda_cirurgica_v46.sql).
+ * Central de acompanhamento — reprodução do V46 aprovado
+ * (docs/design/sra-luck-central-v46.html). Visual 100% do V46 (CSS gerado
+ * e escopado em `.v46`); dados e ações 100% reais via `/api/admin/central/*`
+ * e as APIs do cadastro. Nenhuma regra de negócio é calculada aqui.
  */
 export function CentralAcompanhamento() {
   const searchParams = useSearchParams();
   const abaParam = searchParams.get("aba");
-  const abaInicial: Aba = abaParam === "cirurgia" ? "surgery" : abaParam === "termos" ? "terms" : "overview";
-  const [aba, setAba] = useState<Aba>(abaInicial);
-  const [clienteAberto, setClienteAberto] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [aba, setAba] = useState<Aba>(abaParam === "cirurgia" ? "surgery" : abaParam === "termos" ? "terms" : "overview");
+  const [dados, setDados] = useState<VisaoGeralResponse | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<{ clienteId: string; estagio: EstagioCentral | null } | null>(null);
+  const [novaCliente, setNovaCliente] = useState(false);
+  const [escolherDia, setEscolherDia] = useState(false);
+  const [dataTermos, setDataTermos] = useState<string | null>(null);
+  const [dataCirurgia, setDataCirurgia] = useState<string | null>(null);
+  const [recarregarKey, setRecarregarKey] = useState(0);
 
-  const tabs: { id: Aba; label: string }[] = [
-    { id: "overview", label: "Visão geral" },
-    { id: "terms", label: "Termos" },
-    { id: "surgery", label: "Cirurgia" },
-  ];
+  const carregar = useCallback(async () => {
+    try { setDados(await centralApi.visaoGeral()); setErro(null); }
+    catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível carregar a Central."); }
+  }, []);
+  useEffect(() => { void carregar(); }, [carregar]);
 
-  return <div className="zip-admin">
-    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
+  const hoje = dados?.hoje ?? null;
+  useEffect(() => { if (hoje) { setDataTermos((d) => d ?? hoje); setDataCirurgia((d) => d ?? hoje); } }, [hoje]);
+
+  const aoMudar = useCallback(async () => { setRecarregarKey((k) => k + 1); await carregar(); }, [carregar]);
+
+  const todos = useMemo(() => dados ? Object.values(dados.filas).flat() as CartaoCliente[] : [], [dados]);
+  const cartoes = useMemo(() => new Map(todos.map((c) => [c.id, c])), [todos]);
+  const sugestoesResponsavel = useMemo(() => [...new Set(todos.map((c) => c.termosResponsavel).filter((x): x is string => Boolean(x)))].sort((a, b) => a.localeCompare(b, "pt-BR")), [todos]);
+  const liberadas = useMemo(() => (dados?.filas.financialRelease ?? []).filter((c) => c.agendaCirurgicaLiberadaEm && !c.dataCirurgia), [dados]);
+  const contagens = useMemo(() => {
+    const m = new Map<string, { termos: number; cirurgias: number }>();
+    for (const c of todos) {
+      if (c.dataTermos) { const x = m.get(c.dataTermos) ?? { termos: 0, cirurgias: 0 }; x.termos++; m.set(c.dataTermos, x); }
+      if (c.dataCirurgia) { const x = m.get(c.dataCirurgia) ?? { termos: 0, cirurgias: 0 }; x.cirurgias++; m.set(c.dataCirurgia, x); }
+    }
+    return m;
+  }, [todos]);
+
+  const diaRef = aba === "surgery" ? dataCirurgia : dataTermos;
+  const cab = CABECALHO[aba];
+  const abrir = (clienteId: string, estagio: EstagioCentral | null = null) => setDrawer({ clienteId, estagio });
+
+  return <div className="v46">
+    <div className="page-head">
       <div>
-        <h1 style={{ fontSize: 27 }}>Central de acompanhamento</h1>
-        <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>
-          Acompanhe todo o fluxo das clientes: elegibilidade, levantamento, termos, liberação financeira e cirurgia.
-        </p>
+        <h1>{cab.titulo}</h1>
+        <p>{cab.subtitulo}</p>
+      </div>
+      <div className="head-actions">
+        <button type="button" className="today-card today-picker-btn" aria-label="Escolher dia das agendas" disabled={!hoje} onClick={() => setEscolherDia(true)}>
+          <span aria-hidden="true">▣</span>
+          <div>
+            <b>{!hoje ? "Carregando…" : !diaRef || diaRef === hoje ? `Hoje é ${dataBr(hoje)}` : `Visualizando ${dataBr(diaRef)}`}</b>
+            <small>{diaSemana(diaRef ?? hoje)}</small>
+          </div>
+          <span className="today-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <button type="button" className="primary-btn" onClick={() => setNovaCliente(true)}>＋ Nova cliente</button>
       </div>
     </div>
 
-    <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 16 }}>
-      {tabs.map((t) => {
-        const on = aba === t.id;
-        return <button key={t.id} onClick={() => setAba(t.id)} style={{ display: "flex", alignItems: "center", gap: 7, height: 31, padding: "0 15px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>;
-      })}
+    <div className="main-tabs" role="tablist" aria-label="Áreas da Central">
+      {([["overview", "⌂", "Visão geral"], ["terms", "▤", "Termos"], ["surgery", "⚑", "Cirurgia"]] as [Aba, string, string][]).map(([id, icone, rotulo]) =>
+        <button key={id} type="button" role="tab" aria-selected={aba === id} className={`main-tab${aba === id ? " active" : ""}`} onClick={() => setAba(id)}><span aria-hidden="true">{icone}</span> <span>{rotulo}</span></button>)}
     </div>
 
-    {aba === "overview" && <OverviewBoard key={`overview-${refreshKey}`} onAbrirCliente={(id) => setClienteAberto(id)} />}
-    {aba === "terms" && <TermsAgendaTab key={`terms-${refreshKey}`} onAbrirCliente={(id) => setClienteAberto(id)} />}
-    {aba === "surgery" && <SurgeryAgendaTab key={`surgery-${refreshKey}`} onAbrirCliente={(id) => setClienteAberto(id)} onConsultarProcesso={(id) => setClienteAberto(id)} />}
+    {erro && !dados && <div className="panel panel-pad" role="alert"><div className="callout danger">{erro}</div><div className="inline-actions" style={{ marginTop: 10 }}><button type="button" className="secondary-btn" onClick={() => void carregar()}>Tentar novamente</button></div></div>}
+    {!erro && !dados && <div className="panel panel-pad"><div className="empty-card">Carregando a Central…</div></div>}
 
-    {clienteAberto && <ClienteProcessDrawer clienteId={clienteAberto} onClose={() => setClienteAberto(null)} onChanged={() => setRefreshKey((k) => k + 1)} />}
+    {dados && hoje && aba === "overview" && <section className="view active v46-overview">
+      <OverviewBoard dados={dados} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} />
+    </section>}
+    {dados && hoje && aba === "terms" && dataTermos && <section className="view active">
+      <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} />
+    </section>}
+    {dados && hoje && aba === "surgery" && dataCirurgia && <section className="view active">
+      <SurgeryAgendaTab hoje={hoje} data={dataCirurgia} onData={setDataCirurgia} recarregarKey={recarregarKey} liberadas={liberadas} cartoes={cartoes} onAbrirCliente={(id) => abrir(id)} onConsultarProcesso={(id) => abrir(id, "surgeryConfirmed")} onMudou={carregar} />
+    </section>}
+
+    {drawer && hoje && <ClienteProcessDrawer key={drawer.clienteId} clienteId={drawer.clienteId} estagioOrigem={drawer.estagio} hoje={hoje}
+      sugestoesResponsavel={sugestoesResponsavel} onClose={() => setDrawer(null)} onChanged={aoMudar}
+      onIrParaAgenda={(tipo, data) => {
+        if (tipo === "terms") { if (data) setDataTermos(data); setAba("terms"); }
+        else { if (data) setDataCirurgia(data); setAba("surgery"); }
+      }} />}
+
+    {escolherDia && hoje && <SystemDateModal atual={diaRef ?? hoje} hoje={hoje} contagens={contagens} onClose={() => setEscolherDia(false)}
+      onAplicar={(iso) => { setDataTermos(iso); setDataCirurgia(iso); }} />}
+
+    {novaCliente && <ClienteZipDrawer cliente={null} onClose={() => setNovaCliente(false)} onSalvo={() => { setNovaCliente(false); void carregar(); }} />}
   </div>;
 }

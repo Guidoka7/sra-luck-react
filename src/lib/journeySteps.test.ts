@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveJourneySteps, type JourneyStepsInput } from "./journeySteps";
+import { deriveJourneySteps, journeyInputFromProcess, type JourneyProcessSnapshot, type JourneyStepsInput } from "./journeySteps";
 
 const base: JourneyStepsInput = {
   percentualPagamento: 0,
@@ -78,5 +78,39 @@ describe("deriveJourneySteps", () => {
       cirurgiaRealizada: true,
     });
     expect(passos.every((p) => p.status === "done")).toBe(true);
+  });
+});
+
+describe("journeyInputFromProcess (app e drawer administrativo usam o mesmo adaptador)", () => {
+  const snap: JourneyProcessSnapshot = {
+    percentualPagamento: 100,
+    percentualAtingido: true,
+    statusRevisao: "aprovada",
+    custeioStatus: "aprovada",
+    temAgendamentoTermos: true,
+    comparecimentoConfirmado: true,
+    processoConcluido: false,
+    agendaCirurgicaLiberadaEm: "2026-10-05T11:00:00Z",
+    dataCirurgia: null,
+    cirurgiaRealizada: false,
+  };
+
+  it("com agenda liberada e sem data escolhida, a etapa atual é a escolha da data", () => {
+    const passos = deriveJourneySteps(journeyInputFromProcess(snap));
+    expect(passos.find((p) => p.id === "liberacao-cirurgica")?.status).toBe("done");
+    expect(passos.find((p) => p.id === "data-cirurgia")?.status).toBe("current");
+  });
+
+  it("depois de escolher a data da cirurgia, a liberação continua concluída", () => {
+    const passos = deriveJourneySteps(journeyInputFromProcess({ ...snap, dataCirurgia: "2026-10-22" }));
+    expect(passos.find((p) => p.id === "liberacao-cirurgica")?.status).toBe("done");
+    expect(passos.find((p) => p.id === "data-cirurgia")?.status).toBe("done");
+    expect(passos.find((p) => p.id === "cirurgia")?.status).toBe("current");
+  });
+
+  it("processo concluído conta os termos como assinados mesmo sem o status de comparecimento", () => {
+    const input = journeyInputFromProcess({ ...snap, comparecimentoConfirmado: false, processoConcluido: true, dataCirurgia: "2026-10-22", cirurgiaRealizada: true });
+    expect(input.termosAssinados).toBe(true);
+    expect(deriveJourneySteps(input).every((p) => p.status === "done")).toBe(true);
   });
 });
