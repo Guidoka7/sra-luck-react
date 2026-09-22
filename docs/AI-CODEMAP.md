@@ -123,6 +123,15 @@ Procurar:
 - tipos em `src/types/`;
 - tabela `clientes` e futuras entidades de contrato/política.
 
+Drawer único da cliente (Clientes, Financeiro e Central usam o mesmo componente):
+
+- `src/components/admin/cliente-drawer/ClienteDrawer.tsx` — casca (abas Processo/Perfil/Financeiro/Jornada, status do contrato, rodapé por aba, modais V46 do processo);
+- `src/components/admin/useClienteCadastro.ts` — estado e ações reais de Perfil + Financeiro (implementação única);
+- `src/components/admin/cliente-drawer/{PerfilPanel,FinanceiroPanel,JornadaPanel}.tsx` — painéis compartilhados;
+- `src/components/admin/cliente-drawer/drawerModel.ts` e `drawerFormat.ts` — regras puras de exibição (testadas em `drawerModel.test.ts`);
+- `src/features/scheduling/ProcessoTab.tsx` — conteúdo V46 da aba Processo (etapa real vem de `/api/admin/central/cliente/:id`);
+- `src/components/admin/lista/AdminLista.module.css` — padrão visual das listas de Clientes e Financeiro.
+
 Não mudar significado de `valor_contrato` sem migration e compatibilidade explícita.
 
 ### Taxa administrativa
