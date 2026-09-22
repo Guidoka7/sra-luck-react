@@ -5,6 +5,7 @@ import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/li
 import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
+import { dataNascimentoValida } from "../../../worker/app-access";
 const moedaNumero = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
@@ -106,6 +107,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   async function salvarPerfil(e: FormEvent) {
     e.preventDefault();
     if (!nome || !nascimento) return toast.error("Preencha nome e data de nascimento.");
+    if (!dataNascimentoValida(nascimento)) return toast.error("Informe uma data de nascimento válida.");
     setSalvandoPerfil(true);
     try {
       const r = await fetch(editando ? `/api/admin/clientes/${cliente!.id}` : "/api/admin/clientes", {
