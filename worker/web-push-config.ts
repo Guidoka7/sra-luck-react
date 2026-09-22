@@ -239,7 +239,6 @@ export async function webPushConfigApi(request: Request, env: Env): Promise<Resp
 
   const auth = await autorizar(request, env);
   if (auth.resposta) return auth.resposta;
-  const adminId = auth.adminId!;
   const colaboradorId = auth.colaboradorId!;
 
   if (request.method === "GET") return json(await diagnosticoSeguro(env));
