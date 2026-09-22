@@ -48,6 +48,7 @@ export const PERMISSOES_ADMIN = {
   EQUIPE_GERENCIAR: "equipe.gerenciar",
   CREDITO_GERENCIAR: "credito.gerenciar",
   NOTIFICACOES_GERENCIAR: "notificacoes.gerenciar",
+  MONITORAMENTO_VISUALIZAR: "monitoramento.visualizar",
   RELATORIOS_EXPORTAR: "relatorios.exportar",
 } as const;
 
