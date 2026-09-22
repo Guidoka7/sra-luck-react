@@ -107,3 +107,29 @@
 :global(.dark) .status[data-status="suspensa"]{color:#C3CAD2;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}
 :global(.dark) .status[data-status="negativada"]{color:#F3A5A5;background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.25)}
 :global(.dark) .status[data-status="cancelamento"]{color:#E4A3B2;background:rgba(190,111,133,.14);border-color:rgba(190,111,133,.3)}
+/* Etapa 2 — Levantamento financeiro (bloco operacional único), tokens V46. */
+.processWrap :global(.lev-steps){list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.processWrap :global(.lev-steps>li){display:grid;gap:7px;min-width:0}
+.processWrap :global(.lev-step-title){display:flex;align-items:center;gap:8px;margin:0;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--wine)}
+.processWrap :global(.lev-num){width:19px;height:19px;border-radius:50%;display:inline-grid;place-items:center;background:var(--surface-rose);border:1px solid var(--line);font-size:9.5px;letter-spacing:0;color:var(--wine)}
+.processWrap :global(.lev-check){display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 11px;border:1px solid var(--line-soft);border-radius:10px;background:var(--surface-soft);font-size:11.5px;color:var(--text)}
+.processWrap :global(.lev-check .mini-link){border:0;background:transparent;padding:0;cursor:pointer;font-size:11px;font-weight:700;color:var(--wine)}
+.processWrap :global(.lev-field){margin:0}
+.processWrap :global(.lev-field input){width:100%;max-width:280px;font-size:15px;font-weight:700}
+.processWrap :global(.lev-field-short input){max-width:120px}
+.processWrap :global(.lev-formas){display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px}
+.processWrap :global(.lev-forma){position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:12px;font-weight:650;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.processWrap :global(.lev-forma input){position:absolute;opacity:0;pointer-events:none}
+.processWrap :global(.lev-forma-check){width:18px;height:18px;flex:none;border-radius:5px;border:1.5px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:900;color:#fff;background:var(--surface)}
+.processWrap :global(.lev-forma.on){border-color:var(--green);background:var(--surface-green);color:var(--text)}
+.processWrap :global(.lev-forma.on .lev-forma-check){border-color:var(--green);background:var(--green)}
+.processWrap :global(.lev-forma:has(input:focus-visible)){outline:2px solid var(--wine);outline-offset:2px}
+.processWrap :global(.lev-forma:has(input:disabled)){opacity:.6;cursor:default}
+.processWrap :global(.lev-erro){margin-top:12px}
+.processWrap :global(.lev-actions){display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:14px}
+.processWrap :global(.lev-confirmar){width:100%;min-height:44px;white-space:normal;line-height:1.25;font-size:12.5px}
+.processWrap :global(.lev-actions .ghost-btn){align-self:center}
+.processWrap :global(.lev-resumo-grid){grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.processWrap :global(.lev-nota){margin:10px 0 0;font-size:11.5px;color:var(--muted)}
+.processWrap :global(.lev-resumo .lev-actions){align-items:flex-start;margin-top:10px}
+.processWrap :global(.lev-parcelas){scroll-margin-top:12px}

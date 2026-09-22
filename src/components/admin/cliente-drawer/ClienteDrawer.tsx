@@ -9,6 +9,7 @@ import { AgendarCirurgiaModal, LiberacaoModal, QuitacaoModal, ResponsavelModal }
 import { TermsRescheduleModal } from "@/features/scheduling/TermsRescheduleModal";
 import { ConfirmModal } from "@/features/scheduling/V46Modal";
 import { estadoLiberacao } from "@/features/scheduling/v46Cards";
+import { formatarTaxa, formatarValor, normalizarFormas, validarLevantamento } from "@/features/scheduling/levantamento";
 import "@/features/scheduling/central-v46.css";
 import { useClienteCadastro, type ClienteCadastro } from "../useClienteCadastro";
 import { PerfilPanel } from "./PerfilPanel";
@@ -117,7 +118,7 @@ export function ClienteDrawer(props: ClienteDrawerProps) {
         ? <Fallback titulo={titulo} erro={erroCadastro} onTentar={() => { setErroCadastro(null); void carregarCadastro(); }} onClose={requestClose} />
         : <DrawerErrorBoundary titulo={titulo} onClose={requestClose}>
             <DrawerConteudo key={cadastro?.id ?? "nova"} {...props} criando={criando} cadastro={cadastro} setCadastro={setCadastro}
-              central={central} erroCentral={erroCentral} carregarCentral={carregarCentral} requestClose={requestClose} escBloqueado={escBloqueado} />
+              central={central} erroCentral={erroCentral} carregarCentral={carregarCentral} carregarCadastro={carregarCadastro} requestClose={requestClose} escBloqueado={escBloqueado} />
           </DrawerErrorBoundary>}
     </aside>
   </div>, document.body);
@@ -160,10 +161,11 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   central: Central | null;
   erroCentral: string | null;
   carregarCentral: () => Promise<Central | null>;
+  carregarCadastro: () => Promise<Cliente | null>;
   requestClose: () => void;
   escBloqueado: { current: () => boolean };
 }) {
-  const { criando, cadastro, setCadastro, central, erroCentral, carregarCentral, requestClose, onChanged, estagioOrigem, sugestoesResponsavel = [] } = props;
+  const { criando, cadastro, setCadastro, central, erroCentral, carregarCentral, carregarCadastro, requestClose, onChanged, estagioOrigem, sugestoesResponsavel = [] } = props;
   const hoje = props.hoje ?? hojeSaoPaulo();
   const abaPadrao: AbaDrawer = criando ? "profile" : props.abaInicial ?? "process";
   const [aba, setAba] = useState<AbaDrawer>(abaPadrao);
@@ -216,23 +218,26 @@ function DrawerConteudo(props: ClienteDrawerProps & {
 
   const form = useFormLevantamento(cadastro, cad);
 
+  /**
+   * Etapa 2: confirmação (ou edição) do levantamento com o payload validado em
+   * `validarLevantamento`; depois do sucesso recarrega processo e cadastro do
+   * backend. Reconfirmar um levantamento já aprovado só atualiza a configuração
+   * financeira (o backend preserva `financeiro_confirmado_em`).
+   */
   async function concluirLevantamento(decisao: "aprovada" | "recusada", observacao?: string) {
     if (!c || !cadastro) return false;
     if (decisao === "aprovada") {
-      const saldo = Number(String(form.saldo).replace(/\./g, "").replace(",", "."));
-      const taxa = Number(String(form.taxa).replace(",", "."));
-      if (!Number.isFinite(saldo) || saldo < 0) { toast.error("Informe um saldo restante válido."); return false; }
-      if (!Number.isFinite(taxa) || taxa < 0) { toast.error("Informe uma taxa de cartão válida."); return false; }
-      if (!form.formas.length) { toast.error("Selecione ao menos uma forma de quitação."); return false; }
-      return executar("levantamento", async () => {
-        const r = await centralApi.concluirLevantamento(c.id, { decisao, saldoRestante: saldo, taxaCartao: taxa, formasCusteio: form.formas });
-        if (r?.cliente) setCadastro({ ...cadastro, ...r.cliente });
-      }, "Levantamento concluído. Agenda de termos disponível no app.");
+      const v = validarLevantamento(form);
+      if ("erro" in v) { toast.error(v.erro); return false; }
+      const edicao = c.statusRevisaoFinanceira === "aprovada";
+      const ok = await executar("levantamento", () => centralApi.concluirLevantamento(c.id, v.payload),
+        edicao ? "Levantamento atualizado." : "Levantamento concluído. Agenda de Termos liberada no app.");
+      if (ok) await carregarCadastro();
+      return ok;
     }
-    return executar("divergencia", async () => {
-      const r = await centralApi.concluirLevantamento(c.id, { decisao, observacao: observacao || undefined });
-      if (r?.cliente) setCadastro({ ...cadastro, ...r.cliente });
-    }, "Divergência registrada e cliente notificada.");
+    const ok = await executar("divergencia", () => centralApi.concluirLevantamento(c.id, { decisao, observacao: observacao || undefined }), "Divergência registrada e cliente notificada.");
+    if (ok) await carregarCadastro();
+    return ok;
   }
 
   const proximoBoleto = useMemo(() => [...cad.boletos].filter((b) => b.status !== "pago" && !b.suspensa).sort((a, b) => a.numero_parcela - b.numero_parcela)[0] ?? null, [cad.boletos]);
@@ -278,9 +283,8 @@ function DrawerConteudo(props: ClienteDrawerProps & {
     if (estagio === "preEligibility") return c.parcelasFaltantes === 0
       ? [b("Ver Financeiro", () => mudarAba("finance"))]
       : [b("Ver Financeiro", () => mudarAba("finance")), b("Registrar parcela paga", registrarParcela, "primary", !proximoBoleto)];
-    if (estagio === "financialReview") return c.statusRevisaoFinanceira === "aprovada"
-      ? [b("Ver levantamento", () => mudarAba("finance"))]
-      : [b("Conferir Financeiro", () => mudarAba("finance")), b(ocupado === "levantamento" ? "Salvando…" : "Concluir levantamento", () => void concluirLevantamento("aprovada"), "primary")];
+    // A confirmação do levantamento fica no próprio bloco da Etapa 2.
+    if (estagio === "financialReview") return [b("Ver Financeiro", () => mudarAba("finance"))];
     if (estagio === "termsConfirmed") return [b("Ver Agenda de Termos", () => irParaAgenda("terms", c.dataTermos)), b("Reagendar", () => setModal({ tipo: "reagendar" }), "primary", !c.agendamentoId)];
     if (estagio === "financialRelease") {
       if (!c.previsaoConfirmadaEm) return [b("Ver Jornada completa", () => mudarAba("journey"))];
@@ -437,17 +441,29 @@ function SuspensaoModal({ cad, onClose }: { cad: ClienteCadastro; onClose: () =>
 }
 
 function useFormLevantamento(cliente: Cliente | null, cad: ClienteCadastro): FormLevantamento {
-  const formasIniciais = (cliente?.financeiro_formas_custeio?.length ? cliente.financeiro_formas_custeio : ["cartao", "pix", "cheques", "boleto_100"]) as FormaCusteio[];
-  const [saldo, setSaldoState] = useState(cliente?.financeiro_saldo_restante != null ? String(cliente.financeiro_saldo_restante) : "");
+  const persistido = (cl: Cliente | null) => ({
+    saldo: cl?.financeiro_saldo_restante != null ? formatarValor(Number(cl.financeiro_saldo_restante)) : "",
+    taxa: cl?.financeiro_taxa_cartao != null ? formatarTaxa(Number(cl.financeiro_taxa_cartao)) : "5,4",
+    formas: cl?.financeiro_formas_custeio?.length ? normalizarFormas(cl.financeiro_formas_custeio) : (["cartao", "pix", "cheques", "boleto_100"] as FormaCusteio[]),
+  });
+  const inicial = persistido(cliente);
+  const [saldo, setSaldoState] = useState(inicial.saldo);
   const [editado, setEditado] = useState(cliente?.financeiro_saldo_restante != null);
-  const [taxa, setTaxa] = useState(cliente?.financeiro_taxa_cartao != null ? String(cliente.financeiro_taxa_cartao) : "5.4");
-  const [formas, setFormas] = useState<FormaCusteio[]>(formasIniciais);
+  const [taxa, setTaxa] = useState(inicial.taxa);
+  const [formas, setFormas] = useState<FormaCusteio[]>(inicial.formas);
   const emAberto = useMemo(() => cad.boletos.filter((b) => b.status !== "pago").reduce((s, b) => s + Number(b.valor || 0), 0), [cad.boletos]);
-  useEffect(() => { if (!editado && cad.boletos.length) setSaldoState(emAberto.toFixed(2)); }, [editado, emAberto, cad.boletos.length]);
+  useEffect(() => { if (!editado && cad.boletos.length) setSaldoState(formatarValor(emAberto)); }, [editado, emAberto, cad.boletos.length]);
+  const clienteRef = useRef(cliente);
+  clienteRef.current = cliente;
   return {
     saldo, setSaldo: (v: string) => { setEditado(true); setSaldoState(v); }, taxa, setTaxa, formas,
-    alternarForma: (f: FormaCusteio) => setFormas((a) => a.includes(f) ? a.filter((x) => x !== f) : [...a, f]),
+    alternarForma: (f: FormaCusteio) => setFormas((a) => normalizarFormas(a.includes(f) ? a.filter((x) => x !== f) : [...a, f])),
     emAberto,
+    /** Recarrega o editor com o levantamento persistido (Editar levantamento). */
+    restaurar: () => {
+      const v = persistido(clienteRef.current);
+      setSaldoState(v.saldo || formatarValor(emAberto)); setEditado(Boolean(v.saldo)); setTaxa(v.taxa); setFormas(v.formas);
+    },
   };
 }
 

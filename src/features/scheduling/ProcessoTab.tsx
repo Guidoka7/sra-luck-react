@@ -4,6 +4,7 @@ import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
 import type { CartaoCliente, EstagioCentral } from "./types";
 import { ChosenDate, estadoLiberacao, faltamTexto } from "./v46Cards";
+import { exigeTaxaCartao, normalizarFormas, validarLevantamento } from "./levantamento";
 
 export type ModalDrawer =
   | null
@@ -22,6 +23,8 @@ export interface FormLevantamento {
   taxa: string; setTaxa: (v: string) => void;
   formas: FormaCusteio[]; alternarForma: (f: FormaCusteio) => void;
   emAberto: number;
+  /** Volta o editor para o levantamento persistido no backend. */
+  restaurar: () => void;
 }
 
 export interface EventoProcesso { id: string; em: string; texto: string; estagio: EstagioCentral | null; financeiro: boolean }
@@ -136,9 +139,9 @@ function ProcessRail({ real, estagio, concluido, onAbrir }: { real: EstagioCentr
 function proximaAcao(p: Parameters<typeof ProcessoTab>[0]): { titulo: string; detalhe: string } {
   const { c, estagio, hoje } = p;
   if (estagio === "financialReview") {
-    if (c.statusRevisaoFinanceira === "aprovada") return { titulo: "Aguardar a cliente escolher a data dos termos no app", detalhe: "O levantamento já foi concluído. Somente as datas abertas na Agenda de Termos aparecem para ela." };
-    if (c.statusRevisaoFinanceira === "recusada") return { titulo: "Refazer o levantamento financeiro", detalhe: "Uma divergência foi registrada. Depois que a cliente regularizar, confira novamente e conclua o levantamento." };
-    return { titulo: "Concluir o levantamento financeiro", detalhe: "Confira parcelas e comprovantes, defina o saldo restante e libere as formas de quitação antes de disponibilizar a Agenda de Termos." };
+    if (c.statusRevisaoFinanceira === "aprovada") return { titulo: "Aguardar a cliente escolher a data dos termos.", detalhe: "" };
+    if (c.statusRevisaoFinanceira === "recusada") return { titulo: "Refazer o levantamento financeiro.", detalhe: "Divergência registrada. Depois da regularização, confira e confirme novamente." };
+    return { titulo: "Conferir financeiro e confirmar levantamento.", detalhe: "" };
   }
   if (estagio === "financialRelease") {
     const e = estadoLiberacao(c, hoje);
@@ -157,13 +160,13 @@ function StageFocus(p: Parameters<typeof ProcessoTab>[0]) {
   const e = estadoLiberacao(c, p.hoje);
   const cfg: Record<EstagioCentral, [string, string, string]> = {
     preEligibility: ["rose", c.parcelasFaltantes === 0 ? "Elegível para solicitar" : "Próxima da elegibilidade", c.parcelasFaltantes === 0 ? "Aguardando solicitação no app" : `${faltamTexto(c.parcelasFaltantes)} para liberar a solicitação`],
-    financialReview: ["gold", "Levantamento financeiro", c.statusRevisaoFinanceira === "aprovada" ? "Levantamento concluído" : c.statusRevisaoFinanceira === "recusada" ? "Divergência registrada" : "Conferência financeira em andamento"],
+    financialReview: ["gold", "Levantamento financeiro", c.statusRevisaoFinanceira === "aprovada" ? "Concluído" : c.statusRevisaoFinanceira === "recusada" ? "Divergência registrada" : "Em conferência"],
     termsConfirmed: ["green", "Termos agendados", "Agendamento confirmado"],
     financialRelease: ["gold", "Liberação cirúrgica", `Conferência presencial + prazo de ${e.totalDias} dias úteis`],
     surgeryConfirmed: ["green", concluido ? "Processo concluído" : "Cirurgia confirmada", concluido ? "Pagamento da cirurgia confirmado" : "Data cirúrgica escolhida e confirmada"],
   };
   const [tom, titulo, status] = cfg[estagio];
-  const cls = estagio === "surgeryConfirmed" || e.liberada ? "success" : estagio === "financialRelease" ? "wait" : estagio === "preEligibility" ? "danger" : "info";
+  const cls = estagio === "surgeryConfirmed" || e.liberada || (estagio === "financialReview" && c.statusRevisaoFinanceira === "aprovada") ? "success" : estagio === "financialRelease" ? "wait" : estagio === "preEligibility" || (estagio === "financialReview" && c.statusRevisaoFinanceira === "recusada") ? "danger" : "info";
   const acao = estagio === "preEligibility" || estagio === "termsConfirmed" ? null : proximaAcao(p);
   return <section className={`stage-focus ${tom}`}>
     <div className="stage-focus-head">
@@ -171,7 +174,7 @@ function StageFocus(p: Parameters<typeof ProcessoTab>[0]) {
       <div className="stage-focus-copy"><small>Etapa atual · {i + 1} de 5</small><h3>{titulo}</h3></div>
       <span className={`badge ${cls} stage-focus-status`}>{status}</span>
     </div>
-    {acao && <div className="next-action-box"><span>Próxima ação</span><b>{acao.titulo}</b><p>{acao.detalhe}</p></div>}
+    {acao && <div className="next-action-box"><span>Próxima ação</span><b>{acao.titulo}</b>{acao.detalhe ? <p>{acao.detalhe}</p> : null}</div>}
   </section>;
 }
 
@@ -210,39 +213,95 @@ function OperacaoElegibilidade({ c, ocupado, registrarParcela, temParcelaAberta 
   </section>;
 }
 
-function OperacaoLevantamento({ c, cadastro, form, ocupado, abrirModal, parcelas }: Parameters<typeof ProcessoTab>[0]) {
-  const concluido = c.statusRevisaoFinanceira === "aprovada";
-  const formas = (cadastro.financeiro_formas_custeio ?? []) as string[];
+/**
+ * Etapa 2 — Levantamento financeiro: um único bloco operacional.
+ * Pendente (ou em edição): conferência → saldo → formas → taxa (se cartão) →
+ * confirmar. Aprovado: resumo compacto do que foi persistido + Editar.
+ * Editar é só ajuste administrativo da configuração financeira: não muda a
+ * etapa nem a Agenda de Termos (o backend preserva `financeiro_confirmado_em`).
+ */
+function OperacaoLevantamento({ c, cad, cadastro, form, ocupado, abrirModal, concluirLevantamento, parcelas }: Parameters<typeof ProcessoTab>[0]) {
+  const aprovado = c.statusRevisaoFinanceira === "aprovada";
+  const [editando, setEditando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const mostrarEditor = !aprovado || editando;
+  const ocupadoAqui = ocupado === "levantamento";
+
+  async function confirmar() {
+    const v = validarLevantamento(form);
+    if ("erro" in v) { setErro(v.erro); return; }
+    setErro(null);
+    if (await concluirLevantamento("aprovada")) setEditando(false);
+  }
+
+  const pagas = cad.boletos.filter((b) => b.status === "pago").length;
+  const aguardando = cad.boletos.filter((b) => b.status === "pendente_confirmacao").length;
+  const formasPersistidas = normalizarFormas((cadastro.financeiro_formas_custeio ?? []) as string[]);
+  const irParaParcelas = () => document.getElementById("levantamento-parcelas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   return <>
-    {concluido
-      ? <section className="operation-card">
-          <div className="operation-head"><div><b>Levantamento concluído</b><small>Agora a próxima ação é da cliente no app</small></div><span className="badge success">Agenda de termos liberada</span></div>
-          <div className="operation-body">
-            <div className="operation-summary">
-              <div><label>Saldo restante</label><strong>{moeda(Number(cadastro.financeiro_saldo_restante ?? 0))}</strong></div>
-              <div><label>Formas liberadas</label><strong>{formas.map(rotuloFormaCusteio).join(" · ") || "—"}</strong></div>
+    {mostrarEditor
+      ? <section className="drawer-section lev-editor" aria-label="Levantamento financeiro">
+          <div className="drawer-section-head"><span>{editando ? "Editar levantamento" : "Levantamento financeiro"}</span>
+            {c.statusRevisaoFinanceira === "recusada" && !editando ? <span className="badge danger">Divergência</span> : editando ? <span className="badge info">Editando</span> : null}</div>
+          <div className="drawer-section-body">
+            <ol className="lev-steps">
+              <li>
+                <div className="lev-step-title"><span className="lev-num">1</span>Conferência</div>
+                <div className="lev-check">
+                  <span>{cad.boletos.length ? `${pagas} de ${cad.boletos.length} parcelas pagas` : "Parcelas e comprovantes"}{aguardando ? ` · ${aguardando} comprovante${aguardando > 1 ? "s" : ""} aguardando` : ""}</span>
+                  <button type="button" className="mini-link" onClick={irParaParcelas}>Ver parcelas ↓</button>
+                </div>
+              </li>
+              <li>
+                <label className="lev-step-title" htmlFor="central-saldo"><span className="lev-num">2</span>Saldo para quitação</label>
+                <div className="field lev-field">
+                  <input id="central-saldo" inputMode="decimal" placeholder="0,00" value={form.saldo} onChange={(e) => { form.setSaldo(e.target.value); setErro(null); }} disabled={ocupadoAqui} aria-describedby="central-saldo-hint" />
+                  <small id="central-saldo-hint">Valor restante para quitação · parcelas em aberto somam {moeda(form.emAberto)}</small>
+                </div>
+              </li>
+              <li>
+                <div className="lev-step-title" id="central-formas-label"><span className="lev-num">3</span>Formas de pagamento disponíveis</div>
+                <div className="lev-formas" role="group" aria-labelledby="central-formas-label">
+                  {FORMAS_CUSTEIO.map((f) => {
+                    const on = form.formas.includes(f.value);
+                    return <label key={f.value} className={`lev-forma${on ? " on" : ""}`}>
+                      <input type="checkbox" checked={on} onChange={() => { form.alternarForma(f.value); setErro(null); }} disabled={ocupadoAqui} />
+                      <span className="lev-forma-check" aria-hidden="true">{on ? "✓" : ""}</span>{f.label}
+                    </label>;
+                  })}
+                </div>
+              </li>
+              {exigeTaxaCartao(form.formas) && <li>
+                <label className="lev-step-title" htmlFor="central-taxa"><span className="lev-num">4</span>Taxa do cartão (%)</label>
+                <div className="field lev-field lev-field-short"><input id="central-taxa" inputMode="decimal" value={form.taxa} onChange={(e) => { form.setTaxa(e.target.value); setErro(null); }} disabled={ocupadoAqui} /></div>
+              </li>}
+            </ol>
+            {erro && <div className="callout danger lev-erro" role="alert">{erro}</div>}
+            <div className="lev-actions">
+              <button type="button" className="primary-btn lev-confirmar" onClick={() => void confirmar()} disabled={Boolean(ocupado)} aria-busy={ocupadoAqui}>
+                {ocupadoAqui ? "Salvando…" : editando ? "Salvar levantamento" : "Confirmar levantamento e liberar Agenda de Termos"}
+              </button>
+              {editando
+                ? <button type="button" className="ghost-btn tiny-btn" onClick={() => { form.restaurar(); setErro(null); setEditando(false); }} disabled={ocupadoAqui}>Cancelar edição</button>
+                : <button type="button" className="ghost-btn tiny-btn" onClick={() => abrirModal({ tipo: "divergencia" })} disabled={Boolean(ocupado)}>Registrar divergência</button>}
             </div>
-            <div className="process-note" style={{ marginTop: 9 }}><strong>No app:</strong> a cliente verá apenas as datas que você abriu na Agenda de Termos.{c.custeioStatus ? ` Forma de pagamento escolhida: ${rotuloFormaCusteio(c.custeioForma)} (${c.custeioStatus === "aprovada" ? "confirmada" : c.custeioStatus === "recusada" ? "recusada" : "em análise"}).` : ""}</div>
           </div>
         </section>
-      : <section className="drawer-section process-editor">
-          <div className="drawer-section-head"><span>Levantamento financeiro</span><span className={`badge ${c.statusRevisaoFinanceira === "recusada" ? "danger" : "wait"}`}>{c.statusRevisaoFinanceira === "recusada" ? "Divergência" : "Em análise"}</span></div>
-          <div className="drawer-section-body">
-            <div className="callout info"><b>Etapa operacional</b><br />Conferir pagamentos e comprovantes, definir o saldo restante e quais formas estarão disponíveis para a cliente no app.</div>
-            <div className="drawer-form" style={{ marginTop: 12 }}>
-              <div className="field"><label htmlFor="central-saldo">Valor restante para quitação</label><input id="central-saldo" inputMode="decimal" value={form.saldo} onChange={(e) => form.setSaldo(e.target.value)} disabled={Boolean(ocupado)} /><small>Soma das parcelas em aberto: {moeda(form.emAberto)}</small></div>
-              <div className="field"><label htmlFor="central-taxa">Taxa do cartão (%)</label><input id="central-taxa" inputMode="decimal" value={form.taxa} onChange={(e) => form.setTaxa(e.target.value)} disabled={Boolean(ocupado)} /></div>
-              <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                <legend style={{ fontSize: 9, color: "var(--muted)" }}>Formas disponíveis para quitação</legend>
-                <div className="checkbox-row">{FORMAS_CUSTEIO.map((f) => <label key={f.value}><input type="checkbox" checked={form.formas.includes(f.value)} onChange={() => form.alternarForma(f.value)} disabled={Boolean(ocupado)} /> {f.label.toUpperCase()}</label>)}</div>
-              </fieldset>
+      : <section className="operation-card lev-resumo" aria-label="Levantamento concluído">
+          <div className="operation-head"><div><b>✓ Levantamento concluído</b><small>Agenda de Termos liberada no app{c.financeiroConfirmadoEm ? ` · ${dataHoraBr(c.financeiroConfirmadoEm)}` : ""}</small></div></div>
+          <div className="operation-body">
+            <div className="operation-summary lev-resumo-grid">
+              <div><label>Saldo restante</label><strong>{moeda(Number(cadastro.financeiro_saldo_restante ?? 0))}</strong></div>
+              <div><label>Formas liberadas</label><strong>{formasPersistidas.map(rotuloFormaCusteio).join(" · ") || "—"}</strong></div>
+              {exigeTaxaCartao(formasPersistidas) && <div><label>Taxa do cartão</label><strong>{String(Number(cadastro.financeiro_taxa_cartao ?? 0)).replace(".", ",")}%</strong></div>}
+              <div><label>Agenda de Termos</label><strong>Liberada no app</strong></div>
             </div>
-            <div className="inline-actions" style={{ marginTop: 10 }}>
-              <button type="button" className="ghost-btn tiny-btn" onClick={() => abrirModal({ tipo: "divergencia" })} disabled={Boolean(ocupado)}>Registrar divergência</button>
-            </div>
+            <p className="lev-nota">A cliente agora escolhe uma data disponível.{c.custeioStatus ? ` Forma escolhida por ela: ${rotuloFormaCusteio(c.custeioForma)} (${c.custeioStatus === "aprovada" ? "confirmada" : c.custeioStatus === "recusada" ? "recusada" : "em análise"}).` : ""}</p>
+            <div className="lev-actions"><button type="button" className="secondary-btn tiny-btn" onClick={() => { form.restaurar(); setErro(null); setEditando(true); }} disabled={Boolean(ocupado)}>Editar levantamento</button></div>
           </div>
         </section>}
-    {parcelas}
+    <div id="levantamento-parcelas" className="lev-parcelas">{parcelas}</div>
   </>;
 }
 
@@ -387,12 +446,12 @@ function OperacaoCirurgia({ c, concluido, abrirModal, ocupado }: Parameters<type
 function ProximaEtapa({ c, estagio, concluido }: { c: CartaoCliente; estagio: EstagioCentral; concluido: boolean }) {
   const totalDias = 5 + Math.max(0, c.prazoAjusteDias || 0);
   const copy: Partial<Record<EstagioCentral, [string, string, string]>> = {
-    financialReview: ["Depois do levantamento", "A Agenda de Termos fica disponível no app. A cliente escolhe somente uma data que esteja aberta e com vaga.", "Próxima ação da cliente"],
+    financialReview: ["Depois desta etapa", "A cliente escolhe a data dos termos no app.", "Após a confirmação"],
     financialRelease: ["Depois desta etapa", `Comparecimento + quitação iniciam ${totalDias} dias úteis. Ao fim do prazo, a Agenda Cirúrgica libera no app; a cliente só vai para Cirurgias confirmadas depois de escolher uma data.`, "Regra automática"],
     surgeryConfirmed: [concluido ? "Processo arquivado" : "Etapa atual", concluido ? "O processo foi concluído e permanece arquivado na data cirúrgica. Use a Jornada para consultar todo o caminho percorrido." : "A cirurgia já possui data e horário confirmados. Use a Jornada para consultar todo o caminho percorrido pela cliente.", "Fluxo concluído"],
   };
   const x = copy[estagio];
-  if (!x) return null;
+  if (!x || (estagio === "financialReview" && c.statusRevisaoFinanceira === "aprovada")) return null;
   return <section className="next-stage-card">
     <span className="next-stage-icon" aria-hidden="true">→</span>
     <div><small>{x[0]}</small><b>{x[1]}</b><span className="auto-pill">{x[2]}</span></div>
