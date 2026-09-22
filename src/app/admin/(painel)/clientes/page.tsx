@@ -75,6 +75,19 @@ function ordenar<T>(lista: T[], modo: SortMode, nome: (x: T) => string, criado: 
   });
 }
 
+/** Perfil existe, mas o financeiro só é considerado criado quando há parcelas reais persistidas. */
+export function clienteAguardandoCadastroFinanceiro(cliente: Pick<Cliente, "ativo" | "status_contrato" | "parcelas_total">) {
+  return cliente.ativo !== false
+    && cliente.status_contrato !== "cancelado"
+    && Number(cliente.parcelas_total ?? 0) === 0;
+}
+
+export function clienteComCadastroCompleto(cliente: Pick<Cliente, "ativo" | "status_contrato" | "parcelas_total">) {
+  return cliente.ativo !== false
+    && cliente.status_contrato !== "cancelado"
+    && Number(cliente.parcelas_total ?? 0) > 0;
+}
+
 export default function ClientesPage() {
   const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -113,15 +126,17 @@ export default function ClientesPage() {
   }, [menuId]);
 
   const novas = useMemo(() => novasVendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro"), [novasVendas]);
-  const aguardandoCadastro = useMemo(() => novasVendas.filter((v) => v.cliente_id && v.status === "aguardando_boletos"), [novasVendas]);
   // Perfis arquivados por "Excluir perfil" ficam preservados no banco para
   // auditoria, mas não pertencem mais à área operacional de Clientes.
   const clientesVisiveis = useMemo(() => clientes.filter((c) => c.ativo !== false), [clientes]);
-  const cadastradas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato !== "cancelado"), [clientesVisiveis]);
+  // Fonte de verdade do funil "Aguardando cadastro": perfil já persistido,
+  // porém SEM nenhuma parcela real. Não depende da origem (CRM ou cadastro manual).
+  const aguardandoCadastro = useMemo(() => clientesVisiveis.filter(clienteAguardandoCadastroFinanceiro), [clientesVisiveis]);
+  const cadastradas = useMemo(() => clientesVisiveis.filter(clienteComCadastroCompleto), [clientesVisiveis]);
   const canceladas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato === "cancelado"), [clientesVisiveis]);
-  const ehVenda = funil === "novas" || funil === "aguardando";
+  const ehVenda = funil === "novas";
 
-  const baseClientes = funil === "canceladas" ? canceladas : cadastradas;
+  const baseClientes = funil === "aguardando" ? aguardandoCadastro : funil === "canceladas" ? canceladas : cadastradas;
   const bancos = useMemo(() => Array.from(new Set(baseClientes.map((c) => c.banco?.trim()).filter((b): b is string => Boolean(b)))).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [baseClientes]);
   useEffect(() => { if (banco !== "all" && !bancos.includes(banco)) setBanco("all"); }, [banco, bancos]);
 
@@ -132,10 +147,10 @@ export default function ClientesPage() {
     if (status !== "all" && (c.status_contrato ?? "ativo") !== status) return false;
     return noPeriodo(c.created_at, periodo);
   }), ordenacao, (c) => c.nome_completo ?? "", (c) => c.created_at), [baseClientes, termo, banco, status, periodo, ordenacao]);
-  const vendasFiltradas = useMemo(() => ordenar((funil === "novas" ? novas : aguardandoCadastro).filter((v) => {
+  const vendasFiltradas = useMemo(() => ordenar(novas.filter((v) => {
     if (termo && ![v.nome_completo, v.cpf, v.telefone, v.vendedora_responsavel, v.origem_venda].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo)) return false;
     return noPeriodo(v.created_at, periodo);
-  }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [funil, novas, aguardandoCadastro, termo, periodo, ordenacao]);
+  }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
   const counts: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
   const total = ehVenda ? vendasFiltradas.length : filtradas.length;
@@ -249,15 +264,13 @@ export default function ClientesPage() {
         : ehVenda ? <div className={styles.tableWrap}>
             <table className={styles.table}>
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
-              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Valor</th><th>{funil === "novas" ? "Ação" : "Status"}</th></tr></thead>
-              <tbody>{vendasFiltradas.map((v) => <tr key={v.id} onClick={funil === "aguardando" && v.cliente_id ? () => abrir(clientes.find((c) => c.id === v.cliente_id) ?? null, "finance", v.cliente_id) : undefined} style={funil === "novas" ? { cursor: "default" } : undefined}>
+              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Valor</th><th>Ação</th></tr></thead>
+              <tbody>{vendasFiltradas.map((v) => <tr key={v.id} style={{ cursor: "default" }}>
                 <td><div className={styles.clientCell}><Avatar nome={v.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{v.vendedora_responsavel || <Dash />}</td>
                 <td>{v.origem_venda || <Dash />}</td>
                 <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
-                <td>{funil === "novas"
-                  ? <button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button>
-                  : <span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar parcelas</span>}</td>
+                <td><button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button></td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -265,22 +278,24 @@ export default function ClientesPage() {
             <table className={styles.table}>
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Banco</th><th>Status</th><th className={styles.center}>Ações</th></tr></thead>
-              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, "profile")}>
+              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
                 <td><div className={styles.clientCell}><Avatar nome={c.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{c.consultora || <Dash />}</td>
                 <td>{c.origem_venda || <Dash />}</td>
                 <td>{c.banco ? <span className={styles.bankPill}>{c.banco}</span> : <Dash />}</td>
-                <td><span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span></td>
+                <td>{funil === "aguardando"
+                  ? <span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span>
+                  : <span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span>}</td>
                 <td className={styles.center}><RowMenu cliente={c} /></td>
               </tr>)}</tbody>
             </table>
           </div>
-        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, "profile")}>
+        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
             <RowMenu cliente={c} />
             <div className={styles.clientCardTop}><Avatar nome={c.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div>
             <div className={styles.gridDetails}>
               <div><div className={styles.gridLabel}>Banco</div><div className={styles.gridValue}>{c.banco || "—"}</div></div>
-              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
+              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{funil === "aguardando" ? "Falta gerar financeiro" : STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
               <div><div className={styles.gridLabel}>Vendedora</div><div className={styles.gridValue}>{c.consultora || "—"}</div></div>
               <div><div className={styles.gridLabel}>Campanha</div><div className={styles.gridValue}>{c.origem_venda || "—"}</div></div>
             </div>
