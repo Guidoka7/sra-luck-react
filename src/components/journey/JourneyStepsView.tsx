@@ -3,28 +3,10 @@ import type { JourneyStep } from "@/lib/journeySteps";
 
 /**
  * Representação única das etapas da Jornada (mesma lista de
- * `deriveJourneySteps`). `app` é a timeline do app da cliente; `compact` é a
- * versão acordeão do drawer administrativo (V46). Mesmas etapas, nomes,
- * descrições e estados — só a densidade muda.
+ * `deriveJourneySteps`) na timeline do app da cliente. O drawer
+ * administrativo usa a mesma lista (`JornadaPanel`), só com outra densidade.
  */
-export function JourneyStepsView({ passos, variant }: { passos: JourneyStep[]; variant: "app" | "compact" }) {
-  if (variant === "compact") {
-    return <div className="journey-list">
-      {passos.map((passo, i) => {
-        const done = passo.status === "done";
-        const current = passo.status === "current";
-        return <details key={passo.id} className={`journey-step ${done ? "done" : current ? "current" : "upcoming"}`} open={current || undefined}>
-          <summary>
-            <span className="journey-dot" aria-hidden="true">{done ? "✓" : i + 1}</span>
-            <span className="journey-summary-copy"><b>{passo.title}</b><small>{done ? "Concluída" : current ? "Etapa atual" : "Bloqueada"}</small></span>
-            <span className="journey-chevron" aria-hidden="true">⌄</span>
-          </summary>
-          <p>{passo.description}</p>
-        </details>;
-      })}
-    </div>;
-  }
-
+export function JourneyStepsView({ passos }: { passos: JourneyStep[]; variant?: "app" }) {
   return <>
     {passos.map((passo, indice) => {
       const done = passo.status === "done";
