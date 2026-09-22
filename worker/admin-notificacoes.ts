@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-sender";
 
@@ -341,7 +342,16 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
   if (!path.startsWith("/api/admin/notificacoes")) return null;
   const admin = await adminId(request, env);
   if (!admin) return json({ erro: "Sessão administrativa expirada." }, 401);
-  if (["POST", "PATCH", "DELETE"].includes(request.method) && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const mutating = ["POST", "PATCH", "DELETE"].includes(request.method);
+  if (mutating && !sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  let atorNotificacoes: string | null = null;
+  if (mutating) {
+    const colaborador = await buscarColaboradorAdminAtivo(admin, env).catch(() => null);
+    if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.NOTIFICACOES_GERENCIAR)) {
+      return json({ erro: "Seu papel não tem permissão para gerenciar notificações." }, 403);
+    }
+    atorNotificacoes = colaborador.id;
+  }
   const db = createServiceSupabaseClient(env);
 
   if (path === "/api/admin/notificacoes/automacao") {
@@ -417,7 +427,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     try {
       const resultado = await registrarNotificacao(env, db, { clienteId, tipo: "manual", titulo: titulo.slice(0, 200), mensagem: mensagem.slice(0, 5000), emoji: "📬", destino: "agenda", url: "/agenda" });
       await db.from("logs_alteracoes").insert({
-        usuario: `admin:${admin}`,
+        usuario: atorNotificacoes ?? `admin:${admin}`,
         acao: "enviou_notificacao_manual",
         entidade: "notificacoes_cliente",
         entidade_id: resultado.notificacao.id,
