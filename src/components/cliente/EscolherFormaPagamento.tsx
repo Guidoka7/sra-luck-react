@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AgendaBloqueadaShell } from "@/components/cliente/AgendaBloqueadaShell";
 import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
 import { type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
+import type { AgendaData } from "@/lib/clienteAgenda";
 
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
 
@@ -26,7 +27,17 @@ type Solicitacao = {
 type Props = {
   datas: DataDisponivel[];
   onSelecionada?: () => void | Promise<void>;
+  /** Dados já carregados pela página: renderiza na hora, sem nova consulta. */
+  snapshot?: AgendaData | null;
+  parcelasNaoPagas?: number | null;
+  /** Incrementado por fora (ex.: CTA da aba Agenda) para abrir a escolha. */
+  abrirSinal?: number;
 };
+
+function financeiroDe(dados: { financeiro?: { saldoRestante?: number | null; taxaCartao?: number | null; totalComTaxa?: number | null; formasCusteio?: string[] } | null } | null | undefined): Financeiro {
+  const f = dados?.financeiro;
+  return { saldoRestante: f?.saldoRestante ?? null, taxaCartao: f?.taxaCartao ?? null, totalComTaxa: f?.totalComTaxa ?? null, formasCusteio: f?.formasCusteio ?? [] };
+}
 
 function moeda(valor: number) {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -46,11 +57,11 @@ function extra(forma: FormaCusteio) {
   return "conforme condições liberadas";
 }
 
-export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
-  const [financeiro, setFinanceiro] = useState<Financeiro>({ saldoRestante: null, taxaCartao: null, totalComTaxa: null, formasCusteio: [] });
-  const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(null);
-  const [parcelasRestantes, setParcelasRestantes] = useState<number | null>(null);
-  const [carregando, setCarregando] = useState(true);
+export function EscolherFormaPagamento({ datas, onSelecionada, snapshot = null, parcelasNaoPagas = null, abrirSinal = 0 }: Props) {
+  const [financeiro, setFinanceiro] = useState<Financeiro>(() => financeiroDe(snapshot));
+  const [solicitacao, setSolicitacao] = useState<Solicitacao | null>(() => (snapshot?.solicitacaoLiberacaoFinanceira as Solicitacao | null) ?? null);
+  const [parcelasRestantes, setParcelasRestantes] = useState<number | null>(parcelasNaoPagas);
+  const [carregando, setCarregando] = useState(!snapshot);
   const [modal, setModal] = useState(false);
   const [forma, setForma] = useState<FormaCusteio | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -79,8 +90,15 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
   }
 
   useEffect(() => {
+    if (snapshot) {
+      setFinanceiro(financeiroDe(snapshot));
+      setSolicitacao((snapshot.solicitacaoLiberacaoFinanceira as Solicitacao | null) ?? null);
+      setParcelasRestantes(parcelasNaoPagas);
+      setCarregando(false);
+      return;
+    }
     void carregar();
-  }, []);
+  }, [snapshot, parcelasNaoPagas]);
 
   const formas = useMemo(
     () => (["cartao", "pix", "cheques", "boleto_100"] as FormaCusteio[]).filter((item) => financeiro.formasCusteio.includes(item)),
@@ -94,6 +112,11 @@ export function EscolherFormaPagamento({ datas, onSelecionada }: Props) {
   useEffect(() => {
     if (jaEscolheu) void onSelecionada?.();
   }, [jaEscolheu, onSelecionada]);
+
+  useEffect(() => {
+    if (abrirSinal > 0) abrirModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirSinal]);
 
   function abrirModal() {
     setErro(null);

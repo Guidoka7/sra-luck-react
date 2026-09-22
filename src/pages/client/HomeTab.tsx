@@ -1,64 +1,21 @@
 import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
 import { HomeCampaignCarousel } from "@/components/cliente/home/HomeCampaignCarousel";
-import { AgendaHome } from "@/components/cliente/home/AgendaHome";
 import { DisciplinaCard } from "@/components/cliente/home/DisciplinaCard";
 import type { HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
-import type { DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
-
-type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 
 interface HomeTabProps {
   nomeCliente: string;
   procedimento: string | null;
   quantidadeParcelas: number | null;
   porcentagemPagamento: number;
-  parcelasPagas: number;
-  naoLidas: number;
-  onAbrirNotificacoes: () => void;
   /** Destino do CTA do carrossel; a navegação fica no shell do app (AgendaPage). */
   onCampaignAction: (destination: HomeCampaignDestination) => void;
-  agendamentoAtivo: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
-  agendamentoConcluido: { id: string; data: string; horario: string | null; dataCirurgia: string | null } | null;
-  datasDisponiveis: DataDisponivel[];
-  podeAgendar: boolean;
-  agendaLiberada: boolean;
-  statusRevisaoFinanceira: StatusRevisaoFinanceira;
-  observacaoRevisaoFinanceira?: string | null;
-  /** Fonte de verdade real: clientes.liberacao_financeira_solicitada_em
-   * (coluna dedicada) — nunca derivado de statusRevisaoFinanceira. */
-  liberacaoFinanceiraSolicitada: boolean;
-  custeioAprovado: boolean;
-  confirmando: boolean;
-  onEscolherData: (dataId: string, horario: string) => void;
-  onCusteioSelecionado?: () => void | Promise<void>;
-  onAgendaAtualizada?: () => void | Promise<void>;
-  onLiberacaoSolicitada?: () => void | Promise<void>;
+  /** Frase da etapa atual da agenda (a agenda completa vive na aba Agenda). */
+  resumoAgenda: string;
+  onAbrirAgenda: () => void;
 }
 
-export function HomeTab({
-  nomeCliente,
-  procedimento,
-  quantidadeParcelas,
-  porcentagemPagamento,
-  parcelasPagas,
-  naoLidas,
-  onAbrirNotificacoes,
-  onCampaignAction,
-  agendamentoAtivo,
-  agendamentoConcluido,
-  datasDisponiveis,
-  podeAgendar,
-  agendaLiberada,
-  statusRevisaoFinanceira,
-  observacaoRevisaoFinanceira,
-  liberacaoFinanceiraSolicitada,
-  custeioAprovado,
-  confirmando,
-  onEscolherData,
-  onCusteioSelecionado,
-  onAgendaAtualizada,
-  onLiberacaoSolicitada,
-}: HomeTabProps) {
+export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcentagemPagamento, onCampaignAction, resumoAgenda, onAbrirAgenda }: HomeTabProps) {
   return (
     <div>
       <ClientProfileHeader
@@ -66,30 +23,22 @@ export function HomeTab({
         procedimento={procedimento}
         quantidadeParcelas={quantidadeParcelas}
         percentualPago={porcentagemPagamento}
-        naoLidas={naoLidas}
-        onAbrirNotificacoes={onAbrirNotificacoes}
       />
 
       <HomeCampaignCarousel onAction={(slide) => onCampaignAction(slide.action)} />
 
-      <AgendaHome
-        agendamentoAtivo={agendamentoAtivo}
-        agendamentoConcluido={agendamentoConcluido}
-        datasDisponiveis={datasDisponiveis}
-        quantidadeParcelas={quantidadeParcelas}
-        parcelasPagas={parcelasPagas}
-        podeAgendar={podeAgendar}
-        agendaLiberada={agendaLiberada}
-        statusRevisaoFinanceira={statusRevisaoFinanceira}
-        observacaoRevisaoFinanceira={observacaoRevisaoFinanceira}
-        liberacaoFinanceiraSolicitada={liberacaoFinanceiraSolicitada}
-        custeioAprovado={custeioAprovado}
-        confirmando={confirmando}
-        onEscolherData={onEscolherData}
-        onCusteioSelecionado={onCusteioSelecionado}
-        onAgendaAtualizada={onAgendaAtualizada}
-        onLiberacaoSolicitada={onLiberacaoSolicitada}
-      />
+      <div className="px-5 pt-5">
+        <button type="button" onClick={onAbrirAgenda} className="flex w-full items-center gap-3 rounded-[18px] border border-[#E9D6D2] bg-white p-[14px] text-left shadow-[0_8px_22px_rgba(70,42,44,.06)] transition active:scale-[.99]">
+          <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-[14px] bg-[#F9ECEF] text-[#A84759]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3" /><path d="M8 3v4m8-4v4M4 11h16" /></svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[9.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Minha agenda</span>
+            <span className="block truncate pt-[2px] font-heading text-[18px] font-semibold leading-[1.15] text-[#6B1F2E]">{resumoAgenda}</span>
+          </span>
+          <span className="flex-none text-[11px] font-semibold text-[#7D2434]">Abrir ›</span>
+        </button>
+      </div>
 
       <DisciplinaCard />
     </div>

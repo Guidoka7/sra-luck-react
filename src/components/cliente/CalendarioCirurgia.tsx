@@ -4,10 +4,11 @@ import { type FC, useEffect, useMemo, useRef, useState } from "react";
 import { addMonths, format, getDaysInMonth, isBefore, isToday, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { subscribeAgendaSync } from "@/lib/agendaRealtime";
+import type { AgendaData } from "@/lib/clienteAgenda";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
-export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; formaCusteio?: FormaCusteio | null; }
+export interface CalendarioCirurgiaProps { dataAssinatura: string; dataCirurgiaAtual?: string | null; onConfirmada?: (data: string) => void; modoAlteracao?: boolean; onSolicitarAlteracao?: (data: string) => void; termosAssinados?: boolean; formaCusteio?: FormaCusteio | null; /** Dados já carregados pela página: renderiza na hora, sem consulta própria. */ snapshot?: AgendaData | null; }
 
 function parseDataLocal(iso: string) { const [ano, mes, dia] = iso.split("-").map(Number); return new Date(ano, mes - 1, dia); }
 const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
@@ -17,9 +18,9 @@ export function deveExibirInformativoAnaliseCusteio(formaCusteio: FormaCusteio |
   return formaCusteio === "boleto_100" || formaCusteio === "cheques";
 }
 
-export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao, termosAssinados = false, formaCusteio = null }) => {
+export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura, dataCirurgiaAtual = null, onConfirmada, modoAlteracao = false, onSolicitarAlteracao, termosAssinados = false, formaCusteio = null, snapshot = null }) => {
   const hoje = startOfDay(new Date());
-  const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>([]);
+  const [datas, setDatas] = useState<DataCirurgiaDisponivel[]>(snapshot?.datasCirurgiaDisponiveis ?? []);
   const [mesAtual, setMesAtual] = useState(() => startOfMonth(dataCirurgiaAtual ? parseDataLocal(dataCirurgiaAtual) : hoje));
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(dataCirurgiaAtual);
   const [horarioSelecionado, setHorarioSelecionado] = useState<string>(HORARIOS_CIRURGIA[0]);
@@ -28,8 +29,15 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   const [atualizando, setAtualizando] = useState(false);
   const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
   const consultaEmAndamento = useRef<Promise<void> | null>(null);
-  const [agendaLiberada, setAgendaLiberada] = useState(false);
-  const [custeioConfirmado, setCusteioConfirmado] = useState(false);
+  const [agendaLiberada, setAgendaLiberada] = useState(Boolean(snapshot?.agendaCirurgicaLiberada));
+  const [custeioConfirmado, setCusteioConfirmado] = useState(Boolean(snapshot?.financeiro?.custeioConfirmadoEm));
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setDatas(snapshot.datasCirurgiaDisponiveis ?? []);
+    setAgendaLiberada(Boolean(snapshot.agendaCirurgicaLiberada));
+    setCusteioConfirmado(Boolean(snapshot.financeiro?.custeioConfirmadoEm));
+  }, [snapshot]);
 
   async function carregar(manual = false) {
     if (manual) { setAtualizando(true); setAvisoAtualizacao(null); }
@@ -58,6 +66,8 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   useEffect(() => {
+    // Com snapshot, a página já mantém a agenda atualizada (realtime + polling).
+    if (snapshot) return;
     void carregar();
 
     const unsubscribeRealtime = subscribeAgendaSync((tipo) => {
@@ -83,7 +93,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
       window.removeEventListener("focus", aoFoco);
       window.removeEventListener("online", aoOnline);
     };
-  }, []);
+  }, [Boolean(snapshot)]);
 
   const porData = useMemo(() => new Map(datas.map((item) => [item.data, item])), [datas]);
 

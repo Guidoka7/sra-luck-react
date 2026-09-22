@@ -22,7 +22,7 @@ export function ParcelasTab({ procedimento }: ParcelasTabProps) {
     <div className="sl-tab">
       <div className="sl-tab-logo"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" /></div>
       <div className="sl-tab-heading">
-        <h1>Minhas parcelas</h1>
+        <h1>Financeiro</h1>
         <p>Seu contrato em uma única visão, do pagamento confirmado ao próximo vencimento.</p>
       </div>
       <PagamentoProgressBar procedimento={procedimento} />

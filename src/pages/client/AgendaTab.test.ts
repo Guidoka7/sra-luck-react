@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AgendaHome, deveMostrarEscolhaCusteio, statusAgenda } from "./AgendaHome";
+import { AgendaTab } from "./AgendaTab";
+import { deveMostrarEscolhaCusteio, etapaAgenda, passoDaTrilha, statusAgenda } from "@/components/cliente/agenda/agendaEtapa";
 
 const base = {
   agendamentoAtivo: null,
@@ -12,7 +13,7 @@ const base = {
   custeioAprovado: false,
 };
 
-describe("AgendaHome — transição para Etapa 3", () => {
+describe("AgendaTab — transição para Etapa 3", () => {
   it("abre a escolha de pagamento assim que o levantamento é aprovado, mesmo antes de agenda_liberada", () => {
     expect(deveMostrarEscolhaCusteio("aprovada", false)).toBe(true);
     expect(statusAgenda(base).label).toBe("Etapa 3 de 4");
@@ -33,7 +34,7 @@ describe("AgendaHome — transição para Etapa 3", () => {
   });
 });
 
-describe("AgendaHome — após a assinatura", () => {
+describe("AgendaTab — após a assinatura", () => {
   const props = {
     ...base,
     datasDisponiveis: [],
@@ -46,7 +47,7 @@ describe("AgendaHome — após a assinatura", () => {
   const agendamento = { id: "termos-1", data: "2026-09-21", horario: "10:00", dataCirurgia: null };
 
   it("avança o cabeçalho com assinatura persistida mesmo enquanto o agendamento está ativo", () => {
-    const html = renderToStaticMarkup(createElement(AgendaHome, {
+    const html = renderToStaticMarkup(createElement(AgendaTab, {
       ...props,
       agendamentoAtivo: { ...agendamento, termosAssinadosEm: "2026-09-22T12:30:00Z" },
     }));
@@ -59,22 +60,22 @@ describe("AgendaHome — após a assinatura", () => {
   });
 
   it("preserva a confirmação de agendamentos concluídos sem timestamp legado", () => {
-    const html = renderToStaticMarkup(createElement(AgendaHome, { ...props, agendamentoConcluido: agendamento }));
+    const html = renderToStaticMarkup(createElement(AgendaTab, { ...props, agendamentoConcluido: agendamento }));
     expect(html).toContain("Assinatura confirmada");
     expect(html).toContain("21/09/2026 às 10:00");
     expect(html).toContain("Acompanhe a liberação da agenda");
   });
 
   it("não trata uma data agendada como assinatura já realizada", () => {
-    const html = renderToStaticMarkup(createElement(AgendaHome, { ...props, agendamentoAtivo: agendamento }));
+    const html = renderToStaticMarkup(createElement(AgendaTab, { ...props, agendamentoAtivo: agendamento }));
     expect(html).toContain("Assinatura dos termos agendada");
     expect(html).not.toContain("Assinatura confirmada");
   });
 });
 
-describe("AgendaHome — cirurgia confirmada", () => {
+describe("AgendaTab — cirurgia confirmada", () => {
   it.each(["agendamentoAtivo", "agendamentoConcluido"] as const)("mostra somente a cirurgia registrada em %s", (campo) => {
-    const html = renderToStaticMarkup(createElement(AgendaHome, {
+    const html = renderToStaticMarkup(createElement(AgendaTab, {
       ...base,
       datasDisponiveis: [],
       quantidadeParcelas: 12,
@@ -94,5 +95,36 @@ describe("AgendaHome — cirurgia confirmada", () => {
     expect(html).not.toContain("2026-09-22");
     expect(html).not.toContain("Alterar data");
     expect(html).not.toContain("<button");
+  });
+});
+
+describe("AgendaTab — etapa atual do fluxo", () => {
+  const estado = { ...base, liberacaoFinanceiraSolicitada: false };
+  it("segue a ordem real do fluxo até a cirurgia", () => {
+    expect(etapaAgenda({ ...estado, podeAgendar: false, statusRevisaoFinanceira: null })).toBe("percentual");
+    expect(etapaAgenda({ ...estado, statusRevisaoFinanceira: null })).toBe("elegivel");
+    expect(etapaAgenda({ ...estado, statusRevisaoFinanceira: "pendente", liberacaoFinanceiraSolicitada: true })).toBe("levantamento");
+    expect(etapaAgenda({ ...estado, statusRevisaoFinanceira: "recusada" })).toBe("ajuste");
+    expect(etapaAgenda(estado)).toBe("pagamento");
+    expect(etapaAgenda({ ...estado, custeioAprovado: true })).toBe("custeio_analise");
+    expect(etapaAgenda({ ...estado, custeioAprovado: true, agendaLiberada: true })).toBe("data");
+    const agendamento = { id: "a", data: "2026-10-01", horario: "10:00", dataCirurgia: null };
+    expect(etapaAgenda({ ...estado, agendamentoAtivo: agendamento })).toBe("termos_agendados");
+    expect(etapaAgenda({ ...estado, agendamentoConcluido: agendamento })).toBe("termos_assinados");
+    expect(etapaAgenda({ ...estado, agendamentoConcluido: { ...agendamento, dataCirurgia: "2026-11-01" } })).toBe("cirurgia");
+  });
+
+  it("marca a trilha no passo correspondente", () => {
+    expect(passoDaTrilha("percentual")).toBe(0);
+    expect(passoDaTrilha("custeio_analise")).toBe(2);
+    expect(passoDaTrilha("termos_agendados")).toBe(3);
+    expect(passoDaTrilha("cirurgia")).toBe(5);
+  });
+
+  it("oferece o atalho para a forma de pagamento na etapa 3", () => {
+    const html = renderToStaticMarkup(createElement(AgendaTab, {
+      ...base, datasDisponiveis: [], quantidadeParcelas: 12, parcelasPagas: 8, liberacaoFinanceiraSolicitada: true, confirmando: false, onEscolherData: () => {},
+    }));
+    expect(html).toContain("Escolher forma de pagamento");
   });
 });

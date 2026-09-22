@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiJson } from "../lib/api";
+import { limparCacheCliente } from "../lib/clienteAgenda";
 import { dataNascimentoValida } from "../../worker/app-access";
 
 function formatCpf(value: string) {
@@ -13,6 +14,9 @@ type ConfigPublica = { whatsappContato?: string | null };
 
 export function LoginPage() {
   const[cpf,setCpf]=useState("");const[nascimento,setNascimento]=useState("");const[loading,setLoading]=useState(false);const[erro,setErro]=useState<string|null>(null);const[whatsappContato,setWhatsappContato]=useState("");
+
+  // Sem sessão: nenhum dado local de uma cliente anterior deve sobreviver.
+  useEffect(()=>{limparCacheCliente()},[]);
 
   useEffect(()=>{let ativo=true;apiJson<ConfigPublica>("/api/cliente/config-publica").then(data=>{if(ativo)setWhatsappContato(data.whatsappContato||"")}).catch(()=>{});return()=>{ativo=false}},[]);
 

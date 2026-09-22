@@ -13,8 +13,8 @@ export interface NotificacaoCliente {
 }
 
 /**
- * Fonte única das notificações da cliente — usada pelo badge da bottom nav,
- * pelo bloco compacto da Jornada e pela tela cheia de Notificações, para que
+ * Fonte única das notificações da cliente — usada pelo sininho fixo (badge e balão)
+ * e pelo bloco compacto da Jornada, para que
  * "lida em um lugar" reflita em todos.
  */
 export function useNotificacoesCliente() {

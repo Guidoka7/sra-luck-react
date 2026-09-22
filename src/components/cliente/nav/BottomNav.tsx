@@ -1,30 +1,29 @@
 import { motion } from "framer-motion";
 
-export type ClientTab = "inicio" | "parcelas" | "jornada" | "notificacoes" | "mais";
+export type ClientTab = "inicio" | "agenda" | "premios" | "parcelas" | "mais";
 
 interface BottomNavProps {
   aba: ClientTab;
   onSelecionar: (aba: ClientTab) => void;
-  naoLidas?: number;
 }
 
 function Icone({ id }: { id: ClientTab }) {
   if (id === "inicio") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinejoin="round"><path d="M4 9.5 11 4l7 5.5V18H4z"/><path d="M9 18v-5h4v5"/></svg>;
+  if (id === "agenda") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="5" width="15" height="13.5" rx="2.4"/><path d="M7.5 3.2v3.4M14.5 3.2v3.4M3.5 9.4h15"/><path d="M7.4 13h.01M11 13h.01M14.6 13h.01"/></svg>;
+  if (id === "premios") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 11v7h-13v-7"/><path d="M3.5 7.5h15V11h-15z"/><path d="M11 18V7.5"/><path d="M11 7.5H8a1.9 1.9 0 1 1 1.6-2.9L11 7.5Z"/><path d="M11 7.5h3a1.9 1.9 0 1 0-1.6-2.9L11 7.5Z"/></svg>;
   if (id === "parcelas") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><rect x="3.5" y="4.5" width="15" height="5" rx="1.8"/><rect x="3.5" y="12.5" width="15" height="5" rx="1.8"/></svg>;
-  if (id === "jornada") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="16" cy="11" r="2"/><circle cx="8" cy="17" r="2"/><path d="M7.8 6.8c2.5.4 4.3 1.7 6.3 3.1M14.4 12.5c-1.4 1.8-2.8 3-4.7 3.8"/></svg>;
-  if (id === "notificacoes") return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><path d="M6 9.4a5 5 0 0 1 10 0v3.4l1.4 2.4H4.6L6 12.8z"/><path d="M9.2 17.4a2 2 0 0 0 3.6 0"/></svg>;
   return <svg viewBox="0 0 22 22" fill="none" stroke="currentColor"><path d="M4 7h14M4 11h14M4 15h9"/></svg>;
 }
 
+/** "mais" continua sendo uma tela, mas é aberta pelo botão fixo do topo (MenuButton). */
 const ITEMS: { id: ClientTab; label: string }[] = [
   { id: "inicio", label: "Início" },
-  { id: "parcelas", label: "Parcelas" },
-  { id: "jornada", label: "Jornada" },
-  { id: "notificacoes", label: "Notificações" },
-  { id: "mais", label: "Mais" },
+  { id: "agenda", label: "Agenda" },
+  { id: "premios", label: "Prêmios" },
+  { id: "parcelas", label: "Financeiro" },
 ];
 
-export function BottomNav({ aba, onSelecionar, naoLidas = 0 }: BottomNavProps) {
+export function BottomNav({ aba, onSelecionar }: BottomNavProps) {
   return (
     <nav className="sl-bottom-nav" aria-label="Navegação principal">
       {ITEMS.map(({ id, label }) => {
@@ -65,7 +64,6 @@ export function BottomNav({ aba, onSelecionar, naoLidas = 0 }: BottomNavProps) {
             </span>
 
             <span className="relative z-[1]">{label}</span>
-            {id === "notificacoes" && naoLidas > 0 && <span className="sl-nav-badge z-[2]">{naoLidas}</span>}
           </button>
         );
       })}

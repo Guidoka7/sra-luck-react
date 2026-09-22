@@ -78,7 +78,7 @@ describe("campaign-dependent slides need real configuration", () => {
 
 describe("CTA destinations map to the current client app", () => {
   it("routes every active slide to an existing tab or sub-screen", () => {
-    const tabs = ["inicio", "parcelas", "jornada", "notificacoes", "mais"];
+    const tabs = ["inicio", "agenda", "premios", "parcelas", "mais"];
     for (const slide of resolveHomeCampaignSlides()) {
       const nav = resolveHomeCampaignNavigation(slide.action);
       expect(nav, slide.id).not.toBeNull();
@@ -87,12 +87,12 @@ describe("CTA destinations map to the current client app", () => {
   });
 
   it("uses the existing screens for each destination", () => {
-    expect(resolveHomeCampaignNavigation("clube")).toEqual({ tab: "mais", maisSubTela: "clube" });
+    expect(resolveHomeCampaignNavigation("clube")).toEqual({ tab: "premios" });
     expect(resolveHomeCampaignNavigation("atendimento")).toEqual({ tab: "mais", maisSubTela: "atendimento" });
     expect(resolveHomeCampaignNavigation("parcelas")).toEqual({ tab: "parcelas" });
-    expect(resolveHomeCampaignNavigation("jornada")).toEqual({ tab: "jornada" });
-    expect(resolveHomeCampaignNavigation("notificacoes")).toEqual({ tab: "notificacoes" });
-    expect(resolveHomeCampaignNavigation("agenda")).toEqual({ tab: "inicio", scrollToAgenda: true });
+    expect(resolveHomeCampaignNavigation("jornada")).toEqual({ tab: "mais", maisSubTela: "jornada" });
+    expect(resolveHomeCampaignNavigation("notificacoes")).toEqual({ tab: "inicio", openNotifications: true });
+    expect(resolveHomeCampaignNavigation("agenda")).toEqual({ tab: "agenda" });
   });
 
   it("has no runtime for campaigns until a real configuration exists", () => {
