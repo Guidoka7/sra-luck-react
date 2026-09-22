@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiJson } from "../lib/api";
+import { dataNascimentoValida } from "../../worker/app-access";
 
 function formatCpf(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   return digits.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 function formatData(value:string){const d=value.replace(/\D/g,"").slice(0,8);if(d.length<=2)return d;if(d.length<=4)return `${d.slice(0,2)}/${d.slice(2)}`;return `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`}
-function paraIso(value:string){const m=value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return null;const dd=Number(m[1]),mm=Number(m[2]),yyyy=Number(m[3]);const dt=new Date(yyyy,mm-1,dd,12);if(dt.getFullYear()!==yyyy||dt.getMonth()!==mm-1||dt.getDate()!==dd||dt>new Date())return null;return `${m[3]}-${m[2]}-${m[1]}`}
+function paraIso(value:string){const m=value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return null;const iso=`${m[3]}-${m[2]}-${m[1]}`;return dataNascimentoValida(iso)?iso:null}
 
 type ConfigPublica = { whatsappContato?: string | null };
 
