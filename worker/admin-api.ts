@@ -201,7 +201,7 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
       acao:"alterou_status_contrato",
       entidade:"clientes",
       entidade_id:id,
-      detalhes:{de:atual.status_contrato,para:resultado.patch.status_contrato,motivo:resultado.patch.suspensao_motivo,suspensoDesde:resultado.patch.suspenso_desde,suspensoAte:resultado.patch.suspenso_ate,nomeCliente:atual.nome_completo},
+      detalhes:{de:atual.status_contrato,para:resultado.patch.status_contrato,motivo:resultado.patch.suspensao_motivo,suspensoDesde:resultado.patch.suspenso_desde,suspensoAte:resultado.patch.suspenso_ate},
     });
 
     return json({cliente:data});
