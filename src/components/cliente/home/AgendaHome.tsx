@@ -43,13 +43,16 @@ function brDate(value: string | null | undefined) {
   return y && m && d ? `${d}/${m}/${y}` : value;
 }
 
-function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado }: Pick<AgendaHomeProps, "agendamentoAtivo" | "agendamentoConcluido" | "podeAgendar" | "agendaLiberada" | "statusRevisaoFinanceira" | "custeioAprovado">) {
+export function statusAgenda({ agendamentoAtivo, agendamentoConcluido, podeAgendar, agendaLiberada, statusRevisaoFinanceira, custeioAprovado }: Pick<AgendaHomeProps, "agendamentoAtivo" | "agendamentoConcluido" | "podeAgendar" | "agendaLiberada" | "statusRevisaoFinanceira" | "custeioAprovado">) {
   if (agendamentoConcluido) return { label: "Termos assinados", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (agendamentoAtivo) return { label: "Assinatura agendada", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
   if (statusRevisaoFinanceira === "recusada") return { label: "Ajuste necessário", bg: "#FBEBEA", color: "#8F2A25", border: "#F0D3D1" };
   if (!podeAgendar) return { label: "Etapa 1 de 4", bg: "#F7EFED", color: "#7D2434", border: "#EBD9D5" };
-  if (!agendaLiberada || statusRevisaoFinanceira === "pendente") return { label: "Etapa 2 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
-  if (!custeioAprovado) return { label: "Etapa 3 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
+  if (statusRevisaoFinanceira !== "aprovada") return { label: "Etapa 2 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
+  // A aprovação do levantamento libera a Etapa 3 (escolha da forma de
+  // pagamento). A RPC agenda_liberada só fica true DEPOIS dessa escolha,
+  // então ela não pode ser usada como gate para entrar na própria Etapa 3.
+  if (!custeioAprovado || !agendaLiberada) return { label: "Etapa 3 de 4", bg: "#FFF7E8", color: "#8A6720", border: "#E9D7AD" };
   return { label: "Etapa 4 de 4", bg: "#EEF6F0", color: "#3F7D5B", border: "#D3E6D8" };
 }
 
@@ -109,6 +112,12 @@ export function AgendaHome({
     <div>
       {statusRevisaoFinanceira === "recusada" ? (
         <AvisoRevisaoFinanceira status="recusada" observacao={observacaoRevisaoFinanceira ?? null} />
+      ) : statusRevisaoFinanceira === "aprovada" && !custeioAprovado ? (
+        // Etapa 3 começa imediatamente após o levantamento ser confirmado.
+        // agendaLiberada ainda é false neste momento por desenho do backend:
+        // ela exige a forma de pagamento já escolhida. Por isso a seleção
+        // precisa vir ANTES do gate do calendário para não criar um ciclo.
+        <EscolherFormaPagamento datas={datasDisponiveis} onSelecionada={onCusteioSelecionado} />
       ) : !agendaLiberada ? (
         <AgendaBloqueadaPercentual
           percentual={percentualContrato}
@@ -118,8 +127,6 @@ export function AgendaHome({
           etapa={!podeAgendar ? "percentual" : liberacaoFinanceiraSolicitada ? "levantamento" : "elegivel"}
           onLiberacaoSolicitada={onLiberacaoSolicitada}
         />
-      ) : !custeioAprovado ? (
-        <EscolherFormaPagamento datas={datasDisponiveis} onSelecionada={onCusteioSelecionado} />
       ) : (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="rounded-[18px] border border-[#CFE2D3] border-t-[3px] border-t-[#4F8A65] bg-[#FBFFFC] p-[14px] shadow-[0_10px_26px_rgba(63,125,91,.09)]">
