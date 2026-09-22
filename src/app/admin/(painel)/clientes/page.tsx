@@ -114,8 +114,11 @@ export default function ClientesPage() {
 
   const novas = useMemo(() => novasVendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro"), [novasVendas]);
   const aguardandoCadastro = useMemo(() => novasVendas.filter((v) => v.cliente_id && v.status === "aguardando_boletos"), [novasVendas]);
-  const cadastradas = useMemo(() => clientes.filter((c) => c.status_contrato !== "cancelado"), [clientes]);
-  const canceladas = useMemo(() => clientes.filter((c) => c.status_contrato === "cancelado"), [clientes]);
+  // Perfis arquivados por "Excluir perfil" ficam preservados no banco para
+  // auditoria, mas não pertencem mais à área operacional de Clientes.
+  const clientesVisiveis = useMemo(() => clientes.filter((c) => c.ativo !== false), [clientes]);
+  const cadastradas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato !== "cancelado"), [clientesVisiveis]);
+  const canceladas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato === "cancelado"), [clientesVisiveis]);
   const ehVenda = funil === "novas" || funil === "aguardando";
 
   const baseClientes = funil === "canceladas" ? canceladas : cadastradas;
