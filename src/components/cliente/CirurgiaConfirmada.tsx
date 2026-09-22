@@ -10,7 +10,7 @@ export function CirurgiaConfirmada({ data }: { data: string }) {
         <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="16" rx="3" /><path d="M8 3v4m8-4v4M4 11h16" /></svg>
       </span>
       <div className="min-w-0 flex-1">
-        <h2 className="text-[10px] font-medium text-[#8A7772]">Data da sua cirurgia</h2>
+        <h2 className="text-[13px] font-semibold leading-snug text-[#7D2434]">Data da sua cirurgia</h2>
         <time dateTime={data.slice(0, 10)} className="mt-1 block font-heading text-[22px] font-semibold leading-[1.3] text-[#7D2434]">{dataFormatada}</time>
       </div>
     </section>
