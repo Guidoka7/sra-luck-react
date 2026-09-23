@@ -157,6 +157,7 @@ async function registrarNotificacao(env: Env, db: Db, input: {
       notificationId: notificacao.id,
       installmentId: input.referenciaId ?? null,
       action: input.action ?? null,
+      destino: input.destino ?? "agenda",
     });
   } catch (error) {
     push = {

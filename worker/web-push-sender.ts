@@ -29,6 +29,8 @@ export interface WebPushPayload {
   notificationId?: string | null;
   installmentId?: string | null;
   action?: string | null;
+  /** Aba do app a abrir ao tocar (agenda, pagamentos, clube, jornada...). */
+  destino?: string | null;
 }
 
 export interface WebPushResultado {
@@ -107,6 +109,7 @@ export async function enviarWebPushParaCliente(
     notificationId: payload.notificationId ?? null,
     installmentId: payload.installmentId ?? null,
     action: payload.action ?? null,
+    destino: payload.destino ?? null,
   });
 
   for (const subscription of subscriptions ?? []) {

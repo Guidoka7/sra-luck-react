@@ -5,7 +5,7 @@ import { CelebracaoData } from "@/components/cliente/CelebracaoData";
 import { MomentoEspecialCelebracao } from "@/components/cliente/MomentoEspecialCelebracao";
 import { BottomNav, type ClientTab } from "@/components/cliente/nav/BottomNav";
 import { resolveHomeCampaignNavigation, type HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
-import { useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNotifications";
+import { abaDoDestino, destinoDaUrl, useNotificacoesCliente, type NotificacaoCliente } from "@/lib/clientNotifications";
 import { subscribeAgendaSync } from "@/lib/agendaRealtime";
 import { HomeTab } from "@/pages/client/HomeTab";
 import { ParcelasTab } from "@/pages/client/ParcelasTab";
@@ -140,12 +140,43 @@ export function AgendaPage() {
     }
   }
 
+  const abrirDestino = useCallback((destino: string | null | undefined) => {
+    const alvo = abaDoDestino(destino);
+    if (!alvo) return;
+    setNotificacoesAbertas(false);
+    setMaisSubTelaInicial(alvo.maisSubTela ?? null);
+    setAba(alvo.aba);
+  }, []);
+
   function abrirNotificacao(notificacao: NotificacaoCliente) {
-    if (notificacao.destino === "agenda") setAba("agenda");
-    else if (notificacao.destino === "parcelas") setAba("parcelas");
-    else if (notificacao.destino === "clube") setAba("premios");
-    else if (notificacao.destino === "jornada") { setMaisSubTelaInicial("jornada"); setAba("mais"); }
+    abrirDestino(notificacao.destino);
   }
+
+  // Notificação push com o app aberto: o service worker não recarrega mais a
+  // página; ele avisa o app, que busca os dados novos em silêncio e, no toque,
+  // abre a aba da notificação. Aberto a partir de um push (app fechado), o
+  // destino chega na URL e é aplicado uma vez.
+  const recarregarNotificacoes = notificacoesState.carregar;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const destinoInicial = destinoDaUrl(window.location.href);
+    if (destinoInicial) {
+      abrirDestino(destinoInicial);
+      ["abrirComprovante", "destino", "aba"].forEach((chave) => params.delete(chave));
+      const busca = params.toString();
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${busca ? `?${busca}` : ""}`);
+    }
+    if (!("serviceWorker" in navigator)) return;
+    const aoReceber = (evento: MessageEvent) => {
+      const dados = evento.data as { type?: string; url?: string; destino?: string | null } | null;
+      if (!dados?.type?.startsWith("sra-luck:")) return;
+      void carregar(true);
+      void recarregarNotificacoes();
+      if (dados.type === "sra-luck:abrir") abrirDestino(dados.destino ?? destinoDaUrl(dados.url));
+    };
+    navigator.serviceWorker.addEventListener("message", aoReceber);
+    return () => navigator.serviceWorker.removeEventListener("message", aoReceber);
+  }, [abrirDestino, carregar, recarregarNotificacoes]);
 
   /** CTAs do carrossel da Home → abas/subtelas já existentes do app. */
   function abrirDestinoCampanha(destino: HomeCampaignDestination) {

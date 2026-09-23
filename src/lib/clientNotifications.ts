@@ -1,5 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/** Aba do app correspondente ao destino de uma notificação (sininho ou push). */
+export function abaDoDestino(destino: string | null | undefined): { aba: "agenda" | "parcelas" | "premios" | "mais"; maisSubTela?: "jornada" } | null {
+  switch (String(destino ?? "").toLowerCase()) {
+    case "agenda": return { aba: "agenda" };
+    case "parcelas": case "pagamentos": case "financeiro": return { aba: "parcelas" };
+    case "clube": case "premios": return { aba: "premios" };
+    case "jornada": return { aba: "mais", maisSubTela: "jornada" };
+    default: return null;
+  }
+}
+
+/** Destino a partir da URL de um push (ex.: /agenda?abrirComprovante=... abre o Financeiro). */
+export function destinoDaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, "https://app.local");
+    if (parsed.searchParams.get("abrirComprovante")) return "pagamentos";
+    return parsed.searchParams.get("destino") ?? parsed.searchParams.get("aba");
+  } catch {
+    return null;
+  }
+}
+
 export interface NotificacaoCliente {
   id: string;
   tipo: string;
