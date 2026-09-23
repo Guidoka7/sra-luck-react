@@ -16,10 +16,36 @@ import { liberarCanvas, type Rotacao } from "./preprocessamento";
 
 const FOLHA_MAXIMA = 3_400_000;
 const LOTE_MAXIMO = 3_200_000;
+const FOLHAS_POR_LOTE_MAXIMO = 40;
 
 export interface ProgressoImportacao {
   mensagem: string;
   percentual: number;
+}
+
+/**
+ * Divide folhas respeitando simultaneamente tamanho e quantidade por lote.
+ * Exportada para regressão unitária; não depende de DOM nem de File.
+ */
+export function lotearFolhas<T extends { size: number }>(folhas: T[]): T[][] {
+  const lotes: T[][] = [];
+  let atual: T[] = [];
+  let tamanho = 0;
+
+  for (const folha of folhas) {
+    const estouraQuantidade = atual.length >= FOLHAS_POR_LOTE_MAXIMO;
+    const estouraTamanho = atual.length > 0 && tamanho + folha.size > LOTE_MAXIMO;
+    if (estouraQuantidade || estouraTamanho) {
+      lotes.push(atual);
+      atual = [];
+      tamanho = 0;
+    }
+    atual.push(folha);
+    tamanho += folha.size;
+  }
+
+  if (atual.length) lotes.push(atual);
+  return lotes;
 }
 
 export interface ResultadoImportacao {
@@ -159,16 +185,9 @@ export async function importarCarne(d: DadosImportacao, aoProgredir?: (p: Progre
   aoProgredir?.({ mensagem: "Separando as folhas aprovadas…", percentual: 5 });
   const folhas = await separarFolhas({ ...d.arquivo, bytes: d.bytes }, aplicar.map((i) => i.pagina), sinal, d.rotacoes);
 
-  // Lotes pequenos (limite de corpo do servidor).
-  const lotes: File[][] = [];
-  let atual: File[] = [];
-  let tamanho = 0;
-  for (const f of folhas.values()) {
-    if (atual.length && tamanho + f.size > LOTE_MAXIMO) { lotes.push(atual); atual = []; tamanho = 0; }
-    atual.push(f);
-    tamanho += f.size;
-  }
-  if (atual.length) lotes.push(atual);
+  // Lotes pequenos: respeitam tanto o limite de corpo quanto o limite de
+  // quantidade de folhas aceito pelo endpoint (40 por requisição).
+  const lotes = lotearFolhas([...folhas.values()]);
 
   const base = `/api/admin/clientes/${encodeURIComponent(d.clienteId)}/leitor-carne`;
   for (let i = 0; i < lotes.length; i += 1) {
