@@ -64,7 +64,8 @@ export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string):
 export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env): Promise<ColaboradorAdmin | null> {
   // A identidade técnica só pode nascer de uma sessão HMAC criada depois da
   // validação M2M no adapter. Não há usuário Supabase correspondente e nada é
-  // persistido com este ID; a allowlist read-only é a fronteira de autorização.
+  // persistido com este ID; as allowlists de leitura e de correções em
+  // dev-console-auth.ts são a fronteira de autorização.
   if (isDevConsoleSyntheticAdminId(authUserId)) {
     return {
       id: DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,

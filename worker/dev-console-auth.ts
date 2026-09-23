@@ -1,5 +1,5 @@
 import { criarTokenAdmin } from "./session";
-import type { Env } from "./supabase";
+import { createServiceSupabaseClient, type Env } from "./supabase";
 
 export const DEV_CONSOLE_ADMIN_PREFIX = "dev-console:";
 export const DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID = "00000000-0000-4000-8000-000000000046";
@@ -28,6 +28,55 @@ const ALLOWED_PREFIXES = [
   "/api/admin/configuracoes",
   "/api/admin/clientes",
 ];
+
+export type DevConsoleRole = "owner" | "developer" | "operator" | "viewer";
+
+const ROLE_LEVEL: Record<DevConsoleRole, number> = { viewer: 0, operator: 1, developer: 2, owner: 3 };
+
+type MutacaoPermitida = {
+  metodo: "POST" | "PATCH";
+  rota: RegExp;
+  dominio: string;
+  papelMinimo: DevConsoleRole;
+};
+
+/**
+ * Correções operacionais que o Dev Console pode acionar. A lista é fechada:
+ * qualquer mutação fora dela continua bloqueada, mesmo com token válido.
+ *
+ * Ficam de fora de propósito: equipe/RBAC, credenciais de integrações,
+ * rotação de VAPID, configurações gerais, contratos/comissões e importação
+ * de carnês. Essas mudanças exigem uma identidade humana real no Admin.
+ */
+const MUTACOES_PERMITIDAS: readonly MutacaoPermitida[] = [
+  { metodo: "POST", rota: /^\/api\/admin\/central\/(comparecimento|quitacao|liberar-tentativa|prazo\/ajustar|prazo\/liberar-agora|cirurgia\/pagamento)$/, dominio: "v46", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/financeiro\/validacoes\/[^/]+\/(confirmar|rejeitar)$/, dominio: "financeiro", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/financeiro\/recebiveis\/[^/]+\/(baixa|comprovante)$/, dominio: "financeiro", papelMinimo: "operator" },
+  { metodo: "PATCH", rota: /^\/api\/admin\/financeiro\/recebiveis\/[^/]+$/, dominio: "financeiro", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/clientes\/[^/]+\/liberar-acesso-app$/, dominio: "app", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/notificacoes\/automacao$/, dominio: "notificacoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/testar-conexao$/, dominio: "integracoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/credit-ops\/club\/(config|referrals\/[^/]+|vouchers\/[^/]+\/arquivo)$/, dominio: "clube", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/credit-ops\/rewards$/, dominio: "clube", papelMinimo: "operator" },
+];
+
+type ContextoMutacao = { ator: string; papel: DevConsoleRole; metodo: string; rota: string; dominio: string; requestId: string | null };
+
+const contextosMutacao = new WeakMap<Request, ContextoMutacao>();
+
+function escritaHabilitada(env: Env) {
+  return ["1", "true", "on", "enabled"].includes(String(env.DEV_CONSOLE_M2M_WRITE || "").trim().toLowerCase());
+}
+
+function papelValido(value: string | null): DevConsoleRole | null {
+  const papel = String(value || "").trim().toLowerCase();
+  return papel in ROLE_LEVEL ? (papel as DevConsoleRole) : null;
+}
+
+export function mutacaoPermitida(metodo: string, pathname: string) {
+  const m = metodo.toUpperCase();
+  return MUTACOES_PERMITIDAS.find((item) => item.metodo === m && item.rota.test(pathname)) ?? null;
+}
 
 function json(erro: string, codigo: string, status: number) {
   return new Response(JSON.stringify({ erro, codigo }), {
@@ -93,7 +142,10 @@ export function isDevConsoleSyntheticAdminId(value: string) {
  *
  * - Sem header técnico: mantém o fluxo normal do Admin intacto.
  * - Em rotas não administrativas: remove headers técnicos e segue normalmente.
- * - Em /api/admin/*: aceita somente GET/HEAD de uma allowlist explícita.
+ * - Em /api/admin/*: aceita GET/HEAD de uma allowlist explícita.
+ * - Mutações só passam quando DEV_CONSOLE_M2M_WRITE está ligado, a rota está
+ *   em MUTACOES_PERMITIDAS e o papel do operador no Dev Console é suficiente.
+ *   Cada mutação aceita é registrada em logs_alteracoes com o ator técnico.
  * - Após validar o segredo, converte a identidade técnica em uma sessão admin
  *   assinada e efêmera, consumida pelos guardrails já existentes do Worker.
  */
@@ -109,11 +161,17 @@ export async function authorizeDevConsoleRequest(request: Request, env: Env): Pr
     return json("Integração técnica indisponível.", "DEV_CONSOLE_M2M_NOT_CONFIGURED", 503);
   }
 
-  if (!["GET", "HEAD"].includes(request.method.toUpperCase())) {
-    return json("A integração técnica está restrita a consultas.", "DEV_CONSOLE_M2M_READ_ONLY", 403);
-  }
+  const leitura = ["GET", "HEAD"].includes(request.method.toUpperCase());
+  const mutacao = leitura ? null : mutacaoPermitida(request.method, pathname);
 
-  if (!allowedPath(pathname)) {
+  if (!leitura) {
+    if (!escritaHabilitada(env)) {
+      return json("A integração técnica está restrita a consultas.", "DEV_CONSOLE_M2M_READ_ONLY", 403);
+    }
+    if (!mutacao) {
+      return json("Esta correção não está liberada para o Dev Console.", "DEV_CONSOLE_MUTATION_NOT_ALLOWED", 403);
+    }
+  } else if (!allowedPath(pathname)) {
     return json("Rota não autorizada para a integração técnica.", "DEV_CONSOLE_ROUTE_NOT_ALLOWED", 403);
   }
 
@@ -123,6 +181,51 @@ export async function authorizeDevConsoleRequest(request: Request, env: Env): Pr
   }
 
   const actor = normalizeActor(request.headers.get(ACTOR_HEADER));
+  const papel = papelValido(request.headers.get(ROLE_HEADER));
+  if (mutacao && (!papel || ROLE_LEVEL[papel] < ROLE_LEVEL[mutacao.papelMinimo])) {
+    return json("O papel do operador no Dev Console não permite esta correção.", "DEV_CONSOLE_ROLE_INSUFFICIENT", 403);
+  }
+
   const session = await criarTokenAdmin(`${DEV_CONSOLE_ADMIN_PREFIX}${actor}`, env.CLIENTE_SESSION_SECRET);
-  return withAdminCookie(request, session);
+  const autorizado = withAdminCookie(request, session);
+  if (mutacao && papel) {
+    contextosMutacao.set(autorizado, {
+      ator: actor,
+      papel,
+      metodo: request.method.toUpperCase(),
+      rota: pathname,
+      dominio: mutacao.dominio,
+      requestId: request.headers.get("x-request-id"),
+    });
+  }
+  return autorizado;
+}
+
+/**
+ * Registra no histórico oficial (logs_alteracoes) quem, no Dev Console,
+ * acionou a correção e qual foi o resultado. Nunca interrompe a resposta.
+ */
+export async function registrarMutacaoDevConsole(request: Request, response: Response, env: Env) {
+  const contexto = contextosMutacao.get(request);
+  if (!contexto) return;
+  try {
+    const db = createServiceSupabaseClient(env);
+    await db.from("logs_alteracoes").insert({
+      usuario: `${DEV_CONSOLE_ADMIN_PREFIX}${contexto.ator}`,
+      acao: "dev_console_correcao",
+      entidade: "dev_console",
+      entidade_id: null,
+      detalhes: {
+        metodo: contexto.metodo,
+        rota: contexto.rota,
+        dominio: contexto.dominio,
+        papel: contexto.papel,
+        status_http: response.status,
+        sucesso: response.ok,
+        request_id: contexto.requestId,
+      },
+    });
+  } catch {
+    // Auditoria complementar: a ação já foi auditada pelo próprio domínio e pelo Dev Console.
+  }
 }

@@ -10,6 +10,9 @@ export interface Env {
   // Segredo compartilhado exclusivamente entre os backends do Dev Console e
   // do Sra. Luck. Nunca deve ser exposto ao navegador.
   DEV_CONSOLE_SERVICE_TOKEN?: string;
+  // Liga as correções do Dev Console (allowlist fechada). Qualquer valor
+  // diferente de 1/true/on/enabled mantém a integração somente leitura.
+  DEV_CONSOLE_M2M_WRITE?: string;
 
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
   // permanecem exclusivamente no backend/cofre de integrações.

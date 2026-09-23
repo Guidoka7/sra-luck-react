@@ -55,11 +55,76 @@ describe("autenticação M2M do Dev Console", () => {
     expect((result as Response).status).toBe(401);
   });
 
-  it("bloqueia mutações mesmo com token válido", async () => {
-    const result = await authorizeDevConsoleRequest(request("/api/admin/clientes/abc", { method: "PATCH" }), env);
+  it("bloqueia mutações mesmo com token válido quando a escrita está desligada", async () => {
+    const result = await authorizeDevConsoleRequest(request("/api/admin/notificacoes/automacao", { method: "POST" }), env);
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(403);
     expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_M2M_READ_ONLY" });
+  });
+
+  describe("correções com DEV_CONSOLE_M2M_WRITE ligado", () => {
+    const writeEnv: Env = { ...env, DEV_CONSOLE_M2M_WRITE: "1" };
+
+    it("autoriza correção allowlisted para operator e injeta sessão técnica", async () => {
+      const result = await authorizeDevConsoleRequest(
+        request("/api/admin/clientes/abc/liberar-acesso-app", { method: "POST", headers: { "x-dev-actor-role": "operator" } }),
+        writeEnv,
+      );
+      expect(result).toBeInstanceOf(Request);
+      const authorized = result as Request;
+      expect(authorized.headers.get("x-dev-console-token")).toBeNull();
+      expect(authorized.headers.get("x-dev-actor-role")).toBeNull();
+      const session = await verificarTokenAdmin(getCookie(authorized, "admin_session"), SESSION_SECRET);
+      expect(session?.adminId).toBe(`${DEV_CONSOLE_ADMIN_PREFIX}user-123`);
+    });
+
+    it.each([
+      ["POST", "/api/admin/central/prazo/liberar-agora"],
+      ["POST", "/api/admin/financeiro/validacoes/rec-1/confirmar"],
+      ["POST", "/api/admin/financeiro/recebiveis/rec-1/baixa"],
+      ["PATCH", "/api/admin/financeiro/recebiveis/rec-1"],
+      ["POST", "/api/admin/notificacoes/automacao"],
+      ["POST", "/api/admin/integrations/testar-conexao"],
+      ["POST", "/api/admin/credit-ops/club/referrals/ind-1"],
+    ])("aceita %s %s", async (method, path) => {
+      const result = await authorizeDevConsoleRequest(request(path, { method }), writeEnv);
+      expect(result).toBeInstanceOf(Request);
+    });
+
+    it.each([
+      ["POST", "/api/admin/staff"],
+      ["PATCH", "/api/admin/staff/abc"],
+      ["POST", "/api/admin/integrations/credenciais"],
+      ["POST", "/api/admin/integrations/web-push/vapid"],
+      ["POST", "/api/admin/configuracoes"],
+      ["DELETE", "/api/admin/financeiro/recebiveis/rec-1"],
+      ["POST", "/api/admin/financeiro/recebiveis/rec-1/baixa/extra"],
+      ["PATCH", "/api/admin/clientes/abc"],
+    ])("bloqueia %s %s fora da allowlist de correções", async (method, path) => {
+      const result = await authorizeDevConsoleRequest(request(path, { method }), writeEnv);
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(403);
+      expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_MUTATION_NOT_ALLOWED" });
+    });
+
+    it("bloqueia correção para viewer ou papel ausente", async () => {
+      for (const role of ["viewer", "", "admin"]) {
+        const result = await authorizeDevConsoleRequest(
+          request("/api/admin/notificacoes/automacao", { method: "POST", headers: { "x-dev-actor-role": role } }),
+          writeEnv,
+        );
+        expect(result).toBeInstanceOf(Response);
+        expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_ROLE_INSUFFICIENT" });
+      }
+    });
+
+    it("valida o token antes de considerar o papel", async () => {
+      const result = await authorizeDevConsoleRequest(
+        request("/api/admin/notificacoes/automacao", { method: "POST", headers: { "x-dev-console-token": "token-incorreto" } }),
+        writeEnv,
+      );
+      expect((result as Response).status).toBe(401);
+    });
   });
 
   it("bloqueia uma rota administrativa fora da allowlist", async () => {

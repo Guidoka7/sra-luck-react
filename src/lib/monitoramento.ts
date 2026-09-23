@@ -117,6 +117,58 @@ export function registrarErro(evento: EventoErro) {
   void enviar(payload).then((ok) => { if (!ok) enfileirar(payload); });
 }
 
+// Limiares de desempenho: só exceções são enviadas, nunca amostras saudáveis.
+const MEMORIA_LIMIAR_USO = 0.8;
+const TAREFA_LONGA_LIMIAR_MS = 3000;
+const CARREGAMENTO_LENTO_LIMIAR_MS = 4000;
+const DESEMPENHO_INTERVALO_REPORTE_MS = 10 * 60 * 1000;
+const ultimoReporteDesempenho = new Map<string, number>();
+
+function reportarDesempenho(codigo: string, mensagem: string, detalhes: Record<string, unknown>) {
+  const agora = Date.now();
+  if (agora - (ultimoReporteDesempenho.get(codigo) ?? 0) < DESEMPENHO_INTERVALO_REPORTE_MS) return;
+  ultimoReporteDesempenho.set(codigo, agora);
+  const displayMode = window.matchMedia?.("(display-mode: standalone)").matches ? "standalone" : "browser";
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null;
+  registrarErro({ mensagem, nivel: "warn", codigo, action: "frontend.performance", detalhes: { ...detalhes, display_mode: displayMode, device_memory_gb: deviceMemory } });
+}
+
+function observarDesempenho() {
+  const cleanups: Array<() => void> = [];
+  const mb = (bytes: number) => Math.round(bytes / 1048576);
+
+  const verificarMemoria = () => {
+    const memoria = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+    if (!memoria?.jsHeapSizeLimit) return;
+    const uso = memoria.usedJSHeapSize / memoria.jsHeapSizeLimit;
+    if (uso >= MEMORIA_LIMIAR_USO) {
+      reportarDesempenho("APP_MEMORY_PRESSURE", "Uso de memória do app acima do limite seguro", { heap_usado_mb: mb(memoria.usedJSHeapSize), heap_limite_mb: mb(memoria.jsHeapSizeLimit), uso_pct: Math.round(uso * 100) });
+    }
+  };
+  const intervalo = window.setInterval(verificarMemoria, 60 * 1000);
+  cleanups.push(() => window.clearInterval(intervalo));
+
+  if (typeof PerformanceObserver !== "undefined") {
+    const observar = (tipo: string, callback: (entries: PerformanceEntryList) => void) => {
+      try {
+        const observer = new PerformanceObserver((list) => callback(list.getEntries()));
+        observer.observe({ type: tipo, buffered: true });
+        cleanups.push(() => observer.disconnect());
+      } catch { /* tipo não suportado neste navegador */ }
+    };
+    observar("longtask", (entries) => {
+      const maior = entries.reduce((max, entry) => Math.max(max, entry.duration), 0);
+      if (maior >= TAREFA_LONGA_LIMIAR_MS) reportarDesempenho("APP_MAIN_THREAD_BLOCKED", "Tela do app travou por vários segundos", { duracao_ms: Math.round(maior) });
+    });
+    observar("largest-contentful-paint", (entries) => {
+      const ultimo = entries[entries.length - 1];
+      if (ultimo && ultimo.startTime >= CARREGAMENTO_LENTO_LIMIAR_MS) reportarDesempenho("APP_SLOW_LOAD", "Carregamento da tela do app lento", { lcp_ms: Math.round(ultimo.startTime) });
+    });
+  }
+
+  return () => cleanups.forEach((cleanup) => cleanup());
+}
+
 export function instalarMonitoramentoGlobal() {
   if (typeof window === "undefined" || instalado) return () => undefined;
   instalado = true;
@@ -159,7 +211,9 @@ export function instalarMonitoramentoGlobal() {
   window.addEventListener("error", onResourceError, true);
   window.addEventListener("unhandledrejection", onRejection);
   window.addEventListener("online", () => void reenviarFila());
+  const pararDesempenho = observarDesempenho();
   return () => {
+    pararDesempenho();
     window.removeEventListener("error", onError);
     window.removeEventListener("error", onResourceError, true);
     window.removeEventListener("unhandledrejection", onRejection);

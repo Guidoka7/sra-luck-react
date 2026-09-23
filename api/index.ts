@@ -1,6 +1,6 @@
 import worker from "../worker/index";
 import type { Env } from "../worker/supabase";
-import { authorizeDevConsoleRequest } from "../worker/dev-console-auth";
+import { authorizeDevConsoleRequest, registrarMutacaoDevConsole } from "../worker/dev-console-auth";
 
 export const config = { runtime: "edge" };
 
@@ -39,6 +39,7 @@ function buildEnv(request: Request): Env {
     CLIENTE_SESSION_SECRET: firstEnv("CLIENTE_SESSION_SECRET"),
     NOTIFICACOES_CRON_SECRET: firstEnv("NOTIFICACOES_CRON_SECRET"),
     DEV_CONSOLE_SERVICE_TOKEN: firstEnv("DEV_CONSOLE_SERVICE_TOKEN"),
+    DEV_CONSOLE_M2M_WRITE: firstEnv("DEV_CONSOLE_M2M_WRITE"),
 
     WEB_PUSH_VAPID_PUBLIC_KEY: firstEnv("WEB_PUSH_VAPID_PUBLIC_KEY"),
     WEB_PUSH_VAPID_PRIVATE_KEY: firstEnv("WEB_PUSH_VAPID_PRIVATE_KEY"),
@@ -97,10 +98,12 @@ export default async function handler(request: Request) {
 
   // O Dev Console nunca recebe um cookie administrativo real do Sra. Luck.
   // O adapter valida o segredo M2M e cria uma sessão técnica efêmera apenas
-  // para consultas explicitamente permitidas; o header secreto é removido
-  // antes de entregar a requisição ao Worker.
+  // para consultas e correções explicitamente permitidas; o header secreto é
+  // removido antes de entregar a requisição ao Worker.
   const authorizedRequest = await authorizeDevConsoleRequest(trustedRequest, env);
   if (authorizedRequest instanceof Response) return authorizedRequest;
 
-  return worker.fetch(authorizedRequest, env);
+  const response = await worker.fetch(authorizedRequest, env);
+  await registrarMutacaoDevConsole(authorizedRequest, response, env);
+  return response;
 }
