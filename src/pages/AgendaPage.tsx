@@ -16,7 +16,6 @@ import { MenuButton } from "@/components/cliente/nav/MenuButton";
 import { ClubeScreen } from "@/components/cliente/clube/ClubeScreen";
 import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 import { AgendaTab } from "@/pages/client/AgendaTab";
-import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtapa";
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 import { LOGO_SRC } from "@/assets/brand";
 import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
@@ -267,16 +266,6 @@ export function AgendaPage() {
             quantidadeParcelas={boletos.quantidade_parcelas}
             porcentagemPagamento={boletos.porcentagem_pagamento ?? 0}
             onCampaignAction={abrirDestinoCampanha}
-            resumoAgenda={resumoEtapa(etapaAgenda({
-              agendamentoAtivo: agenda.agendamentoAtivo,
-              agendamentoConcluido: agenda.agendamentoConcluido,
-              podeAgendar: boletos.pode_agendar,
-              agendaLiberada: boletos.agenda_liberada,
-              statusRevisaoFinanceira: boletos.status_revisao_financeira,
-              custeioAprovado,
-              liberacaoFinanceiraSolicitada: agenda.elegibilidade.liberacaoFinanceiraSolicitada,
-            }))}
-            onAbrirAgenda={() => setAba("agenda")}
           />
         )}
 

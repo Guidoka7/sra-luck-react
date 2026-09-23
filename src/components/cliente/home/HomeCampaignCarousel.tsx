@@ -35,6 +35,16 @@ function slideImage(slide: ResolvedHomeCampaignSlide) {
   return slide.mobileImage ?? slide.desktopImage ?? slide.backgroundImage ?? null;
 }
 
+/**
+ * Posição de rolagem de um cartão, medida a partir do primeiro cartão: assim
+ * o recuo lateral do trilho (espaço para a sombra dos cartões) não desloca
+ * o encaixe.
+ */
+function posicaoDoCartao(scroller: HTMLElement, cartao: HTMLElement) {
+  const primeiro = scroller.firstElementChild as HTMLElement | null;
+  return cartao.offsetLeft - (primeiro?.offsetLeft ?? 0);
+}
+
 function prefersReducedMotionNow() {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
@@ -72,7 +82,7 @@ export function HomeCampaignCarousel({
     let nearest = 0;
     let distance = Number.POSITIVE_INFINITY;
     for (let index = 0; index < children.length; index += 1) {
-      const currentDistance = Math.abs(scroller.scrollLeft - children[index].offsetLeft);
+      const currentDistance = Math.abs(scroller.scrollLeft - posicaoDoCartao(scroller, children[index]));
       if (currentDistance < distance) {
         distance = currentDistance;
         nearest = index;
@@ -95,10 +105,10 @@ export function HomeCampaignCarousel({
     if (!target) return;
 
     if (behavior === "auto" || reducedMotion) {
-      scroller.scrollLeft = target.offsetLeft;
+      scroller.scrollLeft = posicaoDoCartao(scroller, target);
       return;
     }
-    scroller.scrollTo({ left: target.offsetLeft, behavior });
+    scroller.scrollTo({ left: posicaoDoCartao(scroller, target), behavior });
   }, [reducedMotion]);
 
   const normalizeLoopPosition = useCallback(() => {
