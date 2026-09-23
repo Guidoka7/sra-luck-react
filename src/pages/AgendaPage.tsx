@@ -257,7 +257,7 @@ export function AgendaPage() {
           />
         )}
 
-        {aba === "premios" && <ClubeScreen onIrParcelas={() => setAba("parcelas")} />}
+        {aba === "premios" && <ClubeScreen onIrParcelas={() => setAba("parcelas")} nomeCliente={agenda.cliente.nome} />}
 
         {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} />}
 

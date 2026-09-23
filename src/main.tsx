@@ -31,6 +31,7 @@ const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));
 const FinanceiroPage = lazy(() => import("./app/admin/(painel)/financeiro/page"));
 const FinanceiroAvancado = lazy(() => import("./features/financeiro/AdminFinanceiro"));
 const RelatoriosPage = lazy(() => import("./app/admin/(painel)/relatorios/page"));
+const ClubeAdminPage = lazy(() => import("./app/admin/(painel)/clube/page"));
 
 function CarregandoRota() {
   return <div className="flex min-h-[50vh] items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-burgundy/20 border-t-burgundy" /></div>;
@@ -58,6 +59,7 @@ function AdminRoute({ path }: { path: string }) {
   else if (path.startsWith("/admin/financeiro/avancado")) conteudo = <FinanceiroAvancado />;
   else if (path.startsWith("/admin/financeiro")) conteudo = <FinanceiroPage />;
   else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
+  else if (path.startsWith("/admin/clube")) conteudo = <ClubeAdminPage />;
   else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;
   else if (path.startsWith("/admin/integracoes")) conteudo = <AdminWorkspace />;
   else if (path.startsWith("/admin/notificacoes")) conteudo = <AdminWorkspace />;

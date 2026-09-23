@@ -270,6 +270,21 @@ O sistema deve controlar:
 
 Catálogo configurável, com exemplos como kits, massagem, spa, nécessaire, vouchers e benefícios de parceiros.
 
+### Como a cliente ganha pontos (regra vigente 2026-09-23)
+
+Valores configuráveis em `clube_config` (admin → Clube → Pontuação); os valores atuais são:
+
+| Missão | Pontos | Quando credita |
+|---|---|---|
+| 1ª parcela paga | 50 + voucher de consulta | quando a parcela 1 passa para `pago` |
+| Parcela paga em dia | 10 por parcela | quando a parcela passa para `pago` com `data_pagamento <= data_vencimento` |
+| Indicação que fechou | 200 para quem indicou | quando a equipe marca a indicação como **Fechou** (vinculando o cadastro da indicada) **e** a indicada tem a 1ª parcela paga — o que acontecer por último efetiva o crédito |
+
+- Todo crédito é idempotente (uma vez por motivo + referência) e fica no extrato (`cliente_pontos_eventos`).
+- Uma cliente só pode ser a "venda" de uma única indicação; ninguém indica a si mesma; indicação já premiada não muda de status.
+- Voucher de consulta: liberado na 1ª parcela; a cliente pode solicitar a retirada e a equipe anexa o arquivo pelo admin, que fica disponível para ela no app.
+- Implementação: `supabase/migration_075_clube_missoes_indicacoes.sql`, `worker/clube.ts`, `src/components/cliente/clube/`, `src/app/admin/(painel)/clube/page.tsx`.
+
 ## 16. Colaboradores
 
 Papéis iniciais:

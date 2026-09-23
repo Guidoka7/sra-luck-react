@@ -18,6 +18,7 @@ const NAV_OPERACAO = [
   { href: "/admin/agenda", label: "Agenda", icon: "◷" },
   { href: "/admin/clientes", label: "Clientes", icon: "☻" },
   { href: "/admin/financeiro", label: "Financeiro", icon: "$" },
+  { href: "/admin/clube", label: "Clube", icon: "♡" },
 ];
 
 const NAV_GESTAO = [

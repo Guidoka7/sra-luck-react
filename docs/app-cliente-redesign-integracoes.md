@@ -51,9 +51,9 @@
 
 ## Pendências / fora de escopo desta entrega
 
-- Painel administrativo do Clube de Vantagens (`/admin/clube`): catálogo,
-  confirmação de indicações, fila de resgates, ajuste manual — aguardando
-  especificação própria.
-- Config global de pontos por indicação: sem fluxo de confirmação
-  administrativa ainda, o crédito de indicação não é acionado (a tabela e o
-  endpoint de indicação existem, mas nada confirma `status = "venda"` hoje).
+- Painel administrativo do Clube (`/admin/clube`): **entregue** para
+  indicações (status + vínculo da cliente indicada), vouchers (anexar arquivo)
+  e pontuação. Ainda pendentes: gestão do catálogo com fotos (perfil dev) e
+  fila de resgates.
+- Crédito de indicação: **ativo** desde a migration 075 (Fechou + 1ª parcela
+  paga da indicada → 200 pontos para quem indicou).
