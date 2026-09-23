@@ -51,9 +51,9 @@ export function AdminLoginPage() {
   }
 
   return (
-    <main className="admin-web-shell relative flex min-h-screen items-center justify-center bg-bloom px-6">
+    <main className="admin-web-shell relative flex min-h-screen items-center justify-center bg-bloom px-6 dark:bg-[radial-gradient(circle_at_50%_-12%,rgba(168,95,125,.16),transparent_38%),linear-gradient(180deg,#111116_0%,#0C0D11_100%)]">
       <div className="absolute right-5 top-5"><ThemeToggle compact /></div>
-      <section className="surface-glass w-full max-w-md rounded-3xl p-8 luxury-ring">
+      <section className="surface-glass w-full max-w-md rounded-3xl p-8 luxury-ring dark:border dark:border-white/10 dark:bg-[#111217]/92 dark:shadow-[0_28px_80px_-42px_rgba(0,0,0,.9)]">
         <div className="mb-7 text-center">
           <img src={MARK_SRC} alt="Sra. Luck" className="mx-auto mb-4 h-12 w-12" />
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-burgundy/45">Acesso restrito</p>
@@ -69,7 +69,7 @@ export function AdminLoginPage() {
             <input className="w-full rounded-xl border border-rose/15 bg-white/70 px-4 py-3 text-sm outline-none focus:border-burgundy/40 dark:border-white/10 dark:bg-white/[0.05] dark:text-pearl" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="current-password" required />
           </label>
           {erro && <p role="alert" className="rounded-xl bg-rose/10 px-3 py-2 text-xs text-burgundy dark:text-rose">{erro}</p>}
-          <button disabled={loading} className="w-full rounded-full bg-burgundy px-5 py-3 text-xs font-semibold uppercase tracking-label text-pearl transition-opacity disabled:cursor-wait disabled:opacity-60" type="submit">
+          <button disabled={loading} className="w-full rounded-full bg-burgundy px-5 py-3 text-xs font-semibold uppercase tracking-label text-pearl transition-opacity disabled:cursor-wait disabled:opacity-60 dark:bg-[#A85F7D] dark:text-[#FFF7FA] dark:shadow-[0_12px_26px_-14px_rgba(168,95,125,.55)] dark:hover:bg-[#B96F87]" type="submit">
             {loading ? "Entrando…" : "Entrar"}
           </button>
         </form>
