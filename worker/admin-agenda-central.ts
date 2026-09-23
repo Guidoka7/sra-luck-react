@@ -590,6 +590,7 @@ async function abrirBloquearData(request: Request, env: Env, tabela: "datas" | "
   const acao = body.acao;
   const vagas = Number(body.vagasTotais);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return json({ erro: "Informe uma data válida." }, 400);
+  if (data < agoraSaoPaulo().data) return json({ erro: "Esta data já passou e não pode mais ser alterada." }, 409);
   if (acao !== "liberar" && acao !== "bloquear") return json({ erro: "A ação deve ser liberar ou bloquear." }, 400);
   const bloquear = acao === "bloquear";
   const db = createServiceSupabaseClient(env);
