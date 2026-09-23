@@ -118,8 +118,10 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
     const nome = String(b.nome ?? "").trim().replace(/\s+/g, " ");
     const telefone = String(b.telefone ?? "").trim();
     const digitos = telefone.replace(/\D/g, "");
+    const consentimentoContato = b.consentimentoContato === true;
     if (nome.length < 2 || nome.length > 160) return json({ erro: "Informe o nome da sua amiga." }, 400);
     if (digitos.length < 10 || digitos.length > 13) return json({ erro: "Informe o WhatsApp com DDD, por exemplo (61) 99999-0000." }, 400);
+    if (!consentimentoContato) return json({ erro: "Confirme que sua amiga autorizou o compartilhamento do contato com a Sra. Luck." }, 400);
 
     const { data: anteriores, error: erroAnteriores } = await db
       .from("indicacoes_clientes").select("telefone_indicado,status,created_at").eq("indicador_cliente_id", clienteId);
@@ -132,7 +134,13 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
     if (ultimas24h >= 10) return json({ erro: "Você atingiu o limite de indicações por hoje. Tente novamente amanhã." }, 429);
 
     const { data, error } = await db.from("indicacoes_clientes")
-      .insert({ indicador_cliente_id: clienteId, nome_indicado: nome, telefone_indicado: digitos })
+      .insert({
+        indicador_cliente_id: clienteId,
+        nome_indicado: nome,
+        telefone_indicado: digitos,
+        consentimento_contato: true,
+        consentimento_registrado_em: new Date().toISOString(),
+      })
       .select("id,nome_indicado,status,pontos_creditados,created_at").single();
     if (error) {
       console.error("Falha ao registrar indicação da cliente:", error);

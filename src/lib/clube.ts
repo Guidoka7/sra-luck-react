@@ -85,10 +85,10 @@ export function resgatarPremio(recompensaId: string, idempotencyKey: string) {
   });
 }
 
-export function indicarAmiga(nome: string, telefone: string) {
+export function indicarAmiga(nome: string, telefone: string, consentimentoContato: boolean) {
   return api<{ indicacao: unknown }>("/api/cliente/credit-ops/referrals", {
     method: "POST",
-    body: JSON.stringify({ nome, telefone }),
+    body: JSON.stringify({ nome, telefone, consentimentoContato }),
   });
 }
 
