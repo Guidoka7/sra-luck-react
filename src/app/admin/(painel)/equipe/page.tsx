@@ -85,7 +85,7 @@ export default function EquipeAdminPage() {
     <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
       <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div><h2 style={{ fontSize: 15 }}>Equipe</h2><div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)" }}>Usuários internos, perfis de acesso e histórico recente.</div></div>
-        <button onClick={() => setModal(true)} style={{ height: 31, padding: "0 12px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>+ Novo membro</button>
+        <button onClick={() => setModal(true)} style={{ height: 31, padding: "0 12px", borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>+ Novo membro</button>
       </div>
       <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--line)", display: "flex", gap: 6, overflow: "auto" }}>
         {(["todos", ...CARGOS.map((c) => c.value)] as const).map((v) => { const on = filtroCargo === v; const label = v === "todos" ? "Todos" : CARGOS.find((c) => c.value === v)?.label; return <button key={v} onClick={() => setFiltroCargo(v)} style={{ height: 26, padding: "0 10px", borderRadius: 999, border: `1px solid ${on ? "var(--bg)" : "var(--line)"}`, background: on ? "var(--robg)" : "var(--s0)", color: on ? "var(--bg)" : "var(--soft)", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</button>; })}
@@ -102,7 +102,7 @@ export default function EquipeAdminPage() {
       </div>
     </div>
 
-    {modal && <div style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(30,12,16,.5)", backdropFilter: "blur(3px)", padding: 20 }} className="zip-animate-fade-in">
+    {modal && <div style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--overlay-bg-strong)", backdropFilter: "blur(3px)", padding: 20 }} className="zip-animate-fade-in">
       <div className="zip-animate-pop-in" style={{ width: 430, maxWidth: "100%", background: "var(--s0)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--sh)", overflow: "hidden" }}>
         <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between" }}><h2 style={{ fontSize: 16 }}>Criar acesso da equipe</h2><button onClick={() => !criando && setModal(false)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)" }}>✕</button></div>
         <form onSubmit={criar} style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -110,13 +110,13 @@ export default function EquipeAdminPage() {
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>E-mail corporativo</label><input type="email" style={fieldInput} value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Cargo</label><select style={fieldInput} value={cargo} onChange={(e) => setCargo(e.target.value as Cargo)}>{CARGOS.map((o) => <option key={o.value} value={o.value}>{o.label} — {o.descricao}</option>)}</select></div>
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Senha temporária</label><input type="password" style={fieldInput} value={senha} onChange={(e) => setSenha(e.target.value)} minLength={8} required /><p style={{ marginTop: 4, fontSize: 10, color: "var(--soft)" }}>Mínimo de 8 caracteres.</p></div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line)", paddingTop: 12 }}><button type="button" onClick={() => setModal(false)} disabled={criando} style={{ height: 34, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 12, fontWeight: 600 }}>Cancelar</button><button type="submit" disabled={criando} style={{ height: 34, padding: "0 15px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 12, fontWeight: 600 }}>{criando ? "Criando…" : "Criar acesso"}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line)", paddingTop: 12 }}><button type="button" onClick={() => setModal(false)} disabled={criando} style={{ height: 34, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 12, fontWeight: 600 }}>Cancelar</button><button type="submit" disabled={criando} style={{ height: 34, padding: "0 15px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 12, fontWeight: 600 }}>{criando ? "Criando…" : "Criar acesso"}</button></div>
         </form>
       </div>
     </div>}
 
     {drawer && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(30,12,16,.42)", zIndex: 60 }} onClick={() => setDrawer(null)} />
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
       <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Equipe</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawer.nome}</h2></div>
@@ -132,7 +132,7 @@ export default function EquipeAdminPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{PERMISSOES_DISPONIVEIS.map((p) => { const ativa = drawer.permissoes?.includes(p.chave); return <div key={p.chave} onClick={() => !salvando && void alternarPermissao(drawer, p.chave)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 8, padding: "8px 9px", fontSize: 10.5, cursor: "pointer" }}><span>{p.label}</span><span style={{ color: ativa ? "var(--ok)" : "var(--soft)" }}>{ativa ? "✓" : "—"}</span></div>; })}</div>
         </div>}
         <div style={{ padding: "0 15px 15px", display: "flex", justifyContent: "flex-end" }}>
-          <button disabled={salvando === drawer.id} onClick={() => { const acao = drawer.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${drawer.nome}?`)) void atualizar(drawer.id, { ativo: !drawer.ativo }); }} style={{ height: 31, padding: "0 10px", border: `1px solid ${drawer.ativo ? "var(--bad)" : "var(--bg)"}`, borderRadius: 9, background: drawer.ativo ? "var(--badbg)" : "var(--bg)", color: drawer.ativo ? "var(--bad)" : "#FFFDFC", fontSize: 10.5, fontWeight: 700 }}>{drawer.ativo ? "Desativar acesso" : "Ativar acesso"}</button>
+          <button disabled={salvando === drawer.id} onClick={() => { const acao = drawer.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${drawer.nome}?`)) void atualizar(drawer.id, { ativo: !drawer.ativo }); }} style={{ height: 31, padding: "0 10px", border: `1px solid ${drawer.ativo ? "var(--bad)" : "var(--bg)"}`, borderRadius: 9, background: drawer.ativo ? "var(--badbg)" : "var(--bg)", color: drawer.ativo ? "var(--bad)" : "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{drawer.ativo ? "Desativar acesso" : "Ativar acesso"}</button>
         </div>
       </aside>
     </>}
