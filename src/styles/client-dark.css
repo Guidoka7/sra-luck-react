@@ -38,31 +38,7 @@ html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
   }
 }
 
-/*
- * Degradê do topo: toda página começa em rosé e desce até o grafite.
- * Fica fixo atrás do conteúdo (a barra do celular continua rosé ao rolar);
- * o script de index.html lê o primeiro tom (--tema-topo) para colorir a barra.
- */
-html[data-tema-cliente="escuro"] {
-  --tema-topo: #4E2A36;
-  --tema-degrade-topo: linear-gradient(180deg, #4E2A36 0px, #3A2029 110px, #231820 240px, #111013 420px);
-}
-html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
-  isolation: isolate;
-}
-html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: -1;
-  max-width: 430px;
-  height: 420px;
-  margin: 0 auto;
-  background: var(--tema-degrade-topo);
-  pointer-events: none;
-}
+/* Degradê rosé do topo: cores dos dois temas em src/styles/client-topo.css. */
 
 /* Cabeçalho da Início (fixo ao rolar): mesmo rosé do topo, translúcido como no iOS. */
 html[data-tema-cliente="escuro"] .client-app .sl-home-header {
