@@ -3,7 +3,7 @@ import type { CarneLido, ClienteReferencia, PaginaTexto, TipoDocumento } from "@
 import { PAGINAS_MAXIMAS, ErroArquivo, type ArquivoRecebido } from "./intake";
 import { encerrarOcr, lerComOcr } from "./ocr";
 import { liberarCanvas, type Rotacao } from "./preprocessamento";
-import { abrirPdf, renderizarPagina, textoNativo, textoSuficiente } from "./pdf";
+import { abrirPdf, fecharPdf, renderizarPagina, textoNativo, textoSuficiente } from "./pdf";
 
 /**
  * Orquestra a leitura no navegador: texto nativo do PDF → OCR local só nas
@@ -160,7 +160,7 @@ export async function lerDocumento(arquivo: ArquivoRecebido, opcoes: OpcoesLeitu
         }
         tipoDocumento = comOcr === 0 ? "PDF_TEXT" : comTexto === 0 ? "PDF_SCANNED" : "MIXED_PDF";
       } finally {
-        void pdf.destroy();
+        await fecharPdf(pdf);
       }
     } else {
       progresso({ etapa: "lendo", mensagem: "Reconhecendo o texto da imagem…", percentual: 20, pagina: 1, totalPaginas: 1 });

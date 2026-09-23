@@ -10,7 +10,10 @@ type Pdfjs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type DocumentoPdf = Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>;
 type PaginaPdf = Awaited<ReturnType<DocumentoPdf["getPage"]>>;
 
+type TarefaPdf = ReturnType<Pdfjs["getDocument"]>;
+
 let pdfjsPromise: Promise<Pdfjs> | null = null;
+const tarefasPdf = new WeakMap<DocumentoPdf, TarefaPdf>();
 async function pdfjs(): Promise<Pdfjs> {
   if (!pdfjsPromise) {
     pdfjsPromise = Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs"), import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]).then(([lib, worker]) => {
@@ -24,7 +27,21 @@ async function pdfjs(): Promise<Pdfjs> {
 export async function abrirPdf(bytes: Uint8Array): Promise<DocumentoPdf> {
   const lib = await pdfjs();
   // Cópia: o pdfjs transfere o buffer para o worker.
-  return lib.getDocument({ data: bytes.slice() }).promise;
+  const tarefa = lib.getDocument({ data: bytes.slice() });
+  const documento = await tarefa.promise;
+  tarefasPdf.set(documento, tarefa);
+  return documento;
+}
+
+/** Encerra a loading task associada e libera o Worker/recursos do PDF. */
+export async function fecharPdf(documento: DocumentoPdf): Promise<void> {
+  const tarefa = tarefasPdf.get(documento);
+  tarefasPdf.delete(documento);
+  if (tarefa) {
+    await tarefa.destroy();
+    return;
+  }
+  await documento.cleanup();
 }
 
 interface Item { texto: string; x: number; y: number; w: number; h: number }

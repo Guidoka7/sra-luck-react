@@ -2,7 +2,7 @@ import type { CarneLido } from "@/lib/leitor-carne/tipos";
 import type { ItemRevisao } from "@/lib/leitor-carne/revisao";
 import type { ArquivoRecebido } from "./intake";
 import { desenharGirada, type MetricasLeitura } from "./processador";
-import { abrirPdf, renderizarPagina } from "./pdf";
+import { abrirPdf, fecharPdf, renderizarPagina } from "./pdf";
 import { liberarCanvas, type Rotacao } from "./preprocessamento";
 
 /**
@@ -116,7 +116,7 @@ export async function separarFolhas(arquivo: ArquivoRecebido, paginas: number[],
         }
       }
     } finally {
-      if (pdfjs) void pdfjs.destroy();
+      if (pdfjs) await fecharPdf(pdfjs);
     }
     return folhas;
   }
