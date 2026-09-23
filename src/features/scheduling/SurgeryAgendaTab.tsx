@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { centralApi, dataBr, mesAno, moeda, somarMeses } from "./api";
-import { AgendaCalendar, AppointmentRow, DayPanel, statusDoDia } from "./AgendaCalendar";
+import { AgendaCalendar, AppointmentRow, capacidadeAoLiberar, DayPanel, statusDoDia } from "./AgendaCalendar";
 import type { AgendaCirurgiaResponse, CartaoCliente } from "./types";
 import { AgendarCirurgiaModal } from "./DrawerModals";
 import { ConfirmModal } from "./V46Modal";
-
-const VAGAS_PADRAO_CIRURGIA = 4;
 
 /**
  * Agenda Cirúrgica V46: calendário, painel do dia com teto financeiro do
@@ -120,7 +118,7 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
           <p>{excedido > 0 ? <>O teto foi ultrapassado em <b>{moeda(excedido)}</b>. Novas escolhas deste mês ficam bloqueadas.</> : restante === 0 ? "O teto mensal foi atingido. Novas escolhas deste mês ficam bloqueadas." : <>Ainda há <b>{moeda(restante)}</b> disponíveis para novas liberações neste mês.</>}</p>
         </div>}
         acaoLista={<button type="button" className="primary-btn" onClick={abrirNovaCirurgia} disabled={ocupado || !calendario}>＋ Nova cirurgia</button>}
-        onAbrir={() => void acaoDia("liberar", dia?.vagasTotais || VAGAS_PADRAO_CIRURGIA)}
+        onAbrir={() => void acaoDia("liberar", capacidadeAoLiberar(dia))}
         onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
         onCapacidade={(n) => void acaoDia("liberar", n, "Capacidade atualizada.")}
         itens={doDia.map((m) => <AppointmentRow key={m.agendamentoId} tipo="surgery" horario={m.horario} nome={m.nome} detalhe={m.procedimento ?? "—"}
