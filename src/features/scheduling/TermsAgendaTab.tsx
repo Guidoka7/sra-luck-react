@@ -33,6 +33,7 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
   useEffect(() => { void carregar(); }, [carregar, recarregarKey]);
 
   async function acaoDia(acao: "liberar" | "bloquear", vagas?: number, msg?: string) {
+    if (data < hoje) { toast.warning("Esta data já passou e está disponível somente para consulta."); return false; }
     if (ocupado) return false;
     setOcupado(true);
     try {
@@ -71,7 +72,7 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
       <div className="panel panel-pad v46-terms-calendar-panel">
         <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
-      <DayPanel tipo="terms" data={data} dia={dia} ocupado={ocupado || !calendario}
+      <DayPanel tipo="terms" data={data} hoje={hoje} dia={dia} ocupado={ocupado || !calendario}
         onAbrir={() => void acaoDia("liberar", dia?.vagasTotais || VAGAS_PADRAO_TERMOS)}
         onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
         onCapacidade={(n) => void acaoDia("liberar", n, "Vagas atualizadas.")}
