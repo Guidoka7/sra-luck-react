@@ -43,11 +43,11 @@ export function FinanceiroClientesFunil() {
   }
 
   return <>
-    <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#171519]/92">
+    <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#17181D]/92">
       <div className="mb-3 flex flex-wrap gap-1.5">
         {ORDEM.map((b) => {
           const total = funis.find((f) => f.bucket === b)?.total ?? 0;
-          return <button key={b} type="button" onClick={() => setBucket(b)} className={cn("flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition", bucket === b ? "bg-burgundy text-cream shadow-sm dark:bg-[#7f3546]" : "text-clay/55 hover:bg-blush/50 dark:text-white/45 dark:hover:bg-white/6")}>
+          return <button key={b} type="button" onClick={() => setBucket(b)} className={cn("flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition", bucket === b ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/55 hover:bg-blush/50 dark:text-white/45 dark:hover:bg-white/6")}>
             {FUNIL_CLIENTE_LABEL[b]}<span className={cn("rounded-full px-1.5 py-0.5 text-[9px]", bucket === b ? "bg-white/20" : "bg-rose/10 text-rose")}>{total}</span>
           </button>;
         })}
@@ -62,7 +62,7 @@ export function FinanceiroClientesFunil() {
             </div>
             <div className="flex items-center gap-3 text-right">
               {item.quitado && <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3" />Quitado</span>}
-              {item.vencidas > 0 && <span className="flex items-center gap-1 rounded-full bg-alert/10 px-2 py-0.5 text-[10px] font-semibold text-alert"><AlertTriangle className="h-3 w-3" />{item.vencidas} vencida(s)</span>}
+              {item.vencidas > 0 && <span className="flex items-center gap-1 rounded-full bg-alert/10 px-2 py-0.5 text-[10px] font-semibold text-alert dark:bg-[#C7869B]/10 dark:text-[#DCA0B2]"><AlertTriangle className="h-3 w-3" />{item.vencidas} vencida(s)</span>}
               <span className="text-xs font-semibold text-burgundy dark:text-cream">{formatarMoeda(item.saldoAReceber)}</span>
               <span className="hidden text-[10px] text-clay/45 dark:text-white/40 sm:block">{item.proximaAcao}</span>
               <ArrowRight className="h-3.5 w-3.5 text-clay/30" />
