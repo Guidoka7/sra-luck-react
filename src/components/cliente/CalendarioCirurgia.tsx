@@ -203,7 +203,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
       <div className="relative isolate grid min-h-[305px]">
         <div aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 select-none p-[13px] opacity-[.36] blur-[4px]"><CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado /></div>
         <div className="z-10 col-start-1 row-start-1 flex items-center justify-center p-4">
-          <div className="w-full max-w-[320px] rounded-[15px] border border-[#E9D4B2] bg-white/[.97] p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]">
+          <div className="w-full max-w-[320px] rounded-[15px] border border-[#E9D4B2] bg-white/95 p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]">
             <span className="mx-auto flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#F9ECEF] text-[#8E3243]"><IconeCadeado size={18} /></span>
             <div className="pt-[7px] font-heading text-[18px] font-semibold text-[#7D2434]">Agenda cirúrgica bloqueada</div>
             <div className="pt-[5px] text-[11px] font-light leading-[1.5] text-[#7A6B67]">{informativoInicio}</div>
@@ -220,7 +220,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
         <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado />
       </div>
       <div className="z-10 col-start-1 row-start-1 flex items-center justify-center p-5">
-        <div className="w-full rounded-[15px] border border-[#E9D4B2] bg-white/[.97] p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]">
+        <div className="w-full rounded-[15px] border border-[#E9D4B2] bg-white/95 p-[17px] text-center shadow-[0_14px_35px_rgba(95,54,58,.12)]">
           <span className="mx-auto flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#FBF1DD] text-[#A77A24]">
             <svg aria-hidden="true" width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg>
           </span>
