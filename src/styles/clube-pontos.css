@@ -1,9 +1,8 @@
 /* Cartão "Seus pontos" do Clube de Vantagens (mesma família visual da Frase do dia). */
 .client-app {
   --pontos-fundo:
-    radial-gradient(120% 90% at 100% 0%, rgba(232, 176, 188, 0.3) 0%, rgba(232, 176, 188, 0) 55%),
-    radial-gradient(90% 80% at 0% 100%, rgba(216, 178, 106, 0.18) 0%, rgba(216, 178, 106, 0) 60%),
-    linear-gradient(150deg, #86303F 0%, #6B1F2E 55%, #561824 100%);
+    radial-gradient(120% 90% at 100% 0%, rgba(232, 176, 188, 0.22) 0%, rgba(232, 176, 188, 0) 55%),
+    linear-gradient(150deg, #82303F 0%, #6B1F2E 60%, #5A1A27 100%);
   --pontos-borda: rgba(255, 255, 255, 0.08);
   --pontos-sombra: 0 16px 34px rgba(107, 31, 46, 0.26);
   --pontos-texto: #FFF7F5;
@@ -54,7 +53,7 @@ html[data-tema-cliente="escuro"] .client-app {
   padding: 6px 11px;
   border: 1px solid var(--pontos-painel-borda);
   border-radius: 999px;
-  background: var(--pontos-painel);
+  background: transparent;
   color: var(--pontos-texto);
   font-size: 11.5px;
   font-weight: 600;
@@ -62,115 +61,31 @@ html[data-tema-cliente="escuro"] .client-app {
 .client-app .sl-pontos-saldo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: 4px; }
 .client-app .sl-pontos-numero {
   font-family: var(--font-heading, Georgia, serif);
-  font-size: 46px;
+  font-size: 42px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
 }
 .client-app .sl-pontos-unidade { color: var(--pontos-suave); font-size: 13px; }
-.client-app .sl-pontos-caminho {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(227, 192, 126, 0.16);
-  color: var(--pontos-dourado);
-  font-size: 11px;
-  font-weight: 700;
-  align-self: center;
-}
-
-.client-app .sl-pontos-meta {
+.client-app .sl-pontos-meta { margin-top: 14px; }
+.client-app .sl-pontos-meta-linha {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 10px;
-  border: 1px solid var(--pontos-painel-borda);
-  border-radius: 18px;
-  background: var(--pontos-painel);
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--pontos-suave);
+  font-size: 12.5px;
 }
-.client-app .sl-pontos-meta--pronta { padding: 12px 14px; font-size: 12.5px; line-height: 1.4; color: var(--pontos-texto); }
-.client-app .sl-pontos-meta-foto {
-  flex: none;
-  width: 58px;
-  height: 58px;
-  overflow: hidden;
-  border-radius: 14px;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
-}
-.client-app .sl-pontos-meta-rotulo { color: var(--pontos-suave); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.client-app .sl-pontos-meta-titulo {
-  overflow: hidden;
-  margin-top: 1px;
-  font-family: var(--font-heading, Georgia, serif);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.15;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+.client-app .sl-pontos-meta-linha span:first-child { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.client-app .sl-pontos-meta-linha strong { color: var(--pontos-texto); font-weight: 700; }
 .client-app .sl-pontos-barra {
-  position: relative;
-  height: 6px;
+  height: 5px;
   margin-top: 8px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
 }
-.client-app .sl-pontos-barra-cheia {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #F2D7B0, #E3B56E);
-}
-/* Parte da barra que os pontos a caminho vão completar. */
-.client-app .sl-pontos-barra-prevista {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: repeating-linear-gradient(135deg, rgba(242, 215, 176, 0.5) 0 4px, rgba(242, 215, 176, 0.18) 4px 8px);
-}
-.client-app .sl-pontos-meta-rodape {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  color: var(--pontos-suave);
-  font-size: 11.5px;
-}
-.client-app .sl-pontos-meta-rodape strong { color: var(--pontos-texto); font-weight: 700; }
-
-.client-app .sl-pontos-dicas {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.client-app .sl-pontos-dicas li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--pontos-suave);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.client-app .sl-pontos-dicas svg { margin-top: 2px; color: var(--pontos-dourado); }
-.client-app .sl-pontos-dicas button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
-  text-underline-offset: 3px;
-}
-.client-app .sl-pontos-dicas strong { color: var(--pontos-texto); font-weight: 700; }
+.client-app .sl-pontos-barra-cheia { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #F2D7B0, #E3B56E); }
+.client-app .sl-pontos-dica { margin: 8px 0 0; color: var(--pontos-suave); font-size: 11.5px; line-height: 1.4; }
 
 .client-app .sl-pontos-cta {
   display: flex;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Sparkles, Ticket, UserPlus, Users } from "lucide-react";
+import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Ticket, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   abrirArquivoVoucher, buscarClube, resgatarPremio, solicitarVoucher, usarBeneficio, VOUCHER_CONSULTA_KEY,
@@ -56,11 +56,11 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
   const indicacoes = dados?.indicacoes.itens ?? [];
   const pontosIndicacoes = indicacoes.reduce((t, i) => t + (i.pontos_creditados || 0), 0);
   const aCaminho = pontosACaminho(indicacoes, config.pontosIndicacao);
-  const dica = meta.alvo ? caminhoAteMeta({
+  const caminho = meta.alvo ? caminhoAteMeta({
     faltam: meta.faltam, aCaminho, primeiraParcelaConcluida: dados?.missoes?.primeiraParcela.concluida ?? true,
     pontosPrimeiraParcela: config.pontosPrimeiraParcela, pontosParcelaEmDia: config.pontosParcelaEmDia, pontosIndicacao: config.pontosIndicacao,
   }) : null;
-  const proximaParcela = dados?.missoes?.parcelaEmDia.proxima ?? null;
+  const dica = aCaminho > 0 ? `+${pts(aCaminho)} a caminho de indicações que já fecharam.` : caminho;
 
   async function confirmarResgate() {
     if (!resgateAlvo) return;
@@ -110,7 +110,7 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
         <p className="m-0 pt-1 text-[13px] font-light text-[#8A7B77]">Pague em dia, indique amigas e troque seus pontos por prêmios.</p>
       </div>
 
-      {/* Saldo + meta inteligente */}
+      {/* Saldo + meta */}
       <section className="sl-pontos" aria-label="Seus pontos">
         <div className="sl-pontos-topo">
           <span className="sl-pontos-rotulo">Seus pontos</span>
@@ -121,46 +121,22 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
         <div className="sl-pontos-saldo">
           <span className="sl-pontos-numero">{carregando ? "—" : saldo.toLocaleString("pt-BR")}</span>
           <span className="sl-pontos-unidade">pontos</span>
-          {!carregando && aCaminho > 0 && (
-            <button type="button" onClick={() => setAba("indicacoes")} className="sl-pontos-caminho" aria-label={`${pts(aCaminho)} a caminho, de indicações que já fecharam`}>
-              <Clock3 className="h-[12px] w-[12px]" aria-hidden="true" /> +{pts(aCaminho)} a caminho
-            </button>
-          )}
         </div>
 
         {!carregando && meta.alvo && (
           <div className="sl-pontos-meta">
-            <div className="sl-pontos-meta-foto"><ImagemPremio recompensa={meta.alvo} /></div>
-            <div className="min-w-0 flex-1">
-              <div className="sl-pontos-meta-rotulo">Próximo prêmio</div>
-              <div className="sl-pontos-meta-titulo">{meta.alvo.titulo}</div>
-              <div className="sl-pontos-barra" role="progressbar" aria-valuenow={meta.progresso} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso até ${meta.alvo.titulo}`}>
-                <motion.div className="sl-pontos-barra-cheia" initial={{ width: 0 }} animate={{ width: `${meta.progresso}%` }} transition={{ duration: 0.7, ease: "easeOut" }} />
-                {aCaminho > 0 && <span className="sl-pontos-barra-prevista" style={{ left: `${meta.progresso}%`, width: `${Math.min(100 - meta.progresso, Math.round((aCaminho / meta.alvo.pontos) * 100))}%` }} aria-hidden="true" />}
-              </div>
-              <div className="sl-pontos-meta-rodape"><span>Faltam <strong>{pts(meta.faltam)}</strong></span><span>{meta.progresso}%</span></div>
+            <div className="sl-pontos-meta-linha">
+              <span>Faltam <strong>{pts(meta.faltam)}</strong> para {meta.alvo.titulo}</span>
+              <span>{meta.progresso}%</span>
             </div>
+            <div className="sl-pontos-barra" role="progressbar" aria-valuenow={meta.progresso} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso até ${meta.alvo.titulo}`}>
+              <motion.div className="sl-pontos-barra-cheia" initial={{ width: 0 }} animate={{ width: `${meta.progresso}%` }} transition={{ duration: 0.7, ease: "easeOut" }} />
+            </div>
+            {dica && <p className="sl-pontos-dica">{dica}</p>}
           </div>
         )}
         {!carregando && !meta.alvo && recompensas.length > 0 && (
-          <div className="sl-pontos-meta sl-pontos-meta--pronta">
-            <Gift className="h-5 w-5 flex-none" aria-hidden="true" />
-            <span>Seus pontos já alcançam todos os prêmios do catálogo. Escolha o seu abaixo.</span>
-          </div>
-        )}
-
-        {!carregando && (dica || proximaParcela) && (
-          <ul className="sl-pontos-dicas">
-            {dica && <li><Sparkles className="h-[14px] w-[14px] flex-none" aria-hidden="true" /><span>{dica}</span></li>}
-            {proximaParcela && (
-              <li>
-                <CalendarCheck className="h-[14px] w-[14px] flex-none" aria-hidden="true" />
-                <button type="button" onClick={onIrParcelas}>
-                  Parcela {proximaParcela.numero}{proximaParcela.vencimento ? ` vence em ${dataCurta(proximaParcela.vencimento)}` : ""}: pague em dia e ganhe <strong>+{config.pontosParcelaEmDia} pts</strong>
-                </button>
-              </li>
-            )}
-          </ul>
+          <p className="sl-pontos-dica">Seus pontos já alcançam todos os prêmios. Escolha o seu abaixo.</p>
         )}
 
         <button type="button" onClick={() => setIndicarAberta(true)} className="sl-pontos-cta">
