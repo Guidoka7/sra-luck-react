@@ -70,7 +70,7 @@ export const CATALOGO_PROVEDORES: Record<string, { nome: string; grupo: string; 
     grupo: "comunicacao",
     campos: [
       { chave: "api_key", label: "API Key (Google AI Studio)", obrigatorio: true, envVar: "GEMINI_API_KEY" },
-      { chave: "modelo", label: "Modelo (opcional, padrão gemini-2.5-flash)", obrigatorio: false, envVar: "GEMINI_MODEL" },
+      { chave: "modelo", label: "Modelo (opcional; em branco, escolhe sozinho)", obrigatorio: false, envVar: "GEMINI_MODEL" },
     ],
   },
   brb: { nome: "BRB", grupo: "bancos", campos: [{ chave: "webhook_secret", label: "Webhook Secret", obrigatorio: true, envVar: "BRB_WEBHOOK_SECRET" }] },

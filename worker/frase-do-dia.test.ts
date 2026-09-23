@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErroGemini, aplicarNome, chamarGemini, montarPrompt, segmentoPorPercentual, validarFraseIa } from "./frase-do-dia";
+import { ErroGemini, aplicarNome, chamarGemini, descobrirModelos, ordenarModelos, montarPrompt, segmentoPorPercentual, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 
 describe("agente da frase do dia", () => {
@@ -77,8 +77,40 @@ describe("agente da frase do dia", () => {
 
   it("chave recusada para na hora, sem tentar outros modelos", async () => {
     let chamadas = 0;
-    const fetcher = (async () => { chamadas += 1; return new Response("{}", { status: 403 }); }) as unknown as typeof fetch;
+    const fetcher = (async () => { chamadas += 1; return new Response(JSON.stringify({ error: { message: "API key not valid" } }), { status: 403 }); }) as unknown as typeof fetch;
     await expect(chamarGemini("k", ["a", "b"], "s", "u", fetcher, 0)).rejects.toThrow("http_403");
     expect(chamadas).toBe(1);
+  });
+
+  it("ordena os modelos disponíveis: leves estáveis, flash estáveis, apelidos e prévias", () => {
+    const nomes = [
+      "models/gemini-2.5-flash", "models/gemini-3.8-flash", "models/gemini-3.5-flash-lite", "models/gemini-3.1-flash-lite",
+      "models/gemini-3-flash-latest", "models/gemini-3-flash-preview", "models/gemini-3.8-flash-tts", "models/gemini-3.1-flash-image",
+      "models/gemini-2.5-pro", "models/gemini-3.8-live", "models/gemini-embedding-2",
+    ];
+    expect(ordenarModelos(nomes)).toEqual([
+      "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-3-flash-latest", "gemini-3-flash-preview",
+    ]);
+  });
+
+  it("descobre pela ListModels só os modelos que geram texto", async () => {
+    const fetcher = (async (url: string) => {
+      expect(url).toContain("/v1beta/models?");
+      return new Response(JSON.stringify({ models: [
+        { name: "models/gemini-3.8-flash", supportedGenerationMethods: ["generateContent", "countTokens"] },
+        { name: "models/gemini-3.5-flash-lite", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/gemini-9-flash-sem-texto", supportedGenerationMethods: ["embedContent"] },
+      ] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await descobrirModelos("chave-lista", fetcher)).toEqual(["gemini-3.5-flash-lite", "gemini-3.8-flash"]);
+  });
+
+  it("erro 400 que não é da chave passa para o próximo modelo", async () => {
+    const fetcher = (async (url: string) => url.includes("/a:")
+      ? new Response(JSON.stringify({ error: { message: "Invalid JSON payload: unknown field" } }), { status: 400 })
+      : new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"texto\": \"ok *deu certo* aqui\"}" }] } }] }), { status: 200 })) as unknown as typeof fetch;
+    await expect(chamarGemini("k", ["a", "b"], "s", "u", fetcher, 0)).resolves.toMatchObject({ modelo: "b" });
+    const chaveRuim = (async () => new Response(JSON.stringify({ error: { message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT" } }), { status: 400 })) as unknown as typeof fetch;
+    await expect(chamarGemini("k", ["a", "b"], "s", "u", chaveRuim, 0)).rejects.toThrow("http_400");
   });
 });

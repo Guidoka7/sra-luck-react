@@ -16,7 +16,8 @@
  * (uma por segmento), bem dentro da cota gratuita.
  *
  * A chave fica em Admin → Integrações → Gemini (cofre cifrado) ou na variável
- * GEMINI_API_KEY. Modelo opcional em GEMINI_MODEL / campo "modelo".
+ * GEMINI_API_KEY. O modelo é escolhido sozinho entre os disponíveis para a
+ * chave (ListModels); dá para fixar um em GEMINI_MODEL / campo "modelo".
  */
 import { obterCredencial } from "./integrations-credenciais";
 import { getCookie, verificarTokenSessao } from "./session";
@@ -33,11 +34,14 @@ const SEGMENTOS: Record<SegmentoJornada, string> = {
   quitado: "concluiu os pagamentos do plano e está na fase de agendar e viver o sonho",
 };
 
-// Ordem de tentativa. Se um modelo estiver sobrecarregado (503), sem cota (429)
-// ou aposentado (404), passa para o próximo.
-const MODELOS_PADRAO = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"];
-const TIMEOUT_MS = 8_000;
-const PRAZO_TOTAL_MS = 20_000;
+// Reserva quando a listagem de modelos do Google não responde (todos com plano
+// gratuito em set/2026). Normalmente a lista vem de descobrirModelos(), que
+// acompanha sozinha os modelos que o Google lança e aposenta.
+const MODELOS_PADRAO = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash"];
+const MAX_MODELOS = 5;
+const TIMEOUT_MS = 10_000;
+const PRAZO_TOTAL_MS = 24_000;
+const VALIDADE_LISTA_MS = 6 * 3_600_000;
 const NOVA_TENTATIVA_MS = 30 * 60_000;
 
 function json(data: unknown, status = 200) {
@@ -138,10 +142,62 @@ export class ErroGemini extends Error {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const NAO_TEXTO = /(image|tts|live|audio|transcri|embedding|translate|omni|robotic|computer|vision|aqa|thinking)/;
+
+function versao(modelo: string) {
+  const m = modelo.match(/gemini-(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Ordena os modelos de texto "flash" disponíveis para a chave: primeiro os
+ * estáveis leves (rápidos e com mais cota gratuita), depois os flash estáveis,
+ * os apelidos "-latest" e por último as prévias. Dentro de cada grupo, o mais novo antes.
+ */
+export function ordenarModelos(nomes: string[]) {
+  const candidatos = [...new Set(nomes.map((n) => n.replace(/^models\//, "")))]
+    .filter((n) => /^gemini-/.test(n) && /flash/.test(n) && !NAO_TEXTO.test(n));
+  const grupo = (n: string) => {
+    if (/preview|exp/.test(n)) return 4;
+    if (/latest/.test(n)) return 3;
+    if (/-\d{2,}$/.test(n)) return 4; // versões datadas/fixas antigas
+    return /lite/.test(n) ? 1 : 2;
+  };
+  return candidatos.sort((a, b) => grupo(a) - grupo(b) || versao(b) - versao(a) || a.localeCompare(b));
+}
+
+let listaEmCache: { chave: string; modelos: string[]; ate: number } | null = null;
+
+/** Lista (ListModels) os modelos que esta chave pode usar. Guarda por 6 h na memória do servidor. */
+export async function descobrirModelos(chave: string, fetcher: typeof fetch = fetch): Promise<string[] | null> {
+  if (listaEmCache && listaEmCache.chave === chave && listaEmCache.ate > Date.now()) return listaEmCache.modelos;
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), 6_000);
+  try {
+    const resposta = await fetcher("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": chave }, signal: controle.signal });
+    if (!resposta.ok) return null;
+    const corpo = await resposta.json() as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
+    const nomes = (corpo.models ?? []).filter((m) => m.name && (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m) => m.name!);
+    const modelos = ordenarModelos(nomes);
+    if (!modelos.length) return null;
+    listaEmCache = { chave, modelos, ate: Date.now() + VALIDADE_LISTA_MS };
+    return modelos;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Erro 400/403 que indica chave inválida ou API desativada (não adianta tentar outro modelo). */
+function erroDeChave(corpo: string) {
+  return /api[ _-]?key|API_KEY_INVALID|SERVICE_DISABLED|has not been used|permission denied on resource project/i.test(corpo);
+}
+
 /**
  * Chama o Gemini (REST generateContent). Tenta os modelos em ordem: 404, 429,
- * 5xx e timeout passam para o próximo; chave recusada (400/401/403) para na
- * hora. Se todos estiverem só sobrecarregados, faz mais uma rodada após 1,5 s.
+ * 5xx, timeout e 400/403 sem relação com a chave passam para o próximo; chave
+ * recusada para na hora. Se todos estiverem só sobrecarregados, faz mais uma rodada após 1,5 s.
  */
 export async function chamarGemini(chave: string, modelos: string[], sistema: string, usuario: string, fetcher: typeof fetch = fetch, pausaMs = 1_500) {
   const inicio = Date.now();
@@ -167,7 +223,7 @@ export async function chamarGemini(chave: string, modelos: string[], sistema: st
             },
           }),
         });
-        if (resposta.status === 400 || resposta.status === 401 || resposta.status === 403) {
+        if (resposta.status === 401 || ((resposta.status === 400 || resposta.status === 403) && erroDeChave(await resposta.text().catch(() => "")))) {
           tentativas.push(`${modelo}:${resposta.status}`);
           throw new ErroGemini(`http_${resposta.status}`, tentativas);
         }
@@ -195,8 +251,10 @@ export async function chamarGemini(chave: string, modelos: string[], sistema: st
 
 async function credenciaisGemini(env: Env) {
   const [chave, modelo] = await Promise.all([obterCredencial(env, "gemini", "api_key"), obterCredencial(env, "gemini", "modelo")]);
-  const modelos = [...new Set([modelo?.trim(), ...MODELOS_PADRAO].filter((m): m is string => Boolean(m)))];
-  return { chave: chave?.trim() || null, modelos };
+  const chaveLimpa = chave?.trim() || null;
+  const disponiveis = chaveLimpa ? await descobrirModelos(chaveLimpa) : null;
+  const modelos = [...new Set([modelo?.trim(), ...(disponiveis ?? MODELOS_PADRAO)].filter((m): m is string => Boolean(m)))].slice(0, MAX_MODELOS);
+  return { chave: chaveLimpa, modelos };
 }
 
 /** Gera e valida (até 2 tentativas). Retorna null quando não deu para usar a IA. */
