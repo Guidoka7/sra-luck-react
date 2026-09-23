@@ -122,7 +122,7 @@ export default function ClubeAdminPage() {
     return <ClubeDashboard dados={dados} carregando={carregando} onOpen={setAba} />;
   }
 
-  return <div className="zip-admin" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+  return <div className={["zip-admin", styles.page].join(" ")} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 720px", minWidth: 0 }}>
       <div style={{ padding: "2px 2px 14px" }}>
         <button type="button" onClick={() => setAba("painel")} className={styles.backButton}><ArrowLeft size={14} /> Voltar ao Clube</button>
@@ -368,12 +368,6 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
     },
   ];
 
-  const categorias = Array.from(recompensasAtivas.reduce((map, r) => {
-    const nome = (r.categoria || "Benefícios").trim() || "Benefícios";
-    map.set(nome, (map.get(nome) ?? 0) + 1);
-    return map;
-  }, new Map<string, number>()).entries()).slice(0, 4);
-
   const campanhas = [
     { titulo: "Indique e ganhe", descricao: "Cada indicação elegível rende +" + dados.config.pontosIndicacao + " pontos.", cor: "var(--ok)" },
     { titulo: "Parcela em dia", descricao: "Pagamento no prazo rende +" + dados.config.pontosParcelaEmDia + " pontos.", cor: "var(--rose)" },
@@ -463,10 +457,13 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
           <h2>Benefícios e parceiros</h2>
           <button type="button" className={styles.panelLink} onClick={() => onOpen("beneficios")}>Ver todos <ChevronRight size={13} /></button>
         </div>
-        {categorias.length === 0 ? <div className={styles.empty}>Nenhum benefício ativo no catálogo.</div> : <div className={styles.benefitsGrid}>
-          {categorias.map(([categoria, quantidade], index) => <button type="button" key={categoria} onClick={() => onOpen("beneficios")} className={[styles.benefitCard, index < 2 ? styles.benefitCardWide : ""].join(" ")}>
-            <span className={styles.benefitIcon}>{iconeCategoria(categoria)}</span>
-            <span><span className={styles.benefitTitle}>{categoria}</span><span className={styles.benefitDesc}>{quantidade} {quantidade === 1 ? "benefício disponível" : "benefícios disponíveis"} no catálogo.</span></span>
+        {recompensasAtivas.length === 0 ? <div className={styles.empty}>Nenhum benefício ativo no catálogo.</div> : <div className={styles.benefitsGrid}>
+          {recompensasAtivas.slice(0, 4).map((r) => <button type="button" key={r.id} onClick={() => onOpen("beneficios")} className={styles.benefitProductCard}>
+            <span className={styles.benefitThumb}><ImagemPremio recompensa={r} /></span>
+            <span className={styles.benefitProductCopy}>
+              <span className={styles.benefitTitle}>{r.titulo}</span>
+              <span className={styles.benefitDesc}>{r.categoria || "Benefício"} · {r.pontos.toLocaleString("pt-BR")} pts</span>
+            </span>
             <ChevronRight size={15} color="var(--rose)" />
           </button>)}
         </div>}
