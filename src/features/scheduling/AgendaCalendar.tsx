@@ -33,9 +33,10 @@ export function AgendaCalendar({ selecionado, hoje, calendario, onSelecionar, on
       {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((x) => <div key={x} className="weekday">{x}</div>)}
       {celulasDoMes(selecionado).map((cel) => {
         const s = statusDoDia(porData.get(cel.iso));
+        const passado = cel.iso < hoje;
         const agendada = s.usadas > 0;
-        const estado = agendada ? "booked" : s.kind === "available" || s.kind === "partial" ? "available" : "blocked";
-        const legenda = agendada ? `${s.usadas} agendamento(s)` : estado === "available" ? "disponível" : "fechada";
+        const estado = passado ? "past" : agendada ? "booked" : s.kind === "available" || s.kind === "partial" ? "available" : "blocked";
+        const legenda = passado ? "data encerrada" : agendada ? `${s.usadas} agendamento(s)` : estado === "available" ? "disponível" : "fechada";
         return <div key={cel.iso} className={["day-cell", estado, cel.outroMes ? "other" : "", cel.iso === selecionado ? "selected" : ""].filter(Boolean).join(" ")}>
           <div className="day-top"><span className="day-num">{cel.dia}</span><span className="day-marker" /></div>
           {agendada && <span className="cell-bookings" aria-hidden="true">{s.usadas}</span>}
@@ -48,14 +49,15 @@ export function AgendaCalendar({ selecionado, hoje, calendario, onSelecionar, on
 }
 
 /** V46 `dayPanelHtml`: status, abrir/bloquear, vagas e lista do dia. */
-export function DayPanel({ tipo, data, dia, ocupado, tetoAtingido, antesDaLista, itens, acaoLista, onAbrir, onBloquear, onCapacidade }: {
-  tipo: "terms" | "surgery"; data: string; dia: DiaCalendario | undefined; ocupado: boolean; tetoAtingido?: boolean;
+export function DayPanel({ tipo, data, hoje, dia, ocupado, tetoAtingido, antesDaLista, itens, acaoLista, onAbrir, onBloquear, onCapacidade }: {
+  tipo: "terms" | "surgery"; data: string; hoje: string; dia: DiaCalendario | undefined; ocupado: boolean; tetoAtingido?: boolean;
   antesDaLista?: ReactNode; itens: ReactNode[]; acaoLista?: ReactNode;
   onAbrir: () => void; onBloquear: () => void; onCapacidade: (novo: number) => void;
 }) {
   const s = statusDoDia(dia);
-  const texto = s.usadas > 0 ? "Já agendada" : s.kind === "blocked" || s.kind === "full" ? "Fechada" : "Disponível";
-  const cls = s.kind === "blocked" || s.kind === "full" ? "danger" : s.kind === "partial" ? "wait" : "success";
+  const passado = data < hoje;
+  const texto = passado ? "Data encerrada" : s.usadas > 0 ? "Já agendada" : s.kind === "blocked" || s.kind === "full" ? "Fechada" : "Disponível";
+  const cls = passado ? "past" : s.kind === "blocked" || s.kind === "full" ? "danger" : s.kind === "partial" ? "wait" : "success";
   const capacidade = dia?.vagasTotais || 0;
   return <div className={`selected-day ${tipo === "terms" ? "terms-day-panel" : "surgery-day-panel"} panel panel-pad`}>
     <div className="calendar-head">
@@ -65,24 +67,28 @@ export function DayPanel({ tipo, data, dia, ocupado, tetoAtingido, antesDaLista,
       </div>
     </div>
     {antesDaLista}
-    <div className="day-actions">
-      <button type="button" className="secondary-btn" onClick={onAbrir} disabled={ocupado || tetoAtingido} title={tetoAtingido ? "Teto financeiro mensal atingido" : undefined}>{tipo === "terms" ? "Liberar para termos" : "Abrir data cirúrgica"}</button>
-      <button type="button" className="danger-btn" onClick={onBloquear} disabled={ocupado || (Boolean(dia) && !s.aberta)}>Bloquear</button>
-    </div>
-    <div className="vacancy-card">
+    {passado
+      ? <div className="past-date-notice" role="note"><b>Data encerrada</b><span>Este dia já passou e está disponível somente para consulta. Não é possível abrir, bloquear, alterar vagas ou criar novos agendamentos.</span></div>
+      : <div className="day-actions">
+          <button type="button" className="secondary-btn" onClick={onAbrir} disabled={ocupado || tetoAtingido} title={tetoAtingido ? "Teto financeiro mensal atingido" : undefined}>{tipo === "terms" ? "Liberar para termos" : "Abrir data cirúrgica"}</button>
+          <button type="button" className="danger-btn" onClick={onBloquear} disabled={ocupado || (Boolean(dia) && !s.aberta)}>Bloquear</button>
+        </div>}
+    <div className={`vacancy-card${passado ? " read-only" : ""}`}>
       <div>
         <small>{tipo === "terms" ? "Vagas para assinatura" : "Capacidade cirúrgica"}</small>
         <div className="big">{Math.max(0, capacidade - s.usadas)} de {capacidade}</div>
         <small>{s.usadas} {tipo === "terms" ? "agendada(s)" : "ocupada(s)"}</small>
       </div>
-      <div className="stepper" title={s.aberta ? undefined : "Libere a data para ajustar as vagas"}>
-        <button type="button" aria-label="Diminuir vagas" disabled={ocupado || !s.aberta || capacidade - 1 < Math.max(1, s.usadas)} onClick={() => onCapacidade(capacidade - 1)}>−</button>
-        <span aria-live="polite">{capacidade}</span>
-        <button type="button" aria-label="Aumentar vagas" disabled={ocupado || !s.aberta} onClick={() => onCapacidade(capacidade + 1)}>+</button>
-      </div>
+      {passado
+        ? <span className="past-date-pill">Encerrada</span>
+        : <div className="stepper" title={s.aberta ? undefined : "Libere a data para ajustar as vagas"}>
+            <button type="button" aria-label="Diminuir vagas" disabled={ocupado || !s.aberta || capacidade - 1 < Math.max(1, s.usadas)} onClick={() => onCapacidade(capacidade - 1)}>−</button>
+            <span aria-live="polite">{capacidade}</span>
+            <button type="button" aria-label="Aumentar vagas" disabled={ocupado || !s.aberta} onClick={() => onCapacidade(capacidade + 1)}>+</button>
+          </div>}
     </div>
     <div className="day-list">
-      <div className="day-list-head"><h4>{tipo === "terms" ? "Assinaturas agendadas" : "Cirurgias do dia"} ({itens.length})</h4>{acaoLista}</div>
+      <div className="day-list-head"><h4>{tipo === "terms" ? "Assinaturas agendadas" : "Cirurgias do dia"} ({itens.length})</h4>{passado ? null : acaoLista}</div>
       <div className="appointment-list">{itens.length ? itens : <div className="empty-card">Nenhum agendamento neste dia.</div>}</div>
     </div>
   </div>;
