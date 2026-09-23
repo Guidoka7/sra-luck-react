@@ -51,7 +51,7 @@ export function AdminWorkspace() {
       <div><h1 style={{ fontSize: 27 }}>Configurações</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "68ch" }}>Centralize preferências da operação, Web Push, monitoramento, equipe e conexões do sistema.</p></div>
     </div>
 
-    <nav aria-label="Seções de Configurações" style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14, boxShadow: "0 12px 28px -25px rgba(122,38,50,.3)" }}>
+    <nav aria-label="Seções de Configurações" style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", width: "fit-content", maxWidth: "100%", overflow: "auto", marginBottom: 14, boxShadow: "var(--tabs-shadow)" }}>
       {ABAS.map((item) => { const on = aba === item.id; return <button key={item.id} type="button" onClick={() => navegar(item.id)} style={{ display: "flex", alignItems: "center", gap: 7, height: 31, padding: "0 13px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}><item.icon className="h-3.5 w-3.5" />{item.label}</button>; })}
     </nav>
 
