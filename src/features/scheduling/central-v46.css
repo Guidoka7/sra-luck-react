@@ -5443,3 +5443,175 @@
 .dark .v46 .surgery-financial-cap p {
     color: #979c99
 }
+
+
+/* V47 — datas anteriores a hoje são históricas: cinza e somente leitura. */
+.v46 .terms-agenda .day-cell.past,
+.v46 .surgery-agenda .day-cell.past,
+.v46 .terms-agenda .day-cell.past.selected,
+.v46 .surgery-agenda .day-cell.past.selected,
+.v46 .terms-agenda .day-cell.past.booked,
+.v46 .surgery-agenda .day-cell.past.booked,
+.v46 .terms-agenda .day-cell.past.available,
+.v46 .surgery-agenda .day-cell.past.available,
+.v46 .terms-agenda .day-cell.past.blocked,
+.v46 .surgery-agenda .day-cell.past.blocked {
+  background:#f1f2f4!important;
+  border:1px solid #d9dde2!important;
+  color:#9299a3!important;
+  box-shadow:none!important;
+  opacity:.78;
+}
+
+.v46 .day-cell.past .day-num,
+.v46 .day-cell.past .day-cap,
+.v46 .day-cell.past .day-capacity {
+  color:#9299a3!important;
+}
+
+.v46 .day-cell.past .day-marker {
+  background:#aeb4bc!important;
+}
+
+.v46 .day-cell.past:before {
+  background:#e2e5e9!important;
+  color:#8f969f!important;
+}
+
+.v46 .day-cell.past .cell-bookings {
+  background:#e8eaed!important;
+  border-color:#d2d6dc!important;
+  color:#858c96!important;
+  box-shadow:none!important;
+}
+
+.v46 .day-cell.past:hover {
+  box-shadow:none!important;
+  transform:none!important;
+}
+
+.v46 .day-cell.past button {
+  cursor:pointer;
+}
+
+.v46 .badge.past {
+  background:#eceef1;
+  border:1px solid #d8dce1;
+  color:#747c87;
+}
+
+.v46 .past-date-notice {
+  display:grid;
+  gap:3px;
+  margin:12px 0;
+  padding:10px 12px;
+  border:1px solid #dfe2e6;
+  border-radius:11px;
+  background:#f5f6f7;
+  color:#717985;
+}
+
+.v46 .past-date-notice b {
+  color:#59616c;
+  font-size:10px;
+}
+
+.v46 .past-date-notice span {
+  font-size:8.5px;
+  line-height:1.45;
+}
+
+.v46 .vacancy-card.read-only {
+  background:#f7f7f8!important;
+  border-color:#e1e3e6!important;
+}
+
+.v46 .vacancy-card.read-only .big {
+  color:#737b86!important;
+}
+
+.v46 .past-date-pill {
+  margin-left:auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:28px;
+  padding:0 9px;
+  border:1px solid #d7dbe0;
+  border-radius:999px;
+  background:#eceef1;
+  color:#757d87;
+  font-size:8px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.dark .v46 .terms-agenda .day-cell.past,
+.dark .v46 .surgery-agenda .day-cell.past,
+.dark .v46 .terms-agenda .day-cell.past.selected,
+.dark .v46 .surgery-agenda .day-cell.past.selected,
+.dark .v46 .terms-agenda .day-cell.past.booked,
+.dark .v46 .surgery-agenda .day-cell.past.booked,
+.dark .v46 .terms-agenda .day-cell.past.available,
+.dark .v46 .surgery-agenda .day-cell.past.available,
+.dark .v46 .terms-agenda .day-cell.past.blocked,
+.dark .v46 .surgery-agenda .day-cell.past.blocked {
+  background:#1b1c1f!important;
+  border:1px solid #30343a!important;
+  color:#70767f!important;
+  box-shadow:none!important;
+  opacity:.72;
+}
+
+.dark .v46 .day-cell.past .day-num,
+.dark .v46 .day-cell.past .day-cap,
+.dark .v46 .day-cell.past .day-capacity {
+  color:#70767f!important;
+}
+
+.dark .v46 .day-cell.past .day-marker {
+  background:#555c66!important;
+}
+
+.dark .v46 .day-cell.past:before {
+  background:#25282d!important;
+  color:#777d86!important;
+}
+
+.dark .v46 .day-cell.past .cell-bookings {
+  background:#24272b!important;
+  border-color:#34383e!important;
+  color:#777d86!important;
+}
+
+.dark .v46 .badge.past {
+  background:#23262a;
+  border-color:#363a40;
+  color:#8d939c;
+}
+
+.dark .v46 .past-date-notice {
+  background:#1b1d20;
+  border-color:#30343a;
+  color:#8a9099;
+}
+
+.dark .v46 .past-date-notice b {
+  color:#a1a6ae;
+}
+
+.dark .v46 .vacancy-card.read-only {
+  background:#191b1e!important;
+  border-color:#2e3237!important;
+}
+
+.dark .v46 .vacancy-card.read-only .big {
+  color:#8c929a!important;
+}
+
+.dark .v46 .past-date-pill {
+  background:#24272b;
+  border-color:#373b41;
+  color:#8d939b;
+}
