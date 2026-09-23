@@ -547,3 +547,37 @@
   background:rgba(199,134,155,.08) !important;
   border-color:rgba(199,134,155,.22) !important;
 }
+
+
+/* Toasts do Sonner vivem fora de .zip-admin; data-sra-admin preserva o escopo. */
+html.dark[data-sra-admin="true"] [data-sonner-toast] {
+  background:#17181D !important;
+  border-color:rgba(236,204,214,.11) !important;
+  color:#F4EEF1 !important;
+  box-shadow:0 20px 52px -28px rgba(0,0,0,.82) !important;
+}
+html.dark[data-sra-admin="true"] [data-sonner-toast][data-type="error"] {
+  background:#21181E !important;
+  border-color:rgba(199,134,155,.26) !important;
+  color:#E4A9B9 !important;
+}
+html.dark[data-sra-admin="true"] [data-sonner-toast][data-type="success"] {
+  background:#142019 !important;
+  border-color:rgba(95,197,138,.22) !important;
+  color:#82D6A5 !important;
+}
+html.dark[data-sra-admin="true"] [data-sonner-toast][data-type="warning"] {
+  background:#211C16 !important;
+  border-color:rgba(216,179,110,.22) !important;
+  color:#E0BF80 !important;
+}
+html.dark[data-sra-admin="true"] [data-sonner-toast][data-type="info"] {
+  background:#171B24 !important;
+  border-color:rgba(145,167,216,.22) !important;
+  color:#B9C7E6 !important;
+}
+html.dark[data-sra-admin="true"] [data-sonner-toast] [data-close-button] {
+  background:#202127 !important;
+  border-color:rgba(236,204,214,.11) !important;
+  color:#CFC7CC !important;
+}
