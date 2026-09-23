@@ -130,12 +130,76 @@
 .loadingState{padding:46px 20px;text-align:center;color:#8d7a7d;font-size:10.5px}
 .pageToast{position:fixed;right:28px;bottom:24px;background:#3e3033;color:#fff;border-radius:9px;padding:12px 15px;font-size:10.5px;box-shadow:0 10px 30px rgba(44,24,28,.18);z-index:150;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}
 .pageToastVisible{opacity:1;transform:translateY(0)}
-.dark{--bg:#221b1d;--bg-soft:#2b2325;--surface:#2d2427;--text:#f1e8e9;--text-secondary:#c7b6ba;--text-muted:#9e8d91;--line:rgba(255,255,255,.08);--line-strong:rgba(255,255,255,.13)}
-.dark .tabs,.dark .filters,.dark .listCard,.dark .field,.dark .selectWrap,.dark .smallSelect,.dark .viewBtn,.dark .moreBtn,.dark .rowMenu,.dark .clientCard{background:#2b2325;color:#eee4e6}
-.dark .table thead th{background:#33292c}
-.dark .table tbody tr:hover{background:#30272a}
-.dark .clientName,.dark .pageTitle,.dark .cardTitle{color:#f0e7e9}
-.dark .field input,.dark .selectWrap select,.dark .smallSelect select{color:#e7dde0;background:#2b2325}
+.dark{
+  --bg:#0f1014;
+  --bg-soft:#14151a;
+  --surface:#18191e;
+  --wine:#d48aa0;
+  --wine-dark:#c37a91;
+  --wine-hover:#e1a0b1;
+  --rose:#c77c93;
+  --rose-soft:rgba(212,138,160,.11);
+  --rose-soft-2:rgba(212,138,160,.08);
+  --gold:#d8b36e;
+  --text:#f4eef1;
+  --text-secondary:#c4bcc1;
+  --text-muted:#938d94;
+  --line:rgba(236,204,214,.09);
+  --line-strong:rgba(236,204,214,.14);
+  --green:#5fc58a;
+  --green-soft:rgba(95,197,138,.12);
+  --shadow:0 22px 58px rgba(0,0,0,.28)
+}
+.dark .tabs,.dark .filters,.dark .listCard,.dark .field,.dark .selectWrap,.dark .smallSelect,.dark .viewBtn,.dark .moreBtn,.dark .rowMenu,.dark .clientCard{
+  background:#17181d;
+  color:#eee8eb;
+  border-color:var(--line)
+}
+.dark .table thead th{background:#14151a;color:#c58ea0;border-color:var(--line)}
+.dark .table tbody tr{border-color:var(--line)}
+.dark .table tbody tr:hover{background:rgba(212,138,160,.055)}
+.dark .clientName,.dark .pageTitle,.dark .cardTitle{color:#f4eef1}
+.dark .pageSub,.dark .cardSub,.dark .orderLabel,.dark .progressText,.dark .gridValue,.dark .emptyState,.dark .loadingState{color:#9f989e}
+.dark .eyebrow,.dark .gridLabel,.dark .legendMode{color:#c8889b}
+.dark .field input,.dark .selectWrap select,.dark .smallSelect select{color:#ece5e8;background:#17181d}
+.dark .field input::placeholder{color:#777179}
+.dark .clientAvatar,.dark .bankPill,.dark .countPill{
+  background:rgba(212,138,160,.12);
+  color:#dfa0b1
+}
+.dark .clearBtn{
+  background:rgba(212,138,160,.10);
+  color:#dfa0b1
+}
+.dark .clearBtn:hover{background:rgba(212,138,160,.16)}
+.dark .viewBtnActive,.dark .primaryBtn{
+  background:linear-gradient(135deg,#d48aa0,#bd7088);
+  border-color:#d48aa0;
+  color:#171116;
+  box-shadow:0 10px 24px rgba(212,138,160,.14)
+}
+.dark .moreBtn:hover,.dark .viewBtn:hover,.dark .rowMenuBtn:hover,.dark .rowMenu button:hover{
+  background:rgba(212,138,160,.075);
+  color:#e3a2b4
+}
+.dark .statusPill,.dark .quitado{
+  background:rgba(95,197,138,.12);
+  color:#78d49f
+}
+.dark .statusCancelled,.dark .statusNegativada,.dark .statusProof{
+  background:rgba(212,138,160,.12);
+  color:#e3a2b4
+}
+.dark .statusSuspensa,.dark .statusInadimplente{
+  background:rgba(216,179,110,.12);
+  color:#dfbd7c
+}
+.dark .pageToast{
+  background:#1d1e23;
+  color:#f4eef1;
+  border:1px solid rgba(236,204,214,.10);
+  box-shadow:0 18px 50px rgba(0,0,0,.42)
+}
 @media(max-width:1250px){
   .page{padding-left:22px;padding-right:22px}
   .selectWrap{flex-basis:168px}.statusSelect{flex-basis:175px}.periodSelect{flex-basis:177px}.clearBtn{min-width:132px}
@@ -164,8 +228,9 @@
 .legendItem{border:1px solid var(--line);border-radius:10px;background:#fffdfc;padding:11px 12px}
 .legendItem p{margin:6px 0 0;font-size:10.5px;line-height:1.5;color:#8d7a7d}
 .legendMode{margin-left:8px;font-size:8px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#a2777d}
-.dark .funilNote,.dark .legendItem{background:#2b2325;color:#c7b6ba}
-.dark .progressTrack{background:#3a2f32}
-.dark .strong{color:#f0e7e9}
+.dark .funilNote,.dark .legendItem{background:#17181d;color:#c4bcc1;border-color:var(--line)}
+.dark .progressTrack{background:#28242a}
+.dark .progressFill{background:linear-gradient(90deg,#c77c93,#e3a2b4)}
+.dark .strong{color:#f4eef1}
 /* Largura intermediária (sidebar do admin ainda visível): abas quebram em linhas e a tabela rola dentro do card. */
 @media(max-width:1060px){.tabs{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));height:auto}.tab{min-height:50px}.tab:not(:last-child)::after{display:none}.tableWrap{overflow-x:auto}.table{min-width:860px}.decorative{display:none}.pageHeadRight{min-width:0}}
