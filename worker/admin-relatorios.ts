@@ -181,7 +181,7 @@ const LABEL_SITUACAO_FORECAST: Record<string, string> = { sem_regra: "Sem regra"
 
 async function fetchClientes(db: Db) {
   const { data, error } = await db.from("clientes").select(
-    "id,nome_completo,cpf,status_contrato,consultora,vendedora_id,procedimento,valor_contrato,ativo,created_at,suspenso_desde,financeiro_confirmado_em,status_revisao_financeira",
+    "id,nome_completo,cpf,status_contrato,status_cirurgia,consultora,vendedora_id,procedimento,valor_contrato,ativo,created_at,updated_at,suspenso_desde,financeiro_confirmado_em,status_revisao_financeira",
   );
   if (error) throw new Error(error.message);
   return data ?? [];
@@ -665,6 +665,165 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
   }
 
   const db = createServiceSupabaseClient(env);
+
+  if (url.pathname === "/api/admin/relatorios/dashboard" && request.method === "GET") {
+    if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {
+      return json({ erro: "Seu papel não tem permissão para visualizar relatórios." }, 403);
+    }
+    try {
+      const agora = new Date();
+      const periodo = /^\d{4}-\d{2}$/.test(url.searchParams.get("periodo") ?? "")
+        ? String(url.searchParams.get("periodo"))
+        : agora.toISOString().slice(0, 7);
+      const [ano, mes] = periodo.split("-").map(Number);
+      const inicio = periodo + "-01";
+      const proximo = new Date(Date.UTC(ano, mes, 1)).toISOString().slice(0, 10);
+      const anteriorDate = new Date(Date.UTC(ano, mes - 2, 1));
+      const periodoAnterior = anteriorDate.toISOString().slice(0, 7);
+      const inicioAnterior = periodoAnterior + "-01";
+      const fimAnterior = inicio;
+      const responsavel = String(url.searchParams.get("responsavel") ?? "todos");
+      const procedimento = String(url.searchParams.get("procedimento") ?? "todos");
+      const status = String(url.searchParams.get("status") ?? "todos");
+
+      const [clientesRaw, boletosRaw, recebimentosRaw, agendamentosRaw, logsRaw] = await Promise.all([
+        fetchClientes(db),
+        fetchBoletos(db),
+        fetchRecebimentos(db),
+        fetchAgendamentos(db),
+        fetchLogs(db, "clientes"),
+      ]);
+
+      const clientes = clientesRaw.filter((c: any) =>
+        (responsavel === "todos" || String(c.consultora ?? "") === responsavel)
+        && (procedimento === "todos" || String(c.procedimento ?? "") === procedimento)
+        && (status === "todos" || String(c.status_contrato ?? "") === status)
+      );
+      const ids = new Set(clientes.map((c: any) => String(c.id)));
+      const boletos = boletosRaw.filter((b: any) => ids.has(String(b.cliente_id)));
+      const recebimentos = recebimentosRaw.filter((r: any) => ids.has(String(r.cliente_id)));
+      const agendamentos = agendamentosRaw.filter((a: any) => ids.has(String(a.cliente_id)));
+      const logs = logsRaw.filter((l: any) => ids.has(String(l.entidade_id)));
+
+      const somaRecebimentos = (ini: string, fim: string) => recebimentos
+        .filter((r: any) => r.data_pagamento && String(r.data_pagamento).slice(0, 10) >= ini && String(r.data_pagamento).slice(0, 10) < fim)
+        .reduce((soma: number, r: any) => soma + Number(r.valor_recebido ?? 0), 0);
+      const contaReativacoes = (ini: string, fim: string) => logs.filter((l: any) => {
+        if (l.acao !== "alterou_status_contrato") return false;
+        const data = String(l.created_at ?? "").slice(0, 10);
+        const detalhes = (l.detalhes ?? {}) as Record<string, unknown>;
+        return data >= ini && data < fim
+          && detalhes.para === "ativo"
+          && ["suspenso", "negativado", "cancelado"].includes(String(detalhes.de ?? ""));
+      }).length;
+      const contaCancelamentos = (ini: string, fim: string) => clientes.filter((c: any) =>
+        c.status_contrato === "cancelado"
+        && String(c.updated_at ?? c.created_at ?? "").slice(0, 10) >= ini
+        && String(c.updated_at ?? c.created_at ?? "").slice(0, 10) < fim
+      ).length;
+      const contaLiberacoes = (ini: string, fim: string) => agendamentos.filter((a: any) =>
+        a.previsao_liberacao_financeira
+        && String(a.previsao_liberacao_financeira).slice(0, 10) >= ini
+        && String(a.previsao_liberacao_financeira).slice(0, 10) < fim
+      ).length;
+
+      const valorRecebido = somaRecebimentos(inicio, proximo);
+      const valorRecebidoAnterior = somaRecebimentos(inicioAnterior, fimAnterior);
+      const reativacoes = contaReativacoes(inicio, proximo);
+      const reativacoesAnterior = contaReativacoes(inicioAnterior, fimAnterior);
+      const cancelamentos = contaCancelamentos(inicio, proximo);
+      const cancelamentosAnterior = contaCancelamentos(inicioAnterior, fimAnterior);
+      const liberacoes = contaLiberacoes(inicio, proximo);
+      const liberacoesAnterior = contaLiberacoes(inicioAnterior, fimAnterior);
+
+      const meses6 = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(Date.UTC(ano, mes - 1 - (5 - i), 1));
+        const chave = d.toISOString().slice(0, 7);
+        const fimD = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+        const iniD = chave + "-01";
+        const receb = somaRecebimentos(iniD, fimD);
+        const inad = boletos.filter((b: any) =>
+          b.data_vencimento
+          && String(b.data_vencimento).slice(0, 10) >= iniD
+          && String(b.data_vencimento).slice(0, 10) < fimD
+          && b.status !== "pago"
+        ).reduce((total: number, b: any) => total + Number(b.valor ?? 0), 0);
+        const cirConfirmadas = agendamentos.filter((a: any) =>
+          a.data_cirurgia
+          && String(a.data_cirurgia).slice(0, 10) >= iniD
+          && String(a.data_cirurgia).slice(0, 10) < fimD
+          && rel<any>(a.clientes)?.status_cirurgia !== "cancelada"
+        ).length;
+        const cirCanceladas = agendamentos.filter((a: any) =>
+          a.data_cirurgia
+          && String(a.data_cirurgia).slice(0, 10) >= iniD
+          && String(a.data_cirurgia).slice(0, 10) < fimD
+          && rel<any>(a.clientes)?.status_cirurgia === "cancelada"
+        ).length;
+        return { mes: chave, recebimentos: receb, inadimplencia: inad, cirurgiasConfirmadas: cirConfirmadas, cirurgiasCanceladas: cirCanceladas };
+      });
+
+      const cadastro = clientes.length;
+      const emAnalise = clientes.filter((c: any) => c.status_revisao_financeira === "pendente").length;
+      const aguardandoLiberacao = agendamentos.filter((a: any) => a.termos_assinados_em && rel<any>(a.clientes)?.custeio_confirmado_em && !a.data_cirurgia).length;
+      const cirurgiaConfirmada = agendamentos.filter((a: any) => a.data_cirurgia && rel<any>(a.clientes)?.status_cirurgia === "agendada").length;
+      const posOperatorio = clientes.filter((c: any) => c.status_cirurgia === "realizada").length;
+
+      const desempenhoMap = new Map<string, number>();
+      for (const a of agendamentos) {
+        const c = rel<any>(a.clientes);
+        if (!a.data_cirurgia || String(a.data_cirurgia).slice(0, 10) < inicio || String(a.data_cirurgia).slice(0, 10) >= proximo) continue;
+        if (c?.status_cirurgia === "cancelada") continue;
+        const nome = String(c?.consultora ?? "Equipe Central");
+        desempenhoMap.set(nome, (desempenhoMap.get(nome) ?? 0) + 1);
+      }
+      const desempenho = [...desempenhoMap.entries()]
+        .map(([nome, total]) => ({ nome, total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+
+      const totalPrevistoMes = boletos.filter((b: any) => b.data_vencimento && String(b.data_vencimento).slice(0, 10) >= inicio && String(b.data_vencimento).slice(0, 10) < proximo)
+        .reduce((soma: number, b: any) => soma + Number(b.valor ?? 0), 0);
+      const inadimplenciaMes = boletos.filter((b: any) => b.data_vencimento && String(b.data_vencimento).slice(0, 10) >= inicio && String(b.data_vencimento).slice(0, 10) < proximo && b.status !== "pago")
+        .reduce((soma: number, b: any) => soma + Number(b.valor ?? 0), 0);
+      const taxaInadimplencia = totalPrevistoMes > 0 ? Math.round(inadimplenciaMes / totalPrevistoMes * 1000) / 10 : 0;
+
+      const percent = (atual: number, anterior: number) => anterior > 0 ? Math.round((atual - anterior) / anterior * 1000) / 10 : null;
+      return json({
+        periodo,
+        filtros: { responsavel, procedimento, status },
+        opcoes: {
+          responsaveis: [...new Set(clientesRaw.map((c: any) => c.consultora).filter(Boolean))].sort(),
+          procedimentos: [...new Set(clientesRaw.map((c: any) => c.procedimento).filter(Boolean))].sort(),
+        },
+        kpis: {
+          recebimentos: { valor: valorRecebido, variacao: percent(valorRecebido, valorRecebidoAnterior) },
+          reativacoes: { valor: reativacoes, variacao: percent(reativacoes, reativacoesAnterior) },
+          cancelamentos: { valor: cancelamentos, variacao: percent(cancelamentos, cancelamentosAnterior) },
+          liberacoes: { valor: liberacoes, variacao: percent(liberacoes, liberacoesAnterior) },
+        },
+        funil: [
+          { id: "cadastro", label: "Cadastro", valor: cadastro },
+          { id: "analise", label: "Em análise", valor: emAnalise },
+          { id: "liberacao", label: "Aguardando liberação", valor: aguardandoLiberacao },
+          { id: "cirurgia", label: "Cirurgia confirmada", valor: cirurgiaConfirmada },
+          { id: "pos", label: "Pós-operatório", valor: posOperatorio },
+        ],
+        meses: meses6,
+        desempenho,
+        insights: {
+          taxaInadimplencia,
+          melhorResponsavel: desempenho[0] ?? null,
+          recebimentosVariacao: percent(valorRecebido, valorRecebidoAnterior),
+          reativacoes,
+          cancelamentos,
+        },
+      });
+    } catch (error) {
+      console.error("Falha ao montar dashboard de relatórios:", error);
+      return json({ erro: "Não foi possível carregar o painel de relatórios." }, 500);
+    }
+  }
 
   if (url.pathname === "/api/admin/relatorios/catalogo" && request.method === "GET") {
     const grupos = ["clientes", "financeiro", "agenda", "previsoes", "operacao", "equipe", "integracoes"].map((modulo) => ({
