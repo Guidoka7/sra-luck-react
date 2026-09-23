@@ -43,6 +43,28 @@
 
 .dark .zip-admin {
   /* Dark premium: preto grafite quente + rosé. Sem vermelho puro. */
+  /* Tokens Tailwind também ficam escopados ao Admin para que badges,
+     alertas e componentes compartilhados não voltem ao vermelho global. */
+  --color-cream: 255 247 250;
+  --color-pearl: 255 247 250;
+  --color-blush: 28 29 35;
+  --color-rose: 199 134 155;
+  --color-burgundy: 168 95 125;
+  --color-burgundy-light: 220 160 178;
+  --color-burgundy-dark: 149 82 111;
+  --color-clay: 232 224 228;
+  --color-gold: 216 179 110;
+  --color-alert: 199 134 155;
+  --color-success: 95 197 138;
+  --surface-0: 15 16 20;
+  --surface-1: 21 22 27;
+  --surface-2: 28 29 35;
+  --surface-glass: 18 19 24;
+  --text-main: 244 238 241;
+  --text-soft: 169 162 168;
+  --border-soft: 236 204 214;
+  --shadow-rgb: 0 0 0;
+
   --s0: #111217;
   --s1: #15161B;
   --s2: #1C1D23;
