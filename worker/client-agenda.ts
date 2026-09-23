@@ -109,7 +109,14 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
       const { data: comprometido } = await supabase.rpc("agenda_comprometimento_mes", { p_mes: `${mes}-01`, p_excluir_cliente: cliente.id });
       comprometidoPorMes.set(mes, Number(comprometido ?? 0));
     }));
+    // Regra interna (migration_076): só a partir da data dos termos + intervalo
+    // configurado (padrão 90 dias). Antes disso, as datas não são enviadas e o
+    // calendário da cliente as mostra como lotadas.
+    const { data: dataMinima, error: erroDataMinima } = await supabase.rpc("agenda_data_minima_cirurgia", { p_agendamento_id: agendamentoCorrente.id });
+    if (erroDataMinima) console.error("Falha ao calcular a data mínima da cirurgia:", erroDataMinima);
+    const primeiraData = typeof dataMinima === "string" ? dataMinima.slice(0, 10) : null;
     datasCirurgiaDisponiveis = (datasCirurgia ?? [])
+      .filter((d: any) => !primeiraData || String(d.data) >= primeiraData)
       .filter((d: any) => (comprometidoPorMes.get(String(d.data).slice(0, 7)) ?? 0) + cartaDeCredito <= 100000)
       .map((d: any) => ({
         id: d.id,
@@ -227,14 +234,16 @@ export async function agendarCirurgia(request: Request, env: Env): Promise<Respo
   if (!horario || !HORARIOS_CIRURGIA_VALIDOS.has(horario)) return json({ erro: "Escolha um horário válido." }, 400);
 
   const supabase = createServiceSupabaseClient(env);
-  // agenda_reservar_cirurgia (migration_060/064) já valida, na mesma
-  // transação: agenda liberada, previsão como piso, capacidade da data e o
-  // teto mensal de R$ 100.000 — nenhuma dessas regras é recalculada aqui.
-  const { error } = await supabase.rpc("agenda_reservar_cirurgia", { p_cliente_id: s.clienteId, p_data: data, p_horario: horario, p_usuario: `cliente:${s.clienteId}` });
+  // agenda_reservar_cirurgia_cliente (migration_076) aplica o intervalo mínimo
+  // após os termos e delega para agenda_reservar_cirurgia (migration_070), que
+  // valida na mesma transação: agenda liberada, previsão como piso, capacidade
+  // da data e o teto mensal de R$ 100.000 — nada disso é recalculado aqui.
+  const { error } = await supabase.rpc("agenda_reservar_cirurgia_cliente", { p_cliente_id: s.clienteId, p_data: data, p_horario: horario, p_usuario: `cliente:${s.clienteId}` });
   if (error) {
     const m = error.message ?? "";
     if (m.includes("AGENDA_CIRURGICA_NAO_LIBERADA")) return json({ erro: "Sua agenda cirúrgica ainda não foi liberada." }, 409);
     if (m.includes("ANTES_DA_PREVISAO")) return json({ erro: "Escolha uma data igual ou posterior à previsão confirmada pela equipe." }, 409);
+    if (m.includes("DATA_CIRURGIA_LOTADA")) return json({ erro: "Essa data está lotada. Escolha outra data disponível." }, 409);
     if (m.includes("DATA_PASSADA")) return json({ erro: "Escolha uma data futura." }, 409);
     if (m.includes("DATA_CIRURGIA_INDISPONIVEL")) return json({ erro: "Essa data não foi liberada pela equipe ou já não está disponível." }, 409);
     if (m.includes("VAGAS_ESGOTADAS")) return json({ erro: "As vagas dessa data acabaram de se esgotar." }, 409);

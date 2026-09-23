@@ -8,7 +8,7 @@ import { AgendaBloqueadaPercentual } from "@/components/cliente/AgendaBloqueadaP
 import { SolicitarLiberacaoFinanceira } from "@/components/cliente/SolicitarLiberacaoFinanceira";
 import { EscolherFormaPagamento } from "@/components/cliente/EscolherFormaPagamento";
 import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinanceira";
-import { etapaAgenda, passoDaTrilha, PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS, statusAgenda, termosJaAssinados, TRILHA_AGENDA, type EtapaAgenda } from "@/components/cliente/agenda/agendaEtapa";
+import { etapaAgenda, passoDaTrilha, PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS, statusAgenda, termosJaAssinados, TRILHA_AGENDA, type EtapaAgenda } from "@/components/cliente/agenda/agendaEtapa";
 import type { AgendaData, FormaCusteio, StatusRevisaoFinanceira } from "@/lib/clienteAgenda";
 import { percentualNecessario } from "@/lib/utils";
 import { LOGO_SRC } from "@/assets/brand";
@@ -301,7 +301,7 @@ export function AgendaTab({
     case "termos_assinados":
       cartao = cirurgiaLiberada
         ? <CartaoEtapa tom="verde" etapa={etapa} rotulo="Agora · Última etapa" titulo="Escolha a data da cirurgia" texto="Sua agenda cirúrgica está liberada. Escolha um dia disponível no calendário abaixo." />
-        : <CartaoEtapa tom="ambar" etapa={etapa} rotulo="Agora · Última etapa" titulo="Agenda cirúrgica em liberação" texto={liberarEm ? `A escolha da data da cirurgia será liberada a partir de ${brDate(liberarEm)}, podendo ser antecipada pela equipe.` : `Com os termos assinados e a quitação confirmada, a liberação da sua agenda cirúrgica ocorre em até ${PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS} dias corridos, podendo ser antecipada pela equipe.`} />;
+        : <CartaoEtapa tom="ambar" etapa={etapa} rotulo="Agora · Última etapa" titulo="Agenda cirúrgica em liberação" texto={liberarEm ? `A escolha da data da cirurgia será liberada a partir de ${brDate(liberarEm)}.` : `Com os termos assinados e a quitação confirmada, sua agenda cirúrgica é liberada em até ${PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS} dias úteis.`} />;
       break;
     case "cirurgia": {
       const dias = agendamentoAtual?.dataCirurgia ? diasAte(agendamentoAtual.dataCirurgia) : null;

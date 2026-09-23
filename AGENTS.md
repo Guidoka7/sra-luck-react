@@ -154,7 +154,7 @@ Se essas respostas não existirem, não construir a ação como se estivesse pro
 - A receita da empresa vem da **taxa administrativa** embutida nas parcelas.
 - O percentual de elegibilidade da cliente é baseado em **quantidade de parcelas pagas / total de parcelas**, não em valor financeiro pago.
 - O fluxo novo de cirurgia substitui regras históricas incompatíveis, inclusive a antiga regra de 5 dias úteis.
-- Após termos assinados **e** quitação confirmada (nenhum dos dois isoladamente inicia a janela), a agenda cirúrgica é liberada em até o prazo operacional vigente documentado (atualmente até 90 dias corridos, como teto — a liberação real pode ocorrer antes).
+- Após termos assinados **e** quitação confirmada (nenhum dos dois isoladamente inicia a janela), a agenda cirúrgica é liberada em até 5 dias úteis; a cliente só escolhe datas a partir da data dos termos + 90 dias (antes disso, aparecem como lotadas).
 
 Detalhes completos: `docs/BUSINESS-RULES.md`.
 
