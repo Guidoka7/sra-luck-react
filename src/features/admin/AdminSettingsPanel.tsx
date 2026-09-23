@@ -128,7 +128,7 @@ export function AdminSettingsPanel() {
     {feedback && <div style={{ marginBottom: 12, borderRadius: 9, border: `1px solid ${feedback.tone === "ok" ? "var(--okbg)" : "var(--badbg)"}`, background: feedback.tone === "ok" ? "var(--okbg)" : "var(--badbg)", color: feedback.tone === "ok" ? "var(--ok)" : "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{feedback.text}</div>}
 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(330px,1fr))", gap: 12 }} className="zip-animate-fade-in">
-      {cards.map((card) => <div key={card.id} onClick={() => setDrawer(card.id)} className="zip-row-hover" style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "15px 16px", boxShadow: "0 14px 34px -31px var(--panel-shadow)", cursor: "pointer", minHeight: 138 }}>
+      {cards.map((card) => <div key={card.id} onClick={() => setDrawer(card.id)} className="zip-row-hover" style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "15px 16px", boxShadow: "var(--panel-shadow)", cursor: "pointer", minHeight: 138 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: card.iconBg, display: "grid", placeItems: "center", color: card.iconColor, fontSize: card.icon.length > 1 ? 9 : 15, fontWeight: 800 }}>{card.icon}</div>
