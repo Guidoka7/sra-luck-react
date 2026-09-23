@@ -26,9 +26,34 @@ export function compararComExistentes(parcelas: ParcelaLida[], existentes: Parce
     const existente = numero != null ? porNumero.get(numero) ?? null : null;
     const provavel = (): ComparacaoParcela["correspondenciaProvavel"] => {
       if (!p.vencimento.valor || p.valorCentavos.valor == null) return null;
-      const candidatas = existentes.filter((e) => !e.temBoleto && e.vencimento && mesesEntre(e.vencimento, p.vencimento.valor!) === 0 && e.valorCentavos === p.valorCentavos.valor);
+
+      // Correspondência forte: data completa + valor + total (quando o total foi
+      // lido) apontam para uma única parcela sem boleto. Isso é seguro para
+      // carnês em que o banco não imprime o número da parcela em cada folha.
+      const exatas = existentes.filter((e) =>
+        !e.temBoleto
+        && e.vencimento === p.vencimento.valor
+        && e.valorCentavos === p.valorCentavos.valor
+        && (p.total.valor == null || e.total === p.total.valor)
+      );
+      if (exatas.length === 1 && exatas[0].numero !== numero) {
+        return {
+          numero: exatas[0].numero,
+          motivo: `Mesmo vencimento, valor${p.total.valor != null ? " e total" : ""} da parcela ${exatas[0].numero}/${exatas[0].total} já cadastrada.`,
+          exata: true,
+        };
+      }
+
+      // Correspondência fraca: mesmo mês e valor. Continua sendo apenas uma
+      // sugestão humana porque o dia ou o total podem divergir.
+      const candidatas = existentes.filter((e) =>
+        !e.temBoleto
+        && e.vencimento
+        && mesesEntre(e.vencimento, p.vencimento.valor!) === 0
+        && e.valorCentavos === p.valorCentavos.valor
+      );
       return candidatas.length === 1 && candidatas[0].numero !== numero
-        ? { numero: candidatas[0].numero, motivo: `Mesmo mês de vencimento e mesmo valor da parcela ${candidatas[0].numero}/${candidatas[0].total} já cadastrada.` }
+        ? { numero: candidatas[0].numero, motivo: `Mesmo mês de vencimento e mesmo valor da parcela ${candidatas[0].numero}/${candidatas[0].total} já cadastrada.`, exata: false }
         : null;
     };
     if (!existente) return { item: p.id, situacao: "NOVA", existente: null, diferencas: [], correspondenciaProvavel: provavel() };

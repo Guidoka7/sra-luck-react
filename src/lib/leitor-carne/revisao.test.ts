@@ -55,6 +55,46 @@ describe("revisão humana", () => {
     expect(pendenciasItem(corrigido, lista, []).join(" ")).toMatch(/não confere/);
   });
 
+  it("sem número impresso, vencimento exato e valor únicos pré-vinculam à parcela cadastrada", () => {
+    const lidoBase = lerCarne(carne(3), ctx(3));
+    const lido = {
+      ...lidoBase,
+      parcelas: lidoBase.parcelas.map((p) => ({
+        ...p,
+        numero: { ...p.numero, valor: null, confianca: 0, nivel: "BAIXA" as const },
+        total: { ...p.total, valor: null, confianca: 0, nivel: "BAIXA" as const },
+        confianca: 0,
+        nivel: "BAIXA" as const,
+      })),
+    };
+    const existentes = [1, 2, 3].map((n) => existente(n, 3));
+    const { itens } = montarRevisao(lido, existentes);
+    expect(itens.map((i) => i.acao)).toEqual(["anexar", "anexar", "anexar"]);
+    expect(itens.map((i) => i.boletoId)).toEqual(existentes.map((e) => e.id));
+    expect(itens.every((i) => i.numero == null && i.total == null)).toBe(true);
+    expect(podeConfirmar(itens, existentes, false, false)).toBe(true);
+  });
+
+  it("mesmo mês e valor, mas dia diferente, continua apenas como sugestão manual", () => {
+    const lidoBase = lerCarne(carne(1), ctx(1));
+    const lido = {
+      ...lidoBase,
+      parcelas: lidoBase.parcelas.map((p) => ({
+        ...p,
+        numero: { ...p.numero, valor: null, confianca: 0, nivel: "BAIXA" as const },
+        total: { ...p.total, valor: null, confianca: 0, nivel: "BAIXA" as const },
+        vencimento: { ...p.vencimento, valor: "2026-02-20" },
+        confianca: 0,
+        nivel: "BAIXA" as const,
+      })),
+    };
+    const existentes = [existente(1, 1, { vencimento: "2026-02-16" })];
+    const { itens } = montarRevisao(lido, existentes);
+    expect(itens[0].acao).toBeNull();
+    expect(itens[0].sugestaoAnexo?.numero).toBe(1);
+    expect(podeConfirmar(itens, existentes, false, false)).toBe(false);
+  });
+
   it("carnê complementar impresso como 1/12 sugere a parcela 61/72 sem trocar sozinho", () => {
     const lido = lerCarne(carne(12, { inicio: "2031-02-16" }), ctx(12));
     const existentes = Array.from({ length: 72 }, (_, i) => existente(i + 1, 72, { vencimento: mensal("2026-02-16", i), temBoleto: i < 60 }));

@@ -56,7 +56,13 @@ export function montarRevisao(carne: CarneLido, existentes: ParcelaExistente[]):
     const c = comparacoes[i];
     const alvo = c.correspondenciaProvavel ? porNumero.get(c.correspondenciaProvavel.numero) : undefined;
     const sugestaoAnexo = c.correspondenciaProvavel && alvo ? { numero: alvo.numero, boletoId: alvo.id, motivo: c.correspondenciaProvavel.motivo } : null;
-    const { acao, boletoId } = acaoPadrao(p, c.situacao, c.existente, Boolean(sugestaoAnexo));
+    // Se o número não foi impresso/lido, mas vencimento exato + valor (+ total,
+    // quando disponível) identificam uma única parcela sem boleto, o vínculo
+    // pode ser pré-selecionado sem inventar o número da parcela.
+    const anexoExatoSemNumero = p.numero.valor == null && c.correspondenciaProvavel?.exata === true && alvo && !alvo.temBoleto;
+    const { acao, boletoId } = anexoExatoSemNumero
+      ? { acao: "anexar" as const, boletoId: alvo.id }
+      : acaoPadrao(p, c.situacao, c.existente, Boolean(sugestaoAnexo));
     return {
       id: p.id,
       pagina: p.pagina,

@@ -208,8 +208,8 @@ export interface ComparacaoParcela {
   situacao: SituacaoParcela;
   existente: ParcelaExistente | null;
   diferencas: ("valor" | "vencimento" | "total")[];
-  /** Parcela existente que parece corresponder por vencimento+valor quando o número impresso não bate (ex.: carnê complementar impresso como 1/12). */
-  correspondenciaProvavel: { numero: number; motivo: string } | null;
+  /** Parcela existente que corresponde por vencimento+valor. `exata` só é true quando data completa, valor e total (se lido) batem de forma única. */
+  correspondenciaProvavel: { numero: number; motivo: string; exata: boolean } | null;
 }
 
 /** Contrato para provedores de leitura (local hoje; externo opcional no futuro). */
