@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Flower2, Gem, Gift, ShoppingBag, Sparkles, X } from "lucide-react";
 import type { ClubeRecompensa } from "@/lib/clube";
@@ -50,10 +50,12 @@ const ARTE: Record<string, { de: string; para: string; Icone: typeof Gift }> = {
   experiência: { de: "#E7F0EA", para: "#C9DDD0", Icone: Gem },
 };
 
-/** Foto real do prêmio quando cadastrada; senão, arte da marca por categoria (não imita foto). */
+/** Foto do prêmio quando cadastrada; se não houver (ou falhar ao carregar), arte da marca por categoria. */
 export function ImagemPremio({ recompensa, className = "" }: { recompensa: Pick<ClubeRecompensa, "titulo" | "categoria" | "imagem_url">; className?: string }) {
-  if (recompensa.imagem_url) {
-    return <img src={recompensa.imagem_url} alt={recompensa.titulo} loading="lazy" decoding="async" className={`h-full w-full object-cover ${className}`} />;
+  const [falhou, setFalhou] = useState(false);
+  useEffect(() => setFalhou(false), [recompensa.imagem_url]);
+  if (recompensa.imagem_url && !falhou) {
+    return <img src={recompensa.imagem_url} alt={recompensa.titulo} loading="lazy" decoding="async" onError={() => setFalhou(true)} className={`h-full w-full object-cover ${className}`} />;
   }
   const arte = ARTE[(recompensa.categoria ?? "").toLowerCase()] ?? { de: "#F7EEEC", para: "#E6D0CB", Icone: Gift };
   const { Icone } = arte;

@@ -1,5 +1,5 @@
 /* Gerado por scripts/tema-escuro-cliente.mjs — não editar à mão.
- * Modo escuro premium do app da cliente (515 regras de classes/estilos).
+ * Modo escuro premium do app da cliente (516 regras de classes/estilos).
  * Ajustes finos que não saem da regra geral ficam em src/styles/client-dark.css. */
 
 html[data-tema-cliente="escuro"] .active\:bg-\[\#F4ECEA\]:active { background-color: #37252A; }
@@ -15,6 +15,7 @@ html[data-tema-cliente="escuro"] .bg-\[\#4F8A65\] { background-color: #528465; }
 html[data-tema-cliente="escuro"] .bg-\[\#6B1F2E\] { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .bg-\[\#6F9F7E\] { background-color: #597D64; }
 html[data-tema-cliente="escuro"] .bg-\[\#7D2434\] { background-color: #B0526A; }
+html[data-tema-cliente="escuro"] .bg-\[\#A84759\] { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .bg-\[\#B3342E\] { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .bg-\[\#B65B67\] { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .bg-\[\#B65B67\]\/10 { background-color: rgba(176, 82, 106, 0.1); }
@@ -100,6 +101,8 @@ html[data-tema-cliente="escuro"] .bg-\[\#FFFBFA\] { background-color: #1C1B1E; }
 html[data-tema-cliente="escuro"] .bg-\[\#FFFDFC\] { background-color: #1C1B1E; }
 html[data-tema-cliente="escuro"] .bg-\[linear-gradient\(135deg\,\#7D2434_0\%\,\#5A1825_100\%\)\] { background-image: linear-gradient(135deg,#B0526A 0%,#B0526A 100%); }
 html[data-tema-cliente="escuro"] .bg-\[linear-gradient\(145deg\,\#FFFDFC_0\%\,\#FFF8F7_100\%\)\] { background-image: linear-gradient(145deg,#1C1B1E 0%,#18171A 100%); }
+html[data-tema-cliente="escuro"] .bg-\[rgba\(255\,255\,255\,\.9\)\] { background-color: rgba(28, 27, 30, 0.9); }
+html[data-tema-cliente="escuro"] .bg-\[rgba\(255\,255\,255\,\.94\)\] { background-color: rgba(28, 27, 30, 0.94); }
 html[data-tema-cliente="escuro"] .bg-\[rgba\(31\,24\,23\,\.56\)\] { background-color: rgba(36, 35, 37, 0.56); }
 html[data-tema-cliente="escuro"] .bg-\[rgba\(34\,25\,24\,\.42\)\] { background-color: rgba(58, 45, 44, 0.42); }
 html[data-tema-cliente="escuro"] .bg-\[rgba\(38\,23\,25\,\.30\)\] { background-color: rgba(62, 40, 43, 0.3); }
@@ -111,13 +114,11 @@ html[data-tema-cliente="escuro"] .bg-white\/65 { background-color: rgba(28, 27, 
 html[data-tema-cliente="escuro"] .bg-white\/70 { background-color: rgba(28, 27, 30, 0.7); }
 html[data-tema-cliente="escuro"] .bg-white\/80 { background-color: rgba(28, 27, 30, 0.8); }
 html[data-tema-cliente="escuro"] .bg-white\/85 { background-color: rgba(28, 27, 30, 0.85); }
-html[data-tema-cliente="escuro"] .bg-white\/90 { background-color: rgba(28, 27, 30, 0.9); }
 html[data-tema-cliente="escuro"] .bg-white\/94 { background-color: rgba(28, 27, 30, 0.94); }
 html[data-tema-cliente="escuro"] .bg-white\/95 { background-color: rgba(28, 27, 30, 0.95); }
 html[data-tema-cliente="escuro"] .bg-white\/96 { background-color: rgba(28, 27, 30, 0.96); }
 html[data-tema-cliente="escuro"] .border-\[\#6B1F2E\] { border-color: #CF6E84; }
 html[data-tema-cliente="escuro"] .border-\[\#7D2434\] { border-color: #CF6E84; }
-html[data-tema-cliente="escuro"] .border-\[\#A9E5B9\] { border-color: #394B3E; }
 html[data-tema-cliente="escuro"] .border-\[\#CFE2D3\] { border-color: #2F2D31; }
 html[data-tema-cliente="escuro"] .border-\[\#D3E6D8\] { border-color: #2F2D31; }
 html[data-tema-cliente="escuro"] .border-\[\#D4E7D8\] { border-color: #2F2D31; }

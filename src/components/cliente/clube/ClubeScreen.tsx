@@ -341,14 +341,19 @@ function CartaoPremio({ recompensa, saldo, onResgatar }: { recompensa: ClubeReco
   const pode = !esgotado && saldo >= recompensa.pontos;
   const progresso = Math.min(100, Math.round((saldo / recompensa.pontos) * 100));
   return (
-    <article className="flex flex-col overflow-hidden rounded-[18px] border border-[#ECE2DF] bg-white shadow-[0_6px_18px_rgba(73,42,47,.05)]">
-      <div className="relative aspect-[4/3] bg-[#F7EEEC]">
+    <article className="flex flex-col overflow-hidden rounded-[18px] border border-[#ECE2DF] bg-white shadow-[0_6px_18px_rgba(73,42,47,.06)]">
+      <div className="relative aspect-square overflow-hidden bg-[#F7EEEC]">
         <ImagemPremio recompensa={recompensa} />
-        {recompensa.categoria && <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-[3px] text-[10px] font-semibold text-[#7D2434] backdrop-blur">{recompensa.categoria}</span>}
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[rgba(38,20,24,.55)] to-transparent" aria-hidden="true" />
+        {recompensa.categoria && <span className="absolute left-2 top-2 rounded-full bg-[rgba(255,255,255,.9)] px-2 py-[3px] text-[10px] font-semibold text-[#7D2434] backdrop-blur">{recompensa.categoria}</span>}
+        <span className="absolute bottom-2 left-2 flex items-center gap-[5px] rounded-full bg-[rgba(255,255,255,.94)] py-[3px] pl-[3px] pr-[9px] shadow-[0_4px_12px_rgba(0,0,0,.12)]">
+          <Moeda tamanho={11} /><span className="text-[12px] font-bold text-[#8A671E]">{recompensa.pontos.toLocaleString("pt-BR")} pts</span>
+        </span>
+        {!esgotado && recompensa.estoque !== null && recompensa.estoque <= 3 && <span className="absolute bottom-2 right-2 rounded-full bg-[#A84759] px-2 py-[3px] text-[10px] font-semibold text-white">Últimas</span>}
       </div>
       <div className="flex flex-1 flex-col p-3">
-        <div className="line-clamp-2 min-h-[36px] text-[13.5px] font-semibold leading-[1.3] text-[#2E2422]">{recompensa.titulo}</div>
-        <div className="flex items-center gap-[6px] pt-2"><Moeda tamanho={12} /><span className="text-[13px] font-bold text-[#8A671E]">{recompensa.pontos.toLocaleString("pt-BR")}</span>{!esgotado && recompensa.estoque !== null && recompensa.estoque <= 3 && <span className="ml-auto text-[10.5px] font-semibold text-[#A84759]">Últimas</span>}</div>
+        <div className="line-clamp-2 text-[13.5px] font-semibold leading-[1.3] text-[#2E2422]">{recompensa.titulo}</div>
+        {recompensa.descricao && <div className="line-clamp-2 pt-1 text-[11.5px] leading-[1.4] text-[#8D7D79]">{recompensa.descricao}</div>}
         <div className="mt-auto pt-3">
           {esgotado ? (
             <div className="rounded-[10px] bg-[#F5F1EF] py-2 text-center text-[12px] font-semibold text-[#988985]">Esgotado</div>
