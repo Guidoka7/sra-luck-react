@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { BadgeDollarSign, CalendarCheck2, CircleX, UserCheck, UserX } from "lucide-react";
+import { BadgeDollarSign, CalendarCheck2, CircleX, UserCheck, UserCog, UserX } from "lucide-react";
 import type { Cliente } from "@/types/database";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
@@ -339,9 +339,14 @@ function OperacaoTermos({ c, hoje, abrirModal, irParaAgenda }: Parameters<typeof
       <ChosenDate iso={c.dataTermos} horario={c.horarioTermos} rotulo="Assinatura dos termos" />
       <div className="operation-summary terms-summary">
         <div className="responsible-summary">
-          <label>Responsável pelo atendimento</label>
-          <strong>{c.termosResponsavel || "Não definido"}</strong>
-          <button type="button" className="mini-link responsible-link" onClick={() => abrirModal({ tipo: "responsavel" })} disabled={!c.agendamentoId}>{c.termosResponsavel ? "Alterar responsável" : "Definir responsável"}</button>
+          <div className="responsible-copy">
+            <label>Responsável pelo atendimento</label>
+            <strong className={c.termosResponsavel ? "responsible-name" : "responsible-empty"}>{c.termosResponsavel || "Não definido"}</strong>
+          </div>
+          <button type="button" className="responsible-action-btn" onClick={() => abrirModal({ tipo: "responsavel" })} disabled={!c.agendamentoId}>
+            <UserCog size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>{c.termosResponsavel ? "Alterar responsável" : "Definir responsável"}</span>
+          </button>
         </div>
       </div>
       <div className="terms-auto-transition">No dia agendado, a cliente passa automaticamente para <b>Liberações financeiras</b>.</div>
