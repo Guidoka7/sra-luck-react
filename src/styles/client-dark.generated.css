@@ -1,5 +1,5 @@
 /* Gerado por scripts/tema-escuro-cliente.mjs — não editar à mão.
- * Modo escuro premium do app da cliente (516 regras de classes/estilos).
+ * Modo escuro premium do app da cliente (515 regras de classes/estilos).
  * Ajustes finos que não saem da regra geral ficam em src/styles/client-dark.css. */
 
 html[data-tema-cliente="escuro"] .active\:bg-\[\#F4ECEA\]:active { background-color: #37252A; }
@@ -152,7 +152,6 @@ html[data-tema-cliente="escuro"] .border-\[\#E8D9D5\] { border-color: #2F2D31; }
 html[data-tema-cliente="escuro"] .border-\[\#E8DCD8\] { border-color: #2F2D31; }
 html[data-tema-cliente="escuro"] .border-\[\#E9CDD3\] { border-color: #493C3F; }
 html[data-tema-cliente="escuro"] .border-\[\#E9D4B2\] { border-color: #4C393D; }
-html[data-tema-cliente="escuro"] .border-\[\#E9D6D2\] { border-color: #493C3F; }
 html[data-tema-cliente="escuro"] .border-\[\#E9D8D4\] { border-color: #493C3F; }
 html[data-tema-cliente="escuro"] .border-\[\#E9D9D5\] { border-color: #493C3F; }
 html[data-tema-cliente="escuro"] .border-\[\#E9DDDA\] { border-color: #2F2D31; }
