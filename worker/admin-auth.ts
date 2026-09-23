@@ -1,6 +1,10 @@
 import { getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import {
+  DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,
+  isDevConsoleSyntheticAdminId,
+} from "./dev-console-auth";
 
 const ADMIN_COOKIE = "admin_session";
 
@@ -58,6 +62,19 @@ export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string):
 }
 
 export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env): Promise<ColaboradorAdmin | null> {
+  // A identidade técnica só pode nascer de uma sessão HMAC criada depois da
+  // validação M2M no adapter. Não há usuário Supabase correspondente e nada é
+  // persistido com este ID; a allowlist read-only é a fronteira de autorização.
+  if (isDevConsoleSyntheticAdminId(authUserId)) {
+    return {
+      id: DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,
+      auth_user_id: authUserId,
+      cargo: "administrativo",
+      ativo: true,
+      permissoes: [],
+    };
+  }
+
   const db = createServiceSupabaseClient(env);
   const { data, error } = await db
     .from("colaboradores")

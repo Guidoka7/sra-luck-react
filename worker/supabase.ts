@@ -7,6 +7,10 @@ export interface Env {
   NOTIFICACOES_CRON_SECRET?: string;
   LOG_PSEUDONYM_KEY?: string;
 
+  // Segredo compartilhado exclusivamente entre os backends do Dev Console e
+  // do Sra. Luck. Nunca deve ser exposto ao navegador.
+  DEV_CONSOLE_SERVICE_TOKEN?: string;
+
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
   // permanecem exclusivamente no backend/cofre de integrações.
   WEB_PUSH_VAPID_PUBLIC_KEY?: string;
