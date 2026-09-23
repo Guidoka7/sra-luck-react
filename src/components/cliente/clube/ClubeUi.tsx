@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Flower2, Gem, Gift, ShoppingBag, Sparkles, X } from "lucide-react";
-import type { ClubeRecompensa } from "@/lib/clube";
 
 export function Moeda({ tamanho = 14 }: { tamanho?: number }) {
   return (
@@ -51,7 +50,7 @@ const ARTE: Record<string, { de: string; para: string; Icone: typeof Gift }> = {
 };
 
 /** Foto do prêmio quando cadastrada; se não houver (ou falhar ao carregar), arte da marca por categoria. */
-export function ImagemPremio({ recompensa, className = "" }: { recompensa: Pick<ClubeRecompensa, "titulo" | "categoria" | "imagem_url">; className?: string }) {
+export function ImagemPremio({ recompensa, className = "" }: { recompensa: { titulo: string; categoria?: string | null; imagem_url?: string | null }; className?: string }) {
   const [falhou, setFalhou] = useState(false);
   useEffect(() => setFalhou(false), [recompensa.imagem_url]);
   if (recompensa.imagem_url && !falhou) {
