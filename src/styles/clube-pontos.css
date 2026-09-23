@@ -1,17 +1,19 @@
-/* Cartão "Seus pontos" do Clube de Vantagens (mesma família visual da Frase do dia). */
+/* Cartão "Seus pontos" do Clube de Vantagens: rosé claro no modo claro, ameixa no escuro. */
 .client-app {
   --pontos-fundo:
-    radial-gradient(120% 90% at 100% 0%, rgba(232, 176, 188, 0.22) 0%, rgba(232, 176, 188, 0) 55%),
-    linear-gradient(150deg, #82303F 0%, #6B1F2E 60%, #5A1A27 100%);
-  --pontos-borda: rgba(255, 255, 255, 0.08);
-  --pontos-sombra: 0 16px 34px rgba(107, 31, 46, 0.26);
-  --pontos-texto: #FFF7F5;
-  --pontos-suave: rgba(255, 238, 238, 0.74);
-  --pontos-dourado: #E3C07E;
-  --pontos-painel: rgba(255, 255, 255, 0.08);
-  --pontos-painel-borda: rgba(255, 255, 255, 0.12);
-  --pontos-cta-fundo: #FFFFFF;
-  --pontos-cta-texto: #6B1F2E;
+    radial-gradient(110% 90% at 100% 0%, rgba(214, 150, 160, 0.18) 0%, rgba(214, 150, 160, 0) 55%),
+    linear-gradient(150deg, #FFFFFF 0%, #FBF3F2 55%, #F5E4E6 100%);
+  --pontos-borda: #EEDDD9;
+  --pontos-sombra: 0 10px 26px rgba(94, 31, 43, 0.08);
+  --pontos-texto: #3D2426;
+  --pontos-numero: #6B1F2E;
+  --pontos-suave: #8A7471;
+  --pontos-dourado: #A8773F;
+  --pontos-painel: rgba(255, 255, 255, 0.6);
+  --pontos-painel-borda: #E9D6D2;
+  --pontos-trilho: #EEE1DE;
+  --pontos-cta-fundo: #6B1F2E;
+  --pontos-cta-texto: #FFFFFF;
 }
 html[data-tema-cliente="escuro"] .client-app {
   --pontos-fundo:
@@ -23,6 +25,10 @@ html[data-tema-cliente="escuro"] .client-app {
   --pontos-dourado: #D8B26A;
   --pontos-painel: rgba(255, 255, 255, 0.05);
   --pontos-painel-borda: rgba(255, 255, 255, 0.08);
+  --pontos-texto: #FFF7F5;
+  --pontos-numero: #FFF7F5;
+  --pontos-suave: rgba(255, 238, 238, 0.74);
+  --pontos-trilho: rgba(255, 255, 255, 0.14);
   --pontos-cta-fundo: #B0526A;
   --pontos-cta-texto: #FFFFFF;
 }
@@ -65,6 +71,7 @@ html[data-tema-cliente="escuro"] .client-app {
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
+  color: var(--pontos-numero);
 }
 .client-app .sl-pontos-unidade { color: var(--pontos-suave); font-size: 13px; }
 .client-app .sl-pontos-meta { margin-top: 14px; }
@@ -82,7 +89,7 @@ html[data-tema-cliente="escuro"] .client-app {
   margin-top: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--pontos-trilho);
 }
 .client-app .sl-pontos-barra-cheia { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #F2D7B0, #E3B56E); }
 .client-app .sl-pontos-dica { margin: 8px 0 0; color: var(--pontos-suave); font-size: 11.5px; line-height: 1.4; }
@@ -101,7 +108,7 @@ html[data-tema-cliente="escuro"] .client-app {
   color: var(--pontos-cta-texto);
   font-size: 14px;
   font-weight: 700;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 8px 18px rgba(107, 31, 46, 0.18);
   transition: transform 160ms ease;
 }
 .client-app .sl-pontos-cta:active { transform: scale(0.98); }
