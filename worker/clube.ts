@@ -180,31 +180,94 @@ const ERROS_INDICACAO: Array<[RegExp, string, number]> = [
 
 export async function clubeAdminApi(path: string, request: Request, db: Db, usuario: string): Promise<Response | null> {
   if (path === "/api/admin/credit-ops/club/overview" && request.method === "GET") {
-    const [indicacoesR, vouchersR, configR] = await Promise.all([
+    const agora = new Date();
+    const inicioMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
+    const [
+      indicacoesR,
+      vouchersR,
+      configR,
+      recompensasR,
+      resgatesR,
+      clientesClubeR,
+      indicacoesAprovadasR,
+      beneficiosResgatadosR,
+      resgatesPendentesR,
+      eventosMesR,
+    ] = await Promise.all([
       db.from("indicacoes_clientes").select("*").order("created_at", { ascending: false }).limit(300),
       db.from("clube_beneficios_cliente").select("*").order("created_at", { ascending: false }).limit(300),
       db.from("clube_config").select("*").eq("id", 1).maybeSingle(),
+      db.from("clube_recompensas").select("*").order("ordem").order("pontos"),
+      db.from("clube_resgates").select("*").order("created_at", { ascending: false }).limit(300),
+      db.from("cliente_pontos").select("cliente_id", { count: "exact", head: true }),
+      db.from("indicacoes_clientes").select("id", { count: "exact", head: true }).eq("status", "venda"),
+      db.from("clube_resgates").select("id", { count: "exact", head: true }).neq("status", "cancelado"),
+      db.from("clube_resgates").select("id", { count: "exact", head: true }).in("status", ["solicitado", "aprovado", "separacao"]),
+      db.from("cliente_pontos_eventos")
+        .select("cliente_id,tipo,pontos,metadata,created_at")
+        .gte("created_at", inicioMes)
+        .in("tipo", ["bonus", "indicacao"])
+        .gt("pontos", 0)
+        .limit(5000),
     ]);
-    const erro = indicacoesR.error ?? vouchersR.error;
+    const erro =
+      indicacoesR.error ?? vouchersR.error ?? recompensasR.error ?? resgatesR.error ??
+      clientesClubeR.error ?? indicacoesAprovadasR.error ?? beneficiosResgatadosR.error ??
+      resgatesPendentesR.error ?? eventosMesR.error;
     if (erro) return json({ erro: publicError(erro) }, 500);
+
     const indicacoes = (indicacoesR.data ?? []) as Array<Record<string, unknown>>;
     const vouchers = (vouchersR.data ?? []) as Array<Record<string, unknown>>;
+    const recompensas = (recompensasR.data ?? []) as Array<Record<string, unknown>>;
+    const resgates = (resgatesR.data ?? []) as Array<Record<string, unknown>>;
+    const eventosMes = (eventosMesR.data ?? []) as Array<Record<string, unknown>>;
     const ids = [...new Set([
       ...indicacoes.flatMap((i) => [i.indicador_cliente_id, i.indicado_cliente_id]),
       ...vouchers.map((v) => v.cliente_id),
+      ...resgates.map((r) => r.cliente_id),
     ].filter(Boolean) as string[])];
     const { data: clientes } = ids.length
       ? await db.from("clientes").select("id,nome_completo,telefone,cpf").in("id", ids)
       : { data: [] as Array<{ id: string; nome_completo: string; telefone: string | null; cpf: string | null }> };
     const porId = new Map((clientes ?? []).map((c) => [c.id, c]));
+    const recompensasPorId = new Map(recompensas.map((r) => [String(r.id), r]));
+
+    const clientesPorMotivo = (motivo: string) => new Set(
+      eventosMes
+        .filter((e) => (e.metadata as Record<string, unknown> | null)?.motivo === motivo)
+        .map((e) => String(e.cliente_id))
+        .filter(Boolean),
+    ).size;
+    const resgatesMes = resgates.filter((r) => r.status !== "cancelado" && String(r.created_at ?? "") >= inicioMes);
+    const clientesComResgateMes = new Set(resgatesMes.map((r) => String(r.cliente_id))).size;
+
     return json({
       config: configDoBanco(configR.data as Record<string, unknown> | null),
+      metricas: {
+        clientesClube: clientesClubeR.count ?? 0,
+        missoesConcluidasMes: eventosMes.length + resgatesMes.length,
+        indicacoesAprovadas: indicacoesAprovadasR.count ?? 0,
+        beneficiosResgatados: beneficiosResgatadosR.count ?? 0,
+        resgatesPendentes: resgatesPendentesR.count ?? 0,
+        missoesPorTipo: {
+          primeiraParcela: clientesPorMotivo("primeira_parcela"),
+          parcelaEmDia: clientesPorMotivo("parcela_em_dia"),
+          indicacao: clientesPorMotivo("indicacao_venda"),
+          resgate: clientesComResgateMes,
+        },
+      },
       indicacoes: indicacoes.map((i) => ({
         ...i,
         indicador: porId.get(String(i.indicador_cliente_id)) ?? null,
         indicado: i.indicado_cliente_id ? porId.get(String(i.indicado_cliente_id)) ?? null : null,
       })),
       vouchers: vouchers.map(({ arquivo_path, ...v }) => ({ ...v, arquivo_disponivel: Boolean(arquivo_path), cliente: porId.get(String(v.cliente_id)) ?? null })),
+      recompensas,
+      resgates: resgates.map((r) => ({
+        ...r,
+        cliente: porId.get(String(r.cliente_id)) ?? null,
+        recompensa: recompensasPorId.get(String(r.recompensa_id)) ?? null,
+      })),
     });
   }
 
