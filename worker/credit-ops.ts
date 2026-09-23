@@ -159,7 +159,7 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/rewards" && request.method === "GET") {
-      const { data, error } = await db.from("clube_recompensas").select("*").order("pontos", { ascending: true });
+      const { data, error } = await db.from("clube_recompensas").select("*").is("excluido_em", null).order("ordem").order("pontos", { ascending: true });
       if (error) return json({ erro: publicError(error) }, 500);
       return json({ recompensas: data ?? [] });
     }
@@ -167,16 +167,110 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (path === "/api/admin/credit-ops/rewards" && request.method === "POST") {
       if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar recompensas." }, 403);
       const b = await body(request);
-      const { data, error } = await db.from("clube_recompensas").insert({
-        titulo: b.titulo,
-        descricao: b.descricao || null,
-        categoria: b.categoria || null,
-        pontos: Number(b.pontos),
-        estoque: b.estoque === undefined ? null : Number(b.estoque),
+      const titulo = String(b.titulo ?? "").trim().replace(/\s+/g, " ");
+      const pontos = Number(b.pontos);
+      const estoque = b.estoque === undefined || b.estoque === null || b.estoque === "" ? null : Number(b.estoque);
+      const ordem = b.ordem === undefined || b.ordem === null || b.ordem === "" ? 0 : Number(b.ordem);
+      const imagemBruta = String(b.imagemUrl ?? b.imagem_url ?? "").trim();
+      let imagemUrl: string | null = null;
+      if (imagemBruta) {
+        try {
+          const urlImagem = new URL(imagemBruta);
+          if (!["http:", "https:"].includes(urlImagem.protocol)) throw new Error("protocolo");
+          imagemUrl = urlImagem.toString();
+        } catch {
+          return json({ erro: "Informe uma URL de imagem válida (http ou https)." }, 400);
+        }
+      }
+      if (titulo.length < 2 || titulo.length > 160) return json({ erro: "Informe um nome de benefício entre 2 e 160 caracteres." }, 400);
+      if (!Number.isInteger(pontos) || pontos <= 0 || pontos > 10_000_000) return json({ erro: "Informe uma pontuação inteira maior que zero." }, 400);
+      if (estoque !== null && (!Number.isInteger(estoque) || estoque < 0 || estoque > 1_000_000)) return json({ erro: "Informe um estoque válido ou deixe em branco para estoque livre." }, 400);
+      if (!Number.isInteger(ordem) || ordem < -10_000 || ordem > 10_000) return json({ erro: "Informe uma ordem válida." }, 400);
+      const payload = {
+        titulo,
+        descricao: String(b.descricao ?? "").trim().slice(0, 800) || null,
+        categoria: String(b.categoria ?? "").trim().slice(0, 100) || null,
+        pontos,
+        estoque,
         ativo: b.ativo !== false,
-      }).select("*").single();
+        imagem_url: imagemUrl,
+        ordem,
+        instrucoes_pos_resgate: String(b.instrucoesPosResgate ?? b.instrucoes_pos_resgate ?? "").trim().slice(0, 1000) || null,
+        excluido_em: null,
+      };
+      const { data, error } = await db.from("clube_recompensas").insert(payload).select("*").single();
       if (error) return json({ erro: publicError(error) }, 400);
+      await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "criou_recompensa_clube", entidade: "clube_recompensas", entidade_id: data.id, detalhes: payload });
       return json({ recompensa: data }, 201);
+    }
+
+    const reward = path.match(/^\/api\/admin\/credit-ops\/rewards\/([^/]+)$/);
+    if (reward && request.method === "PATCH") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar recompensas." }, 403);
+      const id = decodeURIComponent(reward[1]);
+      const b = await body(request);
+      const patch: Record<string, unknown> = {};
+
+      if (b.titulo !== undefined) {
+        const titulo = String(b.titulo ?? "").trim().replace(/\s+/g, " ");
+        if (titulo.length < 2 || titulo.length > 160) return json({ erro: "Informe um nome de benefício entre 2 e 160 caracteres." }, 400);
+        patch.titulo = titulo;
+      }
+      if (b.descricao !== undefined) patch.descricao = String(b.descricao ?? "").trim().slice(0, 800) || null;
+      if (b.categoria !== undefined) patch.categoria = String(b.categoria ?? "").trim().slice(0, 100) || null;
+      if (b.pontos !== undefined) {
+        const pontos = Number(b.pontos);
+        if (!Number.isInteger(pontos) || pontos <= 0 || pontos > 10_000_000) return json({ erro: "Informe uma pontuação inteira maior que zero." }, 400);
+        patch.pontos = pontos;
+      }
+      if (b.estoque !== undefined) {
+        const estoque = b.estoque === null || b.estoque === "" ? null : Number(b.estoque);
+        if (estoque !== null && (!Number.isInteger(estoque) || estoque < 0 || estoque > 1_000_000)) return json({ erro: "Informe um estoque válido ou deixe em branco para estoque livre." }, 400);
+        patch.estoque = estoque;
+      }
+      if (b.ativo !== undefined) patch.ativo = Boolean(b.ativo);
+      if (b.ordem !== undefined) {
+        const ordem = Number(b.ordem);
+        if (!Number.isInteger(ordem) || ordem < -10_000 || ordem > 10_000) return json({ erro: "Informe uma ordem válida." }, 400);
+        patch.ordem = ordem;
+      }
+      if (b.imagemUrl !== undefined || b.imagem_url !== undefined) {
+        const imagemBruta = String(b.imagemUrl ?? b.imagem_url ?? "").trim();
+        if (!imagemBruta) patch.imagem_url = null;
+        else {
+          try {
+            const urlImagem = new URL(imagemBruta);
+            if (!["http:", "https:"].includes(urlImagem.protocol)) throw new Error("protocolo");
+            patch.imagem_url = urlImagem.toString();
+          } catch {
+            return json({ erro: "Informe uma URL de imagem válida (http ou https)." }, 400);
+          }
+        }
+      }
+      if (b.instrucoesPosResgate !== undefined || b.instrucoes_pos_resgate !== undefined) {
+        patch.instrucoes_pos_resgate = String(b.instrucoesPosResgate ?? b.instrucoes_pos_resgate ?? "").trim().slice(0, 1000) || null;
+      }
+      if (!Object.keys(patch).length) return json({ erro: "Nenhuma alteração informada." }, 400);
+
+      const { data, error } = await db.from("clube_recompensas").update(patch).eq("id", id).is("excluido_em", null).select("*").maybeSingle();
+      if (error) return json({ erro: publicError(error) }, 400);
+      if (!data) return json({ erro: "Benefício não encontrado." }, 404);
+      await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "alterou_recompensa_clube", entidade: "clube_recompensas", entidade_id: id, detalhes: patch });
+      return json({ recompensa: data });
+    }
+
+    if (reward && request.method === "DELETE") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para excluir recompensas." }, 403);
+      const id = decodeURIComponent(reward[1]);
+      const excluidoEm = new Date().toISOString();
+      const { data, error } = await db.from("clube_recompensas")
+        .update({ ativo: false, excluido_em: excluidoEm })
+        .eq("id", id).is("excluido_em", null)
+        .select("id,titulo").maybeSingle();
+      if (error) return json({ erro: publicError(error) }, 400);
+      if (!data) return json({ erro: "Benefício não encontrado." }, 404);
+      await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "excluiu_recompensa_clube", entidade: "clube_recompensas", entidade_id: id, detalhes: { titulo: data.titulo, excluido_em: excluidoEm } });
+      return json({ sucesso: true });
     }
 
     if (path === "/api/admin/credit-ops/team" && request.method === "GET") {
