@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'sra-luck-pwa-';
-const CACHE = 'sra-luck-pwa-v17';
+const CACHE = 'sra-luck-pwa-v18';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
@@ -13,14 +13,61 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Mantém um fetch handler ativo para compatibilidade com critérios de PWA,
-// mas sem cachear a página/manifest e sem interferir nas APIs.
+// Cache para o app abrir "sólido" ao atualizar a página, sem nunca tocar nas APIs:
+// - /assets/* (arquivos do build com hash no nome, imutáveis): cache-first;
+// - marca, ícones e fontes: servidos do cache e revalidados em segundo plano;
+// - navegação (HTML): rede primeiro, com a última cópia como reserva offline.
+const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+
+function guardar(request, response) {
+  if (response && (response.ok || response.type === 'opaque')) {
+    const copia = response.clone();
+    caches.open(CACHE).then((cache) => cache.put(request, copia)).catch(() => {});
+  }
+  return response;
+}
+
+function cacheFirst(request) {
+  return caches.match(request).then((salvo) => salvo || fetch(request).then((res) => guardar(request, res)));
+}
+
+function staleWhileRevalidate(event, request) {
+  const rede = fetch(request).then((res) => guardar(request, res));
+  event.waitUntil(rede.catch(() => {}));
+  return caches.match(request).then((salvo) => salvo || rede);
+}
+
+function networkFirst(request) {
+  return fetch(request)
+    .then((res) => guardar(request, res))
+    .catch(() => caches.match(request).then((salvo) => salvo || caches.match('/')));
+}
+
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+
+  if (FONT_HOSTS.includes(url.hostname)) {
+    event.respondWith(staleWhileRevalidate(event, request));
+    return;
+  }
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) return;
-  event.respondWith(fetch(event.request));
+
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+  if (url.pathname.startsWith('/brand/') || url.pathname.startsWith('/icons/')) {
+    event.respondWith(staleWhileRevalidate(event, request));
+    return;
+  }
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+  event.respondWith(fetch(request));
 });
 
 self.addEventListener('push', (event) => {

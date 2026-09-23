@@ -1,6 +1,7 @@
 import { deriveJourneySteps, type JourneyStepsInput } from "@/lib/journeySteps";
 import { JourneyStepsView } from "@/components/journey/JourneyStepsView";
 import type { NotificacaoCliente } from "@/lib/clientNotifications";
+import { LOGO_SRC } from "@/assets/brand";
 
 interface JornadaTabProps extends JourneyStepsInput {
   notificacoesCompactas: NotificacaoCliente[];
@@ -15,7 +16,7 @@ export function JornadaTab(props: JornadaTabProps) {
   return (
     <div className="sl-tab pb-[10px]">
       <div className="sl-journey-top">
-        <div className="flex min-h-[31px] items-center">{props.onVoltar ? <button type="button" onClick={props.onVoltar} className="flex items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[91px] object-contain" />}</div>
+        <div className="flex min-h-[31px] items-center">{props.onVoltar ? <button type="button" onClick={props.onVoltar} className="flex items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src={LOGO_SRC} alt="Sra. Luck" className="w-[91px] object-contain" />}</div>
       </div>
 
       <div className="flex items-end justify-between gap-3 px-5 pb-2 pt-[19px]">
@@ -31,7 +32,7 @@ export function JornadaTab(props: JornadaTabProps) {
       </div>
 
       <div className="relative mx-5 mt-[7px] overflow-hidden rounded-[19px] border border-[#EAD8D3] bg-gradient-to-br from-[#F8F0EE] to-[#F4E7E4] px-[17px] py-4">
-        <img src="/brand/sra-luck-logo.png" alt="" aria-hidden="true" className="pointer-events-none absolute -right-[63px] -top-2 w-[150px] opacity-[.065]" />
+        <img src={LOGO_SRC} alt="" aria-hidden="true" className="pointer-events-none absolute -right-[63px] -top-2 w-[150px] opacity-[.065]" />
         <div className="relative">
           <div className="font-heading text-[19px] font-semibold leading-[1.2] text-[#6B1F2E]">Você não precisa decorar o processo.</div>
           <div className="max-w-[320px] pt-1 text-[10.8px] font-light leading-[1.5] text-[#866E70]">A Sra. Luck vai destacar sempre a etapa que precisa da sua atenção. O restante fica organizado para você acompanhar com tranquilidade.</div>

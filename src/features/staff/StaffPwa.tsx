@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BadgeDollarSign, BookOpenCheck, CheckCircle2, ChevronRight, Home, LogOut, Medal, PlayCircle, RefreshCw, UserRound } from "lucide-react";
 import "../../styles/staff-pwa.css";
+import { MARK_SRC } from "@/assets/brand";
 
 type Cargo = "vendedora" | "sdr" | "financeiro" | "administrativo";
 type Tab = "inicio" | "comissoes" | "treinamentos" | "perfil";
@@ -146,7 +147,7 @@ export function StaffPwa() {
   }
 
   if (loading) {
-    return <main className="st-app"><div className="st-loading"><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><span>Carregando portal da equipe...</span></div></main>;
+    return <main className="st-app"><div className="st-loading"><img src={MARK_SRC} alt="Sra. Luck"/><span>Carregando portal da equipe...</span></div></main>;
   }
 
   if (!data) {
@@ -159,7 +160,7 @@ export function StaffPwa() {
   return (
     <div className="st-app">
       <header>
-        <div><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><div><small>Portal da equipe</small><strong>Olá, {data.colaborador.nome.split(" ")[0]}</strong></div></div>
+        <div><img src={MARK_SRC} alt="Sra. Luck"/><div><small>Portal da equipe</small><strong>Olá, {data.colaborador.nome.split(" ")[0]}</strong></div></div>
         <span>{labelCargo(cargo)}</span>
       </header>
       <main>

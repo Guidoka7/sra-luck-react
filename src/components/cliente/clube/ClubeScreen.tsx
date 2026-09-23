@@ -5,6 +5,7 @@ import {
   buscarClube, indicarAmiga, resgatarPremio, usarBeneficio, VOUCHER_CONSULTA_KEY,
   type ClubeData, type ClubeRecompensa,
 } from "@/lib/clube";
+import { LOGO_SRC } from "@/assets/brand";
 
 interface ClubeScreenProps { onVoltar?: () => void; onIrParcelas: () => void; }
 
@@ -36,7 +37,7 @@ export function ClubeScreen({ onVoltar, onIrParcelas }: ClubeScreenProps) {
   return <div className="sl-tab pb-6">
     <div className="px-[18px] pt-[calc(max(env(safe-area-inset-top),0px)+11px)]">
       <div className="flex items-center justify-between gap-3 pr-[86px]">
-        {onVoltar ? <button type="button" onClick={onVoltar} className="flex min-w-0 items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[91px] object-contain" />}
+        {onVoltar ? <button type="button" onClick={onVoltar} className="flex min-w-0 items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src={LOGO_SRC} alt="Sra. Luck" className="w-[91px] object-contain" />}
         <div className="flex items-center gap-[7px]">
           <button type="button" onClick={()=>setSheet("carteira")} className="flex h-[34px] items-center gap-[6px] rounded-full border border-[#E8D9D5] bg-white pl-2 pr-[10px] text-[#6B1F2E] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7] text-[#9B741E]"><CoinIcon/></span><span className="font-heading text-[16px] font-semibold leading-none">{dados?.saldo??0}</span></button>
           <button type="button" onClick={()=>setSheet("indicacoes")} className="relative flex h-[34px] w-[34px] items-center justify-center rounded-full border border-[#E8D9D5] bg-white text-[#B86575] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>{Boolean(dados?.indicacoes.emAnalise)&&<span className="absolute -right-0.5 -top-[3px] flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-[#FBF7F5] bg-[#6B1F2E] px-[3px] text-[7.5px] font-bold text-white">{dados?.indicacoes.emAnalise}</span>}</button>

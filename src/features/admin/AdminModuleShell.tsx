@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "../../components/ui/ThemeToggle";
 import { aplicarPaleta, lerPaletaLocal, paletaDeConfiguracoes, salvarPaletaLocal } from "./adminAppearance";
+import { LOGO_SRC } from "@/assets/brand";
 
 const NAV = [
   ["/admin/visao-geral", "Visão Geral", LayoutDashboard],
@@ -60,7 +61,7 @@ export function AdminModuleShell({ path, title, children }: { path: string; titl
       <AdminAppearanceBootstrap />
       <aside className={mobile ? "open" : ""}>
         <div className="sl-brand">
-          <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" />
+          <img src={LOGO_SRC} alt="Sra. Luck" />
           <span>Crédito que realiza</span>
         </div>
         <nav>

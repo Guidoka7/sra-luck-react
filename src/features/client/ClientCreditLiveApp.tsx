@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, ChevronRight, CreditCard, FileText, Gift, Home, LoaderCircle, Paperclip, ReceiptText, RefreshCw, Sparkles, Star, UserRound, WalletCards } from "lucide-react";
 import "../../styles/client-credit.css";
+import { MARK_SRC } from "@/assets/brand";
 
 type Stage = "nova_venda"|"aguardando_conferencia"|"formacao_saldo"|"proxima_meta"|"meta_atingida"|"levantamento_financeiro"|"forma_pagamento_liberada"|"termos_agendados"|"aguardando_quitacao"|"quitado"|"agenda_cirurgica_liberada"|"cirurgia_agendada"|"concluido"|"cancelado";
 type Contract = { id:string; codigo:string; valor_contrato:number|string; percentual_minimo:number|string; etapa:Stage; modalidade:"flex"|"100_boleto"; saldo_final_apurado?:number|string|null; formas_quitacao_disponiveis?:string[]; forma_quitacao?:string|null; pagar_no_dia_termos?:boolean; levantamento_prazo_ate?:string|null; termos_assinados_em?:string|null; agenda_cirurgica_liberar_em?:string|null; cirurgia_em?:string|null };
@@ -32,7 +33,7 @@ export function ClientCreditLiveApp(){
  if(loading&&!journey)return <Loading/>;
  if(error&&!journey)return <ErrorState message={error} retry={reload}/>;
  if(!journey?.contrato)return <ErrorState message="Ainda não encontramos um contrato ativo para este acesso." retry={reload}/>;
- return <div className="cl-app"><header><div><img src="/brand/sra-luck-mark.png" alt="Sra. Luck"/><span>Olá, {name}</span></div><button onClick={()=>void reload()} aria-label="Atualizar"><RefreshCw size={17}/></button></header><main>
+ return <div className="cl-app"><header><div><img src={MARK_SRC} alt="Sra. Luck"/><span>Olá, {name}</span></div><button onClick={()=>void reload()} aria-label="Atualizar"><RefreshCw size={17}/></button></header><main>
  {error&&<div className="cl-inline-error">{error}</div>}
  {tab==='inicio'&&<LiveHome name={name} data={journey} reload={reload} setTab={setTab}/>} 
  {tab==='contrato'&&<LiveContract data={journey}/>} 
@@ -42,8 +43,8 @@ export function ClientCreditLiveApp(){
  </main><nav>{tabs.map(([id,label,Icon])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={18}/><span>{label}</span></button>)}</nav></div>
 }
 
-function Loading(){return <main className="cl-loading"><img src="/brand/sra-luck-mark.png"/><LoaderCircle className="spin"/><strong>Carregando seu progresso...</strong></main>}
-function ErrorState({message,retry}:{message:string;retry:()=>Promise<void>}){return <main className="cl-loading"><img src="/brand/sra-luck-mark.png"/><strong>{message}</strong><button onClick={()=>void retry()}>Tentar novamente</button></main>}
+function Loading(){return <main className="cl-loading"><img src={MARK_SRC}/><LoaderCircle className="spin"/><strong>Carregando seu progresso...</strong></main>}
+function ErrorState({message,retry}:{message:string;retry:()=>Promise<void>}){return <main className="cl-loading"><img src={MARK_SRC}/><strong>{message}</strong><button onClick={()=>void retry()}>Tentar novamente</button></main>}
 function ProgressRing({percent}:{percent:number}){const p=Math.max(0,Math.min(100,percent));return <div className="cl-ring" style={{background:`conic-gradient(#a9844f ${p*3.6}deg,#eadfce 0)`}}><div><b>{Math.round(p)}%</b><span>valor pago</span></div></div>}
 
 function LiveHome({name,data,reload,setTab}:{name:string;data:Journey;reload:()=>Promise<void>;setTab:(t:Tab)=>void}){

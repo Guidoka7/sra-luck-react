@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import { LOGO_SRC, MARK_SRC } from "@/assets/brand";
 
 /**
  * Marca oficial da Sra. Luck: a silhueta em círculo (duas "pétalas" + corpo
@@ -12,7 +13,7 @@ export function LogoMark({ className }: { className?: string }) {
   return (
     <span className={cn("relative inline-block h-10 w-10", className)}>
       <Image
-        src="/brand/sra-luck-mark.png"
+        src={MARK_SRC}
         alt="Sra. Luck"
         fill
         sizes="160px"
@@ -35,7 +36,7 @@ interface WordmarkProps {
 export function Wordmark({ className, maxWidth = 340 }: WordmarkProps) {
   return (
     <Image
-      src="/brand/sra-luck-logo.png"
+      src={LOGO_SRC}
       alt="Sra. Luck — Cirurgia Programada"
       width={1800}
       height={569}

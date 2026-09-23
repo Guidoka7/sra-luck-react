@@ -11,6 +11,7 @@ import { AvisoRevisaoFinanceira } from "@/components/cliente/AvisoRevisaoFinance
 import { etapaAgenda, passoDaTrilha, PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS, statusAgenda, termosJaAssinados, TRILHA_AGENDA, type EtapaAgenda } from "@/components/cliente/agenda/agendaEtapa";
 import type { AgendaData, FormaCusteio, StatusRevisaoFinanceira } from "@/lib/clienteAgenda";
 import { percentualNecessario } from "@/lib/utils";
+import { LOGO_SRC } from "@/assets/brand";
 
 type Agendamento = { id: string; data: string; horario: string | null; dataCirurgia: string | null; termosAssinadosEm?: string | null } | null;
 
@@ -362,7 +363,7 @@ export function AgendaTab({
 
   return (
     <div className="sl-tab pb-6">
-      <div className="sl-tab-logo"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck" /></div>
+      <div className="sl-tab-logo"><img src={LOGO_SRC} alt="Sra. Luck" /></div>
       <div className="sl-tab-heading">
         <div className="flex flex-wrap items-center gap-2">
           <span className="sl-agenda-kicker">Minha agenda</span>
