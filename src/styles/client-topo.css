@@ -2,36 +2,29 @@
  * App da cliente — degradê do topo: toda página começa em rosé e desce até o
  * fundo do app. Vale para os dois temas; cada tema só define as cores:
  *   --tema-topo           primeiro tom (a barra do celular usa esta cor);
- *   --tema-degrade-topo   o degradê completo.
+ *   --tema-degrade-topo   o degradê completo;
+ *   --tema-fundo-app      o fundo liso abaixo do degradê.
  *
- * O degradê fica num ::before fixo atrás do conteúdo, então o topo continua
- * rosé ao rolar. O script de index.html (sampleTopColor) lê o primeiro tom
- * desse ::before para colorir a barra do celular.
+ * O degradê é pintado como fundo do próprio quadro do app (sem camadas
+ * fixas nem novo contexto de empilhamento), para que modais, folhas e a
+ * barra de abas continuem na ordem de sobreposição de sempre. O script de
+ * index.html (sampleTopColor) lê o primeiro tom do degradê para colorir a
+ * barra do celular.
  */
 .client-app {
   --tema-topo: #EFD0D8;
+  --tema-fundo-app: #FBF7F5;
   --tema-degrade-topo: linear-gradient(180deg, #EFD0D8 0px, #F4E0E4 120px, #F9EFEF 260px, #FBF7F5 420px);
 }
 html[data-tema-cliente="escuro"] .client-app {
   --tema-topo: #4E2A36;
+  --tema-fundo-app: #111013;
   --tema-degrade-topo: linear-gradient(180deg, #4E2A36 0px, #3A2029 110px, #231820 240px, #111013 420px);
 }
 
-body .client-app .mobile-app-frame {
-  isolation: isolate;
-}
-body .client-app .mobile-app-frame::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: -1;
-  max-width: 430px;
-  height: 420px;
-  margin: 0 auto;
-  background: var(--tema-degrade-topo);
-  pointer-events: none;
+/* Especificidade acima das regras de fundo do quadro (claro e escuro). */
+html body .client-app .mobile-app-frame.mobile-app-frame {
+  background: var(--tema-degrade-topo) top center / 100% 420px no-repeat, var(--tema-fundo-app) !important;
 }
 
 /* Cabeçalho da Início (fixo ao rolar): mesmo rosé do topo, translúcido. */
