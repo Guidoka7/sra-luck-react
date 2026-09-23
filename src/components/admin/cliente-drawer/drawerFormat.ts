@@ -26,10 +26,10 @@ export function hojeSaoPaulo() {
 
 /** Somente os status aceitos pela API atual (`validarTransicaoStatusContrato`). */
 export const STATUS_CLIENTE: Array<{ db: StatusContratoCliente; label: string; key: string; color: string }> = [
-  { db: "ativo", label: "Ativa", key: "ativa", color: "#16A34A" },
+  { db: "ativo", label: "Ativa", key: "ativa", color: "var(--green)" },
   { db: "suspenso", label: "Suspensa", key: "suspensa", color: "#66717C" },
-  { db: "negativado", label: "Negativada", key: "negativada", color: "#DC2626" },
-  { db: "cancelado", label: "Cancelada", key: "cancelamento", color: "#7A2632" },
+  { db: "negativado", label: "Negativada", key: "negativada", color: "var(--danger)" },
+  { db: "cancelado", label: "Cancelada", key: "cancelamento", color: "var(--wine)" },
 ];
 
 export function statusCliente(db: StatusContratoCliente | null | undefined) {
