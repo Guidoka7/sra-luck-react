@@ -176,7 +176,7 @@ export function WebPushSettings({ onChanged }: { onChanged?: () => void }) {
         type="button"
         disabled={Boolean(busy) || !subject.trim()}
         onClick={() => void executar({ acao: "gerar", subject }, "gerar")}
-        style={{ ...button, background: "var(--bg)", color: "#FFFDFC", borderColor: "var(--bg)", opacity: Boolean(busy) || !subject.trim() ? .55 : 1 }}
+        style={{ ...button, background: "var(--bg)", color: "var(--on-accent)", borderColor: "var(--bg)", opacity: Boolean(busy) || !subject.trim() ? .55 : 1 }}
       >{gerando ? "Gerando…" : status?.configurado ? "Gerar novo par VAPID" : "Gerar chaves automaticamente"}</button>
       <button type="button" disabled={Boolean(busy) || !status?.configurado} onClick={() => void testar()} style={{ ...button, opacity: Boolean(busy) || !status?.configurado ? .55 : 1 }}>{busy === "testar" ? "Validando…" : "Testar configuração"}</button>
       <button type="button" disabled={Boolean(busy)} onClick={() => setManual((v) => !v)} style={{ ...button, color: "var(--soft)" }}>{manual ? "Fechar importação" : "Importar par existente"}</button>
