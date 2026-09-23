@@ -278,3 +278,131 @@
   .zip-shell-menu-open .zip-shell-scrim { display: block; position: fixed; inset: 0; z-index: 69; background: var(--overlay-bg); }
   .zip-shell > main { width: 100%; }
 }
+
+
+/* V46 premium final — neutraliza resíduos vinho/vermelho do CSS gerado no dark. */
+.dark .zip-admin .v46 .today-card,
+.dark .zip-admin .v46 .search-field,
+.dark .zip-admin .v46 .select,
+.dark .zip-admin .v46 .panel,
+.dark .zip-admin .v46 .client-card,
+.dark .zip-admin .v46 .drawer-section,
+.dark .zip-admin .v46 .journey-step,
+.dark .zip-admin .v46 .drawer-accordion,
+.dark .zip-admin .v46 .choice-card,
+.dark .zip-admin .v46 .modal,
+.dark .zip-admin .v46 .process-hero,
+.dark .zip-admin .v46 .process-details span,
+.dark .zip-admin .v46 .finance-metrics>div,
+.dark .zip-admin .v46 .vacancy-card {
+  background:#15161B !important;
+  border-color:#292A31 !important;
+  color:#F2EDF0 !important;
+}
+.dark .zip-admin .v46 .client-drawer,
+.dark .zip-admin .v46 .drawer-header,
+.dark .zip-admin .v46 .drawer-actions {
+  background:#0F1014 !important;
+  border-color:#292A31 !important;
+}
+.dark .zip-admin .v46 .drawer-backdrop,
+.dark .zip-admin .v46 .modal-backdrop {
+  background:rgba(3,4,8,.74) !important;
+  backdrop-filter:blur(4px);
+}
+.dark .zip-admin .v46 .stage-column{
+  background:#14151A !important;
+  border-color:#25262D !important;
+}
+.dark .zip-admin .v46 .stage-column:nth-child(1),
+.dark .zip-admin .v46 .stage-column:nth-child(2){
+  background:linear-gradient(180deg,rgba(199,134,155,.07),#14151A 34%) !important;
+}
+.dark .zip-admin .v46 .stage-column:nth-child(3),
+.dark .zip-admin .v46 .stage-column:nth-child(5){
+  background:linear-gradient(180deg,rgba(95,197,138,.055),#14151A 34%) !important;
+}
+.dark .zip-admin .v46 .stage-column:nth-child(4){
+  background:linear-gradient(180deg,rgba(216,179,110,.055),#14151A 34%) !important;
+}
+.dark .zip-admin .v46 .stage-num,
+.dark .zip-admin .v46 .process-number,
+.dark .zip-admin .v46 .primary-btn,
+.dark .zip-admin .v46 .day-cell.selected,
+.dark .zip-admin .v46 .journey-step.current .journey-dot {
+  background:linear-gradient(135deg,#A85F7D,#95526F) !important;
+  border-color:#A85F7D !important;
+  color:#FFF7FA !important;
+  box-shadow:0 10px 24px rgba(168,95,125,.13);
+}
+.dark .zip-admin .v46 .primary-btn:hover,
+.dark .zip-admin .v46 .secondary-btn:hover{
+  background:rgba(199,134,155,.10) !important;
+}
+.dark .zip-admin .v46 .secondary-btn,
+.dark .zip-admin .v46 .circle-btn,
+.dark .zip-admin .v46 .stepper button{
+  background:#17181D !important;
+  border-color:rgba(199,134,155,.30) !important;
+  color:#DCA0B2 !important;
+}
+.dark .zip-admin .v46 .ghost-btn{
+  background:#1B1C21 !important;
+  color:#B3ADB2 !important;
+}
+.dark .zip-admin .v46 .danger-btn,
+.dark .zip-admin .v46 .release-action-btn.negative,
+.dark .zip-admin .v46 .callout.danger,
+.dark .zip-admin .v46 .check-card.failed,
+.dark .zip-admin .v46 .badge.danger{
+  background:rgba(199,134,155,.11) !important;
+  border-color:rgba(199,134,155,.25) !important;
+  color:#E1A5B6 !important;
+}
+.dark .zip-admin .v46 .day-cell.full{
+  background:rgba(199,134,155,.10) !important;
+  border-color:rgba(199,134,155,.22) !important;
+}
+.dark .zip-admin .v46 .day-cell.full .day-marker,
+.dark .zip-admin .v46 .dot.full{
+  background:#C7869B !important;
+}
+.dark .zip-admin .v46 .badge.info,
+.dark .zip-admin .v46 .subtle-pill,
+.dark .zip-admin .v46 .drawer-tab:not(.active) .tab-count,
+.dark .zip-admin .v46 .drawer-accordion>summary span{
+  background:rgba(199,134,155,.09) !important;
+  color:#DCA0B2 !important;
+  border-color:rgba(199,134,155,.16) !important;
+}
+.dark .zip-admin .v46 .progress,
+.dark .zip-admin .v46 .progress-track{
+  background:#29252A !important;
+}
+.dark .zip-admin .v46 .progress span,
+.dark .zip-admin .v46 .progress-track span{
+  background:linear-gradient(90deg,#A85F7D,#C7869B) !important;
+}
+.dark .zip-admin .v46 .toast.error{
+  background:#3A2630 !important;
+  color:#F0CAD4 !important;
+}
+.dark .zip-admin .v46 .data-table th{
+  background:#131419 !important;
+  color:#BFA5AF !important;
+}
+.dark .zip-admin .v46 .data-table td{
+  border-color:#25262D !important;
+}
+.dark .zip-admin .v46 .data-table tr:hover td{
+  background:rgba(199,134,155,.045) !important;
+}
+.dark .zip-admin .v46 .field input,
+.dark .zip-admin .v46 .field select,
+.dark .zip-admin .v46 .field textarea,
+.dark .zip-admin .v46 .notes-input,
+.dark .zip-admin .v46 .status-control select{
+  background:#15161B !important;
+  border-color:#292A31 !important;
+  color:#F2EDF0 !important;
+}
