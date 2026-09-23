@@ -602,7 +602,10 @@ html[data-tema-cliente="escuro"] .client-app {
   line-height: 1.18;
   color: var(--frase-texto);
   text-wrap: pretty;
+  animation: slFraseEntra 0.45s ease both;
 }
+@keyframes slFraseEntra { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .client-app .sl-frase-texto { animation: none; } }
 .client-app .sl-frase-texto em {
   font-style: italic;
   font-weight: 500;

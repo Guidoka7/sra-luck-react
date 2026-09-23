@@ -196,6 +196,23 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
   ];
 
+  const [geminiChave, frasesTabela, { data: testeGemini }, { count: frasesIa }] = await Promise.all([
+    obterCredencial(env, "gemini", "api_key"),
+    tabelaDisponivel(db, "frases_do_dia"),
+    db.from("logs_alteracoes").select("created_at,detalhes").eq("acao", "testou_conexao_integracao").eq("entidade_id", "gemini").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("frases_do_dia").select("id", { count: "exact", head: true }).eq("origem", "ia"),
+  ]);
+  const geminiConectado = Boolean(geminiChave && (testeGemini?.detalhes as any)?.conectado);
+  integracoes.push({
+    id: "gemini", nome: "Gemini (frase do dia)", grupo: "comunicacao", estado: estadoBase(frasesTabela, Boolean(geminiChave)),
+    credenciaisConfiguradas: Boolean(geminiChave), persistenciaPronta: frasesTabela, conexaoLiveVerificada: geminiConectado,
+    detalhes: geminiChave
+      ? "Gera a frase do dia da Início (uma por dia para cada fase da jornada), sem enviar dados pessoais. Se falhar, o app usa o catálogo de frases."
+      : "Cole a API Key gratuita do Google AI Studio para ativar as frases geradas por IA. Enquanto isso, o app usa o catálogo de frases.",
+    eventosRegistrados: frasesIa ?? 0,
+    ultimaVerificacao: testeGemini?.created_at ?? null,
+  });
+
   const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = await Promise.all([
     obterCredencial(env, "brb", "webhook_secret"), obterCredencial(env, "bb", "webhook_secret"), obterCredencial(env, "santander", "webhook_secret"), obterCredencial(env, "sicredi", "webhook_secret"), obterCredencial(env, "efi", "webhook_secret"),
   ]);

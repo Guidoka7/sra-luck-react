@@ -99,7 +99,7 @@ Procurar:
 - `worker/client-boletos.ts`;
 - `worker/journey.ts`;
 - Início: `src/pages/client/HomeTab.tsx`, `src/components/cliente/home/` (carrossel, acesso rápido, institucional) e `src/styles/home-promo.css`;
-- Frase do dia (cartão final da Início): catálogo e regras em `src/lib/fraseDoDia.ts` (tema por dia da semana, dia 1 do mês e datas especiais, fuso de Brasília), cartão em `src/components/cliente/home/DisciplinaCard.tsx`.
+- Frase do dia (cartão final da Início): agente em `worker/frase-do-dia.ts` (`GET /api/cliente/frase-do-dia`, Gemini plano gratuito, uma frase por dia por fase da jornada, cache em `frases_do_dia` — migration 079, guardrails de tom e sem dados pessoais no prompt; chave em Admin → Integrações → Gemini). Catálogo de reserva e regras de data em `src/lib/fraseDoDia.ts`; cartão em `src/components/cliente/home/DisciplinaCard.tsx`.
 
 Antes de redesenhar, comparar com `docs/PWA-FUNCTIONAL-BASELINE.md`.
 

@@ -39,6 +39,10 @@ export interface Env {
   SANTANDER_WEBHOOK_SECRET?: string;
   SICREDI_WEBHOOK_SECRET?: string;
   EFI_WEBHOOK_SECRET?: string;
+
+  // Agente da frase do dia (Google Gemini, plano gratuito). Preferir o cofre do painel.
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
 }
 
 export function createServiceSupabaseClient(env: Env): SupabaseClient {

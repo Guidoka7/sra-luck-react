@@ -25,12 +25,13 @@ const CAPACIDADES: Record<string, string[]> = {
   web_push: ["Enviar notificação push a dispositivos inscritos", "Registrar entrega/erro por assinatura"],
   mercado_pago: ["Criar preferência de pagamento por parcela", "Receber evento do provedor", "Encaminhar pagamento aprovado para conferência humana — sem baixa automática"],
   conta_azul: ["Criar recebível a partir de uma parcela", "Atualizar parcela existente no Conta Azul"],
+  gemini: ["Gerar a frase do dia da Início no tom Sra. Luck", "Uma frase por dia para cada fase da jornada (até 4 chamadas/dia, plano gratuito)", "Nenhum dado pessoal enviado: o nome é aplicado pelo sistema", "Sem chave ou em falha, usa o catálogo de frases"],
   rd_station: ["Consultar negociações ganhas pela API v2 (GET)", "Receber criação/atualização via webhook", "Atualizar apenas o snapshot externo no Sra. Luck", "Nunca escrever dados comerciais de volta no RD Station"],
 };
 
 function estadoKind(estado: EstadoIntegracao): ZipKind { if (estado === "credenciais_presentes") return "warn"; if (estado === "pronto_para_configurar") return "ok"; if (estado === "planejado") return "neutral"; return "bad"; }
 function estadoLabel(estado: EstadoIntegracao) { if (estado === "credenciais_presentes") return "Credenciais presentes"; if (estado === "pronto_para_configurar") return "Pronto para configurar"; if (estado === "planejado") return "Planejado"; return "Base incompleta"; }
-function iconFor(id: string) { if (id === "web_push") return "↗"; if (id === "mercado_pago") return "MP"; if (id === "conta_azul") return "CA"; if (id === "rd_station") return "RD"; return "$"; }
+function iconFor(id: string) { if (id === "web_push") return "↗"; if (id === "mercado_pago") return "MP"; if (id === "conta_azul") return "CA"; if (id === "rd_station") return "RD"; if (id === "gemini") return "✦"; return "$"; }
 function dataHora(v?: string | null) { return v ? new Date(v).toLocaleString("pt-BR") : "Ainda não"; }
 
 async function carregarStatus(): Promise<Payload> {
@@ -206,7 +207,7 @@ export default function IntegracoesAdminPage() {
           {provedorDrawer ? (credenciais?.persistenciaPronta ? (drawerAtual.id === "web_push" ? <WebPushSettings onChanged={() => void atualizar()} /> : <FormularioCredenciaisZip provedor={provedorDrawer} onSalvo={() => void atualizar()} />) : <p style={{ fontSize: 10.5, color: "var(--gold)" }}>Estrutura de persistência ainda não aplicada neste ambiente.</p>) : <p style={{ fontSize: 10.5, color: "var(--soft)" }}>Este provedor não tem campos de credencial cadastrados.</p>}
         </div>
         <div style={{ padding: "0 15px 15px", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 7 }}>
-          {drawerAtual.id === "mercado_pago" && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}
+          {(drawerAtual.id === "mercado_pago" || drawerAtual.id === "gemini") && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}
           {drawerAtual.id === "rd_station" && <>
             <button onClick={() => void conectarRd()} disabled={conectando || !drawerAtual.oauthConfigurado} style={btn}>{conectando ? "Abrindo OAuth…" : drawerAtual.oauthAutorizado ? "Reautorizar OAuth" : "Conectar OAuth"}</button>
             <button onClick={() => void testarConexao("rd_station")} disabled={testando === "rd_station" || !drawerAtual.oauthAutorizado} style={btn}>{testando === "rd_station" ? "Testando…" : "Testar conexão"}</button>

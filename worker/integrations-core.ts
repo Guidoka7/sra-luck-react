@@ -6,6 +6,7 @@ import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { testarGemini } from "./frase-do-dia";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -311,6 +312,8 @@ async function testarConexao(request: Request, env: Env) {
         resultado = { conectado: false, detalhe: "Falha de rede ao contatar o provedor." };
       }
     }
+  } else if (provedor === "gemini") {
+    resultado = await testarGemini(env);
   } else return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
 
   const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: colaboradorId, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });

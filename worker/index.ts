@@ -19,6 +19,7 @@ import { creditOpsApi } from "./credit-ops";
 import { journeyApi } from "./journey";
 import { clientNotificacoesApi } from "./client-notificacoes";
 import { clientConfigApi } from "./client-config";
+import { fraseDoDiaApi } from "./frase-do-dia";
 import { staffApi } from "./staff-api";
 import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
@@ -440,6 +441,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (journey) return journey;
   const clientNotificacoes = await clientNotificacoesApi(request, env);
   if (clientNotificacoes) return clientNotificacoes;
+  const fraseDia = await fraseDoDiaApi(request, env);
+  if (fraseDia) return fraseDia;
   const clientConfig = await clientConfigApi(request, env);
   if (clientConfig) return clientConfig;
 
