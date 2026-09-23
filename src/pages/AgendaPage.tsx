@@ -18,6 +18,7 @@ import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 import { AgendaTab } from "@/pages/client/AgendaTab";
 import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtapa";
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
+import { LOGO_SRC } from "@/assets/brand";
 
 const CHAVE_ABA = "sra-luck-cliente-aba";
 const ABAS: ClientTab[] = ["inicio", "agenda", "premios", "parcelas", "mais"];
@@ -182,7 +183,7 @@ export function AgendaPage() {
     return (
       <main className="client-app flex min-h-[100dvh] items-center justify-center">
         <div className="mobile-app-frame flex items-center justify-center">
-          <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" className="w-[104px] animate-pulse object-contain" />
+          <img src={LOGO_SRC} alt="Sra. Luck" className="w-[104px] animate-pulse object-contain" />
         </div>
       </main>
     );

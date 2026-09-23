@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { LockKeyhole, Mail, Users } from "lucide-react";
 import "../../styles/staff-pwa.css";
 import "../../styles/staff-login.css";
+import { LOGO_SRC } from "@/assets/brand";
 
 export function StaffLoginPage() {
   const [email, setEmail] = useState("");
@@ -33,7 +34,7 @@ export function StaffLoginPage() {
   return (
     <main className="st-login-page">
       <section className="st-login-card">
-        <img src="/brand/sra-luck-logo.png" alt="Sra. Luck" />
+        <img src={LOGO_SRC} alt="Sra. Luck" />
         <div className="st-login-icon"><Users size={22} /></div>
         <h1>Portal da equipe</h1>
         <p>Acesse seus treinamentos, metas, comissões e informações da sua função.</p>

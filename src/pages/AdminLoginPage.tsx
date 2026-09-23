@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../components/ui/ThemeToggle";
+import { MARK_SRC } from "@/assets/brand";
 
 function mensagemFalha(status: number, body: { erro?: string }): string {
   if (body.erro) return body.erro;
@@ -54,7 +55,7 @@ export function AdminLoginPage() {
       <div className="absolute right-5 top-5"><ThemeToggle compact /></div>
       <section className="surface-glass w-full max-w-md rounded-3xl p-8 luxury-ring">
         <div className="mb-7 text-center">
-          <img src="/brand/sra-luck-mark.png" alt="Sra. Luck" className="mx-auto mb-4 h-12 w-12" />
+          <img src={MARK_SRC} alt="Sra. Luck" className="mx-auto mb-4 h-12 w-12" />
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-burgundy/45">Acesso restrito</p>
           <h1 className="mt-1 text-2xl font-semibold text-burgundy dark:text-pearl">Painel administrativo</h1>
         </div>

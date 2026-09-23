@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { lerCacheCliente, limparCacheCliente } from "@/lib/clienteAgenda";
+import { MARK_SRC } from "@/assets/brand";
 
 interface SessionGateProps {
   audience: "admin" | "cliente" | "equipe";
@@ -13,7 +15,10 @@ function previewPermitido(): boolean {
 }
 
 export function SessionGate({ audience, children }: SessionGateProps) {
-  const [state, setState] = useState<"checking" | "ok" | "denied">("checking");
+  // Cliente com dados já guardados neste aparelho: abre a área na hora enquanto
+  // a sessão é confirmada em segundo plano. Se a sessão não for válida, os
+  // dados locais são apagados e ela volta ao login (as APIs exigem sessão).
+  const [state, setState] = useState<"checking" | "ok" | "denied">(() => (audience === "cliente" && lerCacheCliente() ? "ok" : "checking"));
   const preview = useMemo(() => {
     const solicitado = new URLSearchParams(window.location.search).get("preview") === "1";
     return solicitado && previewPermitido();
@@ -32,11 +37,14 @@ export function SessionGate({ audience, children }: SessionGateProps) {
         return data.autenticado === true;
       })
       .then((ok) => setState(ok ? "ok" : "denied"))
-      .catch(() => setState("denied"));
+      // Falha de rede (ex.: sem internet) não é sessão inválida: quem já estava
+      // aberta com dados locais continua; sem dados, segue o fluxo normal.
+      .catch(() => setState((atual) => (audience === "cliente" && atual === "ok" ? "ok" : "denied")));
   }, [audience, preview]);
 
   useEffect(() => {
     if (state !== "denied") return;
+    if (audience === "cliente") limparCacheCliente();
     const login = audience === "admin" ? "/admin/login" : audience === "equipe" ? "/equipe/login" : "/login";
     window.location.replace(login);
   }, [audience, state]);
@@ -48,7 +56,7 @@ export function SessionGate({ audience, children }: SessionGateProps) {
   return (
     <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f7f3eb",fontFamily:"Inter,system-ui"}}>
       <div style={{textAlign:"center",color:"#755b39"}}>
-        <img src="/brand/sra-luck-mark.png" alt="Sra. Luck" style={{width:48,height:48,objectFit:"contain",margin:"0 auto 12px"}} />
+        <img src={MARK_SRC} alt="Sra. Luck" style={{width:48,height:48,objectFit:"contain",margin:"0 auto 12px"}} />
         <strong style={{display:"block",fontFamily:"Georgia,serif",fontSize:20}}>Validando seu acesso</strong>
         <span style={{fontSize:11,opacity:.65}}>Só um instante...</span>
       </div>

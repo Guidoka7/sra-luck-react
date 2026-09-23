@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiJson } from "../lib/api";
 import { limparCacheCliente } from "../lib/clienteAgenda";
 import { dataNascimentoValida } from "../../worker/app-access";
+import { LogoDestaque } from "@/components/cliente/LogoDestaque";
 
 function formatCpf(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -29,7 +30,7 @@ export function LoginPage() {
     <div className="mobile-app-frame">
       <form onSubmit={submit} className="relative flex min-h-[100dvh] flex-col justify-between bg-[#FBF7F5] px-7 pb-[30px] pt-16">
         <div className="pointer-events-none absolute -right-[50px] -top-10 h-[220px] w-[220px] rounded-full bg-[#F7E9E7] opacity-85" />
-        <div className="relative"><div className="flex flex-col items-center gap-3"><img src="/brand/sra-luck-logo.png" alt="Sra. Luck — Cirurgia Programada" className="h-auto w-[188px] max-w-[72vw] object-contain"/><div className="text-[11px] font-normal uppercase tracking-[.16em] text-[#9A8C88]">Seu sonho, sua jornada.</div></div></div>
+        <div className="relative"><div className="flex flex-col items-center gap-[18px]"><LogoDestaque alt="Sra. Luck — Cirurgia Programada"/><div className="text-[11px] font-normal uppercase tracking-[.16em] text-[#9A8C88]">Seu sonho, sua jornada.</div></div></div>
 
         <div className="relative flex flex-col gap-[14px]">
           <label className="flex flex-col gap-[7px]"><span className="text-[11px] uppercase tracking-[.1em] text-[#9A8C88]">CPF</span><input value={cpf} onChange={e=>setCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" autoComplete="username" className="w-full rounded-[14px] border border-[#E6DAD6] bg-white px-4 py-[15px] text-[16px] text-[#2E2422] outline-none focus:border-[#6B1F2E]" required/></label>
