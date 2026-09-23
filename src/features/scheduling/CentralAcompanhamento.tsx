@@ -74,12 +74,20 @@ export function CentralAcompanhamento() {
       </div>
       <div className="head-actions">
         <button type="button" className="today-card today-picker-btn" aria-label="Escolher dia das agendas" disabled={!hoje} onClick={() => setEscolherDia(true)}>
-          <span aria-hidden="true">▣</span>
-          <div>
+          <span className="today-calendar-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+            </svg>
+          </span>
+          <div className="today-copy">
             <b>{!hoje ? "Carregando…" : !diaRef || diaRef === hoje ? `Hoje é ${dataBr(hoje)}` : `Visualizando ${dataBr(diaRef)}`}</b>
             <small>{diaSemana(diaRef ?? hoje)}</small>
           </div>
-          <span className="today-chevron" aria-hidden="true">⌄</span>
+          <span className="today-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m7 10 5 5 5-5" />
+            </svg>
+          </span>
         </button>
         <button type="button" className="primary-btn" onClick={() => setNovaCliente(true)}>＋ Nova cliente</button>
       </div>
