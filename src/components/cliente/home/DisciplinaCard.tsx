@@ -3,7 +3,7 @@ import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { apiJson } from "@/lib/api";
 import { fraseDoDia, trechosDaFrase, FUSO_SRA_LUCK } from "@/lib/fraseDoDia";
 
-type Frase = { texto: string; tema: string; data: string; dona?: string; origem?: string };
+type Frase = { texto: string; tema: string; data: string; origem?: string };
 
 const CHAVE_CACHE = "sra-luck-frase-do-dia";
 
@@ -12,11 +12,11 @@ function dataPorExtenso(agora: Date) {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
-// A frase traz o primeiro nome da cliente: o cache só vale para a mesma conta.
-function lerCache(data: string, dona: string): Frase | null {
+// A mensagem do dia é a mesma para todas as clientes: o cache vale só pela data.
+function lerCache(data: string): Frase | null {
   try {
     const salvo = JSON.parse(localStorage.getItem(CHAVE_CACHE) ?? "null") as Frase | null;
-    return salvo && salvo.data === data && salvo.dona === dona && salvo.texto ? salvo : null;
+    return salvo && salvo.data === data && salvo.texto ? salvo : null;
   } catch { return null; }
 }
 
@@ -25,15 +25,15 @@ function gravarCache(frase: Frase) {
 }
 
 /**
- * Cartão "Frase do dia" da Início. A frase personalizada vem do agente
- * (GET /api/cliente/frase-do-dia → worker/frase-do-dia.ts, Gemini). Enquanto
- * carrega, ou se o serviço falhar, mostra a frase do catálogo local
- * (src/lib/fraseDoDia.ts). Troca sozinho na virada do dia (horário de Brasília).
+ * Cartão "Frase do dia" da Início. Mostra a mensagem do dia salva pela rotina
+ * diária (GET /api/cliente/frase-do-dia → tabela mensagens_do_dia; o app nunca
+ * chama o Gemini). Enquanto carrega, ou antes de a rotina rodar, mostra a frase
+ * do catálogo local (src/lib/fraseDoDia.ts). Troca sozinho na virada do dia.
  */
-export function DisciplinaCard({ nomeCliente = "" }: { nomeCliente?: string }) {
+export function DisciplinaCard() {
   const [agora, setAgora] = useState(() => new Date());
   const local = fraseDoDia(agora);
-  const [frase, setFrase] = useState<Frase>(() => lerCache(local.data, nomeCliente) ?? local);
+  const [frase, setFrase] = useState<Frase>(() => lerCache(local.data) ?? local);
 
   useEffect(() => {
     const atualizar = () => setAgora((antes) => {
@@ -49,20 +49,20 @@ export function DisciplinaCard({ nomeCliente = "" }: { nomeCliente?: string }) {
   useEffect(() => {
     let ativo = true;
     const hoje = fraseDoDia(agora);
-    const emCache = lerCache(hoje.data, nomeCliente);
+    const emCache = lerCache(hoje.data);
     setFrase(emCache ?? hoje);
     if (emCache) return;
     apiJson<Frase>("/api/cliente/frase-do-dia", { cache: "no-store" })
       .then((resposta) => {
         if (!ativo || !resposta?.texto || resposta.data !== hoje.data) return;
-        const nova = { texto: resposta.texto, tema: resposta.tema || hoje.tema, data: resposta.data, dona: nomeCliente };
-        // Só guarda a frase da IA; a de reserva é refeita no próximo acesso.
-        if (resposta.origem === "ia") gravarCache(nova);
+        const nova = { texto: resposta.texto, tema: resposta.tema || hoje.tema, data: resposta.data };
+        // Guarda só a mensagem já salva no banco; a reserva ("antes da rotina") é consultada de novo.
+        if (resposta.origem !== "reserva") gravarCache(nova);
         setFrase(nova);
       })
       .catch(() => { /* mantém a frase do catálogo */ });
     return () => { ativo = false; };
-  }, [agora, nomeCliente]);
+  }, [agora]);
 
   return (
     <section className="sl-frase" aria-label="Frase do dia">

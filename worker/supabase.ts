@@ -40,9 +40,12 @@ export interface Env {
   SICREDI_WEBHOOK_SECRET?: string;
   EFI_WEBHOOK_SECRET?: string;
 
-  // Agente da frase do dia (Google Gemini, plano gratuito). Preferir o cofre do painel.
+  // Mensagem do dia (Google Gemini, plano gratuito) — worker/frase-do-dia.ts.
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GEMINI_PROMPT?: string;
+  // Segredo do Vercel Cron (enviado como "Authorization: Bearer <CRON_SECRET>").
+  CRON_SECRET?: string;
 }
 
 export function createServiceSupabaseClient(env: Env): SupabaseClient {

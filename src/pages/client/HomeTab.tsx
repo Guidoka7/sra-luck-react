@@ -43,7 +43,7 @@ export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcent
 
       <PorQueSraLuck onConhecer={() => setHistoriaAberta(true)} />
 
-      <DisciplinaCard nomeCliente={nomeCliente} />
+      <DisciplinaCard />
 
       <NossaHistoriaFolha aberta={historiaAberta} onFechar={() => setHistoriaAberta(false)} onFalarComEquipe={() => onCampaignAction("atendimento")} />
     </div>

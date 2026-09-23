@@ -4,6 +4,9 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist/client",
+  "crons": [
+    { "path": "/api/cron/mensagem-do-dia", "schedule": "5 3 * * *" }
+  ],
   "routes": [
     {
       "src": "/(.*)",

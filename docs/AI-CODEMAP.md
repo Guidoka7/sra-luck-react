@@ -99,7 +99,7 @@ Procurar:
 - `worker/client-boletos.ts`;
 - `worker/journey.ts`;
 - Início: `src/pages/client/HomeTab.tsx`, `src/components/cliente/home/` (carrossel, acesso rápido, institucional) e `src/styles/home-promo.css`;
-- Frase do dia (cartão final da Início): agente em `worker/frase-do-dia.ts` (`GET /api/cliente/frase-do-dia`, Gemini plano gratuito, uma frase por dia por fase da jornada, cache em `frases_do_dia` — migration 079, guardrails de tom e sem dados pessoais no prompt; chave em Admin → Integrações → Gemini). Catálogo de reserva e regras de data em `src/lib/fraseDoDia.ts`; cartão em `src/components/cliente/home/DisciplinaCard.tsx`.
+- Mensagem do dia (cartão final da Início): 1 mensagem por data, igual para todas as clientes. Rotina diária `GET /api/cron/mensagem-do-dia` (Vercel Cron em `vercel.json`, 00:05 de Brasília; idempotente) em `worker/frase-do-dia.ts` chama o Gemini no máximo 1 vez e salva em `mensagens_do_dia` (migration 080, chave primária = data); o app só lê em `GET /api/cliente/frase-do-dia`. Reserva: catálogo `src/lib/fraseDoDia.ts` ou última mensagem válida. Config por ambiente: `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_PROMPT`, `CRON_SECRET` (chave/modelo também em Admin → Integrações → Gemini, que tem o botão "Mensagem de hoje"). Cartão em `src/components/cliente/home/DisciplinaCard.tsx`. A tabela `frases_do_dia` (079) ficou sem uso.
 
 Antes de redesenhar, comparar com `docs/PWA-FUNCTIONAL-BASELINE.md`.
 

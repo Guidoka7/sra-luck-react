@@ -25,7 +25,7 @@ const CAPACIDADES: Record<string, string[]> = {
   web_push: ["Enviar notificação push a dispositivos inscritos", "Registrar entrega/erro por assinatura"],
   mercado_pago: ["Criar preferência de pagamento por parcela", "Receber evento do provedor", "Encaminhar pagamento aprovado para conferência humana — sem baixa automática"],
   conta_azul: ["Criar recebível a partir de uma parcela", "Atualizar parcela existente no Conta Azul"],
-  gemini: ["Gerar a frase do dia da Início no tom Sra. Luck", "Uma frase por dia para cada fase da jornada (até 4 chamadas/dia, plano gratuito)", "Nenhum dado pessoal enviado: o nome é aplicado pelo sistema", "Sem chave ou em falha, usa o catálogo de frases"],
+  gemini: ["1 mensagem do dia, igual para todas as clientes (rotina diária às 00:05)", "No máximo 1 geração por dia; o app só lê a mensagem salva", "Nenhum dado de cliente enviado ao Gemini", "Se falhar, usa a frase de reserva do catálogo ou a última válida"],
   rd_station: ["Consultar negociações ganhas pela API v2 (GET)", "Receber criação/atualização via webhook", "Atualizar apenas o snapshot externo no Sra. Luck", "Nunca escrever dados comerciais de volta no RD Station"],
 };
 
@@ -120,6 +120,22 @@ export default function IntegracoesAdminPage() {
     finally { setTestando(null); }
   }
 
+  /** Roda a rotina da mensagem do dia (idempotente: se já existe a de hoje, só mostra). */
+  async function mensagemDeHoje() {
+    setTestando("gemini_mensagem");
+    try {
+      const response = await fetch("/api/admin/integrations/gemini/mensagem-do-dia", { method: "POST", credentials: "same-origin" });
+      const body = await response.json().catch(() => ({})) as { texto?: string; origem?: string; reutilizada?: boolean; motivo?: string; erro?: string };
+      const origem = body.origem === "ia" ? "gerada pelo Gemini" : body.origem === "ultima_valida" ? "última mensagem válida" : "frase de reserva do catálogo";
+      const detalhe = response.ok && body.texto
+        ? `${body.reutilizada ? "Mensagem de hoje já existia" : "Mensagem de hoje criada"} (${origem}): ${body.texto.replace(/\*/g, "")}${body.motivo && body.origem !== "ia" ? ` — motivo: ${body.motivo}` : ""}`
+        : body.erro ?? "Não foi possível preparar a mensagem de hoje.";
+      setResultadoTeste((a) => ({ ...a, gemini: { conectado: response.ok && body.origem === "ia", detalhe } }));
+      await atualizar();
+    } catch { setResultadoTeste((a) => ({ ...a, gemini: { conectado: false, detalhe: "Erro de conexão." } })); }
+    finally { setTestando(null); }
+  }
+
   async function sincronizarRd() {
     setSincronizando(true); setErro(null);
     try {
@@ -208,6 +224,7 @@ export default function IntegracoesAdminPage() {
         </div>
         <div style={{ padding: "0 15px 15px", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 7 }}>
           {(drawerAtual.id === "mercado_pago" || drawerAtual.id === "gemini") && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}
+          {drawerAtual.id === "gemini" && <button onClick={() => void mensagemDeHoje()} disabled={testando === "gemini_mensagem"} style={btn}>{testando === "gemini_mensagem" ? "Preparando…" : "Mensagem de hoje"}</button>}
           {drawerAtual.id === "rd_station" && <>
             <button onClick={() => void conectarRd()} disabled={conectando || !drawerAtual.oauthConfigurado} style={btn}>{conectando ? "Abrindo OAuth…" : drawerAtual.oauthAutorizado ? "Reautorizar OAuth" : "Conectar OAuth"}</button>
             <button onClick={() => void testarConexao("rd_station")} disabled={testando === "rd_station" || !drawerAtual.oauthAutorizado} style={btn}>{testando === "rd_station" ? "Testando…" : "Testar conexão"}</button>

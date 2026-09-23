@@ -65,6 +65,11 @@ function buildEnv(request: Request): Env {
     SANTANDER_WEBHOOK_SECRET: firstEnv("SANTANDER_WEBHOOK_SECRET"),
     SICREDI_WEBHOOK_SECRET: firstEnv("SICREDI_WEBHOOK_SECRET"),
     EFI_WEBHOOK_SECRET: firstEnv("EFI_WEBHOOK_SECRET"),
+
+    GEMINI_API_KEY: firstEnv("GEMINI_API_KEY"),
+    GEMINI_MODEL: firstEnv("GEMINI_MODEL"),
+    GEMINI_PROMPT: firstEnv("GEMINI_PROMPT"),
+    CRON_SECRET: firstEnv("CRON_SECRET"),
   };
 }
 
