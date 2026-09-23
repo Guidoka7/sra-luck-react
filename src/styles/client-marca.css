@@ -1,0 +1,51 @@
+/*
+ * Logo do topo das abas (componente MarcaSraLuck). As cores vêm do tema:
+ * troque aqui para ajustar a marca nos dois modos.
+ */
+.client-app {
+  --marca-simbolo: linear-gradient(160deg, #C07F86 0%, #A55E66 100%);
+  --marca-assinatura: linear-gradient(160deg, #8B2E40 0%, #6B1F2E 100%);
+  --marca-sombra: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.55));
+}
+html[data-tema-cliente="escuro"] .client-app {
+  --marca-simbolo: linear-gradient(160deg, #F0B8C5 0%, #D9899C 100%);
+  --marca-assinatura: linear-gradient(160deg, #FBEDF0 0%, #EDC2CD 100%);
+  --marca-sombra: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.35));
+}
+
+.client-app .sl-marca {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 128px;
+  aspect-ratio: 1800 / 569;
+  filter: var(--marca-sombra);
+}
+.client-app .sl-marca__simbolo,
+.client-app .sl-marca__assinatura {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.client-app .sl-marca__simbolo {
+  background: var(--marca-simbolo);
+  -webkit-mask-image: url("../assets/brand/sra-luck-simbolo-mascara.webp");
+  mask-image: url("../assets/brand/sra-luck-simbolo-mascara.webp");
+}
+.client-app .sl-marca__assinatura {
+  background: var(--marca-assinatura);
+  -webkit-mask-image: url("../assets/brand/sra-luck-assinatura-mascara.webp");
+  mask-image: url("../assets/brand/sra-luck-assinatura-mascara.webp");
+}
+
+/* Alinhada ao centro dos botões de menu e notificações do topo. */
+.client-app .sl-tab-logo .sl-marca,
+.client-app .sl-marca--aba {
+  margin-top: -6px;
+}
+.client-app .sl-home-header .sl-marca {
+  width: 124px;
+}

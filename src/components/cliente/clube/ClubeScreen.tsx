@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { AnimatePresence, motion } from "framer-motion";
 import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Ticket, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -6,7 +7,6 @@ import {
   abrirArquivoVoucher, buscarClube, resgatarPremio, solicitarVoucher, usarBeneficio, VOUCHER_CONSULTA_KEY,
   type ClubeData, type ClubeRecompensa,
 } from "@/lib/clube";
-import { LOGO_SRC } from "@/assets/brand";
 import { Folha, ImagemPremio, Moeda } from "./ClubeUi";
 import { IndicarFolha } from "./IndicarFolha";
 import { descreverEvento, estadoVoucher, etapaIndicacao, proximoPremio, rotuloResgate } from "./clubeRegras";
@@ -97,7 +97,7 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
         <div className="flex min-h-[34px] items-center pr-[86px]">
           {onVoltar
             ? <button type="button" onClick={onVoltar} className="flex items-center gap-[7px] text-[12px] text-[#6B1F2E]"><ChevronRight className="h-4 w-4 rotate-180" />Mais</button>
-            : <img src={LOGO_SRC} alt="Sra. Luck" className="w-[91px] object-contain" />}
+            : <MarcaSraLuck className="sl-marca--aba" />}
         </div>
         <h1 className="m-0 pt-[14px] font-heading text-[29px] font-semibold leading-[1.08] text-[#2E2422]">Clube de Vantagens</h1>
         <p className="m-0 pt-1 text-[13px] font-light text-[#8A7B77]">Pague em dia, indique amigas e troque seus pontos por prêmios.</p>

@@ -1,5 +1,5 @@
 import { ProfilePhotoPicker } from "@/components/cliente/ProfilePhotoPicker";
-import { LOGO_SRC } from "@/assets/brand";
+import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 
 interface ClientProfileHeaderProps {
   nomeCliente: string;
@@ -29,7 +29,7 @@ export function ClientProfileHeader({
       <header className="sl-home-header">
         <div className="sl-home-header-top">
           <div className="flex min-h-[34px] items-center">
-            <img src={LOGO_SRC} alt="Sra. Luck" className="sl-home-logo" />
+            <MarcaSraLuck />
           </div>
 {/* Espaço do menu e do sininho fixos (MenuButton + NotificationBell), que ficam sobre este ponto. */}
           <span className="h-[34px] w-[76px] flex-none" aria-hidden="true" />

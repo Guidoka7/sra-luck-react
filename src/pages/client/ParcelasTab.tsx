@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { PagamentoProgressBar } from "@/components/cliente/parcelas/PagamentoProgressBar";
 import { ParcelasPrototype, type PagamentoConfig } from "@/components/cliente/parcelas/ParcelasPrototype";
-import { LOGO_SRC } from "@/assets/brand";
 
 interface ParcelasTabProps {
   procedimento: string | null;
@@ -21,7 +21,7 @@ export function ParcelasTab({ procedimento }: ParcelasTabProps) {
 
   return (
     <div className="sl-tab">
-      <div className="sl-tab-logo"><img src={LOGO_SRC} alt="Sra. Luck" /></div>
+      <div className="sl-tab-logo"><MarcaSraLuck /></div>
       <div className="sl-tab-heading">
         <h1>Financeiro</h1>
         <p>Seu contrato em uma única visão, do pagamento confirmado ao próximo vencimento.</p>
