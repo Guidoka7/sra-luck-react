@@ -22,16 +22,21 @@
   padding:0 0 24px;
 }
 .dark .overview-v2{
-  --ov-ink:#ece9eb;
-  --ov-muted:#9f9a9e;
-  --ov-line:rgba(255,255,255,.09);
-  --ov-line-2:rgba(255,255,255,.06);
-  --ov-card:rgba(20,22,25,.94);
-  --ov-soft:#17191c;
-  --ov-blush:#2a1d21;
-  --ov-ok-bg:rgba(22,154,82,.12);
-  --ov-warn-bg:rgba(213,150,50,.12);
-  --ov-bad-bg:rgba(214,64,79,.12);
+  --ov-wine:#D48AA0;
+  --ov-wine-2:#E3A2B4;
+  --ov-ink:#F4EEF1;
+  --ov-muted:#AAA3A8;
+  --ov-line:rgba(236,204,214,.10);
+  --ov-line-2:rgba(236,204,214,.06);
+  --ov-card:rgba(18,19,24,.92);
+  --ov-soft:#15161B;
+  --ov-blush:rgba(212,138,160,.11);
+  --ov-ok:#5FC58A;
+  --ov-ok-bg:rgba(95,197,138,.12);
+  --ov-warn:#D8B36E;
+  --ov-warn-bg:rgba(216,179,110,.12);
+  --ov-bad:#D48AA0;
+  --ov-bad-bg:rgba(212,138,160,.12);
 }
 .overview-v2 *{box-sizing:border-box}
 .overview-v2 a{color:inherit}
@@ -194,4 +199,57 @@
   .overview-v2 .ov-kpis{grid-template-columns:1fr}
   .overview-v2 .ov-appointment{grid-template-columns:52px 1fr auto}
   .overview-v2 .ov-appointment>svg{display:none}
+}
+
+
+/* Refinos dark premium da Visão Geral: contraste limpo e rosé, sem vermelho. */
+.dark .overview-v2 .ov-topbar,
+.dark .overview-v2 .ov-card {
+  box-shadow: 0 24px 56px -42px rgba(0,0,0,.88), inset 0 1px 0 rgba(255,255,255,.018);
+}
+.dark .overview-v2 .ov-topbar {
+  background: rgba(17,18,23,.86);
+  backdrop-filter: blur(22px);
+}
+.dark .overview-v2 .ov-search {
+  background: rgba(255,255,255,.025);
+}
+.dark .overview-v2 .ov-search-kbd,
+.dark .overview-v2 .ov-small-btn,
+.dark .overview-v2 .ov-action {
+  background: rgba(255,255,255,.022);
+}
+.dark .overview-v2 .ov-small-btn:hover,
+.dark .overview-v2 .ov-action:hover,
+.dark .overview-v2 .ov-notify:hover {
+  background: rgba(212,138,160,.075);
+}
+.dark .overview-v2 .ov-avatar,
+.dark .overview-v2 .ov-icon,
+.dark .overview-v2 .ov-row-icon {
+  background: rgba(212,138,160,.11);
+  color: #DFA0B1;
+}
+.dark .overview-v2 .ov-notify-badge {
+  background: #D48AA0;
+  color: #171116;
+}
+.dark .overview-v2 .ov-stage:first-child .ov-stage-circle {
+  background: linear-gradient(145deg,#D48AA0,#B96F87);
+  color: #171116;
+}
+.dark .overview-v2 .ov-stage-circle {
+  background: rgba(212,138,160,.10);
+  border-color: rgba(212,138,160,.16);
+  color: #DFA0B1;
+}
+.dark .overview-v2 .ov-progress span,
+.dark .overview-v2 .ov-fin-bar span {
+  background: linear-gradient(90deg,#C77C93,#E3A2B4);
+}
+.dark .overview-v2 .ov-stage:not(:last-child)::after {
+  color: #8F6472;
+}
+.dark .overview-v2 .ov-checkbox {
+  border-color: rgba(236,204,214,.22);
 }
