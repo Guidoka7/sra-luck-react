@@ -23,6 +23,7 @@ import { staffApi } from "./staff-api";
 import { integrationsApi } from "./integrations-core";
 import { adminNovasVendas } from "./admin-novas-vendas";
 import { adminCarnes } from "./admin-carnes";
+import { adminCarneLeitor } from "./admin-carne-leitor";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
 import { protectRequest } from "./http-security";
 import { adminReadPermissions } from "./admin-route-permissions";
@@ -492,6 +493,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   const novasVendas = await adminNovasVendas(request, env);
   if (novasVendas) return novasVendas;
+  const leitorCarne = await adminCarneLeitor(request, env);
+  if (leitorCarne) return leitorCarne;
   const carnes = await adminCarnes(request, env);
   if (carnes) return carnes;
   const notif = await adminNotificacoes(request, env);

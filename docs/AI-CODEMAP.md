@@ -114,6 +114,27 @@ Procurar:
 
 Regra crítica: percentual operacional usa quantidade de parcelas pagas.
 
+### Leitor de carnês (PDF/foto → parcelas)
+
+- `src/lib/leitor-carne/` — núcleo puro (sem DOM/rede, usado no navegador, no Worker e nos testes):
+  `tipos.ts` (contratos, códigos de alerta, `ProvedorLeituraDocumento`), `normalizadores.ts`
+  (CPF, datas ISO, centavos), `febraban.ts` (linha digitável/código de barras, sugestões de OCR),
+  `rotulos.ts` + `candidatos.ts` (rótulo + valor + posição + contexto), `segmentador.ts` (várias
+  parcelas por folha), `parcela.ts`, `documento.ts`, `layouts.ts` (registro de parsers +
+  fingerprint), `analise.ts` (sequência, anomalias, cliente), `confianca.ts`, `duplicidade.ts`,
+  `revisao.ts` (estado da revisão humana), `leitor.ts` (orquestração).
+- `src/features/leitor-carne/` — navegador: `intake.ts` (tipo por assinatura, SHA-256),
+  `pdf.ts` (pdfjs legacy: texto com posição, renderização), `preprocessamento.ts` e `ocr.ts`
+  (tesseract.js local em `/vendor/ocr`, copiado por `scripts/copiar-ocr.mjs`), `processador.ts`
+  (pipeline com progresso/cancelamento), `importacao.ts` (folhas + lotes + importar),
+  `LeitorCarneModal.tsx` (UI; aberto em `FinanceiroPanel` → "Ler carnê").
+- `worker/admin-carne-leitor.ts` — `GET/POST /api/admin/clientes/:id/leitor-carne[/folhas|/importar]`
+  (revalida tudo; `validarItens` é testável).
+- `supabase/migration_078_leitor_carne_importacao.sql` — `carne_importacoes` +
+  RPC `carne_importar_parcelas`.
+- Testes: `src/lib/leitor-carne/*.test.ts` (normalizadores, cenários sintéticos, revisão,
+  validação do servidor, OCR real sobre imagem sintética).
+
 ### Clientes e contratos
 
 Procurar:

@@ -16,11 +16,13 @@ export function requestBodyLimit(path: string, contentType: string): number {
   // Multipart is allowed only on the existing upload endpoints, with envelope headroom.
   if (contentType.toLowerCase().startsWith("multipart/form-data")) {
     if (/^\/api\/admin\/clientes\/[^/]+\/importacoes-boletos$/.test(path)) return 21 * 1024 * 1024;
+    if (/^\/api\/admin\/clientes\/[^/]+\/leitor-carne\/folhas$/.test(path)) return 4 * 1024 * 1024 + 65_536;
     if (/^\/api\/admin\/financeiro\/recebiveis\/[^/]+\/comprovante$/.test(path)) return 9 * 1024 * 1024;
     if (/^\/api\/cliente\/boletos\/[^/]+\/anexar$/.test(path)) return 6 * 1024 * 1024;
     if (path === "/api/cliente/perfil/foto") return 5 * 1024 * 1024;
   }
   if (path === "/api/integrations/rd-station/webhook") return 1_000_000;
+  if (/^\/api\/admin\/clientes\/[^/]+\/leitor-carne\/importar$/.test(path)) return 1_000_000;
   return path.startsWith("/api/integrations/") ? 512_000 : 262_144;
 }
 

@@ -6,6 +6,7 @@ import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { PARCELA_LABEL, descreverHistorico, ehHistoricoFinanceiro, formatCurrency, formatDate, hojeSaoPaulo, statusParcela, type ParcelaStatus } from "./drawerFormat";
 import styles from "./ClienteDrawer.module.css";
+import { LeitorCarneModal } from "@/features/leitor-carne/LeitorCarneModal";
 
 export interface FinanceiroPanelHandle { salvar: () => Promise<void>; editando: () => boolean }
 
@@ -36,6 +37,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
   const anexoRef = useRef<HTMLInputElement>(null);
   const [anexoAlvo, setAnexoAlvo] = useState<Boleto | null>(null);
   const qtdOriginal = useRef(cad.quantidade);
+  const [leitorAberto, setLeitorAberto] = useState(false);
 
   const boletos = cad.boletos;
   const pagos = boletos.filter((b) => b.status === "pago");
@@ -206,10 +208,10 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
           <Field label="Data de geração" id="carne-data"><input id="carne-data" className={styles.input} type="date" value={cad.novoCarneData} onChange={(e) => cad.setNovoCarneData(e.target.value)} /></Field>
           <div className={styles.field} style={{ alignSelf: "end" }}><button type="submit" className={`${styles.modalBtn} ${styles.secondary}`} style={{ width: "100%" }} disabled={cad.criandoCarne}>{cad.criandoCarne ? "Registrando..." : "Registrar carnê"}</button></div>
         </form>
-        <label className={styles.dropzone} style={{ marginTop: 10 }} aria-disabled={cad.importando || !cad.novoCarneBanco}>
-          <DrawerIcon name="upload" width={16} height={16} aria-hidden="true" />{cad.importando ? "Importando…" : cad.novoCarneBanco ? "Importar carnê em PDF" : "Informe a instituição para importar o PDF"}
-          <input type="file" accept="application/pdf" hidden disabled={cad.importando || !cad.novoCarneBanco} onChange={(e) => { const f = e.target.files?.[0]; if (f) void cad.importarCarne(f, cad.novoCarneBanco); e.target.value = ""; }} />
-        </label>
+        <button type="button" className={styles.dropzone} style={{ marginTop: 10, width: "100%" }} onClick={() => setLeitorAberto(true)} disabled={!cad.cliente?.id}>
+          <DrawerIcon name="upload" width={16} height={16} aria-hidden="true" />Ler carnê (PDF ou foto)
+        </button>
+        <p className={styles.muted} style={{ margin: "6px 0 0" }}>Lê o carnê neste computador, mostra cada parcela para conferência e só grava depois da sua confirmação.</p>
         {cad.pendentesRevisao.length > 0 && <div className={styles.miniList} style={{ marginTop: 10 }}>
           <span className={styles.appAccessKicker}>Páginas para confirmar/revisar</span>
           {cad.pendentesRevisao.map((i) => <div key={i.id} className={styles.miniRow}>
@@ -222,6 +224,8 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         </div>}
       </div>
     </article>}
+
+    {leitorAberto && cad.cliente?.id && <LeitorCarneModal clienteId={cad.cliente.id} onClose={() => setLeitorAberto(false)} onImportado={() => { void cad.carregarBoletos(); }} />}
 
     {completo && <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="history" aria-hidden="true" />Histórico financeiro</div>{financeiroHistorico.length > 4 ? <button className={styles.linkBtn} type="button" onClick={() => setHistoricoTodo((v) => !v)}>{historicoTodo ? "Mostrar menos" : "Ver todos"}</button> : null}</div>

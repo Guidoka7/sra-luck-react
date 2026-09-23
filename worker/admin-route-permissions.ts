@@ -15,6 +15,7 @@ export function adminReadPermissions(path: string): readonly string[] | null {
   if (path === "/api/admin/credit-ops/finance/daily") return FINANCE;
   if (/^\/api\/admin\/credit-ops(?:\/|$)/.test(path)) return [P.CREDITO_GERENCIAR];
   if (/^\/api\/admin\/clientes\/[^/]+\/(boletos|parcelas|carnes|importacoes-boletos)$/.test(path)) return FINANCE;
+  if (/^\/api\/admin\/clientes\/[^/]+\/leitor-carne(?:\/(folhas|importar))?$/.test(path)) return FINANCE;
   if (/^\/api\/admin\/(financeiro|boletos|importacoes-boletos)(?:\/|$)/.test(path)) return FINANCE;
   if (/^\/api\/admin\/(liberacoes-financeiras|solicitacoes-liberacao-financeira)$/.test(path)) return [P.FINANCEIRO_REVISAO, P.AGENDA_GERENCIAR];
   if (/^\/api\/admin\/(central|journey)(?:\/|$)/.test(path)) return [P.AGENDA_GERENCIAR, ...FINANCE];

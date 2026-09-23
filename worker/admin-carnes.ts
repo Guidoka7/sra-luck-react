@@ -284,7 +284,6 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
       carne_id: importacao.carne_id ?? boleto.carne_id ?? null,
       instituicao_financeira: importacao.instituicao_financeira ?? boleto.instituicao_financeira ?? null,
       identificador_externo: identificador,
-      origem_boleto: "carne_pdf",
     }).eq("id", boletoId);
     if (erroUpdateBoleto) return json({ erro: publicError(erroUpdateBoleto) }, 500);
 

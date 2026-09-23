@@ -103,6 +103,32 @@ Estados devem representar a realidade operacional, por exemplo:
 
 O sistema deve preservar histórico em vez de apagar eventos relevantes.
 
+### Leitor de carnês (regra vigente 2026-09-23)
+
+O carnê do banco (PDF com texto, PDF escaneado, JPG/PNG; uma ou várias parcelas por folha) é lido
+**no computador da equipe**, sem IA paga e sem enviar o documento a terceiros: texto nativo do PDF,
+OCR local (tesseract.js, português) só nas páginas sem texto, parser determinístico por rótulos e
+posição, e validação cruzada com a linha digitável (dígitos verificadores FEBRABAN).
+
+- **Nunca inventar dado.** Campo sem evidência fica vazio, com confiança baixa, e o item exige
+  decisão humana. Sugestões (ex.: correção de OCR `O→0`, parcela provável 61/72 para um carnê
+  complementar impresso "1/12") ficam separadas do valor e só valem se a equipe aplicar.
+- **Confiança:** ALTA ≥ 0,95 · MÉDIA 0,80–0,9499 · BAIXA < 0,80. Mesmo com confiança alta,
+  nada é gravado sem "Confirmar importação".
+- **O carnê é uma sequência financeira:** faltantes, repetidas, datas fora da sequência mensal,
+  valores destoantes (inclusive erro de vírgula), total de parcelas conflitante, CPF inválido e
+  CPF/nome diferentes do cadastro viram alertas estruturados. CPF divergente exige confirmação
+  explícita.
+- **Importação:** criar parcela nova (`nao_pago`, origem `externo`, vencimento e valor
+  obrigatórios); anexar o boleto a parcela existente sem boleto; substituir o boleto (escolha
+  explícita, nunca em parcela paga ou em conferência); ou não importar. Anexar/substituir nunca
+  altera valor, vencimento, status ou origem da parcela. Tudo numa transação idempotente
+  (`carne_importar_parcelas`, migration 078); o mesmo arquivo (SHA-256) não é importado duas vezes
+  para a mesma cliente sem confirmação.
+- **Arquivos:** a folha inteira de cada parcela (com código de barras) vai para o bucket privado
+  `boletos-clientes` em `carnes/<cliente>/<sha256>/f<página>`; folhas lidas giradas são guardadas
+  em pé. O texto do OCR não é armazenado nem registrado em log; logs só têm contagens.
+
 ## 7. Comprovantes
 
 Cliente anexa comprovante → parcela fica aguardando validação → financeiro aprova ou rejeita.
