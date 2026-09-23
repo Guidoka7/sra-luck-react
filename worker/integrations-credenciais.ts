@@ -141,8 +141,35 @@ async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClien
   return !error;
 }
 
+type EstadoProvedor = { provedor: string; ativo: boolean; atualizado_por: string | null; atualizado_em: string };
+
+const ESTADO_CACHE_MS = 30_000;
+let estadoCache: { em: number; mapa: Map<string, EstadoProvedor> } | null = null;
+
+/**
+ * Liga/desliga por integração (tabela integracoes_estado, migration_084).
+ * Sem linha, ou sem a tabela, a integração segue ativa — exatamente o
+ * comportamento anterior. Cache curto por isolate para não multiplicar consultas.
+ */
+export async function estadosIntegracoes(env: Env, forcar = false): Promise<Map<string, EstadoProvedor>> {
+  if (!forcar && estadoCache && Date.now() - estadoCache.em < ESTADO_CACHE_MS) return estadoCache.mapa;
+  const mapa = new Map<string, EstadoProvedor>();
+  try {
+    const { data, error } = await createServiceSupabaseClient(env).from("integracoes_estado").select("provedor,ativo,atualizado_por,atualizado_em");
+    if (!error) for (const linha of (data ?? []) as EstadoProvedor[]) mapa.set(linha.provedor, linha);
+  } catch { /* sem tabela: todas ativas */ }
+  estadoCache = { em: Date.now(), mapa };
+  return mapa;
+}
+
+export async function integracaoDesativada(env: Env, provedor: string) {
+  return (await estadosIntegracoes(env)).get(provedor)?.ativo === false;
+}
+
 export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
   const campo = campoDoProvedor(provedor, chave);
+  // Integração desligada no painel: nenhuma credencial é entregue (nem a da variável de ambiente).
+  if (campo && env.SUPABASE_URL && await integracaoDesativada(env, provedor)) return null;
   const doAmbiente = campo ? (env[campo.envVar] as string | undefined) || null : null;
 
   if (!env.CLIENTE_SESSION_SECRET) return doAmbiente;
@@ -212,10 +239,13 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
       : { data: [] as { provedor: string; chave: string; valor_mascarado: string; ativo: boolean; atualizado_em: string }[] };
     const salvos = new Map((linhas ?? []).map((linha) => [`${linha.provedor}:${linha.chave}`, linha]));
 
+    const estados = await estadosIntegracoes(env, true);
     const provedores = Object.entries(CATALOGO_PROVEDORES).map(([id, config]) => ({
       id,
       nome: config.nome,
       grupo: config.grupo,
+      ativo: estados.get(id)?.ativo !== false,
+      estadoAtualizadoEm: estados.get(id)?.atualizado_em ?? null,
       campos: config.campos.map((campo: CampoCredencial) => {
         const salvo = salvos.get(`${id}:${campo.chave}`);
         const noAmbiente = Boolean(env[campo.envVar as keyof Env]);
@@ -238,9 +268,19 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     const disponivel = await tabelaDisponivel(db);
     if (!disponivel) return json({ erro: "A estrutura para armazenar credenciais ainda não foi aplicada neste ambiente (migration_035)." }, 409);
 
-    const body = await request.json().catch(() => ({})) as { provedor?: string; chave?: string; valor?: string; remover?: boolean };
+    const body = await request.json().catch(() => ({})) as { provedor?: string; chave?: string; valor?: string; remover?: boolean; ativo?: boolean };
     const provedor = String(body.provedor || "");
     const chave = String(body.chave || "");
+
+    // Liga/desliga a integração inteira: { provedor, ativo: true|false } (sem "chave").
+    if (!chave && typeof body.ativo === "boolean") {
+      if (!CATALOGO_PROVEDORES[provedor]) return json({ erro: "Provedor desconhecido." }, 400);
+      const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: body.ativo, atualizado_por: colaborador.id, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
+      if (error) return json({ erro: "A estrutura de liga/desliga ainda não foi aplicada neste ambiente (migration_084)." }, 409);
+      estadoCache = null;
+      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: body.ativo ? "ativou_integracao" : "desativou_integracao", entidade: "integracoes_credenciais", detalhes: { provedor } });
+      return json({ ok: true, provedor, ativo: body.ativo });
+    }
     const campo = campoDoProvedor(provedor, chave);
     if (!campo) return json({ erro: "Provedor ou campo de credencial desconhecido." }, 400);
 

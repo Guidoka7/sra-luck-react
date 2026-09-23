@@ -126,7 +126,7 @@ export default function IntegracoesAdminPage() {
     try {
       const response = await fetch("/api/admin/integrations/gemini/mensagem-do-dia", { method: "POST", credentials: "same-origin" });
       const body = await response.json().catch(() => ({})) as { texto?: string; origem?: string; reutilizada?: boolean; motivo?: string; erro?: string };
-      const origem = body.origem === "ia" ? "gerada pelo Gemini" : body.origem === "ultima_valida" ? "última mensagem válida" : "frase de reserva do catálogo";
+      const origem = body.origem === "ia" ? "gerada pelo Gemini" : body.origem === "ultima_valida" ? "última mensagem válida" : body.origem === "admin" ? "escolhida pela equipe" : "frase de reserva do catálogo";
       const detalhe = response.ok && body.texto
         ? `${body.reutilizada ? "Mensagem de hoje já existia" : "Mensagem de hoje criada"} (${origem}): ${body.texto.replace(/\*/g, "")}${body.motivo && body.origem !== "ia" ? ` — motivo: ${body.motivo}` : ""}`
         : body.erro ?? "Não foi possível preparar a mensagem de hoje.";

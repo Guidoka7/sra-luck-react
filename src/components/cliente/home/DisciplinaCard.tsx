@@ -51,14 +51,16 @@ export function DisciplinaCard() {
     const hoje = fraseDoDia(agora);
     const emCache = lerCache(hoje.data);
     setFrase(emCache ?? hoje);
-    if (emCache) return;
+    // Mostra o cache na hora e confere em segundo plano: a equipe pode trocar a
+    // mensagem de hoje pelo painel, e a troca precisa chegar a quem já abriu o app.
     apiJson<Frase>("/api/cliente/frase-do-dia", { cache: "no-store" })
       .then((resposta) => {
         if (!ativo || !resposta?.texto || resposta.data !== hoje.data) return;
+        if (emCache && resposta.origem === "reserva") return;
         const nova = { texto: resposta.texto, tema: resposta.tema || hoje.tema, data: resposta.data };
         // Guarda só a mensagem já salva no banco; a reserva ("antes da rotina") é consultada de novo.
         if (resposta.origem !== "reserva") gravarCache(nova);
-        setFrase(nova);
+        if (!emCache || emCache.texto !== nova.texto) setFrase(nova);
       })
       .catch(() => { /* mantém a frase do catálogo */ });
     return () => { ativo = false; };
