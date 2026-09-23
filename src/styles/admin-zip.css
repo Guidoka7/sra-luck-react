@@ -28,6 +28,8 @@
   --gobg: rgba(201, 161, 90, .16);
   --robg: rgba(173, 104, 107, .13);
   --bluebg: rgba(37, 99, 235, .1);
+  --on-accent: #FFFDFC;
+  --active-shadow: 0 12px 24px -16px rgba(122, 38, 50, .55);
   /* Mesma progressão cromática do topo do app da cliente: rosé presente no início e transição contínua para o neutro do Admin. */
   --shell: linear-gradient(180deg, #EFD0D8 0px, #F4E0E4 120px, #F9EFEF 260px, #FBF7F5 420px, #FAF7F7 560px, #FAF7F7 100%);
 
@@ -36,30 +38,36 @@
 }
 
 .dark .zip-admin {
-  --s0: #0E1012;
-  --s1: #141619;
-  --s2: #1D1F23;
-  --bg: #BE6F85;
-  --bgl: #DD91A3;
-  --rose: #BE6F85;
-  --ink: #EBE8E9;
-  --soft: #A4A0A2;
-  --gold: #D6AE5B;
-  --ok: #4ADE80;
-  --bad: #F87171;
-  --blue: #60A5FA;
-  --line: rgba(255, 255, 255, .1);
-  --line2: rgba(255, 255, 255, .06);
-  --hov: rgba(255, 255, 255, .04);
-  --panel: rgba(25, 27, 30, .88);
-  --sh: 0 22px 60px -34px rgba(0, 0, 0, .75);
-  --okbg: rgba(74, 222, 128, .12);
-  --badbg: rgba(248, 113, 113, .12);
-  --gobg: rgba(214, 174, 91, .16);
-  --robg: rgba(190, 111, 133, .16);
-  --bluebg: rgba(96, 165, 250, .12);
-  /* Equivalente escuro do degradê do app da cliente, sem corte entre topo e conteúdo. */
-  --shell: linear-gradient(180deg, #4E2A36 0px, #3A2029 110px, #231820 240px, #111013 420px, #111417 560px, #0D0F11 100%);
+  /* Dark premium: preto grafite quente + rosé. Sem vermelho puro. */
+  --s0: #111217;
+  --s1: #15161B;
+  --s2: #1C1D23;
+  --bg: #D48AA0;
+  --bgl: #E3A2B4;
+  --rose: #C77C93;
+  --ink: #F4EEF1;
+  --soft: #A9A2A8;
+  --gold: #D8B36E;
+  --ok: #5FC58A;
+  --bad: #D48AA0;
+  --blue: #91A7D8;
+  --line: rgba(236, 204, 214, .11);
+  --line2: rgba(236, 204, 214, .065);
+  --hov: rgba(212, 138, 160, .07);
+  --panel: rgba(18, 19, 24, .88);
+  --sh: 0 26px 70px -38px rgba(0, 0, 0, .88);
+  --okbg: rgba(95, 197, 138, .12);
+  --badbg: rgba(212, 138, 160, .12);
+  --gobg: rgba(216, 179, 110, .13);
+  --robg: rgba(212, 138, 160, .13);
+  --bluebg: rgba(145, 167, 216, .12);
+  --on-accent: #171116;
+  --active-shadow: 0 14px 30px -17px rgba(212, 138, 160, .48);
+  /* Fundo quase preto com luz rosé restrita ao topo, sem aspecto avermelhado. */
+  --shell:
+    radial-gradient(820px 420px at 7% -7%, rgba(212, 138, 160, .16), transparent 62%),
+    radial-gradient(680px 330px at 78% -10%, rgba(154, 111, 145, .08), transparent 64%),
+    linear-gradient(180deg, #111116 0px, #0F1014 260px, #0C0D11 100%);
 }
 
 .zip-admin h1, .zip-admin h2, .zip-admin h3 {
@@ -94,6 +102,117 @@
 .zip-mono { font-variant-numeric: tabular-nums; }
 
 .zip-row-hover:hover { background: var(--hov); }
+
+/* Acabamento premium do modo escuro administrativo. */
+.dark .zip-admin {
+  color-scheme: dark;
+  caret-color: var(--bg);
+}
+.dark .zip-admin ::selection {
+  background: rgba(212, 138, 160, .28);
+  color: #FFF8FA;
+}
+.dark .zip-admin .zip-shell-aside {
+  background:
+    linear-gradient(180deg, rgba(24, 22, 28, .94), rgba(14, 15, 19, .94)) !important;
+  border-color: rgba(236, 204, 214, .10) !important;
+  box-shadow:
+    0 30px 80px -48px rgba(0, 0, 0, .92),
+    inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+.dark .zip-admin .zip-nav-item {
+  transition: background-color .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+.dark .zip-admin .zip-nav-item:not(.active):hover {
+  background: rgba(212, 138, 160, .075);
+  color: #E8DDE2 !important;
+  transform: translateX(2px);
+}
+.dark .zip-admin .zip-nav-item.active {
+  background: linear-gradient(135deg, #D48AA0 0%, #C47B92 100%) !important;
+  color: var(--on-accent) !important;
+  border: 1px solid rgba(245, 214, 223, .18);
+}
+.dark .zip-admin .zip-theme-toggle {
+  background: rgba(255, 255, 255, .025) !important;
+  border-color: rgba(236, 204, 214, .11) !important;
+  color: #C7BFC4 !important;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+.dark .zip-admin .zip-theme-toggle:hover {
+  background: rgba(212, 138, 160, .085) !important;
+  border-color: rgba(212, 138, 160, .24) !important;
+  color: #F1E6EB !important;
+}
+.dark .zip-admin .zip-logout-btn:hover {
+  background: rgba(255, 255, 255, .035) !important;
+  color: #DDD5DA !important;
+}
+.dark .zip-admin .zip-admin-avatar {
+  background: linear-gradient(145deg, rgba(212, 138, 160, .18), rgba(212, 138, 160, .08)) !important;
+  border: 1px solid rgba(212, 138, 160, .16);
+  color: #E4A8B8 !important;
+}
+.dark .zip-admin input,
+.dark .zip-admin select,
+.dark .zip-admin textarea {
+  accent-color: var(--bg);
+}
+.dark .zip-admin input:focus,
+.dark .zip-admin select:focus,
+.dark .zip-admin textarea:focus,
+.dark .zip-admin button:focus-visible,
+.dark .zip-admin a:focus-visible {
+  outline-color: rgba(212, 138, 160, .42);
+}
+.dark .zip-admin ::-webkit-scrollbar-thumb {
+  background: rgba(212, 138, 160, .27);
+}
+
+/* A Central/Agenda V46 é gerada automaticamente; estes overrides apenas
+   harmonizam o dark com a identidade rosé do shell sem editar o CSS gerado. */
+.dark .zip-admin .v46 {
+  --bg: #0E0F13;
+  --surface: #15161B;
+  --surface-soft: #121318;
+  --surface-rose: #21181E;
+  --surface-gold: #201C16;
+  --surface-green: #142019;
+  --wine: #D48AA0;
+  --wine-2: #E3A2B4;
+  --rose: #C77C93;
+  --gold: #D8B36E;
+  --green: #5FC58A;
+  --green-2: #77D49F;
+  --yellow: #D8B36E;
+  --danger: #D48AA0;
+  --text: #F2EDF0;
+  --muted: #A39CA3;
+  --line: #2A282F;
+  --line-soft: #222229;
+  --shadow: 0 18px 54px rgba(0, 0, 0, .42);
+}
+.dark .zip-admin .v46 .danger-btn,
+.dark .zip-admin .v46 .badge.danger,
+.dark .zip-admin .v46 .callout.danger,
+.dark .zip-admin .v46 .check-card.failed,
+.dark .zip-admin .v46 .release-action-btn.negative {
+  background: rgba(212, 138, 160, .11) !important;
+  border-color: rgba(212, 138, 160, .25) !important;
+  color: #E4A5B6 !important;
+}
+.dark .zip-admin .v46 .check-card.failed .check-card-icon,
+.dark .zip-admin .v46 .toast.error {
+  background: #5B3442 !important;
+  color: #F2C7D2 !important;
+}
+.dark .zip-admin .v46 .dot.full,
+.dark .zip-admin .v46 .day-cell.full .day-marker {
+  background: #C98599 !important;
+}
+.dark .zip-admin .v46 .day-cell.full {
+  background: rgba(201, 133, 153, .12) !important;
+}
 
 /* Shell em telas estreitas: sidebar vira painel sobreposto (desktop inalterado). */
 .zip-shell-menu-btn, .zip-shell-scrim { display: none; }
