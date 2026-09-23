@@ -28,7 +28,7 @@ export function FinanceiroOverview({ resumo, carregando, onNavegar }: Props) {
     <section aria-label="Indicadores financeiros" className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
       {kpis.map((item, index) => {
         const Icon = KPI_ICONS[index];
-        return <button key={item.label} type="button" onClick={() => onNavegar(item.aba, item.status)} className="group rounded-2xl border border-white/70 bg-white/82 p-3.5 text-left shadow-[0_16px_42px_-32px_rgba(122,38,50,.4)] transition hover:-translate-y-0.5 hover:border-rose/25 dark:border-white/8 dark:bg-[#171519]/92">
+        return <button key={item.label} type="button" onClick={() => onNavegar(item.aba, item.status)} className="group rounded-2xl border border-white/70 bg-white/82 p-3.5 text-left shadow-[0_16px_42px_-32px_rgba(122,38,50,.4)] transition hover:-translate-y-0.5 hover:border-rose/25 dark:border-white/8 dark:bg-[#17181D]/92">
           <div className="flex items-start justify-between"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blush text-burgundy dark:bg-white/7 dark:text-rose"><Icon className="h-4 w-4" /></span><span className="text-[9px] font-semibold uppercase tracking-[.16em] text-clay/35 group-hover:text-burgundy/60 dark:text-white/30">Abrir</span></div>
           <p className="mt-3 text-[9px] font-bold uppercase tracking-[.14em] text-clay/48 dark:text-white/45">{item.label}</p>
           <p className="mt-1 truncate text-lg font-semibold text-burgundy dark:text-cream">{item.value}</p>
@@ -38,12 +38,12 @@ export function FinanceiroOverview({ resumo, carregando, onNavegar }: Props) {
     </section>
 
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,.7fr)]">
-      <Panel className="p-5 dark:border-white/8 dark:bg-[#171519]/92">
+      <Panel className="p-5 dark:border-white/8 dark:bg-[#17181D]/92">
         <SectionHeading title="Evolução financeira" description="Previsto versus realizado, usando apenas vencimentos e baixas existentes." />
         {resumo.evolucao.length ? <DualBarChart data={resumo.evolucao.map((item) => ({ label: item.label, value: item.previsto, secondaryValue: item.realizado }))} primaryLabel="Previsto" secondaryLabel="Realizado" primaryColorClassName="bg-burgundy" secondaryColorClassName="bg-success/70" /> : <EmptyPanel title="Sem movimento no período" description="Não há vencimentos ou recebimentos reais para compor o evolutivo selecionado." />}
       </Panel>
 
-      <Panel className="p-5 dark:border-white/8 dark:bg-[#171519]/92">
+      <Panel className="p-5 dark:border-white/8 dark:bg-[#17181D]/92">
         <SectionHeading title="Previsão de recebimento" description="Parcelas abertas e não suspensas a partir de hoje." aside={<CalendarClock className="h-4 w-4 text-rose" />} />
         <div className="space-y-2.5">
           {[{ label: "Próximos 30 dias", value: resumo.previsao.dias30 }, { label: "Próximos 60 dias", value: resumo.previsao.dias60 }, { label: "Próximos 90 dias", value: resumo.previsao.dias90 }].map((item, index) => <div key={item.label} className="rounded-xl border border-rose/10 bg-blush/30 px-3.5 py-3 dark:border-white/7 dark:bg-white/[0.035]">
