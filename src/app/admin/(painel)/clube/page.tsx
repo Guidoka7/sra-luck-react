@@ -8,15 +8,12 @@ import {
   CalendarDays,
   ChevronRight,
   Gift,
-  Heart,
   PackageCheck,
   Pause,
   Pencil,
   Play,
   Settings2,
   Share2,
-  ShoppingBag,
-  Sparkles,
   Star,
   Target,
   Ticket,
@@ -510,14 +507,6 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
       </article>
     </section>
   </div>;
-}
-
-function iconeCategoria(categoria: string) {
-  const c = categoria.toLocaleLowerCase("pt-BR");
-  if (c.includes("auto") || c.includes("bem") || c.includes("beleza")) return <Heart size={19} />;
-  if (c.includes("exper")) return <Sparkles size={19} />;
-  if (c.includes("mimo") || c.includes("kit")) return <Gift size={19} />;
-  return <ShoppingBag size={19} />;
 }
 
 function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompensa[]; onAtualizado: () => Promise<void> }) {
