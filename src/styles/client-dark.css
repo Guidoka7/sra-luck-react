@@ -38,11 +38,37 @@ html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
   }
 }
 
-/* Cabeçalho da Início: barra neutra translúcida, como a navegação do iOS. */
+/*
+ * Degradê do topo: toda página começa em rosé e desce até o grafite.
+ * Fica fixo atrás do conteúdo (a barra do celular continua rosé ao rolar);
+ * o script de index.html lê o primeiro tom (--tema-topo) para colorir a barra.
+ */
+html[data-tema-cliente="escuro"] {
+  --tema-topo: #4E2A36;
+  --tema-degrade-topo: linear-gradient(180deg, #4E2A36 0px, #3A2029 110px, #231820 240px, #111013 420px);
+}
+html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
+  isolation: isolate;
+}
+html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  max-width: 430px;
+  height: 420px;
+  margin: 0 auto;
+  background: var(--tema-degrade-topo);
+  pointer-events: none;
+}
+
+/* Cabeçalho da Início (fixo ao rolar): mesmo rosé do topo, translúcido como no iOS. */
 html[data-tema-cliente="escuro"] .client-app .sl-home-header {
-  background: rgba(17, 16, 19, 0.96) !important;
-  border-bottom-color: var(--tema-borda) !important;
-  box-shadow: none !important;
+  background: linear-gradient(180deg, rgba(78, 42, 54, 0.97) 0%, rgba(62, 34, 44, 0.95) 100%) !important;
+  border-bottom-color: rgba(230, 162, 178, 0.14) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35) !important;
 }
 
 /* Cores nomeadas da marca (text-burgundy, bg-blush, text-clay/60...): as

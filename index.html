@@ -118,6 +118,12 @@
           var el = document.elementFromPoint(Math.round(window.innerWidth / 2), 1);
           // Para antes de #root/body: o fundo deles é pintado por este próprio script.
           while (el && el.id !== "root" && el !== document.body && el !== document.documentElement) {
+            // Degradê de fundo desenhado num ::before fixo (modo escuro).
+            var antes = window.getComputedStyle(el, "::before");
+            if (antes.content !== "none" && antes.position === "fixed" && antes.backgroundImage !== "none") {
+              var topo = toHex((antes.backgroundImage.match(/rgba?\([^)]*\)/) || [])[0]);
+              if (topo) return topo;
+            }
             var cs = window.getComputedStyle(el);
             if (cs.backgroundImage && cs.backgroundImage !== "none") {
               var first = toHex((cs.backgroundImage.match(/rgba?\([^)]*\)/) || [])[0]);
