@@ -68,9 +68,9 @@
 .cardTitle{line-height:1.2}
 
 /* --- Tema escuro (a referência só tinha o tema claro) ------------------ */
-:global(.dark) .root{--bg:#141619;--surface:#191B1E;--soft:#1D1F23;--wine:#C97A8C;--wine2:#DD91A3;--rose:#BE6F85;--blush:rgba(190,111,133,.18);--text:#EBE8E9;--muted:#A4A0A2;--green:#4ADE80;--danger:#F87171;--border:rgba(255,255,255,.10);color:var(--text)}
-:global(.dark) .overlay{background:rgba(0,0,0,.62)}
-:global(.dark) .drawer{box-shadow:-24px 0 60px rgba(0,0,0,.5)}
+:global(.dark) .root{--bg:#0F1014;--surface:#17181D;--soft:#1C1D23;--wine:#A85F7D;--wine2:#C7869B;--rose:#C7869B;--blush:rgba(199,134,155,.14);--text:#F4EEF1;--muted:#A9A2A8;--green:#5FC58A;--danger:#C7869B;--border:rgba(236,204,214,.11);color:var(--text)}
+:global(.dark) .overlay{background:rgba(4,4,7,.72);backdrop-filter:blur(4px)}
+:global(.dark) .drawer{box-shadow:-30px 0 80px rgba(0,0,0,.62),inset 1px 0 0 rgba(255,255,255,.018)}
 :global(.dark) .card,:global(.dark) .menu,:global(.dark) .statusMenu,:global(.dark) .journeyToggle,:global(.dark) .appAccessRequirement,:global(.dark) .loading,:global(.dark) .errorBox,:global(.dark) .toast,:global(.dark) .closeBtn,:global(.dark) .secondary,:global(.dark) .retryBtn,:global(.dark) .dangerBtn,:global(.dark) .journeyBadge,:global(.dark) .marker{background:var(--surface);border-color:var(--border)}
 :global(.dark) .cardHead,:global(.dark) .table th,:global(.dark) .table td,:global(.dark) .modalHead{border-color:var(--border)}
 :global(.dark) .value,:global(.dark) .journeyTitle,:global(.dark) .historyEvent,:global(.dark) .bannerRow b,:global(.dark) .miniRow b,:global(.dark) .progressCopy strong,:global(.dark) .kpiValue{color:var(--text)}
@@ -80,24 +80,34 @@
 :global(.dark) .banner{background:rgba(214,174,91,.12);border-color:rgba(214,174,91,.3)}
 :global(.dark) .banner .kicker{color:#D6AE5B}
 :global(.dark) .bannerRow{color:var(--muted)}
-:global(.dark) .warning,:global(.dark) .dangerZone{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.25);color:#F3C4C4}
+:global(.dark) .warning,:global(.dark) .dangerZone{background:rgba(199,134,155,.11);border-color:rgba(199,134,155,.26);color:#E4A9B9}
 :global(.dark) .modal{background:var(--bg);border-color:var(--border)}
 :global(.dark) .modalLayer{background:rgba(0,0,0,.45)}
 :global(.dark) .ring:after{background:var(--surface)}
 :global(.dark) .ring{background:conic-gradient(var(--wine) calc(var(--progress)*1%),rgba(255,255,255,.08) 0)}
-:global(.dark) .pPending{background:rgba(190,111,133,.18);color:var(--wine2)}
+:global(.dark) .pPending{background:rgba(199,134,155,.14);color:#DCA0B2}\n:global(.dark) .pOverdue,:global(.dark) .pRejected{background:rgba(199,134,155,.12);color:#E2A6B7}\n:global(.dark) .toast.error{background:#1B171C;color:#E6B0BE;border-color:rgba(199,134,155,.28)}
 :global(.dark) .pReview{background:rgba(214,174,91,.16);color:#E2BE74}
 :global(.dark) .pSuspended{background:rgba(255,255,255,.08);color:var(--muted)}
 :global(.dark) .installmentInteractive{background:transparent}
 :global(.dark) .installmentInteractive:hover{background:rgba(255,255,255,.04)}
 :global(.dark) .tab{color:var(--muted)}
-:global(.dark) .tab[aria-selected="true"]{background:#7A2632;color:#fff}
-:global(.dark) .saveBtn,:global(.dark) .primary,:global(.dark) .appAccessButton{background:#7A2632;border-color:#96313F;color:#fff}
+:global(.dark) .tab[aria-selected="true"]{background:linear-gradient(135deg,#A85F7D,#95526F);color:#FFF7FA;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+:global(.dark) .saveBtn,:global(.dark) .primary,:global(.dark) .appAccessButton{background:linear-gradient(135deg,#A85F7D,#95526F);border-color:#A85F7D;color:#FFF7FA;box-shadow:0 9px 22px rgba(168,95,125,.13)}
 :global(.dark) .iconBtn{color:var(--muted)}
 :global(.dark) .iconBtn:hover,:global(.dark) .edit:hover,:global(.dark) .linkBtn:hover,:global(.dark) .menu button:hover,:global(.dark) .statusOpt:hover{background:rgba(255,255,255,.06)}
 :global(.dark) .menu button,:global(.dark) .statusOpt{color:var(--text)}
 :global(.dark) .appAccessRequirementDone{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.2);color:#86E0A8}
-:global(.dark) .processWrap :global(.v46){color:var(--text)}
+:global(.dark) .processWrap :global(.v46){color:var(--text)}\n:global(.dark) .header,:global(.dark) .tabs,:global(.dark) .footer{background:var(--bg)}
+:global(.dark) .statusMenu,:global(.dark) .menu{box-shadow:0 18px 48px rgba(0,0,0,.45)}
+:global(.dark) .tab+ .tab{border-color:rgba(236,204,214,.07)}
+:global(.dark) .content{scrollbar-color:rgba(199,134,155,.25) transparent}
+:global(.dark) .content::-webkit-scrollbar-thumb{background:rgba(199,134,155,.25)}
+:global(.dark) .input:focus{border-color:rgba(199,134,155,.52);box-shadow:0 0 0 3px rgba(199,134,155,.10)}
+:global(.dark) .closeBtn,:global(.dark) .secondary{color:#DCA0B2;border-color:rgba(199,134,155,.35)}
+:global(.dark) .deleteBtn{background:#A85F7D;border-color:#A85F7D;color:#FFF7FA}
+:global(.dark) .journeyState.current,:global(.dark) .appAccessReady{color:#DCA0B2}
+:global(.dark) .installmentFocused{background:rgba(199,134,155,.10)!important;box-shadow:inset 3px 0 0 #C7869B}
+
 /* Modais V46 do Processo: ficam dentro do drawer (mesmo contexto de empilhamento). */
 .v46Layer{position:static}
 /* 4 abas em telas estreitas: `.root button{font:inherit}` tem prioridade sobre `.tab`, por isso o seletor composto. */
@@ -105,8 +115,8 @@
 @media(max-width:430px){.clientHead{padding-right:132px;min-height:0}.actions{top:12px}.root .status{padding:6px 10px;font-size:12px}}
 :global(.dark) .status[data-status="ativa"]{color:#86E0A8;background:rgba(74,222,128,.10);border-color:rgba(74,222,128,.25)}
 :global(.dark) .status[data-status="suspensa"]{color:#C3CAD2;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}
-:global(.dark) .status[data-status="negativada"]{color:#F3A5A5;background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.25)}
-:global(.dark) .status[data-status="cancelamento"]{color:#E4A3B2;background:rgba(190,111,133,.14);border-color:rgba(190,111,133,.3)}
+:global(.dark) .status[data-status="negativada"]{color:#DDA3B3;background:rgba(199,134,155,.12);border-color:rgba(199,134,155,.27)}
+:global(.dark) .status[data-status="cancelamento"]{color:#DDA3B3;background:rgba(199,134,155,.12);border-color:rgba(199,134,155,.27)}
 /* Etapa 2 — Levantamento financeiro (bloco operacional único), tokens V46. */
 .processWrap :global(.lev-steps){list-style:none;margin:0;padding:0;display:grid;gap:14px}
 .processWrap :global(.lev-steps>li){display:grid;gap:7px;min-width:0}
