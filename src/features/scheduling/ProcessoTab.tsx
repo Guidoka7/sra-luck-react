@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { BadgeDollarSign, CalendarCheck2, CircleX, UserCheck, UserX } from "lucide-react";
 import type { Cliente } from "@/types/database";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
@@ -416,9 +417,15 @@ function OperacaoLiberacao(p: Parameters<typeof ProcessoTab>[0]) {
             <small>{previsaoOk ? `Confirmada para ${dataBr(c.previsaoCirurgia)}.` : previsao ? "Sugestão automática: 90 dias após a assinatura dos termos. Você pode ajustar a data antes de confirmar." : "Confirme a data-alvo da agenda cirúrgica antes da conferência presencial."}</small>
           </div>
         </div>
-        {!previsaoOk && c.agendamentoId && <form className="inline-actions" onSubmit={(ev) => { ev.preventDefault(); if (previsao) void executar("previsao", () => centralApi.confirmarPrevisao(c.agendamentoId!, previsao), "Previsão cirúrgica confirmada."); }}>
-          <input type="date" aria-label="Data da previsão cirúrgica" value={previsao} min={hoje} onChange={(ev) => setPrevisao(ev.target.value)} disabled={Boolean(ocupado)} />
-          <button type="submit" className="success-btn tiny-btn" disabled={!previsao || Boolean(ocupado)}>{ocupado === "previsao" ? "Salvando…" : "Confirmar previsão"}</button>
+        {!previsaoOk && c.agendamentoId && <form className="release-forecast-form" onSubmit={(ev) => { ev.preventDefault(); if (previsao) void executar("previsao", () => centralApi.confirmarPrevisao(c.agendamentoId!, previsao), "Previsão cirúrgica confirmada."); }}>
+          <label className="release-date-field">
+            <span>Data prevista</span>
+            <input type="date" aria-label="Data da previsão cirúrgica" value={previsao} min={hoje} onChange={(ev) => setPrevisao(ev.target.value)} disabled={Boolean(ocupado)} />
+          </label>
+          <button type="submit" className="release-action-btn positive" disabled={!previsao || Boolean(ocupado)} aria-busy={ocupado === "previsao"}>
+            <CalendarCheck2 size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>{ocupado === "previsao" ? "Salvando…" : "Confirmar previsão"}</span>
+          </button>
         </form>}
       </div>
 
@@ -430,9 +437,15 @@ function OperacaoLiberacao(p: Parameters<typeof ProcessoTab>[0]) {
             <small>{att === "compareceu" ? `Confirmado às ${horaLocal(c.comparecimentoEm)}.` : att === "nao_compareceu" ? "Ausência registrada." : previsaoOk ? "Confirme quando a cliente comparecer para assinatura." : "Disponível após confirmar a previsão cirúrgica."}</small>
           </div>
         </div>
-        {att === "pendente" && <div className="inline-actions">
-          <button type="button" className="success-btn tiny-btn" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "comparecimento", compareceu: true })}>Confirmar comparecimento</button>
-          <button type="button" className="ghost-btn tiny-btn" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "comparecimento", compareceu: false })}>Não compareceu</button>
+        {att === "pendente" && <div className="release-task-actions" role="group" aria-label="Ações de comparecimento">
+          <button type="button" className="release-action-btn positive" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "comparecimento", compareceu: true })}>
+            <UserCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>Confirmar comparecimento</span>
+          </button>
+          <button type="button" className="release-action-btn negative" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "comparecimento", compareceu: false })}>
+            <UserX size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>Não compareceu</span>
+          </button>
         </div>}
       </div>
 
@@ -444,9 +457,15 @@ function OperacaoLiberacao(p: Parameters<typeof ProcessoTab>[0]) {
             <small>{pay === "paga" ? `Confirmada às ${horaLocal(c.quitacaoEm)}.` : pay === "nao_realizada" ? "Quitação não confirmada." : `Saldo a conferir: ${c.custeioSaldo != null ? moeda(c.custeioSaldo) : "—"}${c.custeioForma ? ` · ${rotuloFormaCusteio(c.custeioForma)}` : ""}`}</small>
           </div>
         </div>
-        {pay === "pendente" && <div className="inline-actions">
-          <button type="button" className="success-btn tiny-btn" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "quitacao" })}>Confirmar quitação</button>
-          <button type="button" className="ghost-btn tiny-btn" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "naoQuitado" })}>Não quitado</button>
+        {pay === "pendente" && <div className="release-task-actions" role="group" aria-label="Ações de quitação">
+          <button type="button" className="release-action-btn positive" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "quitacao" })}>
+            <BadgeDollarSign size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>Confirmar quitação</span>
+          </button>
+          <button type="button" className="release-action-btn negative" disabled={!previsaoOk || Boolean(ocupado)} onClick={() => abrirModal({ tipo: "naoQuitado" })}>
+            <CircleX size={14} strokeWidth={1.8} aria-hidden="true" />
+            <span>Não quitado</span>
+          </button>
         </div>}
       </div>
     </div>
