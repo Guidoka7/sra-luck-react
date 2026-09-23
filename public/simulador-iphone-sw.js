@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'sra-luck-pwa-';
-const CACHE = 'sra-luck-pwa-v18';
+const CACHE = 'sra-luck-pwa-v19';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
@@ -86,17 +86,43 @@ self.addEventListener('push', (event) => {
       url: data.url || '/agenda',
       notificationId: data.notificationId || null,
       installmentId: data.installmentId || null,
-      action: data.action || null
+      action: data.action || null,
+      destino: data.destino || null
     }
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Além de mostrar a notificação, avisa o app aberto para buscar os dados
+  // novos na hora (sem recarregar a página).
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => clients.forEach((client) => client.postMessage({ type: 'sra-luck:atualizar' })))
+      .catch(() => {})
+  ]));
 });
+
+const AREA_CLIENTE = ['/agenda', '/app', '/cliente'];
+
+function naAreaDaCliente(client) {
+  try {
+    const url = new URL(client.url);
+    return url.origin === self.location.origin && AREA_CLIENTE.some((p) => url.pathname === p || url.pathname.startsWith(p + '/'));
+  } catch (_) {
+    return false;
+  }
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = new URL(event.notification.data?.url || '/agenda', self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // App já aberto: foca e pede para ele mesmo abrir a aba certa, sem
+      // navegação (navigate() recarregaria a página inteira).
+      const aberto = clients.find((client) => naAreaDaCliente(client) && 'focus' in client);
+      if (aberto) {
+        aberto.postMessage({ type: 'sra-luck:abrir', url: targetUrl, destino: event.notification.data?.destino || null });
+        return aberto.focus();
+      }
       const existing = clients.find((client) => 'focus' in client);
       if (existing) return existing.focus().then(() => existing.navigate(targetUrl));
       return self.clients.openWindow(targetUrl);
