@@ -639,13 +639,6 @@ html[data-tema-cliente="escuro"] .client-app .sl-agenda-rule-icon {
 html[data-tema-cliente="escuro"] .client-app .sl-agenda-rule-label {
     color: #EAA7B7
 }
-html[data-tema-cliente="escuro"] .client-app .sl-discipline {
-    background: #37252A;
-    border: 1px solid rgba(207, 110, 132, 0.05)
-}
-html[data-tema-cliente="escuro"] .client-app .sl-discipline-copy {
-    color: #EDB1BF
-}
 html[data-tema-cliente="escuro"] .client-app .sl-tab-heading h1 {
     color: #E1DEDD
 }

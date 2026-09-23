@@ -97,7 +97,9 @@ Procurar:
 - componentes de cliente herdados;
 - `worker/client-agenda.ts`;
 - `worker/client-boletos.ts`;
-- `worker/journey.ts`.
+- `worker/journey.ts`;
+- Início: `src/pages/client/HomeTab.tsx`, `src/components/cliente/home/` (carrossel, acesso rápido, institucional) e `src/styles/home-promo.css`;
+- Frase do dia (cartão final da Início): catálogo e regras em `src/lib/fraseDoDia.ts` (tema por dia da semana, dia 1 do mês e datas especiais, fuso de Brasília), cartão em `src/components/cliente/home/DisciplinaCard.tsx`.
 
 Antes de redesenhar, comparar com `docs/PWA-FUNCTIONAL-BASELINE.md`.
 

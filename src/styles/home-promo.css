@@ -535,3 +535,109 @@ html[data-tema-cliente="escuro"] .sl-historia {
   font-weight: 700;
 }
 html[data-tema-cliente="escuro"] .sl-historia-cta { background: #B0526A; }
+
+/* ── Frase do dia (motor em src/lib/fraseDoDia.ts) ── */
+.client-app {
+  --frase-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(232, 176, 188, 0.28) 0%, rgba(232, 176, 188, 0) 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(216, 178, 106, 0.16) 0%, rgba(216, 178, 106, 0) 60%),
+    linear-gradient(150deg, #86303F 0%, #6B1F2E 55%, #561824 100%);
+  --frase-borda: rgba(255, 255, 255, 0.08);
+  --frase-sombra: 0 14px 30px rgba(107, 31, 46, 0.24);
+  --frase-texto: #FFF7F5;
+  --frase-destaque: #F3C3CE;
+  --frase-suave: rgba(255, 238, 238, 0.72);
+  --frase-dourado: #E3C07E;
+}
+html[data-tema-cliente="escuro"] .client-app {
+  --frase-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(230, 162, 178, 0.18) 0%, rgba(230, 162, 178, 0) 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(216, 178, 106, 0.1) 0%, rgba(216, 178, 106, 0) 60%),
+    linear-gradient(150deg, #3E2029 0%, #2C1820 60%, #221419 100%);
+  --frase-borda: #3A2A30;
+  --frase-sombra: 0 14px 30px rgba(0, 0, 0, 0.35);
+  --frase-destaque: #E6A2B2;
+  --frase-dourado: #D8B26A;
+}
+
+.client-app .sl-frase {
+  position: relative;
+  overflow: hidden;
+  /* Espaço no fim da Início para o botão do WhatsApp não cobrir o cartão. */
+  margin: 18px 20px 72px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--frase-borda);
+  border-radius: 24px;
+  background: var(--frase-fundo);
+  box-shadow: var(--frase-sombra);
+  color: var(--frase-texto);
+}
+.client-app .sl-frase-topo {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.client-app .sl-frase-rotulo {
+  color: var(--frase-dourado);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.client-app .sl-frase-data {
+  color: var(--frase-suave);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-align: right;
+}
+.client-app .sl-frase-texto {
+  position: relative;
+  margin: 12px 0 0;
+  max-width: 310px;
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.18;
+  color: var(--frase-texto);
+  text-wrap: pretty;
+}
+.client-app .sl-frase-texto em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--frase-destaque);
+}
+.client-app .sl-frase-rodape {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.client-app .sl-frase-tema {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--frase-suave);
+  font-size: 11px;
+  font-weight: 600;
+}
+.client-app .sl-frase-tema::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--frase-dourado);
+}
+.client-app .sl-frase .sl-marca.sl-frase-marca {
+  --marca-simbolo: linear-gradient(160deg, #F6CBD5 0%, #E4A0B1 100%);
+  --marca-assinatura: linear-gradient(160deg, #FFF7F5 0%, #F3D9DF 100%);
+  width: 84px;
+  margin: 0;
+  filter: none;
+  opacity: 0.92;
+}
