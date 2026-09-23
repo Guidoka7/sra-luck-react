@@ -2,6 +2,7 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
+import { clubeAdminApi, clubeClienteApi } from "./clube";
 
 interface InstallmentSummaryRow {
   id: string;
@@ -70,6 +71,13 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     if (!colaborador) return json({ erro: "Acesso administrativo não autorizado." }, 403);
     const pode = (permissao: string) => temPermissaoAdmin(colaborador, permissao);
     const db = createServiceSupabaseClient(env);
+
+    // Clube de Vantagens: indicações, vouchers e pontuação (worker/clube.ts).
+    if (path.startsWith("/api/admin/credit-ops/club/")) {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para operar o Clube de Vantagens." }, 403);
+      const resposta = await clubeAdminApi(path, request, db, `admin:${adminId}`);
+      if (resposta) return resposta;
+    }
 
     if (path === "/api/admin/credit-ops/contracts" && request.method === "GET") {
       const { data, error } = await db
@@ -263,57 +271,9 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       });
     }
 
-    if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-      const [saldoResult, rewardsResult, historyResult, beneficiosResult, indicacoesResult] = await Promise.all([
-        db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-        db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
-        db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50),
-        db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
-        db.from("indicacoes_clientes").select("id,nome_indicado,status,pontos_creditados,created_at").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
-      ]);
-      const clubeError = saldoResult.error ?? rewardsResult.error ?? historyResult.error ?? beneficiosResult.error ?? indicacoesResult.error;
-      if (clubeError) {
-        console.error("Falha ao carregar Clube de Benefícios da cliente:", clubeError);
-        return json({ erro: "Não foi possível carregar o Clube de Benefícios agora." }, 500);
-      }
-      const saldo = saldoResult.data;
-      const rewards = rewardsResult.data;
-      const history = historyResult.data;
-      const beneficios = beneficiosResult.data;
-      const indicacoes = indicacoesResult.data;
-      const listaIndicacoes = indicacoes ?? [];
-      return json({
-        saldo: Number(saldo?.saldo ?? 0),
-        recompensas: rewards ?? [],
-        historico: history ?? [],
-        beneficios: beneficios ?? [],
-        indicacoes: {
-          confirmadas: listaIndicacoes.filter((item) => item.status === "venda").length,
-          emAnalise: listaIndicacoes.filter((item) => item.status === "enviada" || item.status === "qualificada").length,
-          itens: listaIndicacoes,
-        },
-      });
-    }
-
-    if (path === "/api/cliente/credit-ops/referrals" && request.method === "POST") {
-      const b = await body(request);
-      const nome = String(b.nome ?? "").trim();
-      const telefone = String(b.telefone ?? "").trim();
-      if (!nome || nome.length > 160) return json({ erro: "Informe um nome válido, com até 160 caracteres." }, 400);
-      if (telefone.length > 40) return json({ erro: "Informe um telefone válido." }, 400);
-      const digitosTelefone = telefone.replace(/\D/g, "");
-      if (telefone && (digitosTelefone.length < 8 || digitosTelefone.length > 20)) return json({ erro: "Informe um telefone válido." }, 400);
-      const { data, error } = await db.from("indicacoes_clientes").insert({
-        indicador_cliente_id: clienteId,
-        nome_indicado: nome,
-        telefone_indicado: telefone || null,
-      }).select("id,nome_indicado,status,pontos_creditados,created_at").single();
-      if (error) {
-        console.error("Falha ao registrar indicação da cliente:", error);
-        return json({ erro: "Não foi possível enviar sua indicação agora." }, 500);
-      }
-      return json({ indicacao: data }, 201);
-    }
+    // Clube de Vantagens da cliente (leitura, indicação, voucher): worker/clube.ts.
+    const clube = await clubeClienteApi(path, request, db, clienteId);
+    if (clube) return clube;
 
     const usarBeneficio = path.match(/^\/api\/cliente\/credit-ops\/beneficios\/([^/]+)\/usar$/);
     if (usarBeneficio && request.method === "POST") {

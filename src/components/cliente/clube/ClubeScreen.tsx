@@ -1,78 +1,427 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Ticket, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
-  buscarClube, indicarAmiga, resgatarPremio, usarBeneficio, VOUCHER_CONSULTA_KEY,
+  abrirArquivoVoucher, buscarClube, resgatarPremio, solicitarVoucher, usarBeneficio, VOUCHER_CONSULTA_KEY,
   type ClubeData, type ClubeRecompensa,
 } from "@/lib/clube";
 import { LOGO_SRC } from "@/assets/brand";
+import { Folha, ImagemPremio, Moeda } from "./ClubeUi";
+import { IndicarFolha } from "./IndicarFolha";
+import { descreverEvento, estadoVoucher, etapaIndicacao, proximoPremio, rotuloResgate } from "./clubeRegras";
 
-interface ClubeScreenProps { onVoltar?: () => void; onIrParcelas: () => void; }
+interface ClubeScreenProps { onVoltar?: () => void; onIrParcelas: () => void; nomeCliente?: string }
+type Aba = "premios" | "missoes" | "indicacoes";
 
-function CoinIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8"/><path d="M9 10.2c.6-.8 1.5-1.2 2.7-1.2 1.5 0 2.6.7 2.6 1.8 0 2.8-5.3 1.1-5.3 4 0 1.1 1.1 1.9 2.8 1.9 1.2 0 2.2-.4 2.9-1.3M12 7.2v1.5M12 16.8v1.5"/></svg>; }
-function GiftIcon({ size=19 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v9H4v-9"/><path d="M2 7h20v5H2z"/><path d="M12 21V7"/><path d="M12 7H7.5a2.3 2.3 0 1 1 2-3.5L12 7Z"/><path d="M12 7h4.5a2.3 2.3 0 1 0-2-3.5L12 7Z"/></svg>; }
-function TicketIcon() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4V8Z"/><path d="M12 7v10"/></svg>; }
+const PADRAO = { pontosPrimeiraParcela: 50, pontosParcelaEmDia: 10, pontosIndicacao: 200 };
 
-function BottomSheet({ aberto, onFechar, titulo, children }: { aberto: boolean; onFechar: () => void; titulo: string; children: React.ReactNode }) {
-  return <AnimatePresence>{aberto && <div className="sl-sheet-backdrop" onClick={onFechar}><motion.div onClick={(e)=>e.stopPropagation()} initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ duration:.16 }} className="sl-sheet"><div className="sl-sheet-grab"/><div className="flex items-center justify-between"><h3 className="m-0 font-heading text-[22px] font-semibold text-[#392927]">{titulo}</h3><button type="button" onClick={onFechar} className="flex h-8 w-8 items-center justify-center rounded-full text-[#9A8A86]"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M3 3l10 10M13 3 3 13"/></svg></button></div><div className="pt-3">{children}</div></motion.div></div>}</AnimatePresence>;
+function dataCurta(iso?: string | null) {
+  if (!iso) return "";
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return a && m && d ? `${d}/${m}` : "";
 }
 
-function PremioCard({ recompensa, saldo, onResgatar }: { recompensa: ClubeRecompensa; saldo: number; onResgatar:(r:ClubeRecompensa)=>void }) {
-  const elegivel = saldo >= recompensa.pontos && (recompensa.estoque === null || recompensa.estoque > 0);
-  return <div className="flex items-center gap-[11px] rounded-[17px] border border-[#ECE2DF] bg-white p-[13px] shadow-[0_4px_14px_rgba(73,42,47,.025)]">
-    <div className="flex h-10 w-10 flex-none items-center justify-center rounded-[13px] border border-[#E9D9D5] bg-[#FFF9F8] text-[#B86575]"><GiftIcon/></div>
-    <div className="min-w-0 flex-1"><div className="text-[12.4px] font-semibold text-[#4B3936]">{recompensa.titulo}</div><div className="pt-[2px] text-[9.7px] font-light leading-[1.4] text-[#9A8A86]">{recompensa.descricao ?? "Benefício exclusivo Sra. Luck."}</div></div>
-    <div className="flex-none text-right"><div className="flex items-center justify-end gap-1 text-[9.8px] font-bold text-[#8A671E]"><span className="inline-flex h-[15px] w-[15px] items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7]"><CoinIcon/></span>{recompensa.pontos}</div><button type="button" disabled={!elegivel} onClick={()=>onResgatar(recompensa)} className="mt-[5px] rounded-[9px] px-[8px] py-[6px] text-[8.7px] font-semibold" style={elegivel?{background:"#6B1F2E",color:"#FFF"}:{background:"#F4EFED",color:"#A89A96"}}>{elegivel?"Resgatar":`Faltam ${Math.max(0,recompensa.pontos-saldo)}`}</button></div>
-  </div>;
-}
+function pts(n: number) { return `${n.toLocaleString("pt-BR")} pts`; }
 
-export function ClubeScreen({ onVoltar, onIrParcelas }: ClubeScreenProps) {
-  const [dados,setDados]=useState<ClubeData|null>(null); const [carregando,setCarregando]=useState(true); const [sheet,setSheet]=useState<"carteira"|"indicacoes"|"como"|null>(null); const [indicarAberto,setIndicarAberto]=useState(false); const [resgateAlvo,setResgateAlvo]=useState<ClubeRecompensa|null>(null); const [busy,setBusy]=useState(false);
-  async function carregar(){try{setDados(await buscarClube())}catch(e){toast.error(e instanceof Error?e.message:"Não foi possível abrir o Clube de Vantagens.")}finally{setCarregando(false)}}
-  useEffect(()=>{void carregar()},[]);
-  const voucher=dados?.beneficios.find((x)=>x.beneficio_key===VOUCHER_CONSULTA_KEY)??null;
-  async function confirmarResgate(){if(!resgateAlvo)return;setBusy(true);try{await resgatarPremio(resgateAlvo.id,crypto.randomUUID());toast.success("Resgate solicitado! A equipe vai confirmar em breve.");setResgateAlvo(null);await carregar()}catch(e){toast.error(e instanceof Error?e.message:"Não foi possível concluir o resgate.")}finally{setBusy(false)}}
-  async function usarVoucher(){if(!voucher)return;setBusy(true);try{await usarBeneficio(voucher.id);toast.success("Voucher marcado como utilizado. Combine o horário com a equipe.");await carregar()}catch(e){toast.error(e instanceof Error?e.message:"Não foi possível usar o voucher.")}finally{setBusy(false)}}
+export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreenProps) {
+  const [dados, setDados] = useState<ClubeData | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [falhou, setFalhou] = useState(false);
+  const [aba, setAba] = useState<Aba>("premios");
+  const [folha, setFolha] = useState<"extrato" | "como" | null>(null);
+  const [indicarAberta, setIndicarAberta] = useState(false);
+  const [resgateAlvo, setResgateAlvo] = useState<ClubeRecompensa | null>(null);
+  const [ocupado, setOcupado] = useState(false);
 
-  return <div className="sl-tab pb-6">
-    <div className="px-[18px] pt-[calc(max(env(safe-area-inset-top),0px)+11px)]">
-      <div className="flex items-center justify-between gap-3 pr-[86px]">
-        {onVoltar ? <button type="button" onClick={onVoltar} className="flex min-w-0 items-center gap-[7px] text-[12px] font-normal text-[#6B1F2E]"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.35"><path d="M9 3 5 7l4 4"/></svg>Mais</button> : <img src={LOGO_SRC} alt="Sra. Luck" className="w-[91px] object-contain" />}
-        <div className="flex items-center gap-[7px]">
-          <button type="button" onClick={()=>setSheet("carteira")} className="flex h-[34px] items-center gap-[6px] rounded-full border border-[#E8D9D5] bg-white pl-2 pr-[10px] text-[#6B1F2E] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7] text-[#9B741E]"><CoinIcon/></span><span className="font-heading text-[16px] font-semibold leading-none">{dados?.saldo??0}</span></button>
-          <button type="button" onClick={()=>setSheet("indicacoes")} className="relative flex h-[34px] w-[34px] items-center justify-center rounded-full border border-[#E8D9D5] bg-white text-[#B86575] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>{Boolean(dados?.indicacoes.emAnalise)&&<span className="absolute -right-0.5 -top-[3px] flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-[#FBF7F5] bg-[#6B1F2E] px-[3px] text-[7.5px] font-bold text-white">{dados?.indicacoes.emAnalise}</span>}</button>
-          <button type="button" onClick={()=>setSheet("como")} className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-[#E8D9D5] bg-white text-[#B86575] shadow-[0_3px_12px_rgba(67,38,42,.04)]"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="12" cy="12" r="9"/><path d="M12 10.2v5M12 7.2h.01"/></svg></button>
+  const carregar = useCallback(async () => {
+    try {
+      setDados(await buscarClube());
+      setFalhou(false);
+    } catch (e) {
+      setFalhou(true);
+      toast.error(e instanceof Error ? e.message : "Não foi possível abrir o Clube de Vantagens.");
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+  useEffect(() => { void carregar(); }, [carregar]);
+
+  const config = dados?.config ?? PADRAO;
+  const saldo = dados?.saldo ?? 0;
+  const recompensas = dados?.recompensas ?? [];
+  const meta = useMemo(() => proximoPremio(recompensas, saldo), [recompensas, saldo]);
+  const voucher = dados?.beneficios.find((b) => b.beneficio_key === VOUCHER_CONSULTA_KEY) ?? null;
+  const indicacoes = dados?.indicacoes.itens ?? [];
+  const pontosIndicacoes = indicacoes.reduce((t, i) => t + (i.pontos_creditados || 0), 0);
+
+  async function confirmarResgate() {
+    if (!resgateAlvo) return;
+    setOcupado(true);
+    try {
+      await resgatarPremio(resgateAlvo.id, crypto.randomUUID());
+      toast.success("Resgate solicitado! A equipe vai confirmar com você.");
+      setResgateAlvo(null);
+      await carregar();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível concluir o resgate.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function acaoVoucher(tipo: "solicitar" | "abrir" | "usar") {
+    if (!voucher) return;
+    setOcupado(true);
+    try {
+      if (tipo === "solicitar") { await solicitarVoucher(voucher.id); toast.success("Pedido enviado! A equipe vai preparar seu voucher."); }
+      if (tipo === "usar") { await usarBeneficio(voucher.id); toast.success("Voucher marcado como utilizado."); }
+      if (tipo === "abrir") { const { url } = await abrirArquivoVoucher(voucher.id); window.open(url, "_blank", "noopener"); }
+      if (tipo !== "abrir") await carregar();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível concluir agora.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  const abas: { id: Aba; rotulo: string; aviso?: number }[] = [
+    { id: "premios", rotulo: "Prêmios" },
+    { id: "missoes", rotulo: "Missões" },
+    { id: "indicacoes", rotulo: "Indicações", aviso: dados?.indicacoes.emAnalise || undefined },
+  ];
+
+  return (
+    <div className="sl-tab pb-8">
+      <div className="px-5 pt-[calc(max(env(safe-area-inset-top),0px)+18px)]">
+        <div className="flex min-h-[34px] items-center pr-[86px]">
+          {onVoltar
+            ? <button type="button" onClick={onVoltar} className="flex items-center gap-[7px] text-[12px] text-[#6B1F2E]"><ChevronRight className="h-4 w-4 rotate-180" />Mais</button>
+            : <img src={LOGO_SRC} alt="Sra. Luck" className="w-[91px] object-contain" />}
         </div>
+        <h1 className="m-0 pt-[14px] font-heading text-[29px] font-semibold leading-[1.08] text-[#2E2422]">Clube de Vantagens</h1>
+        <p className="m-0 pt-1 text-[13px] font-light text-[#8A7B77]">Pague em dia, indique amigas e troque seus pontos por prêmios.</p>
       </div>
-      <div className="pt-[14px]"><div className="text-[8.4px] font-semibold uppercase tracking-[.16em] text-[#B86575]">Benefícios Sra. Luck</div><div className="pt-[2px] font-heading text-[23px] font-semibold leading-[1.08] text-[#392927]">Clube de vantagens</div><div className="max-w-[330px] pt-1 text-[10.5px] font-light leading-[1.42] text-[#8D7D79]">Indique, acumule pontos e escolha benefícios pensados para acompanhar sua jornada.</div></div>
+
+      {/* Saldo + meta */}
+      <section className="relative mx-5 mt-4 overflow-hidden rounded-[22px] bg-gradient-to-br from-[#6B1F2E] via-[#7A2838] to-[#8E3A48] p-[18px] text-white shadow-[0_14px_32px_rgba(107,31,46,.24)]" aria-label="Seus pontos">
+        <span className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/[.06]" aria-hidden="true" />
+        <span className="absolute -bottom-16 left-10 h-32 w-32 rounded-full bg-[#F2D7B0]/[.08]" aria-hidden="true" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[.16em] text-[#F2D7B0]">Seus pontos</div>
+            <div className="flex items-baseline gap-2 pt-1">
+              <span className="font-heading text-[44px] font-semibold leading-none">{carregando ? "—" : saldo.toLocaleString("pt-BR")}</span>
+              <span className="text-[13px] text-white/70">pontos</span>
+            </div>
+          </div>
+          <button type="button" onClick={() => setFolha("extrato")} className="flex items-center gap-[6px] rounded-full border border-white/25 px-3 py-[7px] text-[12px] font-medium text-white/90">
+            <History className="h-[14px] w-[14px]" /> Extrato
+          </button>
+        </div>
+        {!carregando && (
+          <div className="relative pt-4">
+            {meta.alvo ? (
+              <>
+                <div className="flex items-center justify-between gap-3 text-[12.5px]">
+                  <span className="min-w-0 truncate text-white/85">Faltam <strong className="font-semibold text-white">{pts(meta.faltam)}</strong> para {meta.alvo.titulo}</span>
+                  <span className="flex-none text-white/60">{meta.progresso}%</span>
+                </div>
+                <div className="mt-2 h-[6px] overflow-hidden rounded-full bg-white/15">
+                  <motion.div className="h-full rounded-full bg-gradient-to-r from-[#F2D7B0] to-[#E7B97A]" initial={{ width: 0 }} animate={{ width: `${meta.progresso}%` }} transition={{ duration: 0.7, ease: "easeOut" }} />
+                </div>
+              </>
+            ) : recompensas.length > 0 ? (
+              <div className="text-[12.5px] text-white/85">Você já pode resgatar qualquer prêmio do catálogo. ✨</div>
+            ) : null}
+          </div>
+        )}
+        <button type="button" onClick={() => setIndicarAberta(true)} className="relative mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] bg-white px-4 py-[13px] text-[14px] font-semibold text-[#6B1F2E]">
+          <UserPlus className="h-[17px] w-[17px]" /> Indicar amiga e ganhar {config.pontosIndicacao} pts
+        </button>
+      </section>
+
+      {/* Abas internas */}
+      <div className="mx-5 mt-5 grid grid-cols-3 gap-1 rounded-[14px] bg-[#F3EBE8] p-1" role="tablist" aria-label="Seções do Clube">
+        {abas.map((a) => (
+          <button key={a.id} type="button" role="tab" aria-selected={aba === a.id} onClick={() => setAba(a.id)}
+            className={`relative flex items-center justify-center gap-1 whitespace-nowrap rounded-[11px] px-1 py-[9px] text-[13px] font-semibold transition ${aba === a.id ? "bg-white text-[#6B1F2E] shadow-[0_2px_8px_rgba(46,36,34,.08)]" : "text-[#8A7B77]"}`}>
+            {a.rotulo}
+            {a.aviso ? <span className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#6B1F2E] px-1 text-[10px] font-bold text-white">{a.aviso}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {carregando ? (
+        <div className="mx-5 mt-4 grid grid-cols-2 gap-3" aria-busy="true">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="h-[210px] animate-pulse rounded-[18px] bg-[#F1E8E5]" />)}
+        </div>
+      ) : falhou && !dados ? (
+        <div className="mx-5 mt-4 rounded-[18px] border border-[#ECE2DF] bg-white p-6 text-center">
+          <p className="m-0 text-[13px] text-[#7F6E6A]">Não foi possível carregar o Clube agora.</p>
+          <button type="button" onClick={() => { setCarregando(true); void carregar(); }} className="mt-3 rounded-[12px] bg-[#6B1F2E] px-5 py-[10px] text-[13px] font-semibold text-white">Tentar novamente</button>
+        </div>
+      ) : (
+        <AnimatePresence mode="wait">
+          <motion.div key={aba} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }} className="px-5 pt-4">
+            {aba === "premios" && (
+              <>
+                <CartaoVoucher estado={estadoVoucher(voucher)} solicitadoEm={voucher?.solicitado_em} ocupado={ocupado} pontosMissao={config.pontosPrimeiraParcela}
+                  onIrParcelas={onIrParcelas} onSolicitar={() => void acaoVoucher("solicitar")} onAbrir={() => void acaoVoucher("abrir")} onUsar={() => void acaoVoucher("usar")} />
+
+                <div className="flex items-end justify-between pb-3 pt-5">
+                  <h2 className="m-0 font-heading text-[22px] font-semibold text-[#2E2422]">Prêmios</h2>
+                  <span className="text-[12px] text-[#9A8C88]">{recompensas.length} disponíveis</span>
+                </div>
+                {recompensas.length === 0 ? (
+                  <div className="rounded-[18px] border border-[#ECE2DF] bg-white p-6 text-center text-[13px] font-light text-[#9A8A86]">Nenhum prêmio disponível no momento.</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {recompensas.map((r) => <CartaoPremio key={r.id} recompensa={r} saldo={saldo} onResgatar={() => setResgateAlvo(r)} />)}
+                  </div>
+                )}
+
+                {(dados?.resgates?.length ?? 0) > 0 && (
+                  <>
+                    <h3 className="m-0 pb-2 pt-6 text-[12px] font-semibold uppercase tracking-[.12em] text-[#A9837C]">Meus resgates</h3>
+                    <ul className="m-0 list-none overflow-hidden rounded-[18px] border border-[#ECE2DF] bg-white p-0">
+                      {dados!.resgates!.map((r) => (
+                        <li key={r.id} className="flex items-center justify-between gap-3 border-b border-[#F4ECEA] px-4 py-3 last:border-b-0">
+                          <span className="min-w-0"><span className="block truncate text-[13.5px] font-medium text-[#43322F]">{r.titulo}</span><span className="block pt-[2px] text-[11.5px] text-[#9A8C88]">{dataCurta(r.created_at)} · {pts(r.pontos)}</span></span>
+                          <span className={`flex-none rounded-full px-[10px] py-1 text-[11px] font-semibold ${r.status === "entregue" ? "bg-[#EEF6F0] text-[#3F7D5B]" : r.status === "cancelado" ? "bg-[#F5F1EF] text-[#988985]" : "bg-[#FFF7E8] text-[#8A6720]"}`}>{rotuloResgate(r.status)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            )}
+
+            {aba === "missoes" && (
+              <div className="flex flex-col gap-3">
+                <Missao
+                  Icone={Gift} titulo="Pague a 1ª parcela" recompensa={`+${config.pontosPrimeiraParcela} pts + voucher`}
+                  descricao="Ao confirmar o seu primeiro pagamento, você ganha pontos e libera o voucher de consulta com o Doutor."
+                  concluida={Boolean(dados?.missoes?.primeiraParcela.concluida)}
+                  status={dados?.missoes?.primeiraParcela.concluida ? "Missão concluída" : undefined}
+                  acao={dados?.missoes?.primeiraParcela.concluida ? undefined : { rotulo: "Ver minhas parcelas", onClick: onIrParcelas }}
+                />
+                <Missao
+                  Icone={CalendarCheck} titulo="Pague em dia" recompensa={`+${config.pontosParcelaEmDia} pts por parcela`}
+                  descricao="Toda parcela paga até o vencimento vale pontos. Quanto mais em dia, mais perto do seu prêmio."
+                  status={dados?.missoes?.parcelaEmDia.vezes ? `Você já ganhou ${dados.missoes.parcelaEmDia.vezes}× · ${pts(dados.missoes.parcelaEmDia.pontosGanhos)}` : undefined}
+                  destaque={dados?.missoes?.parcelaEmDia.proxima?.vencimento ? `Próxima: parcela ${dados.missoes.parcelaEmDia.proxima.numero} vence em ${dataCurta(dados.missoes.parcelaEmDia.proxima.vencimento)}` : undefined}
+                  acao={{ rotulo: "Ver parcelas", onClick: onIrParcelas }}
+                />
+                <Missao
+                  Icone={Users} titulo="Indique uma amiga" recompensa={`+${config.pontosIndicacao} pts`}
+                  descricao="Você ganha quando a amiga indicada fechar contrato e pagar a 1ª parcela."
+                  status={dados?.missoes?.indicacao.creditadas ? `${dados.missoes.indicacao.creditadas} ${dados.missoes.indicacao.creditadas === 1 ? "indicação premiada" : "indicações premiadas"} · ${pts(dados.missoes.indicacao.pontosGanhos)}` : undefined}
+                  acao={{ rotulo: "Indicar agora", onClick: () => setIndicarAberta(true) }}
+                />
+                <button type="button" onClick={() => setFolha("como")} className="mt-1 flex items-center justify-center gap-2 py-2 text-[13px] font-semibold text-[#7D2434]"><Info className="h-4 w-4" /> Como funciona o Clube</button>
+              </div>
+            )}
+
+            {aba === "indicacoes" && (
+              <>
+                <div className="rounded-[20px] border border-[#EAD7D2] bg-gradient-to-br from-white to-[#FBEFEC] p-4">
+                  <div className="font-heading text-[21px] font-semibold leading-[1.15] text-[#6B1F2E]">Indique e ganhe {config.pontosIndicacao} pontos</div>
+                  <ol className="m-0 mt-3 grid list-none grid-cols-3 gap-2 p-0 text-center">
+                    {["Você indica", "Ela fecha contrato", "Paga a 1ª parcela"].map((t, i) => (
+                      <li key={t} className="rounded-[12px] bg-white/80 px-2 py-[10px]">
+                        <span className="mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#6B1F2E] text-[11px] font-bold text-white">{i + 1}</span>
+                        <span className="block pt-[6px] text-[11.5px] leading-tight text-[#5E4A46]">{t}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <button type="button" onClick={() => setIndicarAberta(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#6B1F2E] px-4 py-[13px] text-[14px] font-semibold text-white"><UserPlus className="h-4 w-4" /> Indicar uma amiga</button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  {[
+                    ["Em andamento", String(dados?.indicacoes.emAnalise ?? 0)],
+                    ["Fecharam", String(dados?.indicacoes.confirmadas ?? 0)],
+                    ["Pontos ganhos", pontosIndicacoes.toLocaleString("pt-BR")],
+                  ].map(([r, v]) => (
+                    <div key={r} className="rounded-[14px] border border-[#ECE2DF] bg-white px-2 py-3">
+                      <div className="font-heading text-[22px] font-semibold leading-none text-[#2E2422]">{v}</div>
+                      <div className="pt-1 text-[11px] text-[#9A8C88]">{r}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <h3 className="m-0 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[.12em] text-[#A9837C]">Suas indicações</h3>
+                {indicacoes.length === 0 ? (
+                  <div className="rounded-[18px] border border-dashed border-[#E3D4D0] bg-white p-6 text-center text-[13px] font-light leading-[1.5] text-[#9A8A86]">Você ainda não indicou ninguém. Indique uma amiga e acompanhe cada etapa por aqui.</div>
+                ) : (
+                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                    {indicacoes.map((i) => {
+                      const etapa = etapaIndicacao(i, config.pontosIndicacao);
+                      const cor = etapa.tom === "sucesso" ? "#3F7D5B" : etapa.tom === "andamento" ? "#8A6720" : etapa.tom === "encerrada" ? "#988985" : "#7D2434";
+                      const fundo = etapa.tom === "sucesso" ? "#EEF6F0" : etapa.tom === "andamento" ? "#FFF7E8" : etapa.tom === "encerrada" ? "#F5F1EF" : "#F7EFED";
+                      return (
+                        <li key={i.id} className="rounded-[16px] border border-[#ECE2DF] bg-white px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate text-[14.5px] font-semibold text-[#43322F]">{i.nome_indicado}</span>
+                            <span className="flex-none rounded-full px-[10px] py-1 text-[11px] font-semibold" style={{ background: fundo, color: cor }}>{etapa.rotulo}</span>
+                          </div>
+                          {etapa.passo >= 0 && (
+                            <div className="mt-[10px] grid grid-cols-4 gap-1" aria-hidden="true">
+                              {[0, 1, 2, 3].map((p) => <span key={p} className="h-[4px] rounded-full" style={{ background: p <= etapa.passo ? cor : "#EFE6E3" }} />)}
+                            </div>
+                          )}
+                          <div className="pt-2 text-[12px] leading-[1.45] text-[#8D7D79]">{etapa.detalhe} <span className="text-[#B3A6A2]">· indicada em {dataCurta(i.created_at)}</span></div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      <IndicarFolha aberta={indicarAberta} onFechar={() => setIndicarAberta(false)} onEnviada={() => { void carregar(); setAba("indicacoes"); }} pontosPorIndicacao={config.pontosIndicacao} nomeCliente={nomeCliente} />
+
+      <Folha aberta={Boolean(resgateAlvo)} onFechar={() => !ocupado && setResgateAlvo(null)} titulo="Confirmar resgate">
+        {resgateAlvo && (
+          <>
+            <div className="flex items-center gap-3">
+              <div className="h-[72px] w-[72px] flex-none overflow-hidden rounded-[16px]"><ImagemPremio recompensa={resgateAlvo} /></div>
+              <div className="min-w-0"><div className="text-[15px] font-semibold text-[#2E2422]">{resgateAlvo.titulo}</div><div className="pt-1 text-[12.5px] leading-[1.4] text-[#8D7D79]">{resgateAlvo.descricao}</div></div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-[16px] bg-[#FBF7F5] p-3 text-center">
+              {[["Saldo", saldo], ["Resgate", -resgateAlvo.pontos], ["Depois", Math.max(0, saldo - resgateAlvo.pontos)]].map(([r, v]) => (
+                <div key={String(r)}><div className="text-[11px] text-[#9A8C88]">{r}</div><div className={`font-heading text-[20px] font-semibold ${Number(v) < 0 ? "text-[#B86575]" : "text-[#6B1F2E]"}`}>{Number(v).toLocaleString("pt-BR")}</div></div>
+              ))}
+            </div>
+            <p className="m-0 pt-3 text-[12.5px] leading-[1.5] text-[#8D7D79]">{resgateAlvo.instrucoes_pos_resgate || "Depois de solicitar, a equipe Sra. Luck confirma a entrega com você."}</p>
+            <button type="button" disabled={ocupado} onClick={() => void confirmarResgate()} className="mt-4 w-full rounded-[14px] bg-[#6B1F2E] px-4 py-[15px] text-[14.5px] font-semibold text-white disabled:opacity-50">{ocupado ? "Solicitando…" : `Resgatar por ${pts(resgateAlvo.pontos)}`}</button>
+          </>
+        )}
+      </Folha>
+
+      <Folha aberta={folha === "extrato"} onFechar={() => setFolha(null)} titulo="Extrato de pontos">
+        {(dados?.historico ?? []).length === 0 ? (
+          <p className="m-0 py-6 text-center text-[13px] text-[#9A8C88]">Seus pontos aparecem aqui assim que você ganhar os primeiros.</p>
+        ) : (
+          <ul className="m-0 list-none p-0">
+            {dados!.historico.map((e) => (
+              <li key={e.id} className="flex items-center justify-between gap-3 border-b border-[#F4ECEA] py-3 last:border-b-0">
+                <span className="min-w-0"><span className="block truncate text-[13.5px] font-medium text-[#43322F]">{descreverEvento(e)}</span><span className="block pt-[2px] text-[11.5px] text-[#A2938F]">{new Date(e.created_at).toLocaleDateString("pt-BR")}</span></span>
+                <span className={`flex-none font-heading text-[18px] font-semibold ${e.pontos >= 0 ? "text-[#3F7D5B]" : "text-[#B86575]"}`}>{e.pontos >= 0 ? "+" : ""}{e.pontos}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Folha>
+
+      <Folha aberta={folha === "como"} onFechar={() => setFolha(null)} titulo="Como funciona">
+        <ol className="m-0 flex list-none flex-col gap-4 p-0">
+          {[
+            ["Ganhe pontos", `1ª parcela paga: +${config.pontosPrimeiraParcela} e voucher. Cada parcela paga em dia: +${config.pontosParcelaEmDia}. Amiga indicada que fechar e pagar a 1ª parcela: +${config.pontosIndicacao}.`],
+            ["Acompanhe", "Seu saldo, o extrato e cada indicação ficam aqui, atualizados pela equipe."],
+            ["Resgate", "Escolha um prêmio com seus pontos. A equipe confirma e combina a entrega com você."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex items-start gap-3">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[13px] font-bold text-[#7D2434]">{i + 1}</span>
+              <span><span className="block text-[14.5px] font-semibold text-[#2E2422]">{t}</span><span className="block pt-1 text-[13px] leading-[1.5] text-[#7F6F6B]">{d}</span></span>
+            </li>
+          ))}
+        </ol>
+      </Folha>
     </div>
-
-    {carregando ? <div className="px-[18px] py-12 text-center text-[10.5px] font-light text-[#9A8A86]">Carregando...</div> : <>
-      {!voucher && <div className="mx-[18px] mt-[17px] rounded-[18px] bg-gradient-to-br from-[#6B1F2E] to-[#7C2B3B] p-[14px] text-white shadow-[0_10px_26px_rgba(107,31,46,.13)]"><div className="flex items-start gap-[11px]"><div className="flex h-[39px] w-[39px] flex-none items-center justify-center rounded-[13px] border border-white/15 bg-white/10 text-[#F2D7B0]"><GiftIcon/></div><div className="min-w-0 flex-1"><div className="text-[8.5px] font-semibold uppercase tracking-[.13em] text-[#E9CFA8]">Missão de boas-vindas</div><div className="pt-[2px] font-heading text-[19px] font-semibold">Pague sua primeira parcela</div><div className="pt-1 text-[10px] font-light leading-[1.45] text-white/70">Ao confirmar o primeiro pagamento, você recebe <strong className="font-semibold text-white">+50 moedas</strong> e libera seu <strong className="font-semibold text-white">Voucher de Consulta com o Doutor</strong>.</div></div></div><button type="button" onClick={onIrParcelas} className="mt-3 w-full rounded-[11px] bg-white px-3 py-[10px] text-[10.5px] font-semibold text-[#6B1F2E]">Ver primeira parcela</button></div>}
-
-      <div className="px-[18px] pt-[21px]">
-        <div className="flex items-end justify-between gap-[10px] pb-[10px]"><div><div className="font-heading text-[21px] font-semibold text-[#43322F]">Prêmios disponíveis</div><div className="pt-[2px] text-[10.3px] font-light text-[#978783]">Escolha uma conquista para aproveitar.</div></div><button type="button" onClick={()=>setSheet("carteira")} className="text-[9px] font-semibold text-[#B86575]">Ver moedas</button></div>
-
-        <div className="rounded-[20px] border border-[#E6D5D0] bg-gradient-to-br from-white to-[#FFF7F5] p-[15px] shadow-[0_8px_24px_rgba(73,42,47,.045)]">
-          <div className="flex items-start gap-3"><div className="flex h-[46px] w-[46px] flex-none items-center justify-center rounded-[15px] border border-[#E7D1CD] bg-[#F9EFED] text-[#B86575]"><TicketIcon/></div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-[7px]"><div><div className="text-[8.5px] font-semibold uppercase tracking-[.12em] text-[#B86575]">Prêmio de boas-vindas</div><div className="pt-[2px] font-heading text-[20px] font-semibold leading-[1.1] text-[#43322F]">Voucher de consulta com o Doutor</div></div><span className="whitespace-nowrap rounded-full px-[7px] py-1 text-[7.8px] font-bold uppercase" style={voucher?.status==="disponivel"?{background:"#EEF7F0",color:"#3F7D5B"}:{background:"#F5F1EF",color:"#988985"}}>{voucher?.status==="disponivel"?"Disponível":"Bloqueado"}</span></div><div className="pt-[5px] text-[10px] font-light leading-[1.45] text-[#8D7D79]">1 consulta com o Doutor, liberada após a confirmação da sua 1ª parcela. O voucher não consome moedas e o agendamento é combinado com a equipe Sra. Luck.</div></div></div>
-          <div className="mt-3 flex items-center justify-between gap-[10px] border-t border-[#F0E4E1] pt-[11px]"><div className="flex items-center gap-[6px] text-[9px] text-[#8D7D79]"><span className="flex h-[21px] w-[21px] items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7] text-[#9B741E]"><CoinIcon/></span><strong className="font-semibold text-[#5E4A46]">+50</strong> na missão</div>{voucher?.status==="disponivel"&&<button type="button" disabled={busy} onClick={()=>void usarVoucher()} className="rounded-[10px] bg-[#6B1F2E] px-[10px] py-2 text-[9.5px] font-semibold text-white">Usar voucher</button>}</div>
-        </div>
-
-        <div className="mt-[10px] grid gap-[9px]">{(dados?.recompensas??[]).map((r)=><PremioCard key={r.id} recompensa={r} saldo={dados?.saldo??0} onResgatar={setResgateAlvo}/>)}{(dados?.recompensas??[]).length===0&&<div className="rounded-[17px] border border-[#ECE2DF] bg-white p-5 text-center text-[10.5px] font-light text-[#9A8A86]">Nenhum prêmio cadastrado no momento.</div>}</div>
-      </div>
-
-      <button type="button" onClick={()=>setSheet("como")} className="mx-[18px] mt-[18px] flex w-[calc(100%-36px)] items-center justify-between gap-[10px] rounded-[15px] border border-[#EEE4E1] bg-[#FBF7F5] px-[13px] py-3 text-left"><span><span className="block text-[10.8px] font-medium text-[#5A4541]">Quer entender o Clube?</span><span className="block pt-[2px] text-[9.5px] font-light text-[#978783]">Veja como ganhar moedas e usar seus benefícios.</span></span><span className="text-[9px] font-semibold text-[#B86575]">Como funciona ›</span></button>
-    </>}
-
-    <BottomSheet aberto={sheet==="carteira"} onFechar={()=>setSheet(null)} titulo="Suas moedas"><div className="flex items-center gap-[9px]"><span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E8D39E] bg-[#FBF4E7] text-[#9B741E]"><CoinIcon/></span><div><div className="font-heading text-[29px] font-semibold leading-none text-[#6B1F2E]">{dados?.saldo??0}</div><div className="pt-1 text-[9px] font-light text-[#9A8A86]">moedas disponíveis</div></div></div><div className="pt-4 text-[8.5px] font-semibold uppercase tracking-[.13em] text-[#A9837C]">Histórico de moedas</div><div className="mt-2 grid gap-2">{(dados?.historico??[]).map((e)=><div key={e.id} className="flex items-center justify-between rounded-[13px] border border-[#EEE4E1] bg-[#FCFAF9] px-3 py-[10px]"><div><div className="text-[10.8px] font-medium text-[#4B3936]">{e.tipo==="indicacao"?"Indicação confirmada":e.tipo==="bonus"?"Bônus":e.tipo==="resgate"?"Resgate":"Ajuste"}</div><div className="pt-[2px] text-[9px] font-light text-[#A2938F]">{new Date(e.created_at).toLocaleDateString("pt-BR")}</div></div><div className="font-heading text-[16px] font-semibold" style={{color:e.pontos>=0?"#3F7D5B":"#B86575"}}>{e.pontos>=0?"+":""}{e.pontos}</div></div>)}</div></BottomSheet>
-
-    <BottomSheet aberto={sheet==="indicacoes"} onFechar={()=>setSheet(null)} titulo="Suas indicações"><p className="m-0 text-[10.5px] font-light leading-[1.5] text-[#8D7D79]">As moedas entram quando a indicação é confirmada pela equipe.</p><div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-[13px] border border-[#DCE9DF] bg-[#F6FAF7] p-3 text-center"><div className="font-heading text-[25px] font-semibold text-[#3F7D5B]">{dados?.indicacoes.confirmadas??0}</div><div className="text-[8.5px] uppercase tracking-[.08em] text-[#8A7B77]">Confirmadas</div></div><div className="rounded-[13px] border border-[#EADBB8] bg-[#FFF9EE] p-3 text-center"><div className="font-heading text-[25px] font-semibold text-[#9B741E]">{dados?.indicacoes.emAnalise??0}</div><div className="text-[8.5px] uppercase tracking-[.08em] text-[#8A7B77]">Em análise</div></div></div><button type="button" onClick={()=>setIndicarAberto(true)} className="mt-4 w-full rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.5px] font-semibold text-white">Indicar uma amiga</button></BottomSheet>
-
-    <BottomSheet aberto={sheet==="como"} onFechar={()=>setSheet(null)} titulo="Como funciona"><div className="grid gap-3">{[["01","Você indica","Compartilhe o nome e telefone de uma amiga com a equipe Sra. Luck."],["02","A equipe confirma","Quando a indicação atingir o critério real, a equipe confirma o status."],["03","Você escolhe","Troque suas moedas por benefícios disponíveis no catálogo."]].map(([n,t,d])=><div key={n} className="flex items-start gap-3"><span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[9px] font-semibold text-[#7D2434]">{n}</span><div><div className="text-[11.5px] font-medium text-[#4B3936]">{t}</div><div className="pt-[2px] text-[9.8px] font-light leading-[1.48] text-[#8D7D79]">{d}</div></div></div>)}</div></BottomSheet>
-
-    <IndicarModal aberto={indicarAberto} onFechar={()=>setIndicarAberto(false)} onEnviado={()=>{setIndicarAberto(false);void carregar()}}/>
-    {resgateAlvo&&<div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50"><div className="w-full max-w-[430px] rounded-t-[24px] bg-white p-[18px] pb-[calc(max(env(safe-area-inset-bottom),0px)+18px)]"><div className="sl-sheet-grab"/><div className="font-heading text-[22px] font-semibold text-[#392927]">Confirmar resgate</div><div className="pt-1 text-[10.8px] font-light text-[#8D7D79]">{resgateAlvo.titulo}</div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div><div className="text-[8.5px] text-[#A2938F]">Saldo atual</div><div className="font-heading text-[18px] font-semibold text-[#6B1F2E]">{dados?.saldo??0}</div></div><div><div className="text-[8.5px] text-[#A2938F]">Resgate</div><div className="font-heading text-[18px] font-semibold text-[#B86575]">-{resgateAlvo.pontos}</div></div><div><div className="text-[8.5px] text-[#A2938F]">Depois</div><div className="font-heading text-[18px] font-semibold text-[#6B1F2E]">{Math.max(0,(dados?.saldo??0)-resgateAlvo.pontos)}</div></div></div><div className="mt-5 grid grid-cols-2 gap-2"><button type="button" onClick={()=>setResgateAlvo(null)} className="rounded-[11px] border border-[#E7DAD6] px-3 py-[11px] text-[10.5px] font-semibold text-[#6B1F2E]">Agora não</button><button type="button" disabled={busy} onClick={()=>void confirmarResgate()} className="rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.5px] font-semibold text-white">{busy?"Aguarde...":"Solicitar resgate"}</button></div></div></div>}
-  </div>;
+  );
 }
 
-function IndicarModal({ aberto,onFechar,onEnviado }:{aberto:boolean;onFechar:()=>void;onEnviado:()=>void}){const[nome,setNome]=useState("");const[telefone,setTelefone]=useState("");const[busy,setBusy]=useState(false);useEffect(()=>{if(aberto){setNome("");setTelefone("")}},[aberto]);if(!aberto)return null;async function enviar(){if(!nome.trim())return;setBusy(true);try{await indicarAmiga(nome.trim(),telefone.trim());toast.success("Indicação enviada! A equipe vai acompanhar.");onEnviado()}catch(e){toast.error(e instanceof Error?e.message:"Não foi possível enviar a indicação.")}finally{setBusy(false)}}return <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/50"><div className="w-full max-w-[430px] rounded-t-[24px] bg-white p-[18px] pb-[calc(max(env(safe-area-inset-bottom),0px)+18px)]"><div className="sl-sheet-grab"/><div className="font-heading text-[22px] font-semibold text-[#392927]">Indicar uma amiga</div><div className="pt-1 text-[10.5px] font-light text-[#8D7D79]">Compartilhe os dados dela para nossa equipe entrar em contato.</div><label className="mt-4 block text-[9px] font-medium uppercase tracking-[.1em] text-[#9A8C88]">Nome<input value={nome} onChange={e=>setNome(e.target.value)} className="mt-[7px] w-full rounded-[14px] border border-[#E6DAD6] bg-white px-4 py-[13px] text-[14px] text-[#2E2422] outline-none focus:border-[#6B1F2E]"/></label><label className="mt-3 block text-[9px] font-medium uppercase tracking-[.1em] text-[#9A8C88]">Telefone<input value={telefone} onChange={e=>setTelefone(e.target.value)} className="mt-[7px] w-full rounded-[14px] border border-[#E6DAD6] bg-white px-4 py-[13px] text-[14px] text-[#2E2422] outline-none focus:border-[#6B1F2E]"/></label><div className="mt-5 grid grid-cols-2 gap-2"><button type="button" onClick={onFechar} className="rounded-[11px] border border-[#E7DAD6] px-3 py-[11px] text-[10.5px] font-semibold text-[#6B1F2E]">Cancelar</button><button type="button" disabled={!nome.trim()||busy} onClick={()=>void enviar()} className="rounded-[11px] bg-[#6B1F2E] px-3 py-[11px] text-[10.5px] font-semibold text-white disabled:opacity-50">{busy?"Enviando...":"Enviar"}</button></div></div></div>}
+function CartaoPremio({ recompensa, saldo, onResgatar }: { recompensa: ClubeRecompensa; saldo: number; onResgatar: () => void }) {
+  const esgotado = recompensa.estoque !== null && recompensa.estoque <= 0;
+  const pode = !esgotado && saldo >= recompensa.pontos;
+  const progresso = Math.min(100, Math.round((saldo / recompensa.pontos) * 100));
+  return (
+    <article className="flex flex-col overflow-hidden rounded-[18px] border border-[#ECE2DF] bg-white shadow-[0_6px_18px_rgba(73,42,47,.05)]">
+      <div className="relative aspect-[4/3] bg-[#F7EEEC]">
+        <ImagemPremio recompensa={recompensa} />
+        {recompensa.categoria && <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-[3px] text-[10px] font-semibold text-[#7D2434] backdrop-blur">{recompensa.categoria}</span>}
+      </div>
+      <div className="flex flex-1 flex-col p-3">
+        <div className="line-clamp-2 min-h-[36px] text-[13.5px] font-semibold leading-[1.3] text-[#2E2422]">{recompensa.titulo}</div>
+        <div className="flex items-center gap-[6px] pt-2"><Moeda tamanho={12} /><span className="text-[13px] font-bold text-[#8A671E]">{recompensa.pontos.toLocaleString("pt-BR")}</span>{!esgotado && recompensa.estoque !== null && recompensa.estoque <= 3 && <span className="ml-auto text-[10.5px] font-semibold text-[#A84759]">Últimas</span>}</div>
+        <div className="mt-auto pt-3">
+          {esgotado ? (
+            <div className="rounded-[10px] bg-[#F5F1EF] py-2 text-center text-[12px] font-semibold text-[#988985]">Esgotado</div>
+          ) : pode ? (
+            <button type="button" onClick={onResgatar} className="w-full rounded-[10px] bg-[#6B1F2E] py-[9px] text-[12.5px] font-semibold text-white">Resgatar</button>
+          ) : (
+            <div>
+              <div className="h-[5px] overflow-hidden rounded-full bg-[#F1E7E4]"><div className="h-full rounded-full bg-[#C99A5B]" style={{ width: `${progresso}%` }} /></div>
+              <div className="pt-[6px] text-[11.5px] text-[#9A8C88]">Faltam {(recompensa.pontos - saldo).toLocaleString("pt-BR")} pts</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CartaoVoucher({ estado, solicitadoEm, ocupado, pontosMissao, onIrParcelas, onSolicitar, onAbrir, onUsar }: {
+  estado: ReturnType<typeof estadoVoucher>; solicitadoEm?: string | null; ocupado: boolean; pontosMissao: number;
+  onIrParcelas: () => void; onSolicitar: () => void; onAbrir: () => void; onUsar: () => void;
+}) {
+  const textos = {
+    bloqueado: { selo: "Bloqueado", cor: "#988985", fundo: "#F5F1EF", texto: `Pague a 1ª parcela para liberar a consulta com o Doutor e ganhar +${pontosMissao} pts.` },
+    liberado: { selo: "Liberado", cor: "#3F7D5B", fundo: "#EEF6F0", texto: "Seu voucher de consulta está liberado. Solicite e a equipe prepara para você." },
+    solicitado: { selo: "Em preparo", cor: "#8A6720", fundo: "#FFF7E8", texto: `Pedido feito${solicitadoEm ? ` em ${dataCurta(solicitadoEm)}` : ""}. Avisaremos quando o voucher estiver pronto.` },
+    pronto: { selo: "Pronto", cor: "#3F7D5B", fundo: "#EEF6F0", texto: "Seu voucher está disponível. Abra para apresentar na consulta." },
+    utilizado: { selo: "Utilizado", cor: "#988985", fundo: "#F5F1EF", texto: "Voucher já utilizado. Aproveite os outros prêmios do Clube." },
+  }[estado];
+  return (
+    <section className="rounded-[20px] border border-[#E6D5D0] bg-gradient-to-br from-white to-[#FFF6F4] p-4 shadow-[0_8px_22px_rgba(73,42,47,.05)]" aria-label="Voucher de consulta">
+      <div className="flex items-start gap-3">
+        <span className="flex h-12 w-12 flex-none items-center justify-center rounded-[15px] bg-[#F9ECEF] text-[#A84759]">{estado === "bloqueado" ? <Lock className="h-5 w-5" /> : <Ticket className="h-5 w-5" />}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[.12em] text-[#B86575]">Boas-vindas</div>
+            <span className="flex-none rounded-full px-[9px] py-[3px] text-[10.5px] font-bold" style={{ background: textos.fundo, color: textos.cor }}>{textos.selo}</span>
+          </div>
+          <div className="pt-1 font-heading text-[20px] font-semibold leading-[1.15] text-[#2E2422]">Consulta com o Doutor</div>
+          <p className="m-0 pt-1 text-[12.5px] leading-[1.45] text-[#7F6F6B]">{textos.texto}</p>
+        </div>
+      </div>
+      {estado === "bloqueado" && <button type="button" onClick={onIrParcelas} className="mt-3 w-full rounded-[12px] border border-[#E6D3CF] bg-white py-[11px] text-[13px] font-semibold text-[#7D2434]">Ver minha 1ª parcela</button>}
+      {estado === "liberado" && <button type="button" disabled={ocupado} onClick={onSolicitar} className="mt-3 w-full rounded-[12px] bg-[#6B1F2E] py-[11px] text-[13px] font-semibold text-white disabled:opacity-50">Solicitar meu voucher</button>}
+      {estado === "solicitado" && <div className="mt-3 flex items-center justify-center gap-2 rounded-[12px] bg-[#FFF7E8] py-[10px] text-[12.5px] font-medium text-[#8A6720]"><Clock3 className="h-4 w-4" /> A equipe está preparando</div>}
+      {estado === "pronto" && (
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+          <button type="button" disabled={ocupado} onClick={onAbrir} className="flex items-center justify-center gap-2 rounded-[12px] bg-[#6B1F2E] py-[11px] text-[13px] font-semibold text-white disabled:opacity-50"><Receipt className="h-4 w-4" /> Ver voucher</button>
+          <button type="button" disabled={ocupado} onClick={onUsar} className="flex items-center gap-1 rounded-[12px] border border-[#E6D3CF] px-3 text-[12px] font-semibold text-[#7D2434]"><Check className="h-4 w-4" /> Já usei</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Missao({ Icone, titulo, recompensa, descricao, status, destaque, acao, concluida = false }: {
+  Icone: typeof Gift; titulo: string; recompensa: string; descricao: string; status?: string; destaque?: string;
+  acao?: { rotulo: string; onClick: () => void }; concluida?: boolean;
+}) {
+  return (
+    <article className={`rounded-[18px] border p-4 ${concluida ? "border-[#D3E6D8] bg-[#F6FBF7]" : "border-[#ECE2DF] bg-white"}`}>
+      <div className="flex items-start gap-3">
+        <span className={`flex h-11 w-11 flex-none items-center justify-center rounded-[14px] ${concluida ? "bg-[#3F7D5B] text-white" : "bg-[#F9ECEF] text-[#A84759]"}`}>{concluida ? <Check className="h-5 w-5" /> : <Icone className="h-5 w-5" />}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-[15px] font-semibold text-[#2E2422]">{titulo}</div>
+            <span className="rounded-full bg-[#FBF4E7] px-2 py-[2px] text-[11px] font-bold text-[#8A671E]">{recompensa}</span>
+          </div>
+          <p className="m-0 pt-1 text-[12.5px] leading-[1.45] text-[#7F6F6B]">{descricao}</p>
+          {status && <div className={`pt-2 text-[12.5px] font-semibold ${concluida ? "text-[#3F7D5B]" : "text-[#6B1F2E]"}`}>{status}</div>}
+          {destaque && <div className="mt-2 rounded-[10px] bg-[#FBF7F5] px-3 py-2 text-[12px] text-[#6F605C]">{destaque}</div>}
+        </div>
+      </div>
+      {acao && <button type="button" onClick={acao.onClick} className="mt-3 flex w-full items-center justify-center gap-1 rounded-[12px] border border-[#E6D3CF] py-[10px] text-[13px] font-semibold text-[#7D2434]">{acao.rotulo} <ChevronRight className="h-4 w-4" /></button>}
+    </article>
+  );
+}

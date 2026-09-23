@@ -153,9 +153,9 @@ termos assinados
 quitação confirmada
 (nenhum isoladamente inicia a janela)
 →
-prazo MÁXIMO vigente: até 90 dias corridos (teto, não data automática)
+liberação da agenda cirúrgica em até 5 dias úteis
 →
-liberação da agenda cirúrgica (pode ocorrer antes do prazo máximo).
+cliente escolhe datas a partir da data dos termos + 90 dias (antes disso, todas aparecem como lotadas).
 
 Sempre consultar `docs/BUSINESS-RULES.md` antes de alterar essa jornada.
 

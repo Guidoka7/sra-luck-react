@@ -141,11 +141,12 @@ Quitação/saldo final confirmado
    ↓
 Data-base = a mais recente entre os dois eventos
    ↓
-Prazo MÁXIMO: até 90 dias corridos (regra atual)
+Prazo: até 5 dias úteis (regra atual, BUSINESS-RULES §12)
    ↓
-Agenda cirúrgica liberada (pode ocorrer antes do prazo máximo)
+Agenda cirúrgica liberada
    ↓
-Cliente escolhe data publicada, dentro do prazo máximo
+Cliente escolhe data publicada a partir da data dos termos + 90 dias
+(antes disso, todas as datas aparecem como lotadas)
    ↓
 Cirurgia agendada
    ↓

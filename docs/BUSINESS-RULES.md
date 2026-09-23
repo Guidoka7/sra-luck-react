@@ -204,17 +204,24 @@ No dia da assinatura, a cliente precisa cumprir a condição financeira definida
 
 ## 12. Liberação da agenda cirúrgica
 
-A regra vigente (2026-09-14) substitui a lógica anterior de 5 dias úteis.
+Regra vigente (2026-09-23), que substitui o texto anterior de "até 90 dias corridos" para a liberação:
 
-A janela só começa quando **termos assinados E quitação confirmada** existem — nenhum dos dois
-isoladamente inicia a contagem. A data-base é a mais recente entre os dois eventos.
-
-A partir da data-base, o prazo **máximo** é de **90 dias corridos**. Isso é um teto, não uma data
-automática: a liberação real pode ocorrer antes, conforme agenda disponível, planejamento
-financeiro e decisão operacional. A referência mensal (`configuracoes.meta_orcamento_mensal`,
-atualmente R$ 100.000) é só um alerta de capacidade para o planejamento, nunca uma trava.
-
-O prazo deve ser configurável/politicamente versionável; o valor atual é 90 dias corridos.
+- A janela só começa quando **termos assinados E quitação confirmada** existem — nenhum dos dois
+  isoladamente inicia a contagem. A data-base é a mais recente entre os dois eventos.
+- A agenda cirúrgica é liberada em **até 5 dias úteis** a partir da data-base (V46:
+  `worker/surgery-release.ts`, cron da migration_065), com extensão manual (+1/+3/+5 dias úteis) e
+  liberação antecipada pela equipe.
+- **Regra interna — intervalo mínimo:** depois de liberada, a cliente só pode escolher datas a partir
+  da **data que ela escolheu para a assinatura dos termos + 90 dias corridos**. Antes disso, todas as
+  datas aparecem para ela como **lotadas** (o app não explica o intervalo). Depois dele, aparecem as
+  datas realmente disponíveis.
+  - Configurável em `configuracoes.cirurgia_intervalo_minimo_dias` (padrão 90, entre 0 e 365).
+  - Implementação única: `agenda_data_minima_cirurgia` (calendário, via worker) e
+    `agenda_reservar_cirurgia_cliente` (trava no banco, erro `DATA_CIRURGIA_LOTADA`) — migration_076.
+  - Vale para a escolha feita pela cliente no app; a reserva feita pela equipe no admin
+    (`agenda_reservar_cirurgia`) não é limitada por esse intervalo.
+- A referência mensal (`configuracoes.meta_orcamento_mensal`, atualmente R$ 100.000) continua como
+  teto por carta de crédito na escolha da data (V46 §17).
 
 ## 13. Cirurgia
 
@@ -269,6 +276,21 @@ O sistema deve controlar:
 - prevenção de duplicidade/fraude.
 
 Catálogo configurável, com exemplos como kits, massagem, spa, nécessaire, vouchers e benefícios de parceiros.
+
+### Como a cliente ganha pontos (regra vigente 2026-09-23)
+
+Valores configuráveis em `clube_config` (admin → Clube → Pontuação); os valores atuais são:
+
+| Missão | Pontos | Quando credita |
+|---|---|---|
+| 1ª parcela paga | 50 + voucher de consulta | quando a parcela 1 passa para `pago` |
+| Parcela paga em dia | 10 por parcela | quando a parcela passa para `pago` com `data_pagamento <= data_vencimento` |
+| Indicação que fechou | 200 para quem indicou | quando a equipe marca a indicação como **Fechou** (vinculando o cadastro da indicada) **e** a indicada tem a 1ª parcela paga — o que acontecer por último efetiva o crédito |
+
+- Todo crédito é idempotente (uma vez por motivo + referência) e fica no extrato (`cliente_pontos_eventos`).
+- Uma cliente só pode ser a "venda" de uma única indicação; ninguém indica a si mesma; indicação já premiada não muda de status.
+- Voucher de consulta: liberado na 1ª parcela; a cliente pode solicitar a retirada e a equipe anexa o arquivo pelo admin, que fica disponível para ela no app.
+- Implementação: `supabase/migration_075_clube_missoes_indicacoes.sql`, `worker/clube.ts`, `src/components/cliente/clube/`, `src/app/admin/(painel)/clube/page.tsx`.
 
 ## 16. Colaboradores
 

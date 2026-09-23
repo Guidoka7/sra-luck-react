@@ -22,9 +22,9 @@ describe("CalendarioCirurgia — aguardando liberação", () => {
     expect(botoes.filter((botao) => !botao.includes('disabled=""'))).toHaveLength(1);
   });
 
-  it("preserva o aviso de quitação para a etapa anterior à assinatura", () => {
+  it("mantém o aviso de que a quitação libera a agenda na etapa anterior à assinatura", () => {
     const html = renderToStaticMarkup(createElement(CalendarioCirurgia, { dataAssinatura: "2026-09-22" }));
-    expect(html).toContain("A quitação do saldo precisa ser confirmada");
+    expect(html).toContain("e a quitação do saldo");
     expect(html).not.toContain("Atualizar status");
   });
 });
@@ -59,14 +59,12 @@ describe("CalendarioCirurgia — informativo por forma de pagamento", () => {
 });
 
 describe("CalendarioCirurgia — informativo da liberação (BUSINESS-RULES §12)", () => {
-  it("antes da assinatura, explica que a liberação começa após termos + quitação, com o prazo máximo vigente", () => {
+  it("antes da assinatura, explica que a agenda é liberada em até 5 dias úteis após termos + quitação, sem checklist", () => {
     const html = renderToStaticMarkup(createElement(CalendarioCirurgia, { dataAssinatura: "2026-09-22" }));
     expect(html).toContain("Agenda cirúrgica");
-    expect(html).toContain("será iniciada a liberação da sua agenda cirúrgica");
-    expect(html).toContain("90 dias corridos");
-    expect(html).toContain("Assinatura dos termos");
-    expect(html).toContain("Quitação do saldo restante confirmada");
-    expect(html).not.toContain("5 dias úteis");
+    expect(html).toContain("liberada em até 5 dias úteis após a assinatura dos termos e a quitação do saldo");
+    expect(html).not.toContain("dias corridos");
+    expect(html).not.toContain("Quitação do saldo restante confirmada");
   });
 
   it("usa a previsão real de liberação quando o backend a informa", () => {

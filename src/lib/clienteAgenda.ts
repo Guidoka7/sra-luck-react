@@ -6,11 +6,12 @@
  */
 
 /**
- * Prazo máximo (teto) para liberar a agenda cirúrgica, contado a partir da
- * mais recente entre assinatura dos termos e quitação confirmada.
- * Fonte: docs/BUSINESS-RULES.md §12 — ponto único para quando virar configuração.
+ * Prazo para liberar a agenda cirúrgica, em dias úteis, contado a partir da
+ * mais recente entre assinatura dos termos e quitação confirmada. Espelha
+ * PRAZO_PADRAO_LIBERACAO_CIRURGICA_DIAS_UTEIS (worker/surgery-release.ts).
+ * Fonte: docs/BUSINESS-RULES.md §12. Usado só em textos para a cliente.
  */
-export const PRAZO_MAXIMO_LIBERACAO_CIRURGICA_DIAS = 90;
+export const PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS = 5;
 
 export type StatusRevisaoFinanceira = "pendente" | "aprovada" | "recusada" | null;
 export type StatusCusteio = "pendente" | "em_analise" | "aprovada" | "recusada" | null;

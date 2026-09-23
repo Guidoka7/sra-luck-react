@@ -135,7 +135,7 @@ Substituir regra antiga incompatível:
 - pagar agora/no dia;
 - termos;
 - quitação;
-- até 90 dias corridos após termos + quitação, como teto de liberação cirúrgica (sem piso mínimo);
+- liberação cirúrgica em até 5 dias úteis após termos + quitação; datas escolhíveis a partir da data dos termos + 90 dias;
 - agenda cirúrgica;
 - cirurgia realizada.
 
