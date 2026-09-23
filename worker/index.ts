@@ -217,6 +217,11 @@ async function loginCliente(request: Request, env: Env) {
       .select("id,ativo,acesso_app_liberado")
       .in("cpf", cpfFormatado ? [cpfLimpo, cpfFormatado] : [cpfLimpo])
       .eq("data_nascimento", nascimento)
+      // Um CPF pode ter um cadastro arquivado (excluído) e um novo cadastro
+      // ativo (migration_077): o login usa sempre o ativo mais recente.
+      .order("ativo", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (clienteError) {
