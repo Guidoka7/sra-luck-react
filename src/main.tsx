@@ -1,6 +1,7 @@
 import { lazy, StrictMode, Suspense, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/react";
 import { LoginPage } from "./pages/LoginPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
 import { SessionGate } from "./features/auth/SessionGate";
@@ -130,6 +131,7 @@ createRoot(document.getElementById("root")!).render(
       <AppErrorBoundary>
         <App />
         <Toaster position="top-center" richColors closeButton />
+        <Analytics />
       </AppErrorBoundary>
     </ThemeProvider>
   </StrictMode>,
