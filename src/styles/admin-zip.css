@@ -28,7 +28,8 @@
   --gobg: rgba(201, 161, 90, .16);
   --robg: rgba(173, 104, 107, .13);
   --bluebg: rgba(37, 99, 235, .1);
-  --shell: radial-gradient(900px 520px at 8% -8%, rgba(173, 104, 107, .13), transparent 62%), linear-gradient(180deg, #FFFDFC 0%, #FAF7F7 100%);
+  /* Mesma progressão cromática do topo do app da cliente: rosé presente no início e transição contínua para o neutro do Admin. */
+  --shell: linear-gradient(180deg, #EFD0D8 0px, #F4E0E4 120px, #F9EFEF 260px, #FBF7F5 420px, #FAF7F7 560px, #FAF7F7 100%);
 
   font-family: Inter, system-ui, sans-serif;
   color: var(--ink);
@@ -57,7 +58,8 @@
   --gobg: rgba(214, 174, 91, .16);
   --robg: rgba(190, 111, 133, .16);
   --bluebg: rgba(96, 165, 250, .12);
-  --shell: radial-gradient(900px 520px at 8% -8%, rgba(190, 111, 133, .12), transparent 62%), linear-gradient(180deg, #0c0e10 0%, #111417 48%, #0d0f11 100%);
+  /* Equivalente escuro do degradê do app da cliente, sem corte entre topo e conteúdo. */
+  --shell: linear-gradient(180deg, #4E2A36 0px, #3A2029 110px, #231820 240px, #111013 420px, #111417 560px, #0D0F11 100%);
 }
 
 .zip-admin h1, .zip-admin h2, .zip-admin h3 {
