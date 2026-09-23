@@ -93,6 +93,8 @@ describe("autenticação M2M do Dev Console", () => {
       ["PATCH", "/api/admin/notificacoes/templates"],
       ["POST", "/api/admin/notificacoes/enviar"],
       ["PATCH", "/api/admin/configuracoes"],
+      ["PATCH", "/api/admin/credit-ops/rewards/rw-1"],
+      ["DELETE", "/api/admin/credit-ops/rewards/rw-1"],
     ])("aceita %s %s", async (method, path) => {
       const result = await authorizeDevConsoleRequest(request(path, { method }), writeEnv);
       expect(result).toBeInstanceOf(Request);
@@ -107,6 +109,8 @@ describe("autenticação M2M do Dev Console", () => {
       ["POST", "/api/admin/credit-ops/contracts"],
       ["POST", "/api/admin/integrations/conta-azul/create-receivable"],
       ["DELETE", "/api/admin/notificacoes/templates"],
+      ["DELETE", "/api/admin/credit-ops/rewards"],
+      ["DELETE", "/api/admin/credit-ops/club/config"],
       ["DELETE", "/api/admin/financeiro/recebiveis/rec-1"],
       ["POST", "/api/admin/financeiro/recebiveis/rec-1/baixa/extra"],
       ["PATCH", "/api/admin/clientes/abc"],
