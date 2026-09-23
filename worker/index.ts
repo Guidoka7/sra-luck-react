@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { homeCampanhasApi } from "./home-campanhas";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
 import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoEtapa1, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
@@ -429,6 +430,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (bloqueio) return bloqueio;
   }
 
+  const homeCampanhas = await homeCampanhasApi(request, env);
+  if (homeCampanhas) return homeCampanhas;
   const push = await clientPushApi(request, env);
   if (push) return push;
   const integrations = await integrationsApi(request, env);
