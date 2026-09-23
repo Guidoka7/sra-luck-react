@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Cliente } from "@/types/database";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
@@ -17,6 +17,28 @@ export type ModalDrawer =
   | { tipo: "agendarCirurgia" }
   | { tipo: "pagamentoCirurgia" }
   | { tipo: "divergencia" };
+
+export const DIAS_PREVISAO_CIRURGICA = 90;
+
+/**
+ * Sugestão operacional da previsão cirúrgica.
+ * A fonte de verdade do intervalo da cliente continua protegida no banco;
+ * aqui apenas pré-preenchemos o campo administrativo com 90 dias corridos
+ * após a data escolhida para a assinatura dos termos.
+ */
+export function sugerirPrevisaoCirurgica(c: Pick<CartaoCliente, "previsaoCirurgia" | "dataTermos">): string {
+  if (c.previsaoCirurgia) return c.previsaoCirurgia.slice(0, 10);
+  if (!c.dataTermos) return "";
+
+  const [ano, mes, dia] = c.dataTermos.slice(0, 10).split("-").map(Number);
+  if (!ano || !mes || !dia) return "";
+
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  if (Number.isNaN(data.getTime())) return "";
+
+  data.setUTCDate(data.getUTCDate() + DIAS_PREVISAO_CIRURGICA);
+  return data.toISOString().slice(0, 10);
+}
 
 export interface FormLevantamento {
   saldo: string; setSaldo: (v: string) => void;
@@ -333,8 +355,12 @@ function OperacaoTermos({ c, hoje, abrirModal, irParaAgenda }: Parameters<typeof
 function OperacaoLiberacao(p: Parameters<typeof ProcessoTab>[0]) {
   const { c, hoje, ocupado, abrirModal, executar } = p;
   const e = estadoLiberacao(c, hoje);
-  const [previsao, setPrevisao] = useState(c.previsaoCirurgia ?? "");
+  const [previsao, setPrevisao] = useState(() => sugerirPrevisaoCirurgica(c));
   const previsaoOk = Boolean(c.previsaoConfirmadaEm);
+
+  useEffect(() => {
+    setPrevisao(sugerirPrevisaoCirurgica(c));
+  }, [c.id, c.agendamentoId, c.previsaoCirurgia, c.dataTermos]);
 
   if (e.ambos) {
     const inicio = e.inicio ? proximoDiaUtil(e.inicio) : null;
@@ -387,7 +413,7 @@ function OperacaoLiberacao(p: Parameters<typeof ProcessoTab>[0]) {
           <span className="release-task-icon" aria-hidden="true">{previsaoOk ? "✓" : "▣"}</span>
           <div className="release-task-copy">
             <b>Previsão cirúrgica</b>
-            <small>{previsaoOk ? `Confirmada para ${dataBr(c.previsaoCirurgia)}.` : "Confirme a data-alvo da agenda cirúrgica antes da conferência presencial."}</small>
+            <small>{previsaoOk ? `Confirmada para ${dataBr(c.previsaoCirurgia)}.` : previsao ? "Sugestão automática: 90 dias após a assinatura dos termos. Você pode ajustar a data antes de confirmar." : "Confirme a data-alvo da agenda cirúrgica antes da conferência presencial."}</small>
           </div>
         </div>
         {!previsaoOk && c.agendamentoId && <form className="inline-actions" onSubmit={(ev) => { ev.preventDefault(); if (previsao) void executar("previsao", () => centralApi.confirmarPrevisao(c.agendamentoId!, previsao), "Previsão cirúrgica confirmada."); }}>
