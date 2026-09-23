@@ -7,7 +7,7 @@ import { SessionGate } from "./features/auth/SessionGate";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
-import { instalarMonitoramentoGlobal } from "./lib/monitoramento";
+import { instalarMonitoramentoGlobal, registrarAcesso } from "./lib/monitoramento";
 import { limparFlagsPwaAntigas } from "./lib/pwaInstall";
 import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import AdminLayout from "./app/admin/(painel)/layout";
@@ -86,6 +86,12 @@ function App() {
       window.removeEventListener("app:navigate", onNavigate);
     };
   }, []);
+
+  useEffect(() => {
+    // Histórico de acesso do Admin: cada tela /admin aberta. O app da cliente
+    // registra por aba em AgendaPage.
+    if (path.startsWith("/admin")) registrarAcesso(path);
+  }, [path]);
 
   useEffect(() => {
     if (path === "/") {
