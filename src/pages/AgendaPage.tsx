@@ -19,6 +19,7 @@ import { AgendaTab } from "@/pages/client/AgendaTab";
 import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtapa";
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 import { LOGO_SRC } from "@/assets/brand";
+import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
 
 export function AgendaPage() {
   // Último estado conhecido (cache local): a área abre na hora ao recarregar
@@ -35,8 +36,17 @@ export function AgendaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [celebrando, setCelebrando] = useState<string | null>(null);
+  const [whatsappContato, setWhatsappContato] = useState<string | null>(null);
 
   const notificacoesState = useNotificacoesCliente();
+
+  useEffect(() => {
+    let ativo = true;
+    void apiJson<{ whatsappContato?: string | null }>("/api/cliente/config", { cache: "no-store" })
+      .then((dados) => { if (ativo) setWhatsappContato(dados.whatsappContato ?? null); })
+      .catch(() => { if (ativo) setWhatsappContato(null); });
+    return () => { ativo = false; };
+  }, []);
 
   const carregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setLoading(true);
@@ -303,6 +313,7 @@ export function AgendaPage() {
         onAcao={abrirNotificacao}
       />
 
+      <WhatsAppFab numero={whatsappContato} />
       <BottomNav aba={aba} onSelecionar={selecionarAba} />
     </main>
   );

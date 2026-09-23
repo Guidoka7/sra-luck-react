@@ -223,47 +223,86 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
     setPixAberto(false);
   }, [boleto.id]);
 
-  return <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-8 backdrop-blur-[2px] sm:px-4 sm:py-6">
-    <motion.div initial={{ y: "100%", opacity: 0.96 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }} className="w-full max-w-md overflow-hidden rounded-[24px] border border-[#E9DDDA] bg-white shadow-2xl">
-      <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-[#DCCECB]" />
-      <div className="px-4 pb-4 pt-3 sm:px-5">
-        <div className="flex items-start justify-between gap-3">
+  useEffect(() => {
+    function aoPressionarTecla(evento: KeyboardEvent) {
+      if (evento.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", aoPressionarTecla);
+    return () => document.removeEventListener("keydown", aoPressionarTecla);
+  }, [onClose]);
+
+  return <div
+    className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-8 backdrop-blur-[2px] sm:items-center sm:px-4 sm:py-6"
+    onClick={(evento) => { if (evento.target === evento.currentTarget) onClose(); }}
+  >
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-label={valores.vencida ? `Resolver parcela ${boleto.numero_parcela}` : `Pagar parcela ${boleto.numero_parcela}`}
+      initial={{ y: 32, opacity: 0.96, scale: 0.99 }}
+      animate={{ y: 0, opacity: 1, scale: 1 }}
+      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+      className="flex max-h-[calc(100dvh-32px)] w-full max-w-md flex-col overflow-hidden rounded-[26px] border border-[#E9DDDA] bg-white shadow-2xl"
+    >
+      <div className="flex-none px-5 pb-3 pt-3 sm:px-6 sm:pt-4">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#DCCECB]" />
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#B18B4B]">Pagamento</p>
-            <h3 className="mt-0.5 font-heading text-lg font-semibold text-[#6B1F2E]">{valores.vencida ? `Resolver parcela ${boleto.numero_parcela}` : `Pagar parcela ${boleto.numero_parcela}`}</h3>
-            <p className="mt-0.5 text-[11px] text-[#8A7B77]">{valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : "Parcela em aberto"} · {brl(valores.valorHoje)} para pagar hoje</p>
+            <h3 className="mt-1 font-heading text-[22px] font-semibold leading-tight text-[#6B1F2E]">{valores.vencida ? `Resolver parcela ${boleto.numero_parcela}` : `Pagar parcela ${boleto.numero_parcela}`}</h3>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-[#8A7B77]">{valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : "Parcela em aberto"}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-full p-1.5 text-[#8A7B77] transition hover:bg-[#F7EFED]"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#8A7B77] transition hover:bg-[#F1E5E2]">
+            <X className="h-[18px] w-[18px]" />
+          </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          <button type="button" onClick={() => setPixAberto((aberto) => !aberto)} className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-semibold transition-colors duration-100 ${pixAberto ? "border-[#D8A6B0] bg-[#FAEEF1] text-[#8F2A45]" : "border-[#E9DDDA] bg-[#FBF6F4] text-[#6B1F2E] hover:bg-[#F7EFED]"}`}><QrCode className="h-[18px] w-[18px]" /><span>PIX</span></button>
+        <div className="mt-4 rounded-[18px] border border-[#E9D8D4] bg-[#FFF9F8] px-4 py-3.5">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#A99894]">Valor para pagar hoje</p>
+          <p className="mt-1 font-heading text-[28px] font-bold leading-none text-[#8F2A45]">{brl(valores.valorHoje)}</p>
+          {valores.vencida && <p className="mt-1.5 text-[9.5px] text-[#9A7770]">Valor atualizado para pagamento nesta data.</p>}
+        </div>
+      </div>
 
-          {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border border-[#E9DDDA] bg-[#FBF6F4] px-2 py-2 text-[10px] font-semibold text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED]"><FileText className="h-[18px] w-[18px] text-[#8A7B77]" /><span>Boleto</span></a> : <span className="flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border border-[#EEE6E3] bg-[#F7F3F2] px-2 py-2 text-[10px] text-[#B3A5A1]"><FileText className="h-[18px] w-[18px]" /><span>Boleto</span></span>}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
+        <p className="mb-2.5 text-[10px] font-medium text-[#6F5C58]">Escolha como deseja pagar</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button type="button" onClick={() => setPixAberto((aberto) => !aberto)} className={`flex min-h-[76px] items-center gap-3 rounded-[15px] border px-3.5 py-3 text-left transition-colors duration-100 ${pixAberto ? "border-[#D8A6B0] bg-[#FAEEF1] text-[#8F2A45]" : "border-[#E9DDDA] bg-[#FBF6F4] text-[#6B1F2E] hover:bg-[#F7EFED]"}`}>
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><QrCode className="h-5 w-5" /></span>
+            <span><span className="block text-[11.5px] font-semibold">PIX</span><span className="mt-0.5 block text-[9px] font-normal opacity-70">{pixAberto ? "Ocultar dados" : "Ver dados"}</span></span>
+          </button>
 
-          <button type="button" onClick={onCard} disabled={cardBusy} className="flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border border-[#E9DDDA] bg-[#FBF6F4] px-2 py-2 text-[10px] font-semibold text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED] disabled:opacity-50"><CreditCard className="h-[18px] w-[18px] text-[#8A7B77]" /><span>{cardBusy ? "Abrindo..." : "Cartão"}</span></button>
+          {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><FileText className="h-5 w-5 text-[#8A7B77]" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Abrir arquivo</span></span></a> : <span className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#EEE6E3] bg-[#F7F3F2] px-3.5 py-3 text-left text-[#B3A5A1]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/70"><FileText className="h-5 w-5" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal">Indisponível</span></span></span>}
 
-          <button type="button" onClick={onUpload} className="flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border border-[#E7D4D0] bg-[#FFF8F7] px-2 py-2 text-[10px] font-semibold text-[#6B1F2E] shadow-sm transition-colors duration-100 hover:bg-[#F7EFED]"><Paperclip className="h-[18px] w-[18px] text-[#B86575]" /><span>Já paguei</span></button>
+          <button type="button" onClick={onCard} disabled={cardBusy} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED] disabled:opacity-50">
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><CreditCard className="h-5 w-5 text-[#8A7B77]" /></span>
+            <span><span className="block text-[11.5px] font-semibold">{cardBusy ? "Abrindo..." : "Cartão"}</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Checkout seguro</span></span>
+          </button>
+
+          <button type="button" onClick={onUpload} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E7D4D0] bg-[#FFF8F7] px-3.5 py-3 text-left text-[#6B1F2E] shadow-sm transition-colors duration-100 hover:bg-[#F7EFED]">
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><Paperclip className="h-5 w-5 text-[#B86575]" /></span>
+            <span><span className="block text-[11.5px] font-semibold">Já paguei</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Enviar comprovante</span></span>
+          </button>
         </div>
 
         <AnimatePresence initial={false}>
-          {pixAberto && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.1 }} className="overflow-hidden">
-            {pixDisponivel ? <div className="mt-2.5 rounded-2xl border border-[#E8D9D5] bg-[#FFFDFC] p-3">
-              <div className="flex items-center justify-between gap-2 border-b border-[#F1E8E5] pb-2">
+          {pixAberto && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.12 }} className="overflow-hidden">
+            {pixDisponivel ? <div className="mt-3 rounded-[18px] border border-[#E8D9D5] bg-[#FFFDFC] p-3.5">
+              <div className="flex items-center justify-between gap-2 border-b border-[#F1E8E5] pb-2.5">
                 <div className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-[#B86575]" /><span className="text-[11px] font-semibold text-[#6B1F2E]">{valores.temDescontoPix ? "Pague via PIX e economize" : "Pague via PIX"}</span></div>
-                {valores.temDescontoPix && <span className="rounded-full bg-[#EAF5EE] px-1.5 py-0.5 text-[8px] font-semibold text-[#3F7D5B]">{valores.percentualDescontoPix}% nos encargos</span>}
+                {valores.temDescontoPix && <span className="rounded-full bg-[#EAF5EE] px-2 py-1 text-[8px] font-semibold text-[#3F7D5B]">{valores.percentualDescontoPix}% nos encargos</span>}
               </div>
-              <div className="mt-2.5 flex items-center gap-3">
-                {pagamento?.pixQrCodeUrl && <img src={pagamento.pixQrCodeUrl} alt="QR Code para pagamento via PIX" className="h-20 w-20 rounded-xl border border-[#E8D9D5] bg-white object-contain p-1 shadow-sm" />}
+              <div className="mt-3 flex items-center gap-3.5">
+                {pagamento?.pixQrCodeUrl && <img src={pagamento.pixQrCodeUrl} alt="QR Code para pagamento via PIX" className="h-[92px] w-[92px] rounded-xl border border-[#E8D9D5] bg-white object-contain p-1.5 shadow-sm" />}
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#9A8985]">Valor para pagar hoje</p>
-                  <p className="font-heading text-base font-bold text-[#8F2A45]">{brl(valores.valorHoje)}</p>
-                  {valores.temDescontoPix && valores.economiaPix > 0 && <p className="pt-0.5 text-[8.5px] font-medium text-[#3F7D5B]">Economia de {brl(valores.economiaPix)} nos encargos</p>}
+                  <p className="text-[9px] text-[#9A8985]">Valor via PIX</p>
+                  <p className="font-heading text-xl font-bold text-[#8F2A45]">{brl(valores.valorHoje)}</p>
+                  {valores.temDescontoPix && valores.economiaPix > 0 && <p className="pt-1 text-[9px] font-medium text-[#3F7D5B]">Economia de {brl(valores.economiaPix)} nos encargos</p>}
                   {pagamento?.pixChave && <PixChave chave={pagamento.pixChave} />}
                 </div>
               </div>
-              <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-[#F9F1F0] px-2.5 py-1.5 text-[9px] text-[#786764]"><ShieldCheck className="h-3 w-3 flex-none text-[#B86575]" /> Após o pagamento, toque em <strong className="text-[#6B1F2E]">Já paguei</strong> e envie o comprovante.</div>
-            </div> : <div className="mt-2.5 rounded-2xl border border-[#EEE3E0] bg-[#FAF7F6] px-3 py-4 text-center text-[10px] text-[#8A7B77]">PIX ainda não configurado para este contrato.</div>}
+              <div className="mt-3 flex items-start gap-2 rounded-[11px] bg-[#F9F1F0] px-3 py-2.5 text-[9.5px] leading-relaxed text-[#786764]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-[#B86575]" /><span>Após o pagamento, toque em <strong className="text-[#6B1F2E]">Já paguei</strong> e envie o comprovante.</span></div>
+            </div> : <div className="mt-3 rounded-[18px] border border-[#EEE3E0] bg-[#FAF7F6] px-4 py-5 text-center text-[10.5px] text-[#8A7B77]">PIX ainda não configurado para este contrato.</div>}
           </motion.div>}
         </AnimatePresence>
       </div>

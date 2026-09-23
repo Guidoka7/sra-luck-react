@@ -161,7 +161,6 @@ export function MaisTab({ nomeCliente, onSair, renderJornada, initialSubTela = n
   const itens = [
     { id: "documentos" as const, nome: "Meus documentos", subtitulo: "Contrato e documentos da sua jornada" },
     { id: "jornada" as const, nome: "Jornada", subtitulo: "Do contrato à sua cirurgia, passo a passo" },
-    { id: "atendimento" as const, nome: "Atendimento", subtitulo: "Fale com a equipe Sra. Luck" },
     { id: "faq" as const, nome: "Dúvidas frequentes", subtitulo: "Respostas rápidas para as perguntas mais comuns" },
     { id: "configuracoes" as const, nome: "Configurações", subtitulo: "Aplicativo e notificações deste celular" },
     { id: "seguranca" as const, nome: "Segurança", subtitulo: "Acesso, privacidade e proteção dos seus dados" },
