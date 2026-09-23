@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { QUANTIDADE_PARCELAS_OPCOES, type Boleto } from "@/types/database";
 import type { ClienteCadastro } from "../useClienteCadastro";
@@ -229,7 +230,10 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
       </div> : <div className={styles.empty}>Nenhum evento financeiro registrado.</div>}</div>
     </article>}
 
-    {menu && <div className={styles.menu} data-parcela-menu role="menu" style={{ left: menu.left, top: menu.top }}>
+    {/* Portal no body: o menu usa position:fixed com coordenadas da tela, e
+        qualquer ancestral com transform/animação (ex.: .financeStack) o
+        deslocaria para fora da área visível. */}
+    {menu && typeof document !== "undefined" && createPortal(<div className={styles.root}><div className={styles.menu} data-parcela-menu role="menu" style={{ left: menu.left, top: menu.top }}>
       <button type="button" role="menuitem" onClick={() => acao("detalhes", menu.b)}>Ver detalhes</button>
       <button type="button" role="menuitem" onClick={() => acao("editar", menu.b)}>Editar parcela</button>
       {menu.b.status === "pendente_confirmacao" ? <>
@@ -241,7 +245,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         {menu.b.comprovante_url ? <a role="menuitem" className={styles.menuLink} href={cad.comprovanteHref(menu.b)} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>Ver comprovante</a> : <button type="button" role="menuitem" onClick={() => acao("anexar", menu.b)}>Anexar comprovante</button>}
       </>}
       <div className={styles.separator} /><button className={styles.danger} type="button" role="menuitem" onClick={() => acao("excluir", menu.b)}>Excluir parcela</button>
-    </div>}
+    </div></div>, document.body)}
 
     {modal?.tipo === "detalhes" && <Shell titulo="Detalhes da parcela" onClose={() => setModal(null)}>
       <div className={styles.modalGrid}>
