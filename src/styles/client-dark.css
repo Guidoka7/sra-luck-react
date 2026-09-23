@@ -83,3 +83,55 @@ html[data-tema-cliente="escuro"] ::selection { background: rgba(227, 165, 177, 0
 /* Botões sólidos da marca: rosé profundo, texto branco legível (contraste AA). */
 html[data-tema-cliente="escuro"] .bg-burgundy { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .hover\:bg-burgundy-light:hover { background-color: #BE5F77; }
+
+
+/* Agenda cirúrgica: mantém a leitura de disponibilidade no modo escuro. */
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--disponivel {
+  background: rgba(70, 156, 105, .14) !important;
+  border-color: rgba(104, 205, 146, .30) !important;
+  color: #8FD0A9 !important;
+  box-shadow: inset 0 0 0 1px rgba(104, 205, 146, .03);
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--disponivel:hover:not(:disabled) {
+  background: rgba(70, 156, 105, .20) !important;
+  border-color: rgba(104, 205, 146, .42) !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--lotada {
+  background: rgba(196, 72, 92, .13) !important;
+  border-color: rgba(230, 127, 144, .27) !important;
+  color: #C77B87 !important;
+  text-decoration-color: rgba(199, 123, 135, .68);
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--passada {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: #555157 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--selecionada {
+  background: #A2475D !important;
+  border-color: #B75B70 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, .24);
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-hoje {
+  background: #E6A2B2 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-legenda {
+  color: #A7A3A8 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-legenda-cor--disponivel {
+  background: rgba(70, 156, 105, .14) !important;
+  border-color: rgba(104, 205, 146, .30) !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-legenda-cor--lotada {
+  background: rgba(196, 72, 92, .13) !important;
+  border-color: rgba(230, 127, 144, .27) !important;
+}
