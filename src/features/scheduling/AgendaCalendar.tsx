@@ -14,6 +14,12 @@ export function statusDoDia(dia: DiaCalendario | undefined): StatusDia {
   return { kind: "available", usadas, total, aberta: true };
 }
 
+export function capacidadeAoLiberar(dia: DiaCalendario | undefined): number {
+  const s = statusDoDia(dia);
+  if (s.aberta) return Math.max(1, s.total);
+  return Math.max(1, s.usadas);
+}
+
 /** V46 `calendarHtml`: grade 6×7 com estados disponível / agendada / fechada. */
 export function AgendaCalendar({ selecionado, hoje, calendario, onSelecionar, onMudarMes }: {
   selecionado: string; hoje: string; calendario: DiaCalendario[] | null;
