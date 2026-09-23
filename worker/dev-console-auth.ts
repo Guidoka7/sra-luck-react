@@ -41,12 +41,13 @@ type MutacaoPermitida = {
 };
 
 /**
- * Correções operacionais que o Dev Console pode acionar. A lista é fechada:
- * qualquer mutação fora dela continua bloqueada, mesmo com token válido.
+ * Correções e configurações que o Dev Console pode acionar. A lista é
+ * fechada: qualquer mutação fora dela continua bloqueada, mesmo com token
+ * válido. As rotas são as mesmas do Admin; nenhuma regra muda.
  *
- * Ficam de fora de propósito: equipe/RBAC, credenciais de integrações,
- * rotação de VAPID, configurações gerais, contratos/comissões e importação
- * de carnês. Essas mudanças exigem uma identidade humana real no Admin.
+ * Ficam de fora: equipe/RBAC (o RPC auditado exige um colaborador real),
+ * credenciais de integrações e chaves VAPID (segredos), contratos/comissões
+ * (FK para colaboradores) e importação de carnês.
  */
 const MUTACOES_PERMITIDAS: readonly MutacaoPermitida[] = [
   { metodo: "POST", rota: /^\/api\/admin\/central\/(comparecimento|quitacao|liberar-tentativa|prazo\/ajustar|prazo\/liberar-agora|cirurgia\/pagamento)$/, dominio: "v46", papelMinimo: "operator" },
@@ -56,6 +57,13 @@ const MUTACOES_PERMITIDAS: readonly MutacaoPermitida[] = [
   { metodo: "POST", rota: /^\/api\/admin\/clientes\/[^/]+\/liberar-acesso-app$/, dominio: "app", papelMinimo: "operator" },
   { metodo: "POST", rota: /^\/api\/admin\/notificacoes\/automacao$/, dominio: "notificacoes", papelMinimo: "operator" },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/testar-conexao$/, dominio: "integracoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/test$/, dominio: "integracoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/sync$/, dominio: "integracoes", papelMinimo: "developer" },
+  { metodo: "PATCH", rota: /^\/api\/admin\/notificacoes\/automacao$/, dominio: "notificacoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/notificacoes\/templates$/, dominio: "notificacoes", papelMinimo: "operator" },
+  { metodo: "PATCH", rota: /^\/api\/admin\/notificacoes\/templates$/, dominio: "notificacoes", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/notificacoes\/enviar$/, dominio: "notificacoes", papelMinimo: "operator" },
+  { metodo: "PATCH", rota: /^\/api\/admin\/configuracoes$/, dominio: "configuracoes", papelMinimo: "developer" },
   { metodo: "POST", rota: /^\/api\/admin\/credit-ops\/club\/(config|referrals\/[^/]+|vouchers\/[^/]+\/arquivo)$/, dominio: "clube", papelMinimo: "operator" },
   { metodo: "POST", rota: /^\/api\/admin\/credit-ops\/rewards$/, dominio: "clube", papelMinimo: "operator" },
 ];

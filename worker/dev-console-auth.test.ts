@@ -86,6 +86,13 @@ describe("autenticação M2M do Dev Console", () => {
       ["POST", "/api/admin/notificacoes/automacao"],
       ["POST", "/api/admin/integrations/testar-conexao"],
       ["POST", "/api/admin/credit-ops/club/referrals/ind-1"],
+      ["POST", "/api/admin/integrations/rd-station/test"],
+      ["POST", "/api/admin/integrations/rd-station/sync"],
+      ["PATCH", "/api/admin/notificacoes/automacao"],
+      ["POST", "/api/admin/notificacoes/templates"],
+      ["PATCH", "/api/admin/notificacoes/templates"],
+      ["POST", "/api/admin/notificacoes/enviar"],
+      ["PATCH", "/api/admin/configuracoes"],
     ])("aceita %s %s", async (method, path) => {
       const result = await authorizeDevConsoleRequest(request(path, { method }), writeEnv);
       expect(result).toBeInstanceOf(Request);
@@ -97,6 +104,9 @@ describe("autenticação M2M do Dev Console", () => {
       ["POST", "/api/admin/integrations/credenciais"],
       ["POST", "/api/admin/integrations/web-push/vapid"],
       ["POST", "/api/admin/configuracoes"],
+      ["POST", "/api/admin/credit-ops/contracts"],
+      ["POST", "/api/admin/integrations/conta-azul/create-receivable"],
+      ["DELETE", "/api/admin/notificacoes/templates"],
       ["DELETE", "/api/admin/financeiro/recebiveis/rec-1"],
       ["POST", "/api/admin/financeiro/recebiveis/rec-1/baixa/extra"],
       ["PATCH", "/api/admin/clientes/abc"],
@@ -115,6 +125,15 @@ describe("autenticação M2M do Dev Console", () => {
         );
         expect(result).toBeInstanceOf(Response);
         expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_ROLE_INSUFFICIENT" });
+      }
+    });
+
+    it("exige developer para configurações gerais e sync do RD", async () => {
+      for (const [method, path] of [["PATCH", "/api/admin/configuracoes"], ["POST", "/api/admin/integrations/rd-station/sync"]]) {
+        const operator = await authorizeDevConsoleRequest(request(path, { method, headers: { "x-dev-actor-role": "operator" } }), writeEnv);
+        expect(await (operator as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_ROLE_INSUFFICIENT" });
+        const developer = await authorizeDevConsoleRequest(request(path, { method, headers: { "x-dev-actor-role": "developer" } }), writeEnv);
+        expect(developer).toBeInstanceOf(Request);
       }
     });
 
