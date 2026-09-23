@@ -15,6 +15,8 @@ import "./app/globals.css";
 import "./styles/typography.css";
 import "./styles/client-prototype.css";
 import "./styles/client-prototype-overrides.css";
+import "./styles/client-dark.generated.css";
+import "./styles/client-dark.css";
 import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
 import "./styles/staff-real.css";

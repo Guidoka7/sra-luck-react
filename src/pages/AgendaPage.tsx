@@ -20,6 +20,7 @@ import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtap
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 import { LOGO_SRC } from "@/assets/brand";
 import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
+import { aplicarTemaCliente, useTemaCliente } from "@/lib/temaCliente";
 
 export function AgendaPage() {
   // Último estado conhecido (cache local): a área abre na hora ao recarregar
@@ -39,6 +40,12 @@ export function AgendaPage() {
   const [whatsappContato, setWhatsappContato] = useState<string | null>(null);
 
   const notificacoesState = useNotificacoesCliente();
+  const { efetivo: tema } = useTemaCliente();
+
+  // Tema do app da cliente (claro/escuro/automático): vale só enquanto a área
+  // da cliente está aberta; ao sair, o documento volta ao padrão.
+  useEffect(() => { aplicarTemaCliente(tema); }, [tema]);
+  useEffect(() => () => aplicarTemaCliente(null), []);
 
   useEffect(() => {
     let ativo = true;

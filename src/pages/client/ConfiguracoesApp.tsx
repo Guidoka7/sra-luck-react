@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SecaoAparencia } from "@/components/cliente/tema/ControlesTema";
 import { toast } from "sonner";
 import { isPwaInstalada } from "@/lib/pwaInstall";
 
@@ -104,6 +105,8 @@ export function ConfiguracoesApp({ onVoltar }: { onVoltar: () => void }) {
       </div>
 
       <div className="grid gap-[10px] px-[18px] pt-5">
+        <SecaoAparencia />
+
         <section className="rounded-[18px] border border-[#ECE2DF] bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>

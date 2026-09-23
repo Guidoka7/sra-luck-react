@@ -103,6 +103,8 @@
 
         function resolveTopColor() {
           if (window.location.pathname === "/login") return DEFAULT_TOP;
+          // Modo escuro do app da cliente (src/lib/temaCliente.ts).
+          if (document.documentElement.getAttribute("data-tema-cliente") === "escuro") return "#0E0A0B";
           var root = document.getElementById("root");
           if (root && root.querySelector(".sl-home-header")) return HOME_TOP;
           if (root && root.querySelector(".sl-tab")) return DEFAULT_TOP;
@@ -161,6 +163,17 @@
         document.addEventListener("gesturestart", function (event) {
           if (isClientPath()) event.preventDefault();
         }, { passive: false });
+
+        // Aplica o tema salvo antes do primeiro desenho da área da cliente, sem
+        // piscar em claro (a preferência é gerida por src/lib/temaCliente.ts).
+        (function aplicarTemaInicial() {
+          if (!isClientPath() || window.location.pathname === "/login") return;
+          try {
+            var pref = localStorage.getItem("sra-luck-tema-cliente") || "claro";
+            var escuro = pref === "escuro" || (pref === "sistema" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+            document.documentElement.setAttribute("data-tema-cliente", escuro ? "escuro" : "claro");
+          } catch (e) {}
+        })();
 
         syncClientChrome();
         document.addEventListener("DOMContentLoaded", function () {
