@@ -20,13 +20,20 @@ const RAIZ = new URL("..", import.meta.url).pathname;
 const ESCOPO = 'html[data-tema-cliente="escuro"]';
 const SAIDA = "src/styles/client-dark.generated.css";
 
-/** Superfícies neutras do modo escuro (vinho quase preto, quente). */
+/**
+ * Superfícies no estilo iOS escuro: grafite neutro (sem o "vinho quase preto"),
+ * com hierarquia fundo → cartão → cartão elevado e separadores finos.
+ * O rosé da marca aparece nos destaques (texto, ícones, botões, seleção);
+ * o dourado só onde o modo claro já usa dourado.
+ */
 const PALETA = {
-  fundoApp: "#0E0A0B",
-  cartao: "#1A1315",
-  cartaoSuave: "#161012",
-  cartaoElevado: "#221A1C",
-  borda: "#2E2427",
+  fundoApp: "#111013",
+  cartao: "#1C1B1E",
+  cartaoSuave: "#18171A",
+  cartaoElevado: "#262428",
+  borda: "#2F2D31",
+  // Botões e blocos sólidos da marca: rosé profundo, legível com texto branco.
+  roseSolido: "#B0526A",
 };
 
 const FONTES = ["src/pages/AgendaPage.tsx", "src/pages/client", "src/components/cliente", "src/components/cliente/ProfilePhotoPicker.tsx"];
@@ -61,37 +68,54 @@ function hslParaHex({ h, s, l }) {
 }
 const limitar = (v, min, max) => Math.max(min, Math.min(max, v));
 
-/** Tons quentes neutros (pêssego, areia) viram vinho: evita o "marrom" no escuro. */
-function matizVinho(h) {
-  return h <= 45 || h >= 320 ? 345 : h;
+/** Tons quentes (pêssego, areia, vinho) assumem o matiz rosé da marca. */
+function matizRose(h) {
+  return h <= 45 || h >= 320 ? 346 : h;
 }
-/** Fundo: claros viram superfícies escuras (mantendo o matiz dos tons da marca); cores fortes (botões) ganham um pouco de luz. */
+const ehMarca = (hsl) => (hsl.h <= 20 || hsl.h >= 320) && hsl.s >= 0.3;
+/**
+ * Fundo: claros viram superfícies grafite (tons pastel ganham só um véu da
+ * cor original); cores fortes da marca viram rosé sólido; demais cores fortes
+ * (verde, dourado) mantêm o matiz com um pouco mais de luz.
+ */
 function fundo(hex) {
   const hsl = rgbParaHsl(hexParaRgb(hex));
   if (hsl.l >= 0.8) {
-    if (hsl.s < 0.3 || hsl.l >= 0.985) {
+    // Brancos e tons "papel" (quase brancos) são superfícies neutras; só os
+    // pastéis de verdade (blush, verde-claro...) levam um véu da cor.
+    if (hsl.s < 0.25 || hsl.l >= 0.95) {
       if (hsl.l >= 0.985) return PALETA.cartao;
       if (hsl.l >= 0.95) return PALETA.cartaoSuave;
       return PALETA.cartaoElevado;
     }
-    return hslParaHex({ h: matizVinho(hsl.h), s: limitar(hsl.s * 0.45, 0.18, 0.4), l: 0.14 });
+    // Véu "tinted" do iOS: rosé discreto (sem puxar para o marrom).
+    const h = matizRose(hsl.h);
+    return h === 346 ? hslParaHex({ h: 342, s: 0.2, l: 0.18 }) : hslParaHex({ h, s: limitar(hsl.s * 0.3, 0.1, 0.2), l: 0.16 });
   }
-  if (hsl.l >= 0.55) return hslParaHex({ h: matizVinho(hsl.h), s: hsl.s * 0.5, l: 0.24 });
-  return hslParaHex({ h: hsl.h, s: hsl.s, l: limitar(hsl.l * 1.18, 0.12, 0.42) });
+  if (hsl.l >= 0.55) return hslParaHex({ h: matizRose(hsl.h), s: limitar(hsl.s * 0.4, 0.12, 0.3), l: 0.25 });
+  if (ehMarca(hsl)) return hsl.l < 0.2 ? hslParaHex({ h: 346, s: 0.32, l: 0.24 }) : PALETA.roseSolido;
+  if (hsl.s < 0.15) return hslParaHex({ h: 270, s: 0.03, l: limitar(hsl.l * 1.1, 0.14, 0.32) });
+  return hslParaHex({ h: hsl.h, s: hsl.s * 0.85, l: limitar(hsl.l * 1.15, 0.2, 0.42) });
 }
-/** Texto/ícone: escuros viram claros (marca → rosé claro, verde → verde claro, ouro → ouro claro); brancos continuam brancos. */
+/**
+ * Texto/ícone: neutros viram cinzas claros quase sem cor (como no iOS);
+ * a cor da marca vira rosé claro; verde e dourado mantêm o matiz, mais claros.
+ * Brancos continuam brancos.
+ */
 function texto(hex) {
   const hsl = rgbParaHsl(hexParaRgb(hex));
   if (hsl.l >= 0.9) return hex.toUpperCase();
-  const l = limitar(0.95 - hsl.l * 0.55, 0.5, 0.94);
-  const s = hsl.s >= 0.3 ? limitar(hsl.s * 0.8, 0.25, 0.7) : Math.min(hsl.s, 0.12);
-  return hslParaHex({ h: hsl.h, s, l });
+  const l = limitar(0.96 - hsl.l * 0.55, 0.55, 0.94);
+  if (ehMarca(hsl)) return hslParaHex({ h: 346, s: 0.62, l: limitar(l, 0.72, 0.84) });
+  if (hsl.s < 0.3) return hslParaHex({ h: hsl.h, s: Math.min(hsl.s, 0.06), l });
+  return hslParaHex({ h: hsl.h, s: limitar(hsl.s * 0.8, 0.3, 0.65), l });
 }
-/** Borda: claras viram linhas discretas; bordas da marca (seleção) ficam em rosé visível. */
+/** Borda: claras viram separadores finos; bordas da marca (seleção) ficam em rosé. */
 function borda(hex) {
   const hsl = rgbParaHsl(hexParaRgb(hex));
-  if (hsl.l >= 0.75) return hsl.s < 0.3 ? PALETA.borda : hslParaHex({ h: matizVinho(hsl.h), s: limitar(hsl.s * 0.35, 0.15, 0.35), l: 0.24 });
-  return hslParaHex({ h: hsl.h, s: limitar(hsl.s * 0.8, 0.2, 0.65), l: limitar(hsl.l * 1.6, 0.45, 0.7) });
+  if (hsl.l >= 0.75) return hsl.s < 0.3 ? PALETA.borda : hslParaHex({ h: matizRose(hsl.h), s: limitar(hsl.s * 0.25, 0.1, 0.22), l: 0.26 });
+  if (ehMarca(hsl)) return hslParaHex({ h: 346, s: 0.5, l: 0.62 });
+  return hslParaHex({ h: hsl.h, s: limitar(hsl.s * 0.8, 0.2, 0.6), l: limitar(hsl.l * 1.6, 0.45, 0.66) });
 }
 const PAPEIS = { bg: fundo, text: texto, border: borda, from: fundo, via: fundo, to: fundo, fill: texto, stroke: texto, ring: borda, outline: borda, divide: borda, placeholder: texto, decoration: texto, caret: texto, accent: texto };
 

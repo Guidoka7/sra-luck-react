@@ -70,7 +70,7 @@ export function PwaRegister() {
   if (!areaCliente) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[30rem] px-4 pt-3">
+    <div className="mx-auto w-full max-w-[30rem] px-4 pt-3 empty:hidden">
       <PwaInstallPrompt />
       <AtivarNotificacoesPush />
     </div>

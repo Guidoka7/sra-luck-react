@@ -7,51 +7,58 @@
  */
 html[data-tema-cliente="escuro"] {
   color-scheme: dark;
-  --tema-fundo: #0E0A0B;
-  --tema-cartao: #1A1315;
-  --tema-borda: #2E2427;
-  --tema-texto: #F2EAE7;
+  /* Estilo iOS escuro: grafite neutro; rosé da marca nos destaques. */
+  --tema-fundo: #111013;
+  --tema-cartao: #1C1B1E;
+  --tema-borda: #2F2D31;
+  --tema-texto: #F2F0F2;
+  --tema-texto-2: #A7A3A8;
+  --tema-rose: #E6A2B2;
+  --tema-dourado: #D8B26A;
 }
 
-/* Base: vinho quase preto com um brilho sutil da marca no topo. */
+/* Base lisa (sem brilho no topo): a barra do celular usa exatamente esta cor. */
 html[data-tema-cliente="escuro"],
 html[data-tema-cliente="escuro"] body,
 html[data-tema-cliente="escuro"] #root,
-html[data-tema-cliente="escuro"] .client-app {
-  background-color: var(--tema-fundo) !important;
-  color: var(--tema-texto);
-}
-html[data-tema-cliente="escuro"] .client-app .mobile-app-frame {
-  background:
-    radial-gradient(120% 42% at 50% -8%, rgba(125, 36, 52, 0.28) 0%, rgba(125, 36, 52, 0) 62%),
-    var(--tema-fundo) !important;
+html[data-tema-cliente="escuro"] body .client-app,
+html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
+  background: var(--tema-fundo) !important;
   color: var(--tema-texto);
 }
 @media (min-width: 640px) {
   html[data-tema-cliente="escuro"]:has(.client-app),
   html[data-tema-cliente="escuro"] body:has(.client-app),
-  html[data-tema-cliente="escuro"] .client-app {
-    background: #070506 !important;
+  html[data-tema-cliente="escuro"] #root:has(.client-app),
+  html[data-tema-cliente="escuro"] body .client-app {
+    background: #000000 !important;
   }
-  html[data-tema-cliente="escuro"] .client-app .mobile-app-frame {
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 30px 80px rgba(0, 0, 0, 0.6) !important;
+  html[data-tema-cliente="escuro"] body .client-app .mobile-app-frame {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 30px 80px rgba(0, 0, 0, 0.6) !important;
   }
+}
+
+/* Cabeçalho da Início: barra neutra translúcida, como a navegação do iOS. */
+html[data-tema-cliente="escuro"] .client-app .sl-home-header {
+  background: rgba(17, 16, 19, 0.96) !important;
+  border-bottom-color: var(--tema-borda) !important;
+  box-shadow: none !important;
 }
 
 /* Cores nomeadas da marca (text-burgundy, bg-blush, text-clay/60...): as
  * variáveis ganham a versão escura; opacidades do Tailwind continuam valendo. */
 html[data-tema-cliente="escuro"] {
-  --color-cream: 14 10 11;
-  --color-pearl: 242 234 231;
-  --color-blush: 38 26 29;
-  --color-rose: 227 150 166;
-  --color-burgundy: 214 128 147;
-  --color-burgundy-light: 232 160 175;
-  --color-burgundy-dark: 42 12 20;
-  --color-clay: 236 226 223;
-  --color-gold: 222 184 106;
-  --color-alert: 245 130 122;
-  --color-success: 118 204 152;
+  --color-cream: 17 16 19;
+  --color-pearl: 242 240 242;
+  --color-blush: 43 35 38;
+  --color-rose: 230 162 178;
+  --color-burgundy: 230 162 178;
+  --color-burgundy-light: 239 186 198;
+  --color-burgundy-dark: 38 30 33;
+  --color-clay: 236 233 236;
+  --color-gold: 216 178 106;
+  --color-alert: 255 128 118;
+  --color-success: 104 205 146;
 }
 
 /* Elementos que devem continuar brancos no escuro (ex.: bolinha do interruptor). */
@@ -60,7 +67,7 @@ html[data-tema-cliente="escuro"] .tema-manter-branco { background-color: #FFFFFF
 /* Marca: o logotipo vinho ganha luz para ler bem no escuro. */
 html[data-tema-cliente="escuro"] .client-app img[alt="Sra. Luck"],
 html[data-tema-cliente="escuro"] .sl-tab-logo img {
-  filter: brightness(2.1) saturate(0.6) contrast(0.95);
+  filter: brightness(2.2) saturate(0.75) contrast(0.95);
 }
 
 /* Campos nativos e seleção de texto. */
@@ -71,6 +78,6 @@ html[data-tema-cliente="escuro"] .client-app textarea {
 }
 html[data-tema-cliente="escuro"] ::selection { background: rgba(227, 165, 177, 0.35); }
 
-/* Botões sólidos da marca: vinho com luz, mantendo o texto branco legível. */
-html[data-tema-cliente="escuro"] .bg-burgundy { background-color: #8E2C40; }
-html[data-tema-cliente="escuro"] .hover\:bg-burgundy-light:hover { background-color: #A3364C; }
+/* Botões sólidos da marca: rosé profundo, texto branco legível (contraste AA). */
+html[data-tema-cliente="escuro"] .bg-burgundy { background-color: #B0526A; }
+html[data-tema-cliente="escuro"] .hover\:bg-burgundy-light:hover { background-color: #BE5F77; }

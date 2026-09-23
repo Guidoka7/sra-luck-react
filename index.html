@@ -101,10 +101,44 @@
           return CLIENT_PATHS.indexOf(window.location.pathname) !== -1;
         }
 
+        var lastTopColor = null;
+
+        function toHex(color) {
+          var m = color && color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?/);
+          if (!m) return null;
+          var alpha = m[4] === undefined ? 1 : (m[4].slice(-1) === "%" ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+          if (alpha < 0.9) return null;
+          return "#" + [m[1], m[2], m[3]].map(function (v) { return ("0" + Math.round(Number(v)).toString(16)).slice(-2); }).join("").toUpperCase();
+        }
+
+        // Cor real no topo da tela (primeiro fundo opaco sob a barra do celular),
+        // para a barra ficar exatamente da cor da aba aberta — nos dois temas.
+        function sampleTopColor() {
+          if (!document.elementFromPoint || !document.body) return null;
+          var el = document.elementFromPoint(Math.round(window.innerWidth / 2), 1);
+          // Para antes de #root/body: o fundo deles é pintado por este próprio script.
+          while (el && el.id !== "root" && el !== document.body && el !== document.documentElement) {
+            var cs = window.getComputedStyle(el);
+            if (cs.backgroundImage && cs.backgroundImage !== "none") {
+              var first = toHex((cs.backgroundImage.match(/rgba?\([^)]*\)/) || [])[0]);
+              if (first) return first;
+            }
+            var solid = toHex(cs.backgroundColor);
+            if (solid) return solid;
+            el = el.parentElement;
+          }
+          return null;
+        }
+
         function resolveTopColor() {
           if (window.location.pathname === "/login") return DEFAULT_TOP;
+          // Rolando no meio da página, mantém a cor da aba (evita a barra piscar).
+          if (lastTopColor && window.scrollY > 8) return lastTopColor;
+          var sampled = sampleTopColor();
+          if (sampled) return (lastTopColor = sampled);
+          if (lastTopColor) return lastTopColor;
           // Modo escuro do app da cliente (src/lib/temaCliente.ts).
-          if (document.documentElement.getAttribute("data-tema-cliente") === "escuro") return "#0E0A0B";
+          if (document.documentElement.getAttribute("data-tema-cliente") === "escuro") return "#111013";
           var root = document.getElementById("root");
           if (root && root.querySelector(".sl-home-header")) return HOME_TOP;
           if (root && root.querySelector(".sl-tab")) return DEFAULT_TOP;
