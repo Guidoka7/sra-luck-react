@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aplicarNome, chamarGemini, montarPrompt, segmentoPorPercentual, validarFraseIa } from "./frase-do-dia";
+import { ErroGemini, aplicarNome, chamarGemini, montarPrompt, segmentoPorPercentual, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 
 describe("agente da frase do dia", () => {
@@ -56,8 +56,29 @@ describe("agente da frase do dia", () => {
     expect(chamadas).toHaveLength(2);
   });
 
-  it("propaga erro de cota para o chamador usar o catálogo", async () => {
-    const fetcher = (async () => new Response("{}", { status: 429 })) as unknown as typeof fetch;
-    await expect(chamarGemini("k", ["gemini-flash-latest"], "s", "u", fetcher)).rejects.toThrow("http_429");
+  it("com modelo sobrecarregado (503) ou sem cota (429), tenta o próximo", async () => {
+    const status: Record<string, number> = { a: 503, b: 429 };
+    const fetcher = (async (url: string) => {
+      const modelo = url.match(/models\/([^:]+)/)![1];
+      if (status[modelo]) return new Response("{}", { status: status[modelo] });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"texto\": \"ok *deu certo* aqui\"}" }] } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(chamarGemini("k", ["a", "b", "c"], "s", "u", fetcher, 0)).resolves.toEqual({ texto: "ok *deu certo* aqui", modelo: "c" });
+  });
+
+  it("tudo sobrecarregado: faz mais uma rodada e depois desiste com o motivo", async () => {
+    let chamadas = 0;
+    const fetcher = (async () => { chamadas += 1; return new Response("{}", { status: 503 }); }) as unknown as typeof fetch;
+    const erro = await chamarGemini("k", ["a", "b"], "s", "u", fetcher, 0).catch((e) => e);
+    expect(erro).toBeInstanceOf(ErroGemini);
+    expect(erro.message).toBe("http_503");
+    expect(chamadas).toBe(4);
+  });
+
+  it("chave recusada para na hora, sem tentar outros modelos", async () => {
+    let chamadas = 0;
+    const fetcher = (async () => { chamadas += 1; return new Response("{}", { status: 403 }); }) as unknown as typeof fetch;
+    await expect(chamarGemini("k", ["a", "b"], "s", "u", fetcher, 0)).rejects.toThrow("http_403");
+    expect(chamadas).toBe(1);
   });
 });

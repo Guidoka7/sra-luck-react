@@ -33,8 +33,12 @@ const SEGMENTOS: Record<SegmentoJornada, string> = {
   quitado: "concluiu os pagamentos do plano e está na fase de agendar e viver o sonho",
 };
 
-const MODELOS_PADRAO = ["gemini-flash-latest", "gemini-2.5-flash"];
-const TIMEOUT_MS = 15_000;
+// Ordem de tentativa. Se um modelo estiver sobrecarregado (503), sem cota (429)
+// ou aposentado (404), passa para o próximo.
+const MODELOS_PADRAO = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"];
+const TIMEOUT_MS = 8_000;
+const PRAZO_TOTAL_MS = 20_000;
+const NOVA_TENTATIVA_MS = 30 * 60_000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -128,44 +132,65 @@ export function montarPrompt(agora: Date, base: FraseDoDia, segmento: SegmentoJo
 
 type RespostaGemini = { candidates?: { content?: { parts?: { text?: string }[] } }[] };
 
-/** Chama o Gemini (REST generateContent). Retorna o texto bruto e o modelo usado. */
-export async function chamarGemini(chave: string, modelos: string[], sistema: string, usuario: string, fetcher: typeof fetch = fetch) {
-  let ultimoErro = "sem_modelo";
-  for (const modelo of modelos) {
-    const controle = new AbortController();
-    const timer = setTimeout(() => controle.abort(), TIMEOUT_MS);
-    try {
-      const resposta = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": chave },
-        signal: controle.signal,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: sistema }] },
-          contents: [{ role: "user", parts: [{ text: usuario }] }],
-          generationConfig: {
-            temperature: 1,
-            maxOutputTokens: 2048,
-            responseMimeType: "application/json",
-            responseSchema: { type: "OBJECT", properties: { texto: { type: "STRING" } }, required: ["texto"] },
-          },
-        }),
-      });
-      // Modelo inexistente/aposentado: tenta o próximo da lista.
-      if (resposta.status === 404) { ultimoErro = `http_404:${modelo}`; continue; }
-      if (!resposta.ok) throw new Error(`http_${resposta.status}`);
-      const corpo = await resposta.json() as RespostaGemini;
-      const bruto = (corpo.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
-      let texto = bruto;
-      try { texto = String((JSON.parse(bruto) as { texto?: unknown }).texto ?? ""); } catch { /* resposta sem JSON: valida como texto puro */ }
-      return { texto, modelo };
-    } catch (erro) {
-      ultimoErro = erro instanceof Error ? (erro.name === "AbortError" ? "timeout" : erro.message) : "erro";
-      throw new Error(ultimoErro);
-    } finally {
-      clearTimeout(timer);
+export class ErroGemini extends Error {
+  constructor(public motivo: string, public tentativas: string[]) { super(motivo); }
+}
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Chama o Gemini (REST generateContent). Tenta os modelos em ordem: 404, 429,
+ * 5xx e timeout passam para o próximo; chave recusada (400/401/403) para na
+ * hora. Se todos estiverem só sobrecarregados, faz mais uma rodada após 1,5 s.
+ */
+export async function chamarGemini(chave: string, modelos: string[], sistema: string, usuario: string, fetcher: typeof fetch = fetch, pausaMs = 1_500) {
+  const inicio = Date.now();
+  const tentativas: string[] = [];
+  for (let rodada = 0; rodada < 2; rodada += 1) {
+    for (const modelo of modelos) {
+      if (Date.now() - inicio > PRAZO_TOTAL_MS) throw new ErroGemini("prazo_esgotado", tentativas);
+      const controle = new AbortController();
+      const timer = setTimeout(() => controle.abort(), TIMEOUT_MS);
+      try {
+        const resposta = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": chave },
+          signal: controle.signal,
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sistema }] },
+            contents: [{ role: "user", parts: [{ text: usuario }] }],
+            generationConfig: {
+              temperature: 1,
+              maxOutputTokens: 2048,
+              responseMimeType: "application/json",
+              responseSchema: { type: "OBJECT", properties: { texto: { type: "STRING" } }, required: ["texto"] },
+            },
+          }),
+        });
+        if (resposta.status === 400 || resposta.status === 401 || resposta.status === 403) {
+          tentativas.push(`${modelo}:${resposta.status}`);
+          throw new ErroGemini(`http_${resposta.status}`, tentativas);
+        }
+        if (!resposta.ok) { tentativas.push(`${modelo}:${resposta.status}`); continue; }
+        const corpo = await resposta.json() as RespostaGemini;
+        const bruto = (corpo.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
+        if (!bruto) { tentativas.push(`${modelo}:vazio`); continue; }
+        let texto = bruto;
+        try { texto = String((JSON.parse(bruto) as { texto?: unknown }).texto ?? ""); } catch { /* resposta sem JSON: valida como texto puro */ }
+        return { texto, modelo };
+      } catch (erro) {
+        if (erro instanceof ErroGemini) throw erro;
+        tentativas.push(`${modelo}:${erro instanceof Error && erro.name === "AbortError" ? "timeout" : "rede"}`);
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    const soSobrecarga = tentativas.every((t) => /:(5\d\d|timeout|vazio)$/.test(t));
+    if (!soSobrecarga || rodada === 1) break;
+    await esperar(pausaMs);
   }
-  throw new Error(ultimoErro);
+  const ultimo = tentativas[tentativas.length - 1]?.split(":")[1] ?? "erro";
+  throw new ErroGemini(/^\d+$/.test(ultimo) ? `http_${ultimo}` : ultimo, tentativas);
 }
 
 async function credenciaisGemini(env: Env) {
@@ -201,8 +226,15 @@ export async function testarGemini(env: Env) {
       : { conectado: true, detalhe: `Gemini respondeu (${modelo}), mas o exemplo foi reprovado pelos filtros (${validacao.motivo}). Em produção o sistema tenta de novo e, se preciso, usa o catálogo.` };
   } catch (erro) {
     const motivo = erro instanceof Error ? erro.message : "erro";
-    const detalhe = motivo === "http_400" || motivo === "http_403" ? "O Gemini recusou a chave (verifique se ela foi copiada inteira)." : motivo === "http_429" ? "Cota gratuita do Gemini esgotada no momento." : `Falha ao contatar o Gemini (${motivo}).`;
-    return { conectado: false, detalhe };
+    const tentativas = erro instanceof ErroGemini && erro.tentativas.length ? ` Tentativas: ${erro.tentativas.join(", ")}.` : "";
+    const detalhe = motivo === "http_400" || motivo === "http_401" || motivo === "http_403"
+      ? "O Gemini recusou a chave (verifique se ela foi copiada inteira e se a Generative Language API está ativa)."
+      : motivo === "http_429"
+        ? "Cota gratuita do Gemini esgotada no momento. Tente mais tarde."
+        : /^http_5\d\d$|timeout|prazo_esgotado/.test(motivo)
+          ? "O Gemini está sobrecarregado agora (erro do Google, não da chave). O app segue com o catálogo e tenta de novo no próximo dia."
+          : `Falha ao contatar o Gemini (${motivo}).`;
+    return { conectado: false, detalhe: detalhe + tentativas };
   }
 }
 
@@ -226,30 +258,42 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
   const segmento = segmentoPorPercentual(Number(percentual ?? 0));
   const responder = (texto: string, origem: "ia" | "catalogo") => json({ texto: aplicarNome(texto, nome), tema: base.tema, data: base.data, origem, segmento });
 
-  const { data: salva, error: erroCache } = await db.from("frases_do_dia").select("texto,origem").eq("data", base.data).eq("segmento", segmento).maybeSingle();
+  const { data: salva, error: erroCache } = await db.from("frases_do_dia").select("id,texto,origem,created_at").eq("data", base.data).eq("segmento", segmento).maybeSingle();
   if (erroCache) {
     // Cache indisponível (migration 079 não aplicada): não chama a IA sem cache para não gastar cota.
     log.warn("Cache da frase do dia indisponível", { eventCode: "DAILY_PHRASE_CACHE_UNAVAILABLE" });
     return responder(base.texto, "catalogo");
   }
-  if (salva) return responder(salva.texto, salva.origem === "ia" ? "ia" : "catalogo");
+  if (salva?.origem === "ia") return responder(salva.texto, "ia");
+  // Frase de reserva (catálogo) gravada após uma falha: tenta a IA de novo a cada 30 min.
+  if (salva && Date.now() - new Date(salva.created_at).getTime() < NOVA_TENTATIVA_MS) return responder(salva.texto, "catalogo");
 
   const { data: ultimas } = await db.from("frases_do_dia").select("texto").eq("origem", "ia").order("created_at", { ascending: false }).limit(24);
   const recentes = (ultimas ?? []).map((r: { texto: string }) => r.texto);
 
-  let texto = base.texto;
-  let origem: "ia" | "catalogo" = "catalogo";
-  let modelo: string | null = null;
+  let gerada: { texto: string; modelo: string } | null = null;
   try {
-    const gerada = await gerarComIa(env, agora, base, segmento, recentes);
-    if (gerada) { texto = gerada.texto; origem = "ia"; modelo = gerada.modelo; }
+    gerada = await gerarComIa(env, agora, base, segmento, recentes);
   } catch (erro) {
-    log.warn("Gemini indisponível; usando catálogo", { eventCode: "DAILY_PHRASE_AI_FAILED", motivo: erro instanceof Error ? erro.message : "erro" });
+    log.warn("Gemini indisponível; usando catálogo", {
+      eventCode: "DAILY_PHRASE_AI_FAILED",
+      motivo: erro instanceof Error ? erro.message : "erro",
+      tentativas: erro instanceof ErroGemini ? erro.tentativas.join(",") : undefined,
+    });
   }
 
-  // Se outra requisição gravou antes, prevalece a que já está no cache.
-  await db.from("frases_do_dia").upsert({ data: base.data, segmento, tema: base.tema, texto, origem, modelo }, { onConflict: "data,segmento", ignoreDuplicates: true });
+  if (salva) {
+    // Reserva antiga: sobe para a frase da IA (ou renova o prazo da próxima tentativa).
+    const patch = gerada ? { texto: gerada.texto, origem: "ia", modelo: gerada.modelo, created_at: new Date().toISOString() } : { created_at: new Date().toISOString() };
+    await db.from("frases_do_dia").update(patch).eq("id", salva.id).eq("origem", "catalogo");
+  } else {
+    // Se outra requisição gravou antes, prevalece a que já está no cache.
+    await db.from("frases_do_dia").upsert(
+      { data: base.data, segmento, tema: base.tema, texto: gerada?.texto ?? base.texto, origem: gerada ? "ia" : "catalogo", modelo: gerada?.modelo ?? null },
+      { onConflict: "data,segmento", ignoreDuplicates: true },
+    );
+  }
   const { data: final } = await db.from("frases_do_dia").select("texto,origem").eq("data", base.data).eq("segmento", segmento).maybeSingle();
   if (final) return responder(final.texto, final.origem === "ia" ? "ia" : "catalogo");
-  return responder(texto, origem);
+  return gerada ? responder(gerada.texto, "ia") : responder(base.texto, "catalogo");
 }

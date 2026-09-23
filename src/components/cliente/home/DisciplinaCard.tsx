@@ -3,7 +3,7 @@ import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { apiJson } from "@/lib/api";
 import { fraseDoDia, trechosDaFrase, FUSO_SRA_LUCK } from "@/lib/fraseDoDia";
 
-type Frase = { texto: string; tema: string; data: string; dona?: string };
+type Frase = { texto: string; tema: string; data: string; dona?: string; origem?: string };
 
 const CHAVE_CACHE = "sra-luck-frase-do-dia";
 
@@ -56,7 +56,8 @@ export function DisciplinaCard({ nomeCliente = "" }: { nomeCliente?: string }) {
       .then((resposta) => {
         if (!ativo || !resposta?.texto || resposta.data !== hoje.data) return;
         const nova = { texto: resposta.texto, tema: resposta.tema || hoje.tema, data: resposta.data, dona: nomeCliente };
-        gravarCache(nova);
+        // Só guarda a frase da IA; a de reserva é refeita no próximo acesso.
+        if (resposta.origem === "ia") gravarCache(nova);
         setFrase(nova);
       })
       .catch(() => { /* mantém a frase do catálogo */ });
