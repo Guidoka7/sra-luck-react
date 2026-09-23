@@ -599,7 +599,7 @@ async function abrirBloquearData(request: Request, env: Env, tabela: "datas" | "
     status: "disponivel",
     fechamento_manual: bloquear,
   };
-  if (Number.isFinite(vagas) && vagas > 0) payload.vagas_totais = vagas;
+  if (!bloquear) payload.vagas_totais = Number.isFinite(vagas) && vagas > 0 ? Math.max(1, Math.floor(vagas)) : 1;
   const { data: atualizado, error } = await db.from(tabela).upsert(payload, { onConflict: "data" }).select("*").maybeSingle();
   if (error) return json({ erro: publicError(error) }, 500);
   return json({ ok: true, data: atualizado });
