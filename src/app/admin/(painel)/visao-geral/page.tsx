@@ -311,7 +311,7 @@ export default function VisaoGeralPage() {
             <div style={{ position: "absolute", left: 0, right: 0, top: `${100 - refBottomPct}%`, borderTop: "1px dashed var(--rose)", opacity: .55 }} />
             {forecastBarras.length === 0 ? <div style={{ width: "100%", textAlign: "center", fontSize: 9.5, color: "var(--soft)" }}>Sem previsões futuras.</div> : forecastBarras.map((b) => <div key={b.mes} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%", gap: 3 }}>
               <span style={{ fontSize: 7.5, fontWeight: 700 }}>{formatarMoeda(b.valor).replace("R$", "").trim()}</span>
-              <div title={`${b.label}: ${formatarMoeda(b.valor)}`} style={{ width: "80%", height: `${b.altura}%`, minHeight: 8, borderRadius: "5px 5px 0 0", background: "linear-gradient(180deg,var(--bg),rgba(190,111,133,.58))" }} />
+              <div title={`${b.label}: ${formatarMoeda(b.valor)}`} style={{ width: "80%", height: `${b.altura}%`, minHeight: 8, borderRadius: "5px 5px 0 0", background: "linear-gradient(180deg,var(--bg),var(--bgl))" }} />
               <span style={{ fontSize: 7, color: "var(--soft)" }}>{b.label}</span>
             </div>)}
           </div>
@@ -358,8 +358,8 @@ export default function VisaoGeralPage() {
     </CardShell>
 
     {atividadeAberta && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.28)", zIndex: 40 }} onClick={() => setAtividadeAberta(false)} />
-      <aside className="zip-animate-slide-in" style={{ position: "fixed", right: 14, top: 14, bottom: 14, width: "min(390px,calc(100vw - 28px))", zIndex: 41, border: "1px solid var(--line)", background: "var(--s0)", borderRadius: 16, boxShadow: "0 30px 80px -35px rgba(0,0,0,.65)", overflow: "auto" }}>
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 40 }} onClick={() => setAtividadeAberta(false)} />
+      <aside className="zip-animate-slide-in" style={{ position: "fixed", right: 14, top: 14, bottom: 14, width: "min(390px,calc(100vw - 28px))", zIndex: 41, border: "1px solid var(--line)", background: "var(--s0)", borderRadius: 16, boxShadow: "var(--panel-shadow)", overflow: "auto" }}>
         <div style={{ padding: "14px 15px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, position: "sticky", top: 0, background: "var(--s0)", zIndex: 2 }}>
           <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--rose)" }}>Visão geral</div><h2 style={{ fontSize: 17, marginTop: 3 }}>Atividade recente</h2></div>
           <button onClick={() => setAtividadeAberta(false)} style={{ width: 29, height: 29, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s1)", color: "var(--soft)" }}>×</button>
@@ -371,7 +371,7 @@ export default function VisaoGeralPage() {
               <span style={{ color: "var(--soft)" }}>{texto(a.usuario, "sistema")}</span><strong style={{ textAlign: "right" }}>{a.texto}</strong>
             </div>)}
           </div>
-          <a href="/admin/configuracoes?aba=monitoramento" style={{ marginTop: 13, width: "100%", height: 35, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 10.5, fontWeight: 800, textDecoration: "none" }}>Abrir monitoramento</a>
+          <a href="/admin/configuracoes?aba=monitoramento" style={{ marginTop: 13, width: "100%", height: 35, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10, border: "1px solid var(--bg)", background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 800, textDecoration: "none" }}>Abrir monitoramento</a>
         </div>
       </aside>
     </>}
