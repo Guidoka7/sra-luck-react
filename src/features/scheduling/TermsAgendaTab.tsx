@@ -92,10 +92,31 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
             <td><b>{dataBr(a.data)}</b></td><td>{a.horario ?? "—"}</td><td>{a.nome}</td><td>{a.cpf ?? "—"}</td><td>{a.procedimento ?? "—"}</td>
             <td>{a.responsavel ? <span className="responsible-name">{a.responsavel}</span> : <span className="muted-text">Não definido</span>}</td>
             <td><span className="badge success">Termos confirmados</span></td>
-            <td><div className="table-actions-stack">
-              <button type="button" className="mini-link" onClick={() => onAbrirCliente(a.clienteId)}>Abrir cliente</button>
-              <button type="button" className="mini-link" onClick={() => setResponsavel({ agendamentoId: a.agendamentoId, atual: a.responsavel })}>{a.responsavel ? "Alterar responsável" : "Definir responsável"}</button>
-              <button type="button" className="mini-link" onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome, data: a.data, horario: a.horario })}>Reagendar</button>
+            <td><div className="table-actions-stack terms-row-actions" aria-label={`Ações de ${a.nome}`}>
+              <button
+                type="button"
+                className="term-action-btn term-action-open"
+                aria-label={`Abrir cliente ${a.nome}`}
+                onClick={() => onAbrirCliente(a.clienteId)}
+              >
+                Abrir cliente
+              </button>
+              <button
+                type="button"
+                className="term-action-btn term-action-owner"
+                aria-label={`${a.responsavel ? "Alterar" : "Definir"} responsável de ${a.nome}`}
+                onClick={() => setResponsavel({ agendamentoId: a.agendamentoId, atual: a.responsavel })}
+              >
+                {a.responsavel ? "Alterar responsável" : "Definir responsável"}
+              </button>
+              <button
+                type="button"
+                className="term-action-btn term-action-reschedule"
+                aria-label={`Reagendar assinatura de termos de ${a.nome}`}
+                onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome, data: a.data, horario: a.horario })}
+              >
+                Reagendar
+              </button>
             </div></td>
           </tr>)}
         </tbody>

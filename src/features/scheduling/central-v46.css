@@ -5615,3 +5615,99 @@
   border-color:#373b41;
   color:#8d939b;
 }
+
+/* V47 — ações operacionais da fila de assinaturas como botões independentes */
+.v46 .terms-table .terms-row-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  min-width:300px;
+}
+.v46 .terms-table .term-action-btn{
+  min-height:30px;
+  padding:6px 10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fff;
+  color:#61565d;
+  font-size:9.5px;
+  font-weight:800;
+  line-height:1;
+  white-space:nowrap;
+  box-shadow:0 1px 2px rgba(67,39,47,.04);
+  transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+.v46 .terms-table .term-action-btn:hover{
+  transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(78,45,54,.08);
+}
+.v46 .terms-table .term-action-btn:active{
+  transform:translateY(0);
+  box-shadow:none;
+}
+.v46 .terms-table .term-action-btn:focus-visible{
+  outline:2px solid var(--rose);
+  outline-offset:2px;
+}
+.v46 .terms-table .term-action-open{
+  background:#fff2f4;
+  border-color:#e8bcc2;
+  color:#8c4854;
+}
+.v46 .terms-table .term-action-open:hover{
+  background:#fbe6e9;
+  border-color:#dca3ad;
+}
+.v46 .terms-table .term-action-owner{
+  background:#fff;
+  border-color:#e4d9dc;
+  color:#62565d;
+}
+.v46 .terms-table .term-action-owner:hover{
+  background:#faf6f7;
+  border-color:#d6c4c9;
+}
+.v46 .terms-table .term-action-reschedule{
+  background:#f8f4f5;
+  border-color:#ddd1d4;
+  color:#746268;
+}
+.v46 .terms-table .term-action-reschedule:hover{
+  background:#f2ebed;
+  border-color:#cdbcc1;
+}
+.dark .v46 .terms-table .term-action-btn{
+  background:#181616;
+  border-color:#42383b;
+  color:#d9cdd0;
+  box-shadow:none;
+}
+.dark .v46 .terms-table .term-action-open{
+  background:#261b1e;
+  border-color:#69434b;
+  color:#e1a0aa;
+}
+.dark .v46 .terms-table .term-action-open:hover{
+  background:#302126;
+  border-color:#8b5963;
+}
+.dark .v46 .terms-table .term-action-owner{
+  background:#191717;
+  border-color:#4a3c40;
+  color:#d8c7cb;
+}
+.dark .v46 .terms-table .term-action-owner:hover{
+  background:#211d1e;
+  border-color:#655158;
+}
+.dark .v46 .terms-table .term-action-reschedule{
+  background:#201b1c;
+  border-color:#4b4043;
+  color:#cdbbc0;
+}
+.dark .v46 .terms-table .term-action-reschedule:hover{
+  background:#282123;
+  border-color:#66545a;
+}
+
