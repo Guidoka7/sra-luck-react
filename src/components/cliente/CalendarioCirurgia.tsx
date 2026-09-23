@@ -250,9 +250,9 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
 
   const calendario = <div className="p-[13px]">
       <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={diaSelecionado} onSelecionar={selecionarDia} mudarMes={mudarMes} />
-      <div className="mt-[10px] flex items-center justify-center gap-4 text-[10px] text-[#8A7B77]">
-        <span className="inline-flex items-center gap-[6px]"><span className="h-[10px] w-[10px] rounded-[3px] border border-[#D5E8D9] bg-[#F3F8F4]" aria-hidden="true" />Disponível</span>
-        <span className="inline-flex items-center gap-[6px]"><span className="h-[10px] w-[10px] rounded-[3px] bg-[#EFE6E3]" aria-hidden="true" /><span className="line-through">Lotada</span></span>
+      <div className="sl-cirurgia-legenda mt-[10px] flex items-center justify-center gap-4 text-[10px] text-[#8A7B77]">
+        <span className="inline-flex items-center gap-[6px]"><span className="sl-cirurgia-legenda-cor sl-cirurgia-legenda-cor--disponivel" aria-hidden="true" />Disponível</span>
+        <span className="inline-flex items-center gap-[6px]"><span className="sl-cirurgia-legenda-cor sl-cirurgia-legenda-cor--lotada" aria-hidden="true" />Lotada</span>
       </div>
       {diaSelecionado && <div className="mt-[11px] rounded-[12px] bg-[#F9F0EE] p-[11px] text-center">
         <div className="text-[10.2px] font-light text-[#7A6B67]">Você selecionou <b className="font-semibold text-[#7D2434]">{format(parseDataLocal(diaSelecionado), "d 'de' MMMM", { locale: ptBR })}</b></div>
@@ -282,9 +282,11 @@ function CalendarGrid({ mesAtual, celulas, porData, hoje, selecionado, onSelecio
       const passado = isBefore(dia, hoje);
       const disponivel = Boolean(entrada && entrada.vagasRestantes > 0 && !passado);
       const ativo = chave === selecionado;
+      const lotada = !passado && !disponivel;
       const ehHoje = isToday(dia);
-      const estilo = ativo ? { background: "#6B1F2E", borderColor: "#6B1F2E", color: "#FFF", fontWeight: 600 } : disponivel ? { background: "#F3F8F4", borderColor: "#D5E8D9", color: "#3F7D5B", fontWeight: 500 } : { background: passado ? "transparent" : "#FAF5F4", borderColor: "transparent", color: passado ? "#D0C5C2" : "#B8AAA6", fontWeight: 400, textDecoration: passado ? "none" : "line-through" };
-      return <button type="button" key={chave} aria-label={format(dia, "d 'de' MMMM 'de' yyyy", { locale: ptBR })} aria-pressed={ativo} disabled={!disponivel || bloqueado} onClick={() => onSelecionar(dia)} className="relative aspect-square rounded-[9px] border text-[10.5px]" style={estilo}><span className="flex h-full w-full items-center justify-center">{numero}</span>{ehHoje && !ativo && <span className="absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-[#B65B67]" />}</button>;
+      const estado = ativo ? "selecionada" : disponivel ? "disponivel" : lotada ? "lotada" : "passada";
+      const rotuloStatus = ativo ? "selecionada" : disponivel ? "disponível" : lotada ? "lotada" : "indisponível";
+      return <button type="button" key={chave} aria-label={`${format(dia, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}, ${rotuloStatus}`} aria-pressed={ativo} disabled={!disponivel || bloqueado} onClick={() => onSelecionar(dia)} className={`sl-cirurgia-dia sl-cirurgia-dia--${estado} relative aspect-square rounded-[9px] border text-[10.5px]`}><span className="flex h-full w-full items-center justify-center">{numero}</span>{ehHoje && !ativo && <span className="sl-cirurgia-hoje absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full" />}</button>;
     })}</div>
   </>;
 }
