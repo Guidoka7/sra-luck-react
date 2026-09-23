@@ -98,3 +98,74 @@ body:has(.client-app) {
   background-color: #FBF7F5;
   color: #2E2422;
 }
+
+
+/* Agenda cirúrgica: status dos dias precisa ser legível à primeira vista. */
+.client-app .sl-cirurgia-dia {
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, transform .12s ease;
+}
+
+.client-app .sl-cirurgia-dia--disponivel {
+  background: #F0F8F3;
+  border-color: #CDE5D5;
+  color: #347354;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(63, 125, 91, .02);
+}
+
+.client-app .sl-cirurgia-dia--disponivel:hover:not(:disabled) {
+  background: #E8F5ED;
+  border-color: #AFD5BE;
+  transform: translateY(-1px);
+}
+
+.client-app .sl-cirurgia-dia--lotada {
+  background: #FCF0F1;
+  border-color: #EECFD4;
+  color: #A65D68;
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(166, 93, 104, .62);
+}
+
+.client-app .sl-cirurgia-dia--passada {
+  background: transparent;
+  border-color: transparent;
+  color: #D0C5C2;
+  font-weight: 400;
+}
+
+.client-app .sl-cirurgia-dia--selecionada {
+  background: #6B1F2E;
+  border-color: #6B1F2E;
+  color: #FFFFFF;
+  font-weight: 650;
+  box-shadow: 0 6px 14px rgba(107, 31, 46, .18);
+}
+
+.client-app .sl-cirurgia-dia:disabled {
+  cursor: default;
+}
+
+.client-app .sl-cirurgia-hoje {
+  background: #B65B67;
+}
+
+.client-app .sl-cirurgia-legenda-cor {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.client-app .sl-cirurgia-legenda-cor--disponivel {
+  background: #F0F8F3;
+  border-color: #CDE5D5;
+}
+
+.client-app .sl-cirurgia-legenda-cor--lotada {
+  background: #FCF0F1;
+  border-color: #EECFD4;
+}
