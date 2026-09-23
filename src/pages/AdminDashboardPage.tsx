@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   AlertTriangle, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3,
   FileCheck2, FileText, LayoutDashboard, ReceiptText, Search, ShieldCheck, UserRoundCheck,
@@ -104,7 +104,7 @@ function SectionHeader({ icon: Icon, title, subtitle, action }: {
   icon: typeof LayoutDashboard;
   title: string;
   subtitle?: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return <div className="ov-section-head">
     <div className="ov-section-title">
@@ -224,6 +224,14 @@ export default function AdminDashboardPage() {
   ];
 
   const proximos = dados.agenda.proximos.slice(0, 3);
+  const acoesRapidas: { href: string; icon: typeof UsersRound; label: string }[] = [
+    { href: "/admin/clientes", icon: UsersRound, label: "Cadastrar cliente" },
+    { href: "/admin/financeiro", icon: FileText, label: "Analisar comprovantes" },
+    { href: "/admin/agenda", icon: CalendarDays, label: "Abrir agenda" },
+    { href: "/admin/financeiro", icon: WalletCards, label: "Ver financeiro" },
+    { href: "/admin/agenda", icon: Search, label: "Consultar processo" },
+    { href: "/admin/relatorios", icon: ReceiptText, label: "Criar relatório" },
+  ];
 
   return <div className="overview-v2">
     <div className="ov-topbar">
@@ -322,14 +330,7 @@ export default function AdminDashboardPage() {
       <section className="ov-card">
         <SectionHeader icon={Zap} title="Ações rápidas" subtitle="Atalhos para as rotinas mais usadas." />
         <div className="ov-action-grid">
-          {[
-            ["/admin/clientes", UsersRound, "Cadastrar cliente"],
-            ["/admin/financeiro", FileText, "Analisar comprovantes"],
-            ["/admin/agenda", CalendarDays, "Abrir agenda"],
-            ["/admin/financeiro", WalletCards, "Ver financeiro"],
-            ["/admin/agenda", Search, "Consultar processo"],
-            ["/admin/relatorios", ReceiptText, "Criar relatório"],
-          ].map(([href, Icon, label]) => <a className="ov-action" href={String(href)} key={String(label)}><span className="ov-row-icon"><Icon size={15} /></span><span>{String(label)}</span><ChevronRight size={13} style={{ marginLeft: "auto" }} /></a>)}
+          {acoesRapidas.map(({ href, icon: Icon, label }) => <a className="ov-action" href={href} key={label}><span className="ov-row-icon"><Icon size={15} /></span><span>{label}</span><ChevronRight size={13} style={{ marginLeft: "auto" }} /></a>)}
         </div>
       </section>
     </div>
