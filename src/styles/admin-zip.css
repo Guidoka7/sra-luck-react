@@ -519,3 +519,31 @@
 .dark .zip-admin .v46 .surgery-financial-cap.danger .surgery-financial-track span {
   background:#C7869B !important;
 }
+
+
+/* Componentes UI compartilhados: overrides somente quando renderizados no Admin. */
+.dark .zip-admin input[class~="bg-white/90"],
+.dark .zip-admin textarea[class~="bg-white/90"],
+.dark .zip-admin select[class~="bg-white/90"] {
+  background:#15161B !important;
+  border-color:rgba(236,204,214,.12) !important;
+  color:#F4EEF1 !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.018) !important;
+}
+.dark .zip-admin input[class~="focus:bg-white"]:focus,
+.dark .zip-admin textarea[class~="focus:bg-white"]:focus,
+.dark .zip-admin select[class~="focus:bg-white"]:focus {
+  background:#17181D !important;
+  border-color:rgba(199,134,155,.38) !important;
+  box-shadow:0 0 0 4px rgba(199,134,155,.08) !important;
+}
+.dark .zip-admin button[class~="bg-white/90"] {
+  background:#17181D !important;
+  border-color:rgba(236,204,214,.11) !important;
+  color:#DCA0B2 !important;
+  box-shadow:0 12px 34px -26px rgba(0,0,0,.82) !important;
+}
+.dark .zip-admin button[class~="bg-white/90"]:hover {
+  background:rgba(199,134,155,.08) !important;
+  border-color:rgba(199,134,155,.22) !important;
+}
