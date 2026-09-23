@@ -192,7 +192,7 @@ export default function IntegracoesAdminPage() {
     {erro && <div style={{ marginTop: 10, borderRadius: 9, border: "1px solid var(--badbg)", background: "var(--badbg)", color: "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{erro}</div>}
 
     {drawerAtual && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(30,12,16,.42)", zIndex: 60 }} onClick={() => setDrawer(null)} />
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
       <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Integração</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawerAtual.nome}</h2><div style={{ marginTop: 4, fontSize: 10.5, color: "var(--soft)" }}>{drawerAtual.detalhes}</div></div>
@@ -228,7 +228,7 @@ export default function IntegracoesAdminPage() {
           {drawerAtual.id === "rd_station" && <>
             <button onClick={() => void conectarRd()} disabled={conectando || !drawerAtual.oauthConfigurado} style={btn}>{conectando ? "Abrindo OAuth…" : drawerAtual.oauthAutorizado ? "Reautorizar OAuth" : "Conectar OAuth"}</button>
             <button onClick={() => void testarConexao("rd_station")} disabled={testando === "rd_station" || !drawerAtual.oauthAutorizado} style={btn}>{testando === "rd_station" ? "Testando…" : "Testar conexão"}</button>
-            <button onClick={() => void sincronizarRd()} disabled={sincronizando || !drawerAtual.oauthAutorizado} style={{ ...btn, background: "var(--bg)", color: "#FFFDFC", borderColor: "var(--bg)" }}>{sincronizando ? "Sincronizando…" : "Sincronizar agora"}</button>
+            <button onClick={() => void sincronizarRd()} disabled={sincronizando || !drawerAtual.oauthAutorizado} style={{ ...btn, background: "var(--bg)", color: "var(--on-accent)", borderColor: "var(--bg)" }}>{sincronizando ? "Sincronizando…" : "Sincronizar agora"}</button>
           </>}
         </div>
         {resultadoTeste[drawerAtual.id] && <div style={{ margin: "0 15px 15px", borderRadius: 9, padding: "8px 10px", background: resultadoTeste[drawerAtual.id].conectado ? "var(--okbg)" : "var(--badbg)", color: resultadoTeste[drawerAtual.id].conectado ? "var(--ok)" : "var(--bad)", fontSize: 10.5 }}>{resultadoTeste[drawerAtual.id].detalhe}</div>}
