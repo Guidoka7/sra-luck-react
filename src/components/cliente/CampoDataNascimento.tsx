@@ -1,110 +1,100 @@
-import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
-import { completarComZero, distribuirData, juntarData, normalizarParte, type ParteData, type PartesData } from "@/lib/dataNascimento";
+import { useEffect, useRef } from "react";
 
-const CAMPOS: { parte: ParteData; rotulo: string; placeholder: string; autoComplete: string }[] = [
-  { parte: "dia", rotulo: "Dia", placeholder: "DD", autoComplete: "bday-day" },
-  { parte: "mes", rotulo: "Mês", placeholder: "MM", autoComplete: "bday-month" },
-  { parte: "ano", rotulo: "Ano", placeholder: "AAAA", autoComplete: "bday-year" },
-];
+/** Máscara DD/MM/AAAA enquanto a cliente digita. */
+export function formatarDataDigitada(valor: string) {
+  const d = valor.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+/** "DD/MM/AAAA" → "AAAA-MM-DD" (para o calendário), ou "" se incompleta. */
+export function paraValorCalendario(texto: string) {
+  const m = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+/** "AAAA-MM-DD" (do calendário) → "DD/MM/AAAA". */
+export function doValorCalendario(iso: string) {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+function hojeIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 /**
- * Data de nascimento em três caixas (dia · mês · ano) com avanço automático,
- * volta ao apagar e suporte a colar a data inteira. Entrega "DD/MM/AAAA".
+ * Data de nascimento: a cliente digita (DD/MM/AAAA) ou toca no calendário do
+ * canto, que abre o seletor de data nativo do aparelho e preenche o campo.
  */
-export function CampoDataNascimento({ onChange, invalido = false }: { onChange: (valor: string) => void; invalido?: boolean }) {
-  const [partes, setPartes] = useState<PartesData>({ dia: "", mes: "", ano: "" });
-  // Valor mais recente: o foco muda no meio do evento (antes do novo render),
-  // então os handlers (inclusive o blur) sempre leem daqui, nunca do render antigo.
-  const atualRef = useRef(partes);
-  const refs = { dia: useRef<HTMLInputElement>(null), mes: useRef<HTMLInputElement>(null), ano: useRef<HTMLInputElement>(null) };
-  const ordem: ParteData[] = ["dia", "mes", "ano"];
+export function CampoDataNascimento({ value, onChange }: { value: string; onChange: (valor: string) => void }) {
+  const calendarioRef = useRef<HTMLInputElement>(null);
 
-  function atualizar(novas: PartesData) {
-    atualRef.current = novas;
-    setPartes(novas);
-    onChange(juntarData(novas));
+  /** Posiciona o seletor na data digitada ou, sem data, em 1990 (menos rolagem que "hoje"). */
+  function prepararCalendario() {
+    const el = calendarioRef.current;
+    if (el) el.value = paraValorCalendario(value) || el.value || "1990-01-01";
   }
 
-  function focar(parte: ParteData | undefined) {
-    if (!parte) return;
-    const el = refs[parte].current;
-    el?.focus();
-    el?.select();
+  function abrirCalendario() {
+    const el = calendarioRef.current;
+    if (!el) return;
+    prepararCalendario();
+    try { el.showPicker(); } catch { el.focus(); }
   }
 
-  function aoDigitar(parte: ParteData, bruto: string) {
-    // Preenchimento automático ou teclado que entregam a data inteira de uma vez.
-    if (bruto.replace(/\D/g, "").length > (parte === "ano" ? 4 : 2)) {
-      const inteira = distribuirData(bruto);
-      if (inteira) { atualizar(inteira); refs.ano.current?.focus(); return; }
-    }
-    const proxima = ordem[ordem.indexOf(parte) + 1];
-    const digitos = bruto.replace(/\D/g, "");
-    const limite = parte === "ano" ? 4 : 2;
-    // Continuou digitando numa caixa cheia: o excedente segue para a próxima.
-    if (digitos.length > limite && proxima) {
-      const atual = normalizarParte(parte, digitos.slice(0, limite)).valor;
-      const seguinte = normalizarParte(proxima, digitos.slice(limite));
-      atualizar({ ...atualRef.current, [parte]: atual, [proxima]: seguinte.valor });
-      focar(seguinte.completo ? ordem[ordem.indexOf(proxima) + 1] ?? proxima : proxima);
-      return;
-    }
-    const { valor, completo } = normalizarParte(parte, bruto);
-    atualizar({ ...atualRef.current, [parte]: valor });
-    if (completo) focar(proxima);
-  }
-
-  function aoTeclar(parte: ParteData, evento: KeyboardEvent<HTMLInputElement>) {
-    const anterior = ordem[ordem.indexOf(parte) - 1];
-    const partesAtuais = atualRef.current;
-    if (evento.key === "Backspace" && partesAtuais[parte] === "" && anterior) {
-      evento.preventDefault();
-      atualizar({ ...partesAtuais, [anterior]: partesAtuais[anterior].slice(0, -1) });
-      refs[anterior].current?.focus();
-    }
-    if ((evento.key === "/" || evento.key === "-" || evento.key === ".") && parte !== "ano") {
-      evento.preventDefault();
-      atualizar({ ...partesAtuais, [parte]: completarComZero(parte, partesAtuais[parte]) });
-      focar(ordem[ordem.indexOf(parte) + 1]);
-    }
-  }
-
-  function aoColar(evento: ClipboardEvent<HTMLInputElement>) {
-    const inteira = distribuirData(evento.clipboardData.getData("text"));
-    if (!inteira) return;
-    evento.preventDefault();
-    atualizar(inteira);
-    refs.ano.current?.focus();
-  }
+  // Evento nativo do seletor: dispara só quando a cliente escolhe uma data
+  // (cancelar não preenche nada). Nativo porque o React pode ignorar
+  // alterações feitas no valor do campo de data fora da digitação.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    const el = calendarioRef.current;
+    if (!el) return;
+    const aplicar = () => { const texto = doValorCalendario(el.value); if (texto) onChangeRef.current(texto); };
+    el.addEventListener("change", aplicar);
+    return () => el.removeEventListener("change", aplicar);
+  }, []);
 
   return (
-    <fieldset className="m-0 flex flex-col gap-[7px] border-0 p-0">
-      <legend className="p-0 pb-[7px] text-[11px] uppercase tracking-[.1em] text-[#9A8C88]">Data de nascimento</legend>
-      <div className="grid grid-cols-[1fr_1fr_1.45fr] gap-[9px]">
-        {CAMPOS.map(({ parte, rotulo, placeholder, autoComplete }) => (
-          <label key={parte} className="flex min-w-0 flex-col items-center gap-[5px]">
-            <input
-              ref={refs[parte]}
-              value={partes[parte]}
-              onChange={(e) => aoDigitar(parte, e.target.value)}
-              onKeyDown={(e) => aoTeclar(parte, e)}
-              onPaste={aoColar}
-              onBlur={() => { const atuais = atualRef.current; const completo = completarComZero(parte, atuais[parte]); if (completo !== atuais[parte]) atualizar({ ...atuais, [parte]: completo }); }}
-              onFocus={(e) => e.target.select()}
-              placeholder={placeholder}
-              aria-label={`${rotulo} de nascimento`}
-              aria-invalid={invalido || undefined}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              enterKeyHint={parte === "ano" ? "done" : "next"}
-              autoComplete={autoComplete}
-              required
-              className={`w-full rounded-[14px] border bg-white px-2 py-[15px] text-center text-[18px] font-medium tracking-[.08em] text-[#2E2422] outline-none placeholder:font-normal placeholder:text-[#C4B7B3] focus:border-[#6B1F2E] focus:shadow-[0_0_0_3px_rgba(107,31,46,.08)] ${invalido ? "border-[#E3B3B0]" : "border-[#E6DAD6]"}`}
-            />
-            <span className="text-[10px] font-normal uppercase tracking-[.12em] text-[#B3A6A2]">{rotulo}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
+    <label className="flex flex-col gap-[7px]">
+      <span className="text-[11px] uppercase tracking-[.1em] text-[#9A8C88]">Data de nascimento</span>
+      <span className="relative block">
+        <input
+          value={value}
+          onChange={(e) => onChange(formatarDataDigitada(e.target.value))}
+          placeholder="DD/MM/AAAA"
+          inputMode="numeric"
+          autoComplete="bday"
+          className="w-full rounded-[14px] border border-[#E6DAD6] bg-white py-[15px] pl-4 pr-[58px] text-[16px] text-[#2E2422] outline-none focus:border-[#6B1F2E]"
+          required
+        />
+        <span className="absolute right-[6px] top-1/2 h-[42px] w-[42px] -translate-y-1/2">
+          <button
+            type="button"
+            onClick={abrirCalendario}
+            aria-label="Escolher a data no calendário"
+            className="flex h-full w-full items-center justify-center rounded-[11px] bg-[#F7EFED] text-[#7D2434] transition active:scale-95"
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3" /><path d="M8 3v4m8-4v4M4 11h16" /><path d="M8.5 15h.01M12 15h.01M15.5 15h.01" /></svg>
+          </button>
+          {/* Seletor nativo, invisível sobre o botão: no celular abre com o toque. */}
+          <input
+            ref={calendarioRef}
+            type="date"
+            tabIndex={-1}
+            aria-hidden="true"
+            min="1900-01-01"
+            max={hojeIso()}
+            onPointerDown={prepararCalendario}
+            onFocus={prepararCalendario}
+            onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* já aberto ou não suportado: o toque nativo abre */ } }}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+        </span>
+      </span>
+    </label>
   );
 }
