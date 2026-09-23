@@ -133,11 +133,11 @@ export default function RelatoriosPage() {
       </div>
 
       {carregando || !catalogo ? <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando catálogo…</div> : <>
-        <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", maxWidth: "100%", overflow: "auto", marginBottom: 12, boxShadow: "0 12px 28px -25px rgba(122,38,50,.3)" }}>
+        <div style={{ display: "flex", gap: 5, padding: 3, borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", maxWidth: "100%", overflow: "auto", marginBottom: 12, boxShadow: "var(--tabs-shadow)" }}>
           {abas.map((aba) => { const on = categoria === aba.id; return <button key={aba.id} onClick={() => setCategoria(aba.id)} style={{ height: 30, padding: "0 11px", borderRadius: 9, border: on ? "1px solid var(--line)" : "1px solid transparent", background: on ? "var(--s0)" : "transparent", color: on ? "var(--ink)" : "var(--soft)", fontSize: 9.6, fontWeight: 800, letterSpacing: ".06em", whiteSpace: "nowrap" }}>{aba.label} <span style={{ opacity: .62 }}>{aba.count}</span></button>; })}
         </div>
 
-        <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden", boxShadow: "0 16px 40px -34px rgba(122,38,50,.35)" }}>
+        <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--panel-shadow)" }}>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 260px", display: "flex", alignItems: "center", gap: 7, height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", padding: "0 10px" }}>
               <span style={{ color: "var(--soft)", fontSize: 12 }}>⌕</span>
@@ -168,7 +168,7 @@ export default function RelatoriosPage() {
                   <span style={zipChip(kind)}>{g.label}</span>
                   <button onClick={(e) => { e.stopPropagation(); exportarRapido(r, "pdf"); }} title="Gerar PDF" style={{ height: 27, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)", color: "var(--bad)", fontSize: 9.5, fontWeight: 800 }}>PDF</button>
                   <button onClick={(e) => { e.stopPropagation(); exportarRapido(r, "xlsx"); }} title="Gerar Excel" style={{ height: 27, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)", color: "var(--ok)", fontSize: 9.5, fontWeight: 800 }}>XLSX</button>
-                  <button onClick={(e) => { e.stopPropagation(); abrirRelatorio(r); }} style={{ height: 27, border: "1px solid var(--bg)", borderRadius: 8, background: "var(--bg)", color: "#FFFDFC", fontSize: 9.5, fontWeight: 700 }}>Gerar</button>
+                  <button onClick={(e) => { e.stopPropagation(); abrirRelatorio(r); }} style={{ height: 27, border: "1px solid var(--bg)", borderRadius: 8, background: "var(--bg)", color: "var(--on-accent)", fontSize: 9.5, fontWeight: 700 }}>Gerar</button>
                 </div>)}
               </div>; })}
           </div>
@@ -228,7 +228,7 @@ export default function RelatoriosPage() {
             <span style={zipChip(gerando === "pronto" ? "ok" : gerando === "gerando" ? "warn" : "neutral")}>{gerando === "pronto" ? "Concluído" : gerando === "gerando" ? "Gerando..." : "Pronto para gerar"}</span>
             <span style={{ fontSize: 9, color: "var(--soft)" }}>Geração real de PDF/XLSX</span>
           </div>
-          <button disabled={gerando === "gerando"} onClick={() => gerarNoDrawer("pdf")} style={{ width: "100%", height: 36, borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 800, opacity: gerando === "gerando" ? .6 : 1 }}>{gerando === "pronto" ? "Gerar novamente" : "Gerar relatório"}</button>
+          <button disabled={gerando === "gerando"} onClick={() => gerarNoDrawer("pdf")} style={{ width: "100%", height: 36, borderRadius: 9, border: "1px solid var(--bg)", background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 800, opacity: gerando === "gerando" ? .6 : 1 }}>{gerando === "pronto" ? "Gerar novamente" : "Gerar relatório"}</button>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
             <button disabled={gerando === "gerando"} onClick={() => gerarNoDrawer("pdf")} style={{ height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--bad)", fontSize: 10.5, fontWeight: 800 }}>↓ Baixar PDF</button>
             <button disabled={gerando === "gerando"} onClick={() => gerarNoDrawer("xlsx")} style={{ height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ok)", fontSize: 10.5, fontWeight: 800 }}>↓ Baixar Excel</button>
