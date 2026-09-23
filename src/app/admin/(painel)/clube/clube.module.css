@@ -822,3 +822,50 @@
   .editorActions{grid-column:1}
   .rewardActions{grid-template-columns:1fr}
 }
+
+
+/* Produtos reais do app no dashboard do Clube */
+.benefitProductCard{
+  min-height:76px;
+  border:1px solid var(--line2);
+  border-radius:11px;
+  background:color-mix(in srgb,var(--panel) 88%,var(--s0));
+  display:grid;
+  grid-template-columns:54px minmax(0,1fr) 18px;
+  gap:10px;
+  align-items:center;
+  padding:8px;
+  text-align:left;
+  color:inherit;
+  overflow:hidden;
+  transition:border-color .15s ease,transform .15s ease;
+}
+.benefitProductCard:hover{
+  transform:translateY(-1px);
+  border-color:color-mix(in srgb,var(--rose) 30%,var(--line));
+}
+.benefitThumb{
+  width:54px;
+  height:54px;
+  overflow:hidden;
+  border-radius:10px;
+  background:#f7eeec;
+}
+.benefitProductCopy{
+  min-width:0;
+  display:grid;
+  gap:3px;
+}
+.benefitProductCopy .benefitTitle{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.benefitProductCopy .benefitDesc{
+  display:block;
+}
+:global(.dark) .page .benefitProductCard{
+  background:#17181d;
+  border-color:rgba(236,204,214,.13);
+}
