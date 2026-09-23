@@ -81,6 +81,9 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const { inicio, fimExclusivo } = periodoMes(ano, mes);
     // Intervalo [hoje, hoje + 7): exatamente sete datas corridas, incluindo hoje.
     const fimProximos7 = addDias(agoraBrasil, 7);
+    const diaSemanaUtc = new Date(`${agoraBrasil}T12:00:00.000Z`).getUTCDay();
+    const inicioSemana = addDias(agoraBrasil, -((diaSemanaUtc + 6) % 7));
+    const fimSemana = addDias(inicioSemana, 7);
     const inicioPushUtc = `${agoraBrasil}T03:00:00.000Z`;
     const fimPushUtc = `${addDias(agoraBrasil, 1)}T03:00:00.000Z`;
 
@@ -98,7 +101,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       atividadeRes,
     ] = await Promise.all([
       supabase.from("clientes")
-        .select("id,nome_completo,cpf,status_contrato,status_revisao_financeira,valor_contrato,quantidade_parcelas,created_at,ativo")
+        .select("id,nome_completo,cpf,data_nascimento,acesso_app_liberado,status_contrato,status_revisao_financeira,valor_contrato,quantidade_parcelas,created_at,ativo")
         .order("created_at", { ascending: false }),
       supabase.from("boletos")
         .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,comprovante_url,suspensa,clientes(id,nome_completo,cpf)")
@@ -167,6 +170,16 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const aguardandoConferencia = boletos.filter((b) => b.status === "pendente_confirmacao");
     const semVencimento = abertos.filter((b) => !b.data_vencimento);
     const pagosNoMes = boletos.filter((b) => b.status === "pago" && b.data_pagamento && String(b.data_pagamento).slice(0, 10) >= inicio && String(b.data_pagamento).slice(0, 10) < fimExclusivo);
+    const pagosNaSemana = boletos.filter((b) => b.status === "pago" && b.data_pagamento && String(b.data_pagamento).slice(0, 10) >= inicioSemana && String(b.data_pagamento).slice(0, 10) < fimSemana);
+    const clientesInadimplentes = new Set(vencidos.map((b) => String(b.cliente_id ?? "")).filter(Boolean)).size;
+    const clientesComParcela = new Set(boletos.map((b) => String(b.cliente_id ?? "")).filter(Boolean));
+    const clientesProntasAcessoApp = clientes.filter((c) =>
+      !c.acesso_app_liberado
+      && Boolean(c.nome_completo)
+      && /^\d{11}$/.test(String(c.cpf ?? "").replace(/\D/g, ""))
+      && Boolean(c.data_nascimento)
+      && clientesComParcela.has(String(c.id))
+    ).length;
 
     const janelaMeses = Array.from({ length: 6 }, (_, i) => chaveMes(ano, mes, i - 2));
     const financeiroMensal = janelaMeses.map((chave) => {
@@ -306,10 +319,14 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
         parcelasVencidas: vencidos.length,
         aguardandoConferencia: aguardandoConferencia.length,
         recebidasNoMes: pagosNoMes.length,
+        recebidasSemana: pagosNaSemana.length,
+        clientesInadimplentes,
+        clientesProntasAcessoApp,
         semVencimento: semVencimento.length,
         valorAberto: dinheiro(abertos.reduce((s, b) => s + dinheiro(b.valor), 0)),
         valorVencido: dinheiro(vencidos.reduce((s, b) => s + dinheiro(b.valor), 0)),
         valorRecebidoMes: dinheiro(pagosNoMes.reduce((s, b) => s + dinheiro(b.valor), 0)),
+        valorRecebidoSemana: dinheiro(pagosNaSemana.reduce((s, b) => s + dinheiro(b.valor), 0)),
       },
       agenda: {
         resumo: {
