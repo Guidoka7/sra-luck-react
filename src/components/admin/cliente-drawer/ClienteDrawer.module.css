@@ -85,6 +85,8 @@
 :global(.dark) .modalLayer{background:rgba(0,0,0,.45)}
 :global(.dark) .ring:after{background:var(--surface)}
 :global(.dark) .ring{background:conic-gradient(var(--wine) calc(var(--progress)*1%),rgba(255,255,255,.08) 0)}
+:global(.dark) .ring.eligible{background:conic-gradient(var(--green) calc(var(--progress)*1%),rgba(95,197,138,.10) 0)}
+:global(.dark) .skeleton{background:linear-gradient(90deg,#1C1D23,#24252B,#1C1D23)}
 :global(.dark) .pPending{background:rgba(199,134,155,.14);color:#DCA0B2}\n:global(.dark) .pOverdue,:global(.dark) .pRejected{background:rgba(199,134,155,.12);color:#E2A6B7}\n:global(.dark) .toast.error{background:#1B171C;color:#E6B0BE;border-color:rgba(199,134,155,.28)}
 :global(.dark) .pReview{background:rgba(214,174,91,.16);color:#E2BE74}
 :global(.dark) .pSuspended{background:rgba(255,255,255,.08);color:var(--muted)}
