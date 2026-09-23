@@ -153,6 +153,10 @@
           if (client) document.documentElement.setAttribute("data-sra-client", "true");
           else document.documentElement.removeAttribute("data-sra-client");
 
+          var admin = window.location.pathname.indexOf("/admin") === 0;
+          if (admin) document.documentElement.setAttribute("data-sra-admin", "true");
+          else document.documentElement.removeAttribute("data-sra-admin");
+
           if (!client) return;
 
           var color = resolveTopColor();
