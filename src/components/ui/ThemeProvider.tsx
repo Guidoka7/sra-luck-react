@@ -14,6 +14,13 @@ const STORAGE_KEY = "sra-luck-theme";
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+function syncThemeColor(theme: Theme) {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  if (!window.location.pathname.startsWith("/admin")) return;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#0F1014" : "#F6E8E4");
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
 
@@ -29,12 +36,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeState(next);
     document.documentElement.classList.toggle("dark", next === "dark");
     document.documentElement.style.colorScheme = next;
+    syncThemeColor(next);
   }, []);
 
   function setTheme(next: Theme) {
     setThemeState(next);
     document.documentElement.classList.toggle("dark", next === "dark");
     document.documentElement.style.colorScheme = next;
+    syncThemeColor(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {}
