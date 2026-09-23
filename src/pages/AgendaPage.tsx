@@ -20,27 +20,14 @@ import { etapaAgenda, resumoEtapa } from "@/components/cliente/agenda/agendaEtap
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 import { LOGO_SRC } from "@/assets/brand";
 
-const CHAVE_ABA = "sra-luck-cliente-aba";
-const ABAS: ClientTab[] = ["inicio", "agenda", "premios", "parcelas", "mais"];
-
-/** Recarregar a página mantém a aba em que a cliente estava. */
-function abaSalva(): ClientTab {
-  try {
-    const salva = sessionStorage.getItem(CHAVE_ABA) as ClientTab | null;
-    return salva && ABAS.includes(salva) ? salva : "inicio";
-  } catch {
-    return "inicio";
-  }
-}
-
-
 export function AgendaPage() {
   // Último estado conhecido (cache local): a área abre na hora ao recarregar
   // e é revalidada em silêncio logo em seguida.
   const [cacheInicial] = useState(lerCacheCliente);
   const [agenda, setAgenda] = useState<AgendaData | null>(cacheInicial?.agenda ?? null);
   const [boletos, setBoletos] = useState<BoletosData | null>(cacheInicial?.boletos ?? null);
-  const [aba, setAba] = useState<ClientTab>(abaSalva);
+  // O app sempre abre na Início (inclusive ao atualizar a página).
+  const [aba, setAba] = useState<ClientTab>("inicio");
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const abaAntesDoMais = useRef<ClientTab>("inicio");
   const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
@@ -75,9 +62,6 @@ export function AgendaPage() {
     }
   }, []);
 
-  useEffect(() => {
-    try { sessionStorage.setItem(CHAVE_ABA, aba); } catch {}
-  }, [aba]);
 
   useEffect(() => {
     void carregar(Boolean(cacheInicial));
