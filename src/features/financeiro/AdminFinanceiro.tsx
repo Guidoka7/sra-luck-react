@@ -55,7 +55,7 @@ function periodoPreset(value: string): PeriodoFinanceiro {
 }
 
 function estadoFuturo(titulo: string, descricao: string) {
-  return <Panel className="p-6 dark:border-white/8 dark:bg-[#171519]/92"><div className="mx-auto flex min-h-[320px] max-w-xl flex-col items-center justify-center text-center"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-burgundy dark:bg-white/7 dark:text-rose"><Landmark className="h-5 w-5" /></span><h2 className="mt-4 text-lg font-semibold text-burgundy dark:text-cream">{titulo}</h2><p className="mt-2 text-xs leading-5 text-clay/58 dark:text-white/48">{descricao}</p><span className="mt-4 rounded-full border border-gold/25 bg-gold/[0.06] px-3 py-1.5 text-[9px] font-bold uppercase tracking-[.16em] text-burgundy dark:text-gold">Estrutura preparada · integração desativada</span></div></Panel>;
+  return <Panel className="p-6 dark:border-white/8 dark:bg-[#17181D]/92"><div className="mx-auto flex min-h-[320px] max-w-xl flex-col items-center justify-center text-center"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-burgundy dark:bg-white/7 dark:text-rose"><Landmark className="h-5 w-5" /></span><h2 className="mt-4 text-lg font-semibold text-burgundy dark:text-cream">{titulo}</h2><p className="mt-2 text-xs leading-5 text-clay/58 dark:text-white/48">{descricao}</p><span className="mt-4 rounded-full border border-gold/25 bg-gold/[0.06] px-3 py-1.5 text-[9px] font-bold uppercase tracking-[.16em] text-burgundy dark:text-gold">Estrutura preparada · integração desativada</span></div></Panel>;
 }
 
 export default function AdminFinanceiro() {
@@ -95,12 +95,12 @@ export default function AdminFinanceiro() {
     </div>
     <PageHeader eyebrow="Operação financeira" title="Financeiro Unificado" description="Recebimentos, comprovantes, parcelas e auditoria em uma única superfície operacional." actions={<><Button size="sm" variant="secondary" onClick={() => void abrirGeracao()}><Plus className="h-4 w-4" />Adicionar parcelas</Button><Button size="sm" onClick={atualizar}><RefreshCw className={cn("h-4 w-4", carregando && "animate-spin")} />Atualizar</Button></>} />
 
-    <Panel className="p-2.5 dark:border-white/8 dark:bg-[#171519]/92">
+    <Panel className="p-2.5 dark:border-white/8 dark:bg-[#17181D]/92">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
         <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5">
           <span className="mr-1 shrink-0 text-[10px] font-bold uppercase tracking-[.14em] text-clay/42 dark:text-white/38">Período</span>
-          {PERIODOS.map((item) => <button key={item.value} type="button" onClick={() => aplicarPreset(item.value)} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition", preset === item.value ? "bg-burgundy text-cream shadow-sm dark:bg-[#7f3546]" : "text-clay/58 hover:bg-blush hover:text-burgundy dark:text-white/48 dark:hover:bg-white/7 dark:hover:text-cream")}>{item.label}</button>)}
-          <button type="button" onClick={() => aplicarPreset("personalizado")} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition", preset === "personalizado" ? "bg-burgundy text-cream shadow-sm dark:bg-[#7f3546]" : "text-clay/58 hover:bg-blush hover:text-burgundy dark:text-white/48 dark:hover:bg-white/7 dark:hover:text-cream")}>Personalizado</button>
+          {PERIODOS.map((item) => <button key={item.value} type="button" onClick={() => aplicarPreset(item.value)} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition", preset === item.value ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/58 hover:bg-blush hover:text-burgundy dark:text-white/48 dark:hover:bg-white/7 dark:hover:text-cream")}>{item.label}</button>)}
+          <button type="button" onClick={() => aplicarPreset("personalizado")} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition", preset === "personalizado" ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/58 hover:bg-blush hover:text-burgundy dark:text-white/48 dark:hover:bg-white/7 dark:hover:text-cream")}>Personalizado</button>
         </div>
         <label className="relative min-w-0 flex-1 lg:max-w-[330px]">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-clay/35" />
@@ -116,16 +116,16 @@ export default function AdminFinanceiro() {
       </div>
     </Panel>
 
-    <nav aria-label="Seções do Financeiro" className="flex gap-1 overflow-x-auto rounded-2xl border border-white/70 bg-white/70 p-1.5 shadow-sm dark:border-white/8 dark:bg-[#171519]/80">
-      {ABAS.map((item) => <button key={item.id} type="button" onClick={() => navegar(item.id)} className={cn("inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[.11em] transition", aba === item.id ? "bg-burgundy text-cream shadow-sm dark:bg-[#7f3546]" : "text-clay/52 hover:bg-blush/60 hover:text-burgundy dark:text-white/45 dark:hover:bg-white/6 dark:hover:text-cream")}><item.icon className="h-3.5 w-3.5" />{item.label}</button>)}
+    <nav aria-label="Seções do Financeiro" className="flex gap-1 overflow-x-auto rounded-2xl border border-white/70 bg-white/70 p-1.5 shadow-sm dark:border-white/8 dark:bg-[#17181D]/80">
+      {ABAS.map((item) => <button key={item.id} type="button" onClick={() => navegar(item.id)} className={cn("inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[.11em] transition", aba === item.id ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/52 hover:bg-blush/60 hover:text-burgundy dark:text-white/45 dark:hover:bg-white/6 dark:hover:text-cream")}><item.icon className="h-3.5 w-3.5" />{item.label}</button>)}
     </nav>
 
-    {erro ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-alert/20 bg-alert/[0.06] p-3 text-xs text-alert"><span>{erro}</span><button type="button" onClick={atualizar} className="font-bold uppercase tracking-[.1em]">Tentar novamente</button></div> : null}
+    {erro ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-alert/20 bg-alert/[0.06] p-3 text-xs text-alert dark:border-[#C7869B]/30 dark:bg-[#C7869B]/10 dark:text-[#DCA0B2]"><span>{erro}</span><button type="button" onClick={atualizar} className="font-bold uppercase tracking-[.1em]">Tentar novamente</button></div> : null}
     {resumo?.truncado || lista?.truncado ? <p className="rounded-xl border border-gold/25 bg-gold/[0.06] p-3 text-xs text-clay/60 dark:text-white/50">A consulta atingiu o limite operacional de 5.000 parcelas. Refine o período antes de tomar uma decisão financeira.</p> : null}
 
     {aba === "clientes" ? <FinanceiroClientesFunil /> : null}
     {aba === "visao-geral" ? <FinanceiroOverview resumo={resumo} carregando={carregando} onNavegar={navegar} /> : null}
-    {aba === "recebiveis" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#171519]/92">
+    {aba === "recebiveis" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#17181D]/92">
       <div className="mb-3 flex flex-col gap-2 border-b border-rose/10 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/8">
         <div><h2 className="text-base text-burgundy dark:text-cream">Contas a receber</h2><p className="mt-0.5 text-xs text-clay/50 dark:text-white/42">{lista?.total ?? 0} lançamento(s) no período selecionado.</p></div>
         <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-blush/45 p-1 dark:bg-white/[0.04]">
@@ -134,7 +134,7 @@ export default function AdminFinanceiro() {
       </div>
       <RecebiveisTable itens={lista?.itens ?? []} carregando={carregando} onAbrir={(item) => setDrawerId(item.id)} />
     </Panel> : null}
-    {aba === "validacao" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#171519]/92">
+    {aba === "validacao" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#17181D]/92">
       <div className="mb-3 flex flex-col gap-2 border-b border-rose/10 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/8">
         <div><h2 className="text-base text-burgundy dark:text-cream">Validação</h2><p className="mt-0.5 text-xs text-clay/50 dark:text-white/42">Comprovantes pendentes, organizados pelos vencimentos mais antigos.</p></div>
         <div className="flex items-center gap-1.5">
