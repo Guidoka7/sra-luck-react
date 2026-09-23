@@ -100,7 +100,7 @@ export default function MonitoramentoPage() {
     </div>}
 
     {drawer && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(30,12,16,.42)", zIndex: 60 }} onClick={() => setDrawer(null)} />
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
       <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>{drawer.tipo === "log" ? "Log operacional" : "Acesso ao aplicativo"}</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawer.tipo === "log" ? drawer.item.codigo || drawer.item.nivel : drawer.item.cliente?.nome_completo}</h2></div>
