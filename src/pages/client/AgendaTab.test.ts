@@ -46,24 +46,27 @@ describe("AgendaTab — após a assinatura", () => {
   };
   const agendamento = { id: "termos-1", data: "2026-09-21", horario: "10:00", dataCirurgia: null };
 
-  it("avança o cabeçalho com assinatura persistida mesmo enquanto o agendamento está ativo", () => {
+  it("avança para a agenda cirúrgica sem repetir o card de confirmação dos termos", () => {
     const html = renderToStaticMarkup(createElement(AgendaTab, {
       ...props,
       agendamentoAtivo: { ...agendamento, termosAssinadosEm: "2026-09-22T12:30:00Z" },
     }));
     expect(html).toContain("Agenda cirúrgica");
-    expect(html).toContain("22/09/2026 às 09:30");
-    expect(html.match(/Termos assinados/g)).toHaveLength(1);
     expect(html).not.toContain("Assinatura dos termos agendada");
+    expect(html).not.toContain("Assinatura confirmada");
+    expect(html).not.toContain("Sua assinatura foi confirmada");
+    expect(html).not.toContain("22/09/2026 às 09:30");
     expect(html).not.toContain("Horário confirmado:");
     expect(html).not.toContain("Custeio confirmado");
   });
 
-  it("preserva a confirmação de agendamentos concluídos sem timestamp legado", () => {
+  it("não reexibe a confirmação dos termos em agendamentos concluídos legados", () => {
     const html = renderToStaticMarkup(createElement(AgendaTab, { ...props, agendamentoConcluido: agendamento }));
-    expect(html).toContain("Assinatura confirmada");
-    expect(html).toContain("21/09/2026 às 10:00");
+    expect(html).toContain("Agenda cirúrgica");
     expect(html).toContain("Acompanhe a liberação da agenda");
+    expect(html).not.toContain("Assinatura confirmada");
+    expect(html).not.toContain("Sua assinatura foi confirmada");
+    expect(html).not.toContain("21/09/2026 às 10:00");
   });
 
   it("não trata uma data agendada como assinatura já realizada", () => {
