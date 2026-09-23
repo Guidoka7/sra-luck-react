@@ -30,6 +30,10 @@
   --bluebg: rgba(37, 99, 235, .1);
   --on-accent: #FFFDFC;
   --active-shadow: 0 12px 24px -16px rgba(122, 38, 50, .55);
+  --panel-shadow: 0 16px 40px -34px rgba(122, 38, 50, .35);
+  --tabs-shadow: 0 12px 28px -25px rgba(122, 38, 50, .30);
+  --overlay-bg: rgba(30, 12, 16, .42);
+  --overlay-bg-strong: rgba(30, 12, 16, .50);
   /* Mesma progressão cromática do topo do app da cliente: rosé presente no início e transição contínua para o neutro do Admin. */
   --shell: linear-gradient(180deg, #EFD0D8 0px, #F4E0E4 120px, #F9EFEF 260px, #FBF7F5 420px, #FAF7F7 560px, #FAF7F7 100%);
 
@@ -63,6 +67,10 @@
   --bluebg: rgba(145, 167, 216, .12);
   --on-accent: #FFF7FA;
   --active-shadow: 0 14px 30px -17px rgba(168, 95, 125, .48);
+  --panel-shadow: 0 24px 62px -42px rgba(0, 0, 0, .82);
+  --tabs-shadow: 0 16px 38px -30px rgba(0, 0, 0, .70);
+  --overlay-bg: rgba(3, 4, 8, .72);
+  --overlay-bg-strong: rgba(3, 4, 8, .82);
   /* Fundo quase preto com luz rosé restrita ao topo, sem aspecto avermelhado. */
   --shell:
     radial-gradient(820px 420px at 7% -7%, rgba(212, 138, 160, .16), transparent 62%),
@@ -168,6 +176,45 @@
 .dark .zip-admin ::-webkit-scrollbar-thumb {
   background: rgba(212, 138, 160, .27);
 }
+.dark .zip-admin input::placeholder,
+.dark .zip-admin textarea::placeholder {
+  color: #756F76;
+}
+.dark .zip-admin input:disabled,
+.dark .zip-admin select:disabled,
+.dark .zip-admin textarea:disabled,
+.dark .zip-admin button:disabled {
+  opacity: .52;
+}
+.dark .zip-admin select option {
+  background: #17181D;
+  color: #F4EEF1;
+}
+.dark .zip-admin input[type="date"]::-webkit-calendar-picker-indicator,
+.dark .zip-admin input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dark .zip-admin input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(.82) sepia(.08) saturate(.55);
+  opacity: .78;
+}
+.dark .zip-admin input[type="color"] {
+  background: #17181D !important;
+  border-color: var(--line) !important;
+}
+.dark .zip-admin [data-dark-surface="panel"] {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+  box-shadow: var(--panel-shadow) !important;
+}
+.dark .zip-admin [data-dark-surface="solid"] {
+  background: var(--s0) !important;
+  border-color: var(--line) !important;
+}
+.dark .zip-admin [data-dark-overlay] {
+  background: var(--overlay-bg) !important;
+}
+.dark .zip-admin [data-dark-overlay="strong"] {
+  background: var(--overlay-bg-strong) !important;
+}
 
 /* A Central/Agenda V46 é gerada automaticamente; estes overrides apenas
    harmonizam o dark com a identidade rosé do shell sem editar o CSS gerado. */
@@ -228,6 +275,6 @@
     display: flex !important; position: fixed !important; top: 10px !important; left: 10px; bottom: 10px;
     z-index: 70; min-height: 0 !important; overflow-y: auto; background: var(--s0) !important;
   }
-  .zip-shell-menu-open .zip-shell-scrim { display: block; position: fixed; inset: 0; z-index: 69; background: rgba(30, 12, 16, .42); }
+  .zip-shell-menu-open .zip-shell-scrim { display: block; position: fixed; inset: 0; z-index: 69; background: var(--overlay-bg); }
   .zip-shell > main { width: 100%; }
 }
