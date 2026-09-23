@@ -23,9 +23,9 @@ const STATUS: Record<StatusIndicacao, { rotulo: string; kind: ZipKind }> = {
   invalidada: { rotulo: "Não fechou", kind: "bad" },
 };
 
-const cartao: CSSProperties = { border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden", boxShadow: "0 16px 40px -34px rgba(122,38,50,.35)" };
+const cartao: CSSProperties = { border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--panel-shadow)" };
 const cabecalhoTabela: CSSProperties = { fontSize: 8.2, fontWeight: 700, letterSpacing: ".13em", textTransform: "uppercase", color: "var(--rose)" };
-const botao = (primario = false): CSSProperties => ({ height: 30, padding: "0 12px", borderRadius: 9, border: `1px solid ${primario ? "var(--bg)" : "var(--line)"}`, background: primario ? "var(--bg)" : "var(--s0)", color: primario ? "#FFFDFC" : "var(--ink)", fontSize: 11, fontWeight: 700, cursor: "pointer" });
+const botao = (primario = false): CSSProperties => ({ height: 30, padding: "0 12px", borderRadius: 9, border: `1px solid ${primario ? "var(--bg)" : "var(--line)"}`, background: primario ? "var(--bg)" : "var(--s0)", color: primario ? "var(--on-accent)" : "var(--ink)", fontSize: 11, fontWeight: 700, cursor: "pointer" });
 const campo: CSSProperties = { height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 12, padding: "0 10px", width: "100%" };
 
 function data(iso?: string | null) { return iso ? new Date(iso).toLocaleDateString("pt-BR") : "—"; }
