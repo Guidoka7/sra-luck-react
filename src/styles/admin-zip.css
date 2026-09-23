@@ -406,3 +406,94 @@
   border-color:#292A31 !important;
   color:#F2EDF0 !important;
 }
+
+
+/* V46 rose cleanup — cobre seletores específicos do CSS gerado que ainda
+   traziam tons vermelhos no modo escuro. */
+.dark .zip-admin .v46 .release-step.failed i,
+.dark .zip-admin .v46 .process-check.failed .check-mark,
+.dark .zip-admin .v46 .release-task.failed .release-task-icon {
+  background:rgba(199,134,155,.13) !important;
+  color:#DCA0B2 !important;
+}
+.dark .zip-admin .v46 .process-check.failed {
+  border-color:rgba(199,134,155,.22) !important;
+  background:rgba(199,134,155,.07) !important;
+}
+.dark .zip-admin .v46 .calendar-page.terms-agenda {
+  --agenda-accent:#C7869B !important;
+  --agenda-soft:rgba(199,134,155,.08) !important;
+  --agenda-soft-2:#17181D !important;
+  --agenda-line:rgba(199,134,155,.18) !important;
+}
+.dark .zip-admin .v46 .terms-agenda .v46-terms-calendar-panel,
+.dark .zip-admin .v46 .terms-agenda .bottom-table {
+  border-top-color:#A85F7D !important;
+}
+.dark .zip-admin .v46 .terms-agenda .calendar-head h2,
+.dark .zip-admin .v46 .terms-agenda .agenda-meta-line b,
+.dark .zip-admin .v46 .terms-day-panel .calendar-head h3 {
+  color:#DCA0B2 !important;
+}
+.dark .zip-admin .v46 .terms-agenda .circle-btn {
+  border-color:rgba(199,134,155,.26) !important;
+  color:#DCA0B2 !important;
+  background:#17181D !important;
+}
+.dark .zip-admin .v46 .terms-agenda .day-cell.partial {
+  background:rgba(199,134,155,.075) !important;
+  border-color:rgba(199,134,155,.16) !important;
+}
+.dark .zip-admin .v46 .terms-agenda .day-cell.partial .day-marker {
+  background:#C7869B !important;
+}
+.dark .zip-admin .v46 .terms-agenda .day-cell.selected {
+  background:linear-gradient(135deg,#A85F7D,#95526F) !important;
+  border-color:#A85F7D !important;
+  color:#FFF7FA !important;
+  box-shadow:0 0 0 2px rgba(199,134,155,.16),0 10px 26px rgba(0,0,0,.26) !important;
+}
+.dark .zip-admin .v46 .rail-step.current .rail-dot,
+.dark .zip-admin .v46 .rail-step.reviewing .rail-dot {
+  background:#A85F7D !important;
+  border-color:#C7869B !important;
+  color:#FFF7FA !important;
+  box-shadow:0 0 0 4px rgba(199,134,155,.10) !important;
+}
+.dark .zip-admin .v46 .rail-step.reviewing b {
+  color:#DCA0B2 !important;
+}
+.dark .zip-admin .v46 .installment-menu button.danger-item {
+  color:#DCA0B2 !important;
+}
+.dark .zip-admin .v46 .v46-overview .stage-column.stage-preEligibility {
+  --lane:#C7869B !important;
+  --lane-soft:rgba(199,134,155,.08) !important;
+  --lane-line:rgba(199,134,155,.20) !important;
+}
+.dark .zip-admin .v46 .v46-overview .stage-column.stage-preEligibility .stage-count {
+  background:#A85F7D !important;
+  color:#FFF7FA !important;
+}
+.dark .zip-admin .v46 .stage-termsConfirmed .chosen-date {
+  --date-accent:#C7869B !important;
+  --date-soft:rgba(199,134,155,.07) !important;
+  --date-line:rgba(199,134,155,.19) !important;
+}
+.dark .zip-admin .v46 .system-date-day.selected {
+  background:linear-gradient(135deg,#A85F7D,#95526F) !important;
+  border-color:#A85F7D !important;
+  color:#FFF7FA !important;
+  box-shadow:0 0 0 3px rgba(199,134,155,.11) !important;
+}
+.dark .zip-admin .v46 .system-date-day.system-current:not(.selected) {
+  border-color:rgba(199,134,155,.30) !important;
+  box-shadow:inset 0 0 0 1px rgba(199,134,155,.09) !important;
+}
+.dark .zip-admin .v46 .rebook-day.selected {
+  outline-color:#A85F7D !important;
+  box-shadow:0 0 0 3px rgba(199,134,155,.10) !important;
+}
+.dark .zip-admin .v46 .surgery-financial-cap.danger .surgery-financial-track span {
+  background:#C7869B !important;
+}
