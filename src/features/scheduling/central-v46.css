@@ -2322,20 +2322,70 @@
 
 /* V30 — responsável pelo atendimento de termos */
 .v46 .terms-summary{
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important
+  grid-template-columns:1fr!important;
+  margin-top:9px
 }
 .v46 .responsible-summary{
-  position:relative
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  min-height:58px;
+  padding:11px 12px!important
 }
-.v46 .responsible-summary .responsible-link{
-  display:inline-flex;
-  margin-top:6px;
-  padding:0!important;
-  font-size:8px
+.v46 .responsible-copy{
+  min-width:0;
+  display:grid;
+  gap:4px
+}
+.v46 .responsible-copy label{
+  margin:0!important
 }
 .v46 .responsible-name{
-  font-weight:800;
-  color:#465163
+  font-weight:850!important;
+  color:#354052!important
+}
+.v46 .responsible-empty{
+  font-size:11px!important;
+  font-weight:750!important;
+  color:#8b929f!important
+}
+.v46 .responsible-action-btn{
+  min-height:34px;
+  flex:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  border:1px solid #d8b8bd;
+  border-radius:9px;
+  background:#fff;
+  color:var(--wine);
+  padding:0 11px;
+  font-size:8.7px;
+  font-weight:850;
+  white-space:nowrap;
+  transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease,opacity .16s ease
+}
+.v46 .responsible-action-btn:hover:not(:disabled){
+  background:#fff5f6;
+  border-color:#c9969e;
+  box-shadow:0 5px 14px rgba(122,38,50,.08);
+  transform:translateY(-1px)
+}
+.v46 .responsible-action-btn:active:not(:disabled){
+  transform:translateY(0) scale(.985)
+}
+.v46 .responsible-action-btn:focus-visible{
+  outline:3px solid rgba(122,38,50,.12);
+  outline-offset:2px
+}
+.v46 .responsible-action-btn:disabled{
+  cursor:not-allowed;
+  opacity:.42;
+  box-shadow:none;
+  transform:none
 }
 .v46 .muted-text{
   color:#98a0ad;
@@ -2350,6 +2400,15 @@
 }
 @media(max-width:650px){
   .v46 .terms-summary{grid-template-columns:1fr!important}
+  .v46 .responsible-summary{
+    align-items:stretch;
+    flex-direction:column;
+    gap:9px
+  }
+  .v46 .responsible-action-btn{
+    width:100%;
+    min-height:36px
+  }
 }
 
 
@@ -3384,6 +3443,25 @@
     border: 0;
     background: transparent;
     color: var(--wine)
+}
+.dark .v46 .responsible-action-btn {
+    background: #171717;
+    border-color: #4b3539;
+    color: #d98594
+}
+.dark .v46 .responsible-action-btn:hover:not(:disabled) {
+    background: #21191b;
+    border-color: #6a444b;
+    box-shadow: 0 5px 14px rgba(0,0,0,.18)
+}
+.dark .v46 .responsible-action-btn:focus-visible {
+    outline-color: rgba(217,133,148,.2)
+}
+.dark .v46 .responsible-name {
+    color: #c9ced6!important
+}
+.dark .v46 .responsible-empty {
+    color: #858086!important
 }
 .dark .v46 .drawer-backdrop {
     background: rgba(24,18,20,.22)
