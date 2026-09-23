@@ -95,6 +95,9 @@ describe("autenticação M2M do Dev Console", () => {
       ["PATCH", "/api/admin/configuracoes"],
       ["PATCH", "/api/admin/credit-ops/rewards/rw-1"],
       ["DELETE", "/api/admin/credit-ops/rewards/rw-1"],
+      ["POST", "/api/admin/home-campanhas"],
+      ["PUT", "/api/admin/home-campanhas/clube-vantagens"],
+      ["DELETE", "/api/admin/home-campanhas/custom-abc123"],
     ])("aceita %s %s", async (method, path) => {
       const result = await authorizeDevConsoleRequest(request(path, { method }), writeEnv);
       expect(result).toBeInstanceOf(Request);
@@ -148,6 +151,10 @@ describe("autenticação M2M do Dev Console", () => {
       );
       expect((result as Response).status).toBe(401);
     });
+  });
+
+  it("autoriza leitura do carrossel", async () => {
+    expect(await authorizeDevConsoleRequest(request("/api/admin/home-campanhas"), env)).toBeInstanceOf(Request);
   });
 
   it("bloqueia uma rota administrativa fora da allowlist", async () => {

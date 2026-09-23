@@ -27,6 +27,7 @@ const ALLOWED_PREFIXES = [
   "/api/admin/staff",
   "/api/admin/configuracoes",
   "/api/admin/clientes",
+  "/api/admin/home-campanhas",
 ];
 
 export type DevConsoleRole = "owner" | "developer" | "operator" | "viewer";
@@ -34,7 +35,7 @@ export type DevConsoleRole = "owner" | "developer" | "operator" | "viewer";
 const ROLE_LEVEL: Record<DevConsoleRole, number> = { viewer: 0, operator: 1, developer: 2, owner: 3 };
 
 type MutacaoPermitida = {
-  metodo: "POST" | "PATCH" | "DELETE";
+  metodo: "POST" | "PUT" | "PATCH" | "DELETE";
   rota: RegExp;
   dominio: string;
   papelMinimo: DevConsoleRole;
@@ -68,6 +69,9 @@ const MUTACOES_PERMITIDAS: readonly MutacaoPermitida[] = [
   { metodo: "POST", rota: /^\/api\/admin\/credit-ops\/rewards$/, dominio: "clube", papelMinimo: "operator" },
   { metodo: "PATCH", rota: /^\/api\/admin\/credit-ops\/rewards\/[^/]+$/, dominio: "clube", papelMinimo: "operator" },
   { metodo: "DELETE", rota: /^\/api\/admin\/credit-ops\/rewards\/[^/]+$/, dominio: "clube", papelMinimo: "operator" },
+  { metodo: "POST", rota: /^\/api\/admin\/home-campanhas$/, dominio: "carrossel", papelMinimo: "operator" },
+  { metodo: "PUT", rota: /^\/api\/admin\/home-campanhas\/[a-z0-9-]+$/, dominio: "carrossel", papelMinimo: "operator" },
+  { metodo: "DELETE", rota: /^\/api\/admin\/home-campanhas\/[a-z0-9-]+$/, dominio: "carrossel", papelMinimo: "operator" },
 ];
 
 type ContextoMutacao = { ator: string; papel: DevConsoleRole; metodo: string; rota: string; dominio: string; requestId: string | null };
