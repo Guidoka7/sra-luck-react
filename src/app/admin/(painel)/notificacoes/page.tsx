@@ -171,7 +171,7 @@ export default function AdminNotificacoes() {
           <div><div style={{ fontSize: 12, fontWeight: 700 }}>{rotuloEvento(t)}</div></div>
           <div style={{ fontSize: 11, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.titulo}</div>
           <span style={zipChip(t.is_active ? "ok" : "neutral")}>{t.is_active ? "Ativo" : "Inativo"}</span>
-          <button onClick={(e) => { e.stopPropagation(); void salvarTemplate(t, { is_active: !t.is_active }); }} style={{ height: 24, width: 42, borderRadius: 999, border: `1px solid ${t.is_active ? "var(--bg)" : "var(--line)"}`, background: t.is_active ? "var(--bg)" : "var(--s2)", padding: 2, display: "flex", justifyContent: t.is_active ? "flex-end" : "flex-start" }}><span style={{ width: 18, height: 18, borderRadius: 999, background: "#FFFDFC", boxShadow: "0 3px 8px rgba(0,0,0,.14)" }} /></button>
+          <button onClick={(e) => { e.stopPropagation(); void salvarTemplate(t, { is_active: !t.is_active }); }} style={{ height: 24, width: 42, borderRadius: 999, border: `1px solid ${t.is_active ? "var(--bg)" : "var(--line)"}`, background: t.is_active ? "var(--bg)" : "var(--s2)", padding: 2, display: "flex", justifyContent: t.is_active ? "flex-end" : "flex-start" }}><span style={{ width: 18, height: 18, borderRadius: 999, background: "var(--on-accent)", boxShadow: "0 3px 8px rgba(0,0,0,.14)" }} /></button>
           <span style={{ fontSize: 14, color: "var(--soft)" }}>›</span>
         </div>)}
       </div>
@@ -200,21 +200,21 @@ export default function AdminNotificacoes() {
           <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Reenviar a cada<select style={{ ...fieldInput, width: "100%", marginTop: 4 }} value={config.frequencia_atraso_horas} onChange={(e) => setConfig({ ...config, frequencia_atraso_horas: Number(e.target.value) })}>{[6, 12, 24, 48, 72].map((h) => <option key={h} value={h}>{h} horas</option>)}</select></label>
           <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Máx. tentativas<input type="number" min={1} max={10} style={{ ...fieldInput, width: "100%", marginTop: 4 }} value={config.max_tentativas} onChange={(e) => setConfig({ ...config, max_tentativas: Number(e.target.value) })} /></label>
         </div>
-        <button onClick={salvarConfig} disabled={saving} style={{ marginTop: 10, height: 33, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 11, fontWeight: 700 }}>{saving ? "Salvando..." : "Salvar configuração"}</button>
+        <button onClick={salvarConfig} disabled={saving} style={{ marginTop: 10, height: 33, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving ? "Salvando..." : "Salvar configuração"}</button>
       </div>
       <div>
         <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Execução ({aVencer} a vencer · {atrasadas} atrasadas)</div>
         <div style={{ display: "grid", gap: 7 }}>
           <button onClick={executarVencer} disabled={running || sendingAll || runningVencer} style={{ height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 10.5, fontWeight: 700 }}>{runningVencer ? "Verificando..." : "Verificar régua D-2/D-1/D0"}</button>
           <button onClick={executarAgora} disabled={running || sendingAll || runningVencer} style={{ height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 10.5, fontWeight: 700 }}>{running ? "Verificando..." : "Verificar atrasos agora"}</button>
-          <button onClick={enviarAgoraTodas} disabled={running || sendingAll || atrasadas === 0} style={{ height: 33, border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 10.5, fontWeight: 700 }}>{sendingAll ? "Enviando..." : "Enviar agora para todas atrasadas"}</button>
+          <button onClick={enviarAgoraTodas} disabled={running || sendingAll || atrasadas === 0} style={{ height: 33, border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{sendingAll ? "Enviando..." : "Enviar agora para todas atrasadas"}</button>
         </div>
       </div>
     </div>
 
     <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "14px 15px", display: "grid", gridTemplateColumns: ".75fr 1.25fr", gap: 16 }}>
       <div><div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Envio manual</div><select style={{ ...fieldInput, width: "100%" }} value={clienteId} onChange={(e) => setClienteId(e.target.value)}><option value="">Selecione uma cliente...</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome_completo}</option>)}</select></div>
-      <form onSubmit={enviarManual}><div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Mensagem</div><input style={{ ...fieldInput, width: "100%", marginBottom: 8 }} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título" /><textarea style={{ ...fieldInput, width: "100%", height: 60, padding: 8 }} value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Mensagem..." /><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button disabled={enviando} style={{ height: 32, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 10.5, fontWeight: 700 }}>{enviando ? "Enviando..." : "Enviar agora"}</button></div></form>
+      <form onSubmit={enviarManual}><div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Mensagem</div><input style={{ ...fieldInput, width: "100%", marginBottom: 8 }} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título" /><textarea style={{ ...fieldInput, width: "100%", height: 60, padding: 8 }} value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Mensagem..." /><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button disabled={enviando} style={{ height: 32, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{enviando ? "Enviando..." : "Enviar agora"}</button></div></form>
     </div>
 
     <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
@@ -227,7 +227,7 @@ export default function AdminNotificacoes() {
     </div>
 
     {drawer && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "rgba(30,12,16,.42)", zIndex: 60 }} onClick={() => setDrawer(null)} />
+      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
       <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Template Web Push</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{rotuloEvento(drawer)}</h2></div>
@@ -242,7 +242,7 @@ export default function AdminNotificacoes() {
           <div style={{ border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 10, padding: 10 }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>Variáveis disponíveis</div><div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 5 }}>{["{{cliente_nome}}", "{{data_vencimento}}", "{{valor_parcela}}", "{{numero_parcela}}", "{{dias_atraso}}"].map((v) => <code key={v} style={{ fontSize: 9.5, padding: "4px 6px", borderRadius: 6, background: "var(--s2)", color: "var(--bg)" }}>{v}</code>)}</div></div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}>
             <button onClick={() => setDrawer(null)} style={{ height: 32, padding: "0 11px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 10.5, fontWeight: 700 }}>Cancelar</button>
-            <button onClick={() => { void salvarTemplate(drawer, {}); setDrawer(null); }} style={{ height: 32, padding: "0 12px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "#FFFDFC", fontSize: 10.5, fontWeight: 700 }}>Salvar alterações</button>
+            <button onClick={() => { void salvarTemplate(drawer, {}); setDrawer(null); }} style={{ height: 32, padding: "0 12px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>Salvar alterações</button>
           </div>
         </div>
       </aside>
