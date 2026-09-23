@@ -42,7 +42,7 @@ export function RecebiveisTable({ itens, carregando, validacao = false, onAbrir 
           <td className="px-3 py-2.5"><p className="text-clay/65 dark:text-white/58">{item.instituicaoConta ?? "Não informado"}</p><p className="max-w-[130px] truncate text-[10px] text-clay/38 dark:text-white/32">{item.origem.replaceAll("_", " ")}</p></td>
           <td className="px-3 py-2.5">{dataBr(item.dataPagamento)}</td>
           <td className="px-3 py-2.5"><p>{item.comprovante ? "Anexado" : "—"}</p><p className="max-w-[120px] truncate text-[10px] text-clay/38 dark:text-white/32">{item.externalId ?? "Sem ID externo"}</p></td>
-          <td className="sticky right-0 bg-white/95 px-3 py-2.5 text-right dark:bg-[#171519]"><button type="button" onClick={() => onAbrir(item)} className="inline-flex items-center gap-1.5 rounded-lg border border-rose/15 px-2.5 py-2 text-[10px] font-bold uppercase tracking-[.1em] text-burgundy hover:bg-blush dark:border-white/10 dark:text-cream dark:hover:bg-white/7"><Eye className="h-3.5 w-3.5" />Detalhes</button></td>
+          <td className="sticky right-0 bg-white/95 px-3 py-2.5 text-right dark:bg-[#17181D]"><button type="button" onClick={() => onAbrir(item)} className="inline-flex items-center gap-1.5 rounded-lg border border-rose/15 px-2.5 py-2 text-[10px] font-bold uppercase tracking-[.1em] text-burgundy hover:bg-blush dark:border-white/10 dark:text-cream dark:hover:bg-white/7"><Eye className="h-3.5 w-3.5" />Detalhes</button></td>
         </tr>; })}
       </tbody>
     </table>
