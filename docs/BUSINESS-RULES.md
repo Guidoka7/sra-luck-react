@@ -68,6 +68,16 @@ RD Station CRM → venda/negócio fechado → criação/atualização da cliente
 
 Evitar duplicidade por identificadores confiáveis, especialmente CPF e identificador externo do negócio.
 
+O RD Station é somente leitura: dados editáveis (nome, telefone, e-mail, valores, CPF, nascimento) são
+alterados apenas no Sra. Luck, nunca no CRM.
+
+**Excluir perfil (drawer do admin):** sem histórico financeiro/operacional, o cadastro é apagado; com
+histórico, é **arquivado** (`clientes.arquivado_em`, função `clientes_arquivar`, migration_077): some
+das áreas ativas, perde o acesso ao app e preserva parcelas, carnês, recebimentos e agenda para
+auditoria. Nos dois casos o **CPF fica livre** para um novo cadastro (a unicidade de CPF vale só entre
+clientes não arquivadas) e a venda do RD vinculada volta para "aguardando cadastro" no Sra. Luck. O login
+usa sempre o cadastro ativo mais recente do CPF.
+
 Guardar origem/campanha para relatórios e forecast.
 
 ## 6. Cobrança e parcelas
