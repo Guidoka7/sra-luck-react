@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { centralApi, dataBr, somarMeses } from "./api";
-import { AgendaCalendar, AppointmentRow, DayPanel, statusDoDia } from "./AgendaCalendar";
+import { AgendaCalendar, AppointmentRow, capacidadeAoLiberar, DayPanel, statusDoDia } from "./AgendaCalendar";
 import type { AgendaTermosResponse } from "./types";
 import { ResponsavelModal } from "./DrawerModals";
 import { TermsRescheduleModal } from "./TermsRescheduleModal";
 import { ConfirmModal } from "./V46Modal";
-
-const VAGAS_PADRAO_TERMOS = 3;
 
 /**
  * Agenda de Termos V46: calendário + painel do dia + "Próximas assinaturas".
@@ -73,7 +71,7 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
         <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
       <DayPanel tipo="terms" data={data} hoje={hoje} dia={dia} ocupado={ocupado || !calendario}
-        onAbrir={() => void acaoDia("liberar", dia?.vagasTotais || VAGAS_PADRAO_TERMOS)}
+        onAbrir={() => void acaoDia("liberar", capacidadeAoLiberar(dia))}
         onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
         onCapacidade={(n) => void acaoDia("liberar", n, "Vagas atualizadas.")}
         itens={doDia.map((a) => <AppointmentRow key={a.agendamentoId} tipo="terms" horario={a.horario} nome={a.nome}
