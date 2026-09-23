@@ -234,3 +234,115 @@
 .dark .strong{color:#f4eef1}
 /* Largura intermediária (sidebar do admin ainda visível): abas quebram em linhas e a tabela rola dentro do card. */
 @media(max-width:1060px){.tabs{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));height:auto}.tab{min-height:50px}.tab:not(:last-child)::after{display:none}.tableWrap{overflow-x:auto}.table{min-width:860px}.decorative{display:none}.pageHeadRight{min-width:0}}
+
+/* Dark contrast V48 — hierarquia visual de funis, cabeçalhos e listas */
+.dark{
+  --line:rgba(236,204,214,.15);
+  --line-strong:rgba(236,204,214,.24);
+}
+.dark .tabs{
+  background:#18191f;
+  border-color:rgba(212,138,160,.24);
+  box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.018);
+}
+.dark .tab{
+  color:#cbc2c7;
+  background:transparent;
+  transition:background-color .16s ease,color .16s ease;
+}
+.dark .tab:hover{
+  background:rgba(212,138,160,.07);
+  color:#f1e9ed;
+}
+.dark .tab:not(:last-child)::after{
+  top:9px;
+  bottom:9px;
+  background:rgba(236,204,214,.17);
+}
+.dark .tabIcon{
+  color:#b8a8ae;
+}
+.dark .countPill{
+  background:#292127;
+  color:#e0a0b2;
+  border:1px solid rgba(212,138,160,.20);
+}
+.dark .tabActive{
+  color:#f5e9ee;
+  background:linear-gradient(180deg,rgba(212,138,160,.17),rgba(212,138,160,.07));
+  box-shadow:inset 0 0 0 1px rgba(212,138,160,.06);
+}
+.dark .tabActive .tabIcon{
+  color:#e2a0b3;
+}
+.dark .tabActive .tabLabel{
+  color:#f7edf1;
+}
+.dark .tabActive .countPill{
+  background:rgba(212,138,160,.22);
+  color:#ffeaf1;
+  border-color:rgba(229,164,183,.34);
+}
+.dark .tabActive::before{
+  left:10px;
+  right:10px;
+  height:3px;
+  background:#d48aa0;
+  box-shadow:0 -2px 10px rgba(212,138,160,.24);
+}
+.dark .filters{
+  background:#15161b;
+  border-color:rgba(236,204,214,.16);
+  box-shadow:0 8px 24px rgba(0,0,0,.14);
+}
+.dark .field,.dark .selectWrap{
+  background:#1b1c22;
+  border-color:rgba(236,204,214,.18);
+}
+.dark .field:focus-within,.dark .selectWrap:focus-within{
+  border-color:rgba(212,138,160,.46);
+  box-shadow:0 0 0 2px rgba(212,138,160,.08);
+}
+.dark .listCard{
+  background:#16171c;
+  border-color:rgba(236,204,214,.18);
+  box-shadow:0 18px 46px rgba(0,0,0,.22);
+}
+.dark .cardHead{
+  background:linear-gradient(180deg,#1d1b21,#191a1f);
+  border-bottom:1px solid rgba(236,204,214,.18);
+  box-shadow:inset 0 -1px 0 rgba(212,138,160,.035);
+}
+.dark .cardTitle{
+  color:#fbf3f6;
+}
+.dark .cardCount{
+  background:rgba(212,138,160,.16);
+  color:#efb3c3;
+  border:1px solid rgba(212,138,160,.22);
+}
+.dark .cardSub,.dark .orderLabel{
+  color:#b5abb0;
+}
+.dark .smallSelect,.dark .viewBtn{
+  background:#202126;
+  border-color:rgba(236,204,214,.19);
+}
+.dark .table thead th{
+  background:#211c20;
+  color:#e0a0b2;
+  border-bottom:1px solid rgba(212,138,160,.24);
+  box-shadow:inset 0 -1px 0 rgba(255,255,255,.018);
+}
+.dark .table tbody tr{
+  border-bottom-color:rgba(236,204,214,.11);
+}
+.dark .table tbody tr:hover{
+  background:rgba(212,138,160,.075);
+}
+.dark .funilNote{
+  background:#19181d;
+  color:#c9bec3;
+  border-bottom-color:rgba(236,204,214,.14);
+}
+
