@@ -1,0 +1,192 @@
+/* Cartão "Seus pontos" do Clube de Vantagens (mesma família visual da Frase do dia). */
+.client-app {
+  --pontos-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(232, 176, 188, 0.3) 0%, rgba(232, 176, 188, 0) 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(216, 178, 106, 0.18) 0%, rgba(216, 178, 106, 0) 60%),
+    linear-gradient(150deg, #86303F 0%, #6B1F2E 55%, #561824 100%);
+  --pontos-borda: rgba(255, 255, 255, 0.08);
+  --pontos-sombra: 0 16px 34px rgba(107, 31, 46, 0.26);
+  --pontos-texto: #FFF7F5;
+  --pontos-suave: rgba(255, 238, 238, 0.74);
+  --pontos-dourado: #E3C07E;
+  --pontos-painel: rgba(255, 255, 255, 0.08);
+  --pontos-painel-borda: rgba(255, 255, 255, 0.12);
+  --pontos-cta-fundo: #FFFFFF;
+  --pontos-cta-texto: #6B1F2E;
+}
+html[data-tema-cliente="escuro"] .client-app {
+  --pontos-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(230, 162, 178, 0.2) 0%, rgba(230, 162, 178, 0) 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(216, 178, 106, 0.1) 0%, rgba(216, 178, 106, 0) 60%),
+    linear-gradient(150deg, #3E2029 0%, #2C1820 60%, #221419 100%);
+  --pontos-borda: #3A2A30;
+  --pontos-sombra: 0 16px 34px rgba(0, 0, 0, 0.35);
+  --pontos-dourado: #D8B26A;
+  --pontos-painel: rgba(255, 255, 255, 0.05);
+  --pontos-painel-borda: rgba(255, 255, 255, 0.08);
+  --pontos-cta-fundo: #B0526A;
+  --pontos-cta-texto: #FFFFFF;
+}
+
+.client-app .sl-pontos {
+  position: relative;
+  overflow: hidden;
+  margin: 16px 20px 0;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--pontos-borda);
+  border-radius: 24px;
+  background: var(--pontos-fundo);
+  box-shadow: var(--pontos-sombra);
+  color: var(--pontos-texto);
+}
+.client-app .sl-pontos-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.client-app .sl-pontos-rotulo {
+  color: var(--pontos-dourado);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.client-app .sl-pontos-extrato {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--pontos-painel-borda);
+  border-radius: 999px;
+  background: var(--pontos-painel);
+  color: var(--pontos-texto);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.client-app .sl-pontos-saldo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: 4px; }
+.client-app .sl-pontos-numero {
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.client-app .sl-pontos-unidade { color: var(--pontos-suave); font-size: 13px; }
+.client-app .sl-pontos-caminho {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(227, 192, 126, 0.16);
+  color: var(--pontos-dourado);
+  font-size: 11px;
+  font-weight: 700;
+  align-self: center;
+}
+
+.client-app .sl-pontos-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid var(--pontos-painel-borda);
+  border-radius: 18px;
+  background: var(--pontos-painel);
+}
+.client-app .sl-pontos-meta--pronta { padding: 12px 14px; font-size: 12.5px; line-height: 1.4; color: var(--pontos-texto); }
+.client-app .sl-pontos-meta-foto {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+}
+.client-app .sl-pontos-meta-rotulo { color: var(--pontos-suave); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.client-app .sl-pontos-meta-titulo {
+  overflow: hidden;
+  margin-top: 1px;
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.client-app .sl-pontos-barra {
+  position: relative;
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.client-app .sl-pontos-barra-cheia {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #F2D7B0, #E3B56E);
+}
+/* Parte da barra que os pontos a caminho vão completar. */
+.client-app .sl-pontos-barra-prevista {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(242, 215, 176, 0.5) 0 4px, rgba(242, 215, 176, 0.18) 4px 8px);
+}
+.client-app .sl-pontos-meta-rodape {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--pontos-suave);
+  font-size: 11.5px;
+}
+.client-app .sl-pontos-meta-rodape strong { color: var(--pontos-texto); font-weight: 700; }
+
+.client-app .sl-pontos-dicas {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.client-app .sl-pontos-dicas li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--pontos-suave);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.client-app .sl-pontos-dicas svg { margin-top: 2px; color: var(--pontos-dourado); }
+.client-app .sl-pontos-dicas button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 3px;
+}
+.client-app .sl-pontos-dicas strong { color: var(--pontos-texto); font-weight: 700; }
+
+.client-app .sl-pontos-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--pontos-cta-fundo);
+  color: var(--pontos-cta-texto);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+  transition: transform 160ms ease;
+}
+.client-app .sl-pontos-cta:active { transform: scale(0.98); }

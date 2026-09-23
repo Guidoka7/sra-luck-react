@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { descreverEvento, estadoVoucher, etapaIndicacao, linkConviteWhatsApp, mascaraTelefone, proximoPremio } from "./clubeRegras";
+import { caminhoAteMeta, descreverEvento, estadoVoucher, etapaIndicacao, linkConviteWhatsApp, mascaraTelefone, pontosACaminho, proximoPremio } from "./clubeRegras";
 
 const premio = (id: string, pontos: number, estoque: number | null = 5) => ({ id, titulo: id, pontos, estoque, descricao: null, categoria: null, ativo: true, ordem: 0, icone_key: null, instrucoes_pos_resgate: null });
 
@@ -42,5 +42,33 @@ describe("Clube — regras de exibição", () => {
     const link = linkConviteWhatsApp("Bia Souza", "(61) 99999-0000", "Maria Luz");
     expect(link.startsWith("https://wa.me/5561999990000?text=")).toBe(true);
     expect(decodeURIComponent(link)).toContain("Oi, Bia, aqui é a Maria!");
+  });
+});
+
+describe("inteligência do cartão de pontos", () => {
+  const base = { aCaminho: 0, primeiraParcelaConcluida: true, pontosPrimeiraParcela: 50, pontosParcelaEmDia: 10, pontosIndicacao: 200 };
+
+  it("soma só as indicações que fecharam e ainda não creditaram", () => {
+    const itens = [
+      { status: "venda", pontos_creditados: 0 }, { status: "venda", pontos_creditados: 200 },
+      { status: "qualificada", pontos_creditados: 0 }, { status: "venda", pontos_creditados: 0 },
+    ] as Parameters<typeof pontosACaminho>[0];
+    expect(pontosACaminho(itens, 200)).toBe(400);
+  });
+
+  it("sugere o caminho mais curto com as regras reais", () => {
+    expect(caminhoAteMeta({ ...base, faltam: 20 })).toBe("Caminho mais rápido: 2 parcelas em dia.");
+    expect(caminhoAteMeta({ ...base, faltam: 400 })).toBe("Caminho mais rápido: 2 amigas indicadas que fecharem.");
+    expect(caminhoAteMeta({ ...base, faltam: 220 })).toBe("Caminho mais rápido: 1 amiga indicada e 2 parcelas em dia.");
+    expect(caminhoAteMeta({ ...base, faltam: 290 })).toBe("Caminho mais rápido: 2 amigas indicadas que fecharem.");
+    expect(caminhoAteMeta({ ...base, faltam: 150 })).toBe("Caminho mais rápido: 1 amiga indicada que fechar.");
+  });
+
+  it("considera a missão da 1ª parcela e os pontos a caminho", () => {
+    expect(caminhoAteMeta({ ...base, primeiraParcelaConcluida: false, faltam: 40 })).toBe("Pague a 1ª parcela e ele é seu.");
+    expect(caminhoAteMeta({ ...base, primeiraParcelaConcluida: false, faltam: 70 })).toBe("Caminho mais rápido: a 1ª parcela e 2 parcelas em dia.");
+    expect(caminhoAteMeta({ ...base, aCaminho: 200, faltam: 150 })).toBe("Os pontos a caminho já completam este prêmio.");
+    expect(caminhoAteMeta({ ...base, aCaminho: 200, faltam: 210 })).toBe("Caminho mais rápido: 1 parcela em dia.");
+    expect(caminhoAteMeta({ ...base, faltam: 0 })).toBeNull();
   });
 });

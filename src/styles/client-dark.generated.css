@@ -1,5 +1,5 @@
 /* Gerado por scripts/tema-escuro-cliente.mjs — não editar à mão.
- * Modo escuro premium do app da cliente (516 regras de classes/estilos).
+ * Modo escuro premium do app da cliente (510 regras de classes/estilos).
  * Ajustes finos que não saem da regra geral ficam em src/styles/client-dark.css. */
 
 html[data-tema-cliente="escuro"] .active\:bg-\[\#F4ECEA\]:active { background-color: #37252A; }
@@ -54,7 +54,6 @@ html[data-tema-cliente="escuro"] .bg-\[\#F1E7E4\] { background-color: #37252A; }
 html[data-tema-cliente="escuro"] .bg-\[\#F1E8E5\] { background-color: #37252A; }
 html[data-tema-cliente="escuro"] .bg-\[\#F1E9E6\] { background-color: #37252A; }
 html[data-tema-cliente="escuro"] .bg-\[\#F1F7F2\] { background-color: #18171A; }
-html[data-tema-cliente="escuro"] .bg-\[\#F2D7B0\] { background-color: #37252A; }
 html[data-tema-cliente="escuro"] .bg-\[\#F2ECEA\] { background-color: #262428; }
 html[data-tema-cliente="escuro"] .bg-\[\#F3EBE8\] { background-color: #37252A; }
 html[data-tema-cliente="escuro"] .bg-\[\#F3F8F4\] { background-color: #18171A; }
@@ -183,7 +182,6 @@ html[data-tema-cliente="escuro"] .border-white\/80 { border-color: rgba(28, 27, 
 html[data-tema-cliente="escuro"] .focus\:border-\[\#6B1F2E\]:focus { border-color: #CF6E84; }
 html[data-tema-cliente="escuro"] .from-\[\#6B1F2E\] { --tw-gradient-from: #B0526A var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .from-\[\#B65B67\] { --tw-gradient-from: #B0526A var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
-html[data-tema-cliente="escuro"] .from-\[\#F2D7B0\] { --tw-gradient-from: #37252A var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .from-\[\#F3F9F4\] { --tw-gradient-from: #18171A var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .from-\[\#F8F0EE\] { --tw-gradient-from: #18171A var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .from-white { --tw-gradient-from: #1C1B1E var(--tw-gradient-from-position); --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
@@ -274,19 +272,15 @@ html[data-tema-cliente="escuro"] .text-\[\#B6A6A2\] { color: #9C9290; }
 html[data-tema-cliente="escuro"] .text-\[\#B6AAA6\] { color: #9B928F; }
 html[data-tema-cliente="escuro"] .text-\[\#B86575\] { color: #E48BA0; }
 html[data-tema-cliente="escuro"] .text-\[\#C9BCB8\] { color: #938985; }
-html[data-tema-cliente="escuro"] .text-\[\#F2D7B0\] { color: #CE984A; }
 html[data-tema-cliente="escuro"] .text-\[\#F4D9DC\] { color: #F4D9DC; }
 html[data-tema-cliente="escuro"] .text-\[\#FBF7F5\] { color: #FBF7F5; }
-html[data-tema-cliente="escuro"] .to-\[\#8E3A48\] { --tw-gradient-to: #B0526A var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#9A5361\] { --tw-gradient-to: #86505B var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#B65B67\] { --tw-gradient-to: #B0526A var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#D58F9B\] { --tw-gradient-to: #4B343A var(--tw-gradient-to-position); }
-html[data-tema-cliente="escuro"] .to-\[\#E7B97A\] { --tw-gradient-to: #512E36 var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#EDF6EF\] { --tw-gradient-to: #252D27 var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#F4E7E4\] { --tw-gradient-to: #37252A var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#FBEFEC\] { --tw-gradient-to: #18171A var(--tw-gradient-to-position); }
 html[data-tema-cliente="escuro"] .to-\[\#FFF6F4\] { --tw-gradient-to: #18171A var(--tw-gradient-to-position); }
-html[data-tema-cliente="escuro"] .via-\[\#7A2838\] { --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #B0526A var(--tw-gradient-via-position), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .via-\[\#B65B67\]\/70 { --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(176, 82, 106, 0.7) var(--tw-gradient-via-position), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] .via-white { --tw-gradient-to: transparent var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #1C1B1E var(--tw-gradient-via-position), var(--tw-gradient-to); }
 html[data-tema-cliente="escuro"] [stroke="#3F7D5B"], html[data-tema-cliente="escuro"] [stroke="#3f7d5b"] { stroke: #AFD4BF; }

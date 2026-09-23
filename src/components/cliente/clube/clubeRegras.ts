@@ -63,3 +63,45 @@ export function linkConviteWhatsApp(nomeAmiga: string, telefone: string, nomeCli
   const texto = `Oi, ${primeiro}${quem}! 💕 Estou realizando meu sonho com a Sra. Luck — cirurgia programada, com parcelas que cabem no bolso. Indiquei você e a equipe vai te chamar para explicar tudo, sem compromisso.`;
   return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }
+
+/** Pontos de indicações que já fecharam contrato e só esperam a 1ª parcela da amiga. */
+export function pontosACaminho(indicacoes: ClubeIndicacao[], pontosPorIndicacao: number) {
+  return indicacoes.filter((i) => i.status === "venda" && !(i.pontos_creditados > 0)).length * pontosPorIndicacao;
+}
+
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * Caminho mais curto até o próximo prêmio com as regras reais do Clube:
+ * missão da 1ª parcela, parcelas em dia e indicações. Prefere poucas parcelas
+ * (no máximo 3) e completa com indicações.
+ */
+export function caminhoAteMeta(p: {
+  faltam: number; aCaminho: number; primeiraParcelaConcluida: boolean;
+  pontosPrimeiraParcela: number; pontosParcelaEmDia: number; pontosIndicacao: number;
+}): string | null {
+  const { faltam, aCaminho, primeiraParcelaConcluida, pontosPrimeiraParcela, pontosParcelaEmDia, pontosIndicacao } = p;
+  if (faltam <= 0) return null;
+  if (aCaminho >= faltam) return "Os pontos a caminho já completam este prêmio.";
+  let resto = faltam - aCaminho;
+  const prefixo: string[] = [];
+  if (!primeiraParcelaConcluida && pontosPrimeiraParcela > 0) {
+    if (resto <= pontosPrimeiraParcela) return "Pague a 1ª parcela e ele é seu.";
+    prefixo.push("a 1ª parcela");
+    resto -= pontosPrimeiraParcela;
+  }
+  const junta = (partes: string[]) => partes.length > 1 ? `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}` : partes[0];
+  if (pontosParcelaEmDia > 0 && Math.ceil(resto / pontosParcelaEmDia) <= 3) {
+    const n = Math.ceil(resto / pontosParcelaEmDia);
+    return `Caminho mais rápido: ${junta([...prefixo, plural(n, "parcela em dia", "parcelas em dia")])}.`;
+  }
+  if (pontosIndicacao <= 0) return pontosParcelaEmDia > 0 ? `Caminho: ${junta([...prefixo, plural(Math.ceil(resto / pontosParcelaEmDia), "parcela em dia", "parcelas em dia")])}.` : null;
+  const indicacoes = Math.floor(resto / pontosIndicacao);
+  const sobra = resto - indicacoes * pontosIndicacao;
+  const parcelas = pontosParcelaEmDia > 0 ? Math.ceil(sobra / pontosParcelaEmDia) : Infinity;
+  const partes = [...prefixo];
+  if (sobra === 0) partes.push(plural(indicacoes, "amiga indicada que fechar", "amigas indicadas que fecharem"));
+  else if (parcelas <= 3) partes.push(...(indicacoes ? [plural(indicacoes, "amiga indicada", "amigas indicadas")] : []), plural(parcelas, "parcela em dia", "parcelas em dia"));
+  else partes.push(plural(indicacoes + 1, "amiga indicada que fechar", "amigas indicadas que fecharem"));
+  return `Caminho mais rápido: ${junta(partes)}.`;
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Ticket, UserPlus, Users } from "lucide-react";
+import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, Receipt, Sparkles, Ticket, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   abrirArquivoVoucher, buscarClube, resgatarPremio, solicitarVoucher, usarBeneficio, VOUCHER_CONSULTA_KEY,
@@ -9,7 +9,8 @@ import {
 } from "@/lib/clube";
 import { Folha, ImagemPremio, Moeda } from "./ClubeUi";
 import { IndicarFolha } from "./IndicarFolha";
-import { descreverEvento, estadoVoucher, etapaIndicacao, proximoPremio, rotuloResgate } from "./clubeRegras";
+import { caminhoAteMeta, descreverEvento, estadoVoucher, etapaIndicacao, pontosACaminho, proximoPremio, rotuloResgate } from "./clubeRegras";
+import "@/styles/clube-pontos.css";
 
 interface ClubeScreenProps { onVoltar?: () => void; onIrParcelas: () => void; nomeCliente?: string }
 type Aba = "premios" | "missoes" | "indicacoes";
@@ -54,6 +55,12 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
   const voucher = dados?.beneficios.find((b) => b.beneficio_key === VOUCHER_CONSULTA_KEY) ?? null;
   const indicacoes = dados?.indicacoes.itens ?? [];
   const pontosIndicacoes = indicacoes.reduce((t, i) => t + (i.pontos_creditados || 0), 0);
+  const aCaminho = pontosACaminho(indicacoes, config.pontosIndicacao);
+  const dica = meta.alvo ? caminhoAteMeta({
+    faltam: meta.faltam, aCaminho, primeiraParcelaConcluida: dados?.missoes?.primeiraParcela.concluida ?? true,
+    pontosPrimeiraParcela: config.pontosPrimeiraParcela, pontosParcelaEmDia: config.pontosParcelaEmDia, pontosIndicacao: config.pontosIndicacao,
+  }) : null;
+  const proximaParcela = dados?.missoes?.parcelaEmDia.proxima ?? null;
 
   async function confirmarResgate() {
     if (!resgateAlvo) return;
@@ -103,41 +110,61 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
         <p className="m-0 pt-1 text-[13px] font-light text-[#8A7B77]">Pague em dia, indique amigas e troque seus pontos por prêmios.</p>
       </div>
 
-      {/* Saldo + meta */}
-      <section className="relative mx-5 mt-4 overflow-hidden rounded-[22px] bg-gradient-to-br from-[#6B1F2E] via-[#7A2838] to-[#8E3A48] p-[18px] text-white shadow-[0_14px_32px_rgba(107,31,46,.24)]" aria-label="Seus pontos">
-        <span className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/[.06]" aria-hidden="true" />
-        <span className="absolute -bottom-16 left-10 h-32 w-32 rounded-full bg-[#F2D7B0]/[.08]" aria-hidden="true" />
-        <div className="relative flex items-start justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[.16em] text-[#F2D7B0]">Seus pontos</div>
-            <div className="flex items-baseline gap-2 pt-1">
-              <span className="font-heading text-[44px] font-semibold leading-none">{carregando ? "—" : saldo.toLocaleString("pt-BR")}</span>
-              <span className="text-[13px] text-white/70">pontos</span>
-            </div>
-          </div>
-          <button type="button" onClick={() => setFolha("extrato")} className="flex items-center gap-[6px] rounded-full border border-white/25 px-3 py-[7px] text-[12px] font-medium text-white/90">
-            <History className="h-[14px] w-[14px]" /> Extrato
+      {/* Saldo + meta inteligente */}
+      <section className="sl-pontos" aria-label="Seus pontos">
+        <div className="sl-pontos-topo">
+          <span className="sl-pontos-rotulo">Seus pontos</span>
+          <button type="button" onClick={() => setFolha("extrato")} className="sl-pontos-extrato">
+            <History className="h-[13px] w-[13px]" aria-hidden="true" /> Extrato
           </button>
         </div>
-        {!carregando && (
-          <div className="relative pt-4">
-            {meta.alvo ? (
-              <>
-                <div className="flex items-center justify-between gap-3 text-[12.5px]">
-                  <span className="min-w-0 truncate text-white/85">Faltam <strong className="font-semibold text-white">{pts(meta.faltam)}</strong> para {meta.alvo.titulo}</span>
-                  <span className="flex-none text-white/60">{meta.progresso}%</span>
-                </div>
-                <div className="mt-2 h-[6px] overflow-hidden rounded-full bg-white/15">
-                  <motion.div className="h-full rounded-full bg-gradient-to-r from-[#F2D7B0] to-[#E7B97A]" initial={{ width: 0 }} animate={{ width: `${meta.progresso}%` }} transition={{ duration: 0.7, ease: "easeOut" }} />
-                </div>
-              </>
-            ) : recompensas.length > 0 ? (
-              <div className="text-[12.5px] text-white/85">Você já pode resgatar qualquer prêmio do catálogo. ✨</div>
-            ) : null}
+        <div className="sl-pontos-saldo">
+          <span className="sl-pontos-numero">{carregando ? "—" : saldo.toLocaleString("pt-BR")}</span>
+          <span className="sl-pontos-unidade">pontos</span>
+          {!carregando && aCaminho > 0 && (
+            <button type="button" onClick={() => setAba("indicacoes")} className="sl-pontos-caminho" aria-label={`${pts(aCaminho)} a caminho, de indicações que já fecharam`}>
+              <Clock3 className="h-[12px] w-[12px]" aria-hidden="true" /> +{pts(aCaminho)} a caminho
+            </button>
+          )}
+        </div>
+
+        {!carregando && meta.alvo && (
+          <div className="sl-pontos-meta">
+            <div className="sl-pontos-meta-foto"><ImagemPremio recompensa={meta.alvo} /></div>
+            <div className="min-w-0 flex-1">
+              <div className="sl-pontos-meta-rotulo">Próximo prêmio</div>
+              <div className="sl-pontos-meta-titulo">{meta.alvo.titulo}</div>
+              <div className="sl-pontos-barra" role="progressbar" aria-valuenow={meta.progresso} aria-valuemin={0} aria-valuemax={100} aria-label={`Progresso até ${meta.alvo.titulo}`}>
+                <motion.div className="sl-pontos-barra-cheia" initial={{ width: 0 }} animate={{ width: `${meta.progresso}%` }} transition={{ duration: 0.7, ease: "easeOut" }} />
+                {aCaminho > 0 && <span className="sl-pontos-barra-prevista" style={{ left: `${meta.progresso}%`, width: `${Math.min(100 - meta.progresso, Math.round((aCaminho / meta.alvo.pontos) * 100))}%` }} aria-hidden="true" />}
+              </div>
+              <div className="sl-pontos-meta-rodape"><span>Faltam <strong>{pts(meta.faltam)}</strong></span><span>{meta.progresso}%</span></div>
+            </div>
           </div>
         )}
-        <button type="button" onClick={() => setIndicarAberta(true)} className="relative mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] bg-white px-4 py-[13px] text-[14px] font-semibold text-[#6B1F2E]">
-          <UserPlus className="h-[17px] w-[17px]" /> Indicar amiga e ganhar {config.pontosIndicacao} pts
+        {!carregando && !meta.alvo && recompensas.length > 0 && (
+          <div className="sl-pontos-meta sl-pontos-meta--pronta">
+            <Gift className="h-5 w-5 flex-none" aria-hidden="true" />
+            <span>Seus pontos já alcançam todos os prêmios do catálogo. Escolha o seu abaixo.</span>
+          </div>
+        )}
+
+        {!carregando && (dica || proximaParcela) && (
+          <ul className="sl-pontos-dicas">
+            {dica && <li><Sparkles className="h-[14px] w-[14px] flex-none" aria-hidden="true" /><span>{dica}</span></li>}
+            {proximaParcela && (
+              <li>
+                <CalendarCheck className="h-[14px] w-[14px] flex-none" aria-hidden="true" />
+                <button type="button" onClick={onIrParcelas}>
+                  Parcela {proximaParcela.numero}{proximaParcela.vencimento ? ` vence em ${dataCurta(proximaParcela.vencimento)}` : ""}: pague em dia e ganhe <strong>+{config.pontosParcelaEmDia} pts</strong>
+                </button>
+              </li>
+            )}
+          </ul>
+        )}
+
+        <button type="button" onClick={() => setIndicarAberta(true)} className="sl-pontos-cta">
+          <UserPlus className="h-[17px] w-[17px]" aria-hidden="true" /> Indicar amiga e ganhar {config.pontosIndicacao} pts
         </button>
       </section>
 
