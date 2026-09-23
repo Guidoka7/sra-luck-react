@@ -9,10 +9,13 @@ import {
   type WheelEvent,
 } from "react";
 import "@/styles/home-campaign-carousel.css";
+import "@/styles/home-promo.css";
 import { HomeCampaignSlide } from "./HomeCampaignSlide";
 import {
   HOME_CAMPAIGN_SLIDES,
+  aplicarContexto,
   resolveHomeCampaignSlides,
+  type HomeCampaignContexto,
   type HomeCampaignSlideConfig,
   type ResolvedHomeCampaignSlide,
 } from "./homeCampaigns";
@@ -21,6 +24,8 @@ interface HomeCampaignCarouselProps {
   slides?: HomeCampaignSlideConfig[];
   autoplayMs?: number;
   onAction: (slide: ResolvedHomeCampaignSlide) => void;
+  /** Dados da cliente para personalizar os cartões (nome, percentual pago). */
+  contexto?: HomeCampaignContexto;
 }
 
 const INTERACTION_PAUSE_MS = 7000;
@@ -38,6 +43,7 @@ export function HomeCampaignCarousel({
   slides = HOME_CAMPAIGN_SLIDES,
   autoplayMs = 6000,
   onAction,
+  contexto,
 }: HomeCampaignCarouselProps) {
   const activeSlides = useMemo(() => resolveHomeCampaignSlides(slides), [slides]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -306,6 +312,7 @@ export function HomeCampaignCarousel({
                   priority={!isLeadingClone && !isTrailingClone && logicalIndex === 0}
                   suppressTabFocus={isLeadingClone || isTrailingClone}
                   onAction={onAction}
+                  contexto={contexto}
                 />
               </div>
             );
@@ -327,7 +334,7 @@ export function HomeCampaignCarousel({
       )}
 
       <p className="sr-only" aria-live={autoplayPaused ? "polite" : "off"}>
-        Destaque {activeIndex + 1} de {activeSlides.length}: {activeSlides[activeIndex]?.title}
+        Destaque {activeIndex + 1} de {activeSlides.length}: {activeSlides[activeIndex] ? aplicarContexto(activeSlides[activeIndex].title, contexto) : ""}
       </p>
     </section>
   );

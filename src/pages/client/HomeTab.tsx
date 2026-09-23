@@ -1,7 +1,11 @@
 import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
 import { HomeCampaignCarousel } from "@/components/cliente/home/HomeCampaignCarousel";
+import { useState } from "react";
 import { DisciplinaCard } from "@/components/cliente/home/DisciplinaCard";
-import type { HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
+import { AcessoRapido } from "@/components/cliente/home/AcessoRapido";
+import { PorQueSraLuck } from "@/components/cliente/home/PorQueSraLuck";
+import { NossaHistoriaFolha } from "@/components/cliente/home/NossaHistoriaFolha";
+import { primeiroNome, type HomeCampaignDestination } from "@/components/cliente/home/homeCampaigns";
 
 interface HomeTabProps {
   nomeCliente: string;
@@ -16,6 +20,13 @@ interface HomeTabProps {
 }
 
 export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcentagemPagamento, onCampaignAction, resumoAgenda, onAbrirAgenda }: HomeTabProps) {
+  const [historiaAberta, setHistoriaAberta] = useState(false);
+  // "historia" abre a folha aqui mesmo; os demais destinos navegam pelo shell do app.
+  const abrir = (destino: HomeCampaignDestination) => {
+    if (destino === "historia") setHistoriaAberta(true);
+    else onCampaignAction(destino);
+  };
+
   return (
     <div>
       <ClientProfileHeader
@@ -25,7 +36,12 @@ export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcent
         percentualPago={porcentagemPagamento}
       />
 
-      <HomeCampaignCarousel onAction={(slide) => onCampaignAction(slide.action)} />
+      <HomeCampaignCarousel
+        onAction={(slide) => abrir(slide.action)}
+        contexto={{ nome: primeiroNome(nomeCliente), percentualPago: porcentagemPagamento }}
+      />
+
+      <AcessoRapido onAbrir={abrir} />
 
       <div className="px-5 pt-5">
         <button type="button" onClick={onAbrirAgenda} className="flex w-full items-center gap-3 rounded-[18px] border border-[#E9D6D2] bg-white p-[14px] text-left shadow-[0_8px_22px_rgba(70,42,44,.06)] transition active:scale-[.99]">
@@ -40,7 +56,11 @@ export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcent
         </button>
       </div>
 
+      <PorQueSraLuck onConhecer={() => setHistoriaAberta(true)} />
+
       <DisciplinaCard />
+
+      <NossaHistoriaFolha aberta={historiaAberta} onFechar={() => setHistoriaAberta(false)} onFalarComEquipe={() => onCampaignAction("atendimento")} />
     </div>
   );
 }

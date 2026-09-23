@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOME_CAMPAIGN_SLIDES, resolveHomeCampaignNavigation, resolveHomeCampaignSlides } from "./homeCampaigns";
+import { HOME_CAMPAIGN_SLIDES, aplicarContexto, primeiroNome, resolveHomeCampaignNavigation, resolveHomeCampaignSlides } from "./homeCampaigns";
 
 describe("home campaign catalog", () => {
   it("keeps campaign-dependent offers disabled until a real campaign configuration exists", () => {
@@ -58,13 +58,13 @@ describe("campaign-dependent slides need real configuration", () => {
   });
 
   it("keeps the initial institutional catalog in order", () => {
-    expect(resolveHomeCampaignSlides().map((slide) => slide.title)).toEqual([
-      "Clube de Vantagens",
-      "Acompanhe seus pagamentos",
-      "Acompanhe sua jornada",
-      "Sua agenda cada vez mais perto",
-      "Tudo o que importa, no momento certo",
-      "Dúvidas? Fale com a gente",
+    expect(resolveHomeCampaignSlides().map((slide) => slide.id)).toEqual([
+      "nossa-historia",
+      "clube-vantagens",
+      "indique-amiga",
+      "seu-plano",
+      "acompanhe-jornada",
+      "fale-com-a-gente",
     ]);
   });
 
@@ -93,9 +93,32 @@ describe("CTA destinations map to the current client app", () => {
     expect(resolveHomeCampaignNavigation("jornada")).toEqual({ tab: "mais", maisSubTela: "jornada" });
     expect(resolveHomeCampaignNavigation("notificacoes")).toEqual({ tab: "inicio", openNotifications: true });
     expect(resolveHomeCampaignNavigation("agenda")).toEqual({ tab: "agenda" });
+    expect(resolveHomeCampaignNavigation("historia")).toEqual({ tab: "inicio" });
   });
 
   it("has no runtime for campaigns until a real configuration exists", () => {
     expect(resolveHomeCampaignNavigation("campanhas")).toBeNull();
+  });
+});
+
+describe("personalização dos cartões", () => {
+  it("usa o primeiro nome da cliente e some com a vírgula quando não há nome", () => {
+    expect(aplicarContexto("{nome}, acompanhe seus boletos.", { nome: "Maria" })).toBe("Maria, acompanhe seus boletos.");
+    expect(aplicarContexto("{nome}, acompanhe seus boletos.", {})).toBe("Acompanhe seus boletos.");
+    expect(aplicarContexto("Texto sem nome.", { nome: "Ana" })).toBe("Texto sem nome.");
+  });
+
+  it("extrai o primeiro nome com só a inicial maiúscula", () => {
+    expect(primeiroNome("MARIA SOUZA")).toBe("Maria");
+    expect(primeiroNome("  ana  paula ")).toBe("Ana");
+    expect(primeiroNome(null)).toBe("");
+  });
+
+  it("todo cartão ativo tem tema, ilustração e destaque contido no título", () => {
+    for (const slide of resolveHomeCampaignSlides()) {
+      expect(slide.tema, slide.id).toBeTruthy();
+      expect(slide.arte, slide.id).toBeTruthy();
+      expect(slide.title.includes(slide.destaque ?? ""), slide.id).toBe(true);
+    }
   });
 });

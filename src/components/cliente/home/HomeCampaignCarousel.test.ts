@@ -8,7 +8,8 @@ const html = renderToStaticMarkup(createElement(HomeCampaignCarousel, { onAction
 describe("home campaign carousel markup", () => {
   it("renders the active institutional slides and none of the inactive campaigns", () => {
     expect(html).toContain("Clube de Vantagens");
-    expect(html).toContain("Dúvidas? Fale com a gente");
+    expect(html).toContain("Aqui o seu sonho");
+    expect(html).toContain("Falar com a equipe");
     expect(html).not.toContain("Campanhas especiais");
     expect(html).not.toContain("Isenção de juros e multas");
   });
