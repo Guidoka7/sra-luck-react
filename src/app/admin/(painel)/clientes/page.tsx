@@ -23,7 +23,7 @@ type SortMode = "recent" | "old" | "az" | "za";
 type PeriodMode = "all" | "today" | "7" | "30";
 
 const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
-const TABS: Funil[] = ["novas", "aguardando", "cadastradas", "canceladas"];
+const TABS: Funil[] = ["aguardando", "cadastradas", "canceladas"];
 const STATUS_LABEL: Record<StatusContratoCliente, string> = { ativo: "Ativa", suspenso: "Suspensa", negativado: "Negativada", cancelado: "Cancelada" };
 
 const Svg = ({ d, fill }: { d: string; fill?: boolean }) => <svg viewBox="0 0 24 24" fill={fill ? "currentColor" : "none"} stroke={fill ? undefined : "currentColor"} strokeWidth="1.7" aria-hidden="true"><path d={d} /></svg>;
@@ -266,7 +266,7 @@ export default function ClientesPage() {
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Valor</th><th>Ação</th></tr></thead>
               <tbody>{vendasFiltradas.map((v) => <tr key={v.id} style={{ cursor: "default" }}>
-                <td><div className={styles.clientCell}><Avatar nome={v.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
+                <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{v.vendedora_responsavel || <Dash />}</td>
                 <td>{v.origem_venda || <Dash />}</td>
                 <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
@@ -279,7 +279,7 @@ export default function ClientesPage() {
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Banco</th><th>Status</th><th className={styles.center}>Ações</th></tr></thead>
               <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
-                <td><div className={styles.clientCell}><Avatar nome={c.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
+                <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{c.consultora || <Dash />}</td>
                 <td>{c.origem_venda || <Dash />}</td>
                 <td>{c.banco ? <span className={styles.bankPill}>{c.banco}</span> : <Dash />}</td>

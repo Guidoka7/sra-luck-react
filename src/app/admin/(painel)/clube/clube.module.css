@@ -580,3 +580,292 @@
   .missionProgress{grid-column:2}
   .createGrid{grid-template-columns:1fr}
 }
+
+
+/* Catálogo espelhado do app da cliente */
+.catalogEditor{
+  display:grid;
+  grid-template-columns:180px minmax(0,1fr);
+  gap:16px;
+  padding:14px;
+  border-bottom:1px solid var(--line);
+  background:var(--s1);
+}
+.editorPreview{
+  min-width:0;
+}
+.editorPreviewImage{
+  aspect-ratio:1;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--s0);
+}
+.editorPreviewCopy{
+  display:grid;
+  gap:3px;
+  margin-top:9px;
+}
+.editorPreviewCopy span{
+  color:var(--rose);
+  font-size:8px;
+  font-weight:850;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.editorPreviewCopy strong{
+  color:var(--ink);
+  font-size:12px;
+}
+.editorPreviewCopy small{
+  color:var(--soft);
+  font-size:9.5px;
+}
+.editorGrid{
+  min-width:0;
+  display:grid;
+  grid-template-columns:1.3fr 1fr .55fr .55fr .5fr;
+  gap:9px;
+  align-content:start;
+}
+.editorGrid label{
+  min-width:0;
+  display:grid;
+  gap:5px;
+  color:var(--soft);
+  font-size:8.5px;
+  font-weight:800;
+}
+.editorGrid input,
+.editorGrid textarea{
+  width:100%;
+  min-width:0;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--s0);
+  color:var(--ink);
+  padding:0 10px;
+  font:inherit;
+  font-size:10.5px;
+  outline:none;
+}
+.editorGrid input{height:34px}
+.editorGrid textarea{
+  min-height:66px;
+  padding-top:9px;
+  padding-bottom:9px;
+  resize:vertical;
+  line-height:1.4;
+}
+.editorGrid input:focus,
+.editorGrid textarea:focus{
+  border-color:color-mix(in srgb,var(--rose) 52%,var(--line));
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--robg) 55%,transparent);
+}
+.editorWide{grid-column:1 / -1}
+.editorActions{
+  grid-column:2;
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:-2px;
+}
+.rewardCard{
+  padding:0;
+  overflow:hidden;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  transition:transform .16s ease,border-color .16s ease,opacity .16s ease;
+}
+.rewardCard:hover{
+  transform:translateY(-1px);
+  border-color:color-mix(in srgb,var(--rose) 32%,var(--line));
+}
+.rewardCardPaused{
+  opacity:.72;
+}
+.rewardImage{
+  position:relative;
+  aspect-ratio:1.18/1;
+  overflow:hidden;
+  background:#f7eeec;
+}
+.rewardImage:after{
+  content:"";
+  position:absolute;
+  inset:auto 0 0;
+  height:48%;
+  background:linear-gradient(to top,rgba(38,20,24,.48),transparent);
+  pointer-events:none;
+}
+.rewardCategory,
+.rewardPoints,
+.rewardState{
+  position:absolute;
+  z-index:2;
+  border-radius:999px;
+  backdrop-filter:blur(8px);
+  white-space:nowrap;
+}
+.rewardCategory{
+  left:9px;
+  top:9px;
+  padding:4px 8px;
+  background:rgba(255,255,255,.90);
+  color:#7d2434;
+  font-size:8.5px;
+  font-weight:800;
+}
+.rewardPoints{
+  left:9px;
+  bottom:9px;
+  padding:5px 9px;
+  background:rgba(255,255,255,.94);
+  color:#8a671e;
+  font-size:9.5px;
+  font-weight:850;
+  box-shadow:0 4px 12px rgba(0,0,0,.10);
+}
+.rewardState{
+  right:9px;
+  top:9px;
+  padding:4px 8px;
+  font-size:8px;
+  font-weight:850;
+}
+.rewardStateActive{
+  background:rgba(238,246,240,.94);
+  color:#3f7d5b;
+}
+.rewardStatePaused{
+  background:rgba(245,241,239,.94);
+  color:#847672;
+}
+.rewardBody{
+  display:flex;
+  flex:1;
+  flex-direction:column;
+  padding:12px;
+}
+.rewardBody .rewardMeta{
+  margin-top:auto;
+  padding-top:12px;
+}
+.rewardActions{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:6px;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--line2);
+}
+.rewardActions button{
+  min-height:30px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--s0);
+  color:var(--ink);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  padding:0 7px;
+  font-size:8.7px;
+  font-weight:800;
+  transition:background-color .15s ease,border-color .15s ease,color .15s ease;
+}
+.rewardActions button:hover:not(:disabled){
+  background:var(--hov);
+  border-color:color-mix(in srgb,var(--rose) 36%,var(--line));
+}
+.rewardActions button:disabled{opacity:.45;cursor:not-allowed}
+.rewardActions .rewardDelete{
+  color:var(--rose);
+}
+:global(.dark) .page .catalogEditor{
+  background:#14151a;
+}
+:global(.dark) .page .editorPreviewImage,
+:global(.dark) .page .editorGrid input,
+:global(.dark) .page .editorGrid textarea,
+:global(.dark) .page .rewardActions button{
+  background:#17181d;
+  border-color:rgba(236,204,214,.13);
+}
+:global(.dark) .page .rewardCategory,
+:global(.dark) .page .rewardPoints{
+  background:rgba(24,25,30,.90);
+}
+:global(.dark) .page .rewardCategory{color:#e0a1b4}
+:global(.dark) .page .rewardPoints{color:#e0bd7b}
+:global(.dark) .page .rewardStateActive{
+  background:rgba(28,62,43,.92);
+  color:#8fd3aa;
+}
+:global(.dark) .page .rewardStatePaused{
+  background:rgba(41,39,44,.94);
+  color:#b5abb0;
+}
+
+@media(max-width:980px){
+  .catalogEditor{grid-template-columns:150px minmax(0,1fr)}
+  .editorGrid{grid-template-columns:1fr 1fr}
+  .editorActions{grid-column:2}
+}
+@media(max-width:680px){
+  .catalogEditor{grid-template-columns:1fr}
+  .editorPreview{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center}
+  .editorPreviewCopy{margin-top:0}
+  .editorGrid{grid-template-columns:1fr}
+  .editorWide{grid-column:auto}
+  .editorActions{grid-column:1}
+  .rewardActions{grid-template-columns:1fr}
+}
+
+
+/* Produtos reais do app no dashboard do Clube */
+.benefitProductCard{
+  min-height:76px;
+  border:1px solid var(--line2);
+  border-radius:11px;
+  background:color-mix(in srgb,var(--panel) 88%,var(--s0));
+  display:grid;
+  grid-template-columns:54px minmax(0,1fr) 18px;
+  gap:10px;
+  align-items:center;
+  padding:8px;
+  text-align:left;
+  color:inherit;
+  overflow:hidden;
+  transition:border-color .15s ease,transform .15s ease;
+}
+.benefitProductCard:hover{
+  transform:translateY(-1px);
+  border-color:color-mix(in srgb,var(--rose) 30%,var(--line));
+}
+.benefitThumb{
+  width:54px;
+  height:54px;
+  overflow:hidden;
+  border-radius:10px;
+  background:#f7eeec;
+}
+.benefitProductCopy{
+  min-width:0;
+  display:grid;
+  gap:3px;
+}
+.benefitProductCopy .benefitTitle{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.benefitProductCopy .benefitDesc{
+  display:block;
+}
+:global(.dark) .page .benefitProductCard{
+  background:#17181d;
+  border-color:rgba(236,204,214,.13);
+}

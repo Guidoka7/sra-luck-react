@@ -8,20 +8,22 @@ import {
   CalendarDays,
   ChevronRight,
   Gift,
-  Heart,
   PackageCheck,
+  Pause,
+  Pencil,
+  Play,
   Settings2,
   Share2,
-  ShoppingBag,
-  Sparkles,
   Star,
   Target,
   Ticket,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
+import { ImagemPremio } from "@/components/cliente/clube/ClubeUi";
 import styles from "./clube.module.css";
 
 type Pessoa = { id: string; nome_completo: string; telefone: string | null; cpf: string | null } | null;
@@ -38,6 +40,7 @@ interface Config { pontosPrimeiraParcela: number; pontosParcelaEmDia: number; po
 interface Recompensa {
   id: string; titulo: string; descricao?: string | null; categoria?: string | null; pontos: number;
   estoque?: number | null; ativo: boolean; imagem_url?: string | null; ordem?: number | null;
+  icone_key?: string | null; instrucoes_pos_resgate?: string | null; excluido_em?: string | null;
 }
 interface Resgate {
   id: string; cliente_id: string; recompensa_id: string; pontos: number; status: string; created_at: string;
@@ -116,7 +119,7 @@ export default function ClubeAdminPage() {
     return <ClubeDashboard dados={dados} carregando={carregando} onOpen={setAba} />;
   }
 
-  return <div className="zip-admin" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+  return <div className={["zip-admin", styles.page].join(" ")} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 720px", minWidth: 0 }}>
       <div style={{ padding: "2px 2px 14px" }}>
         <button type="button" onClick={() => setAba("painel")} className={styles.backButton}><ArrowLeft size={14} /> Voltar ao Clube</button>
@@ -362,12 +365,6 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
     },
   ];
 
-  const categorias = Array.from(recompensasAtivas.reduce((map, r) => {
-    const nome = (r.categoria || "Benefícios").trim() || "Benefícios";
-    map.set(nome, (map.get(nome) ?? 0) + 1);
-    return map;
-  }, new Map<string, number>()).entries()).slice(0, 4);
-
   const campanhas = [
     { titulo: "Indique e ganhe", descricao: "Cada indicação elegível rende +" + dados.config.pontosIndicacao + " pontos.", cor: "var(--ok)" },
     { titulo: "Parcela em dia", descricao: "Pagamento no prazo rende +" + dados.config.pontosParcelaEmDia + " pontos.", cor: "var(--rose)" },
@@ -457,10 +454,13 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
           <h2>Benefícios e parceiros</h2>
           <button type="button" className={styles.panelLink} onClick={() => onOpen("beneficios")}>Ver todos <ChevronRight size={13} /></button>
         </div>
-        {categorias.length === 0 ? <div className={styles.empty}>Nenhum benefício ativo no catálogo.</div> : <div className={styles.benefitsGrid}>
-          {categorias.map(([categoria, quantidade], index) => <button type="button" key={categoria} onClick={() => onOpen("beneficios")} className={[styles.benefitCard, index < 2 ? styles.benefitCardWide : ""].join(" ")}>
-            <span className={styles.benefitIcon}>{iconeCategoria(categoria)}</span>
-            <span><span className={styles.benefitTitle}>{categoria}</span><span className={styles.benefitDesc}>{quantidade} {quantidade === 1 ? "benefício disponível" : "benefícios disponíveis"} no catálogo.</span></span>
+        {recompensasAtivas.length === 0 ? <div className={styles.empty}>Nenhum benefício ativo no catálogo.</div> : <div className={styles.benefitsGrid}>
+          {recompensasAtivas.slice(0, 4).map((r) => <button type="button" key={r.id} onClick={() => onOpen("beneficios")} className={styles.benefitProductCard}>
+            <span className={styles.benefitThumb}><ImagemPremio recompensa={r} /></span>
+            <span className={styles.benefitProductCopy}>
+              <span className={styles.benefitTitle}>{r.titulo}</span>
+              <span className={styles.benefitDesc}>{r.categoria || "Benefício"} · {r.pontos.toLocaleString("pt-BR")} pts</span>
+            </span>
             <ChevronRight size={15} color="var(--rose)" />
           </button>)}
         </div>}
@@ -509,71 +509,174 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
   </div>;
 }
 
-function iconeCategoria(categoria: string) {
-  const c = categoria.toLocaleLowerCase("pt-BR");
-  if (c.includes("auto") || c.includes("bem") || c.includes("beleza")) return <Heart size={19} />;
-  if (c.includes("exper")) return <Sparkles size={19} />;
-  if (c.includes("mimo") || c.includes("kit")) return <Gift size={19} />;
-  return <ShoppingBag size={19} />;
-}
-
 function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompensa[]; onAtualizado: () => Promise<void> }) {
-  const [criando, setCriando] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  const [novo, setNovo] = useState({ titulo: "", descricao: "", categoria: "", pontos: 0, estoque: "" });
+  type FormCatalogo = { titulo: string; descricao: string; categoria: string; pontos: number; estoque: string; imagemUrl: string; ordem: number; instrucoesPosResgate: string };
+  const vazio: FormCatalogo = { titulo: "", descricao: "", categoria: "", pontos: 0, estoque: "", imagemUrl: "", ordem: 0, instrucoesPosResgate: "" };
+  const [formAberto, setFormAberto] = useState(false);
+  const [editando, setEditando] = useState<Recompensa | null>(null);
+  const [form, setForm] = useState<FormCatalogo>(vazio);
+  const [ocupado, setOcupado] = useState<string | null>(null);
+
+  function abrirNovo() {
+    setEditando(null);
+    setForm(vazio);
+    setFormAberto(true);
+  }
+
+  function abrirEdicao(r: Recompensa) {
+    setEditando(r);
+    setForm({
+      titulo: r.titulo,
+      descricao: r.descricao ?? "",
+      categoria: r.categoria ?? "",
+      pontos: r.pontos,
+      estoque: r.estoque === null || r.estoque === undefined ? "" : String(r.estoque),
+      imagemUrl: r.imagem_url ?? "",
+      ordem: r.ordem ?? 0,
+      instrucoesPosResgate: r.instrucoes_pos_resgate ?? "",
+    });
+    setFormAberto(true);
+  }
+
+  function fecharForm() {
+    setFormAberto(false);
+    setEditando(null);
+    setForm(vazio);
+  }
 
   async function salvar() {
-    if (novo.titulo.trim().length < 2 || novo.pontos <= 0) {
+    if (form.titulo.trim().length < 2 || form.pontos <= 0) {
       toast.error("Informe o nome do benefício e uma pontuação maior que zero.");
       return;
     }
-    setSalvando(true);
+    const chave = editando?.id ?? "novo";
+    setOcupado(chave);
     try {
-      await api("/api/admin/credit-ops/rewards", {
-        method: "POST",
+      await api(editando ? `/api/admin/credit-ops/rewards/${encodeURIComponent(editando.id)}` : "/api/admin/credit-ops/rewards", {
+        method: editando ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          titulo: novo.titulo.trim(),
-          descricao: novo.descricao.trim() || null,
-          categoria: novo.categoria.trim() || null,
-          pontos: novo.pontos,
-          estoque: novo.estoque === "" ? undefined : Math.max(0, Number(novo.estoque) || 0),
-          ativo: true,
+          titulo: form.titulo.trim(),
+          descricao: form.descricao.trim() || null,
+          categoria: form.categoria.trim() || null,
+          pontos: Math.max(1, Math.floor(form.pontos)),
+          estoque: form.estoque === "" ? null : Math.max(0, Math.floor(Number(form.estoque) || 0)),
+          imagemUrl: form.imagemUrl.trim() || null,
+          ordem: Math.floor(form.ordem || 0),
+          instrucoesPosResgate: form.instrucoesPosResgate.trim() || null,
+          ativo: editando?.ativo ?? true,
         }),
       });
-      toast.success("Benefício criado no catálogo.");
-      setNovo({ titulo: "", descricao: "", categoria: "", pontos: 0, estoque: "" });
-      setCriando(false);
+      toast.success(editando ? "Benefício atualizado no app das clientes." : "Benefício criado no catálogo.");
+      fecharForm();
       await onAtualizado();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível criar o benefício.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível salvar o benefício.");
     } finally {
-      setSalvando(false);
+      setOcupado(null);
     }
   }
 
+  async function alternar(r: Recompensa) {
+    setOcupado(r.id);
+    try {
+      await api(`/api/admin/credit-ops/rewards/${encodeURIComponent(r.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: !r.ativo }),
+      });
+      toast.success(r.ativo ? "Benefício pausado e ocultado do app." : "Benefício reativado no app.");
+      await onAtualizado();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível alterar o benefício.");
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function excluir(r: Recompensa) {
+    if (!window.confirm(`Excluir “${r.titulo}” do catálogo? Ele deixará de aparecer no app, mas o histórico de resgates será preservado.`)) return;
+    setOcupado(r.id);
+    try {
+      await api(`/api/admin/credit-ops/rewards/${encodeURIComponent(r.id)}`, { method: "DELETE" });
+      toast.success("Benefício excluído do catálogo.");
+      if (editando?.id === r.id) fecharForm();
+      await onAtualizado();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível excluir o benefício.");
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  const preview: Recompensa = {
+    id: editando?.id ?? "preview",
+    titulo: form.titulo || "Prévia do benefício",
+    descricao: form.descricao || null,
+    categoria: form.categoria || null,
+    pontos: form.pontos || 0,
+    estoque: form.estoque === "" ? null : Number(form.estoque),
+    ativo: editando?.ativo ?? true,
+    imagem_url: form.imagemUrl || null,
+    ordem: form.ordem,
+  };
+
   return <div style={cartao}>
-    <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-      <div><strong style={{ fontSize: 12.5 }}>Catálogo de benefícios</strong><div style={{ fontSize: 10.5, color: "var(--soft)", marginTop: 2 }}>Itens reais disponíveis no Clube da cliente.</div></div>
-      <button type="button" style={botao(true)} onClick={() => setCriando((v) => !v)}>{criando ? "Fechar" : "Novo benefício"}</button>
+    <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+      <div>
+        <strong style={{ fontSize: 13 }}>Benefícios e parceiros</strong>
+        <div style={{ fontSize: 10.5, color: "var(--soft)", marginTop: 3 }}>Mesmo catálogo, produtos, imagens e ordem exibidos no app das clientes.</div>
+      </div>
+      <button type="button" style={botao(true)} onClick={() => formAberto ? fecharForm() : abrirNovo()}>{formAberto ? "Fechar editor" : "Novo benefício"}</button>
     </div>
-    {criando && <div className={styles.createBox}>
-      <div className={styles.createGrid}>
-        <label>Nome<input value={novo.titulo} onChange={(e) => setNovo((v) => ({ ...v, titulo: e.target.value }))} /></label>
-        <label>Descrição<input value={novo.descricao} onChange={(e) => setNovo((v) => ({ ...v, descricao: e.target.value }))} /></label>
-        <label>Categoria<input value={novo.categoria} onChange={(e) => setNovo((v) => ({ ...v, categoria: e.target.value }))} /></label>
-        <label>Pontos<input type="number" min={1} value={novo.pontos || ""} onChange={(e) => setNovo((v) => ({ ...v, pontos: Math.max(0, Number(e.target.value) || 0) }))} /></label>
-        <label>Estoque<input type="number" min={0} value={novo.estoque} onChange={(e) => setNovo((v) => ({ ...v, estoque: e.target.value }))} /></label>
-        <button type="button" className={styles.createButton} disabled={salvando} onClick={() => void salvar()}>{salvando ? "Salvando…" : "Criar"}</button>
+
+    {formAberto && <div className={styles.catalogEditor}>
+      <div className={styles.editorPreview}>
+        <div className={styles.editorPreviewImage}><ImagemPremio recompensa={preview} /></div>
+        <div className={styles.editorPreviewCopy}>
+          <span>Prévia no catálogo</span>
+          <strong>{form.titulo || "Nome do benefício"}</strong>
+          <small>{form.categoria || "Categoria"} · {(form.pontos || 0).toLocaleString("pt-BR")} pts</small>
+        </div>
+      </div>
+      <div className={styles.editorGrid}>
+        <label>Nome<input value={form.titulo} onChange={(e) => setForm((v) => ({ ...v, titulo: e.target.value }))} /></label>
+        <label>Categoria<input value={form.categoria} onChange={(e) => setForm((v) => ({ ...v, categoria: e.target.value }))} placeholder="Ex.: Autocuidado" /></label>
+        <label>Pontos<input type="number" min={1} value={form.pontos || ""} onChange={(e) => setForm((v) => ({ ...v, pontos: Math.max(0, Number(e.target.value) || 0) }))} /></label>
+        <label>Estoque<input type="number" min={0} value={form.estoque} onChange={(e) => setForm((v) => ({ ...v, estoque: e.target.value }))} placeholder="Livre" /></label>
+        <label>Ordem<input type="number" value={form.ordem} onChange={(e) => setForm((v) => ({ ...v, ordem: Number(e.target.value) || 0 }))} /></label>
+        <label className={styles.editorWide}>URL da imagem<input value={form.imagemUrl} onChange={(e) => setForm((v) => ({ ...v, imagemUrl: e.target.value }))} placeholder="https://..." /></label>
+        <label className={styles.editorWide}>Descrição<textarea value={form.descricao} onChange={(e) => setForm((v) => ({ ...v, descricao: e.target.value }))} rows={3} /></label>
+        <label className={styles.editorWide}>Orientação após o resgate<textarea value={form.instrucoesPosResgate} onChange={(e) => setForm((v) => ({ ...v, instrucoesPosResgate: e.target.value }))} rows={2} placeholder="Mensagem exibida à cliente após solicitar o prêmio." /></label>
+      </div>
+      <div className={styles.editorActions}>
+        <button type="button" style={botao(false)} onClick={fecharForm}>Cancelar</button>
+        <button type="button" style={{ ...botao(true), minWidth: 120 }} disabled={ocupado !== null} onClick={() => void salvar()}>{ocupado ? "Salvando…" : editando ? "Salvar alterações" : "Criar benefício"}</button>
       </div>
     </div>}
+
     {recompensas.length === 0 ? <div className={styles.empty}>Nenhum benefício cadastrado.</div> : <div className={styles.catalogGrid}>
-      {[...recompensas].sort((a, b) => Number(b.ativo) - Number(a.ativo) || (a.ordem ?? 0) - (b.ordem ?? 0) || a.pontos - b.pontos).map((r) => <article key={r.id} className={styles.rewardCard}>
-        <div className={styles.rewardTop}><span className={styles.benefitIcon}>{iconeCategoria(r.categoria || "")}</span><span style={zipChip(r.ativo ? "ok" : "neutral")}>{r.ativo ? "Ativo" : "Inativo"}</span></div>
-        <h3 style={{ marginTop: 10 }}>{r.titulo}</h3>
-        <p>{r.descricao || "Benefício disponível no catálogo do Clube."}</p>
-        <div className={styles.rewardMeta}><strong style={{ color: "var(--bg)" }}>{r.pontos.toLocaleString("pt-BR")} pts</strong><span>{r.estoque === null || r.estoque === undefined ? "Estoque livre" : r.estoque + " em estoque"}</span></div>
-      </article>)}
+      {[...recompensas].sort((a, b) => Number(b.ativo) - Number(a.ativo) || (a.ordem ?? 0) - (b.ordem ?? 0) || a.pontos - b.pontos).map((r) => {
+        const emAcao = ocupado === r.id;
+        return <article key={r.id} className={[styles.rewardCard, !r.ativo ? styles.rewardCardPaused : ""].join(" ")}>
+          <div className={styles.rewardImage}>
+            <ImagemPremio recompensa={r} />
+            {r.categoria && <span className={styles.rewardCategory}>{r.categoria}</span>}
+            <span className={styles.rewardPoints}>{r.pontos.toLocaleString("pt-BR")} pts</span>
+            <span className={[styles.rewardState, r.ativo ? styles.rewardStateActive : styles.rewardStatePaused].join(" ")}>{r.ativo ? "Ativo no app" : "Pausado"}</span>
+          </div>
+          <div className={styles.rewardBody}>
+            <h3>{r.titulo}</h3>
+            <p>{r.descricao || "Benefício disponível no catálogo do Clube."}</p>
+            <div className={styles.rewardMeta}><span>{r.estoque === null || r.estoque === undefined ? "Estoque livre" : r.estoque + " em estoque"}</span><span>Ordem {r.ordem ?? 0}</span></div>
+            <div className={styles.rewardActions}>
+              <button type="button" disabled={emAcao} onClick={() => abrirEdicao(r)}><Pencil size={13} /> Editar</button>
+              <button type="button" disabled={emAcao} onClick={() => void alternar(r)}>{r.ativo ? <Pause size={13} /> : <Play size={13} />}{r.ativo ? "Pausar" : "Reativar"}</button>
+              <button type="button" className={styles.rewardDelete} disabled={emAcao} onClick={() => void excluir(r)}><Trash2 size={13} /> Excluir</button>
+            </div>
+          </div>
+        </article>;
+      })}
     </div>}
   </div>;
 }
