@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { CalendarCheck, Check, CreditCard, FileSignature, QrCode, Receipt, X, type LucideIcon } from "lucide-react";
 import { AgendaBloqueadaShell } from "@/components/cliente/AgendaBloqueadaShell";
 import { AgendaEtapasInterativas } from "@/components/cliente/AgendaEtapasInterativas";
 import { type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
@@ -43,19 +44,12 @@ function moeda(valor: number) {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function label(forma: FormaCusteio) {
-  if (forma === "cartao") return "Cartão de crédito";
-  if (forma === "pix") return "PIX";
-  if (forma === "cheques") return "Cheques";
-  return "100% boleto";
-}
-
-function extra(forma: FormaCusteio) {
-  if (forma === "cartao") return "taxa da maquininha";
-  if (forma === "pix") return "sem taxa adicional";
-  if (forma === "cheques") return "conforme autorização do financeiro";
-  return "conforme condições liberadas";
-}
+const OPCOES: Record<FormaCusteio, { titulo: string; detalhe: string; Icone: LucideIcon }> = {
+  pix: { titulo: "PIX", detalhe: "Sem taxa adicional", Icone: QrCode },
+  cartao: { titulo: "Cartão de crédito", detalhe: "Com taxa da maquininha", Icone: CreditCard },
+  cheques: { titulo: "Cheques", detalhe: "Conforme autorização do financeiro", Icone: FileSignature },
+  boleto_100: { titulo: "100% boleto", detalhe: "Conforme condições liberadas", Icone: Receipt },
+};
 
 export function EscolherFormaPagamento({ datas, onSelecionada, snapshot = null, parcelasNaoPagas = null, abrirSinal = 0 }: Props) {
   const [financeiro, setFinanceiro] = useState<Financeiro>(() => financeiroDe(snapshot));
@@ -101,7 +95,7 @@ export function EscolherFormaPagamento({ datas, onSelecionada, snapshot = null, 
   }, [snapshot, parcelasNaoPagas]);
 
   const formas = useMemo(
-    () => (["cartao", "pix", "cheques", "boleto_100"] as FormaCusteio[]).filter((item) => financeiro.formasCusteio.includes(item)),
+    () => (["pix", "cartao", "cheques", "boleto_100"] as FormaCusteio[]).filter((item) => financeiro.formasCusteio.includes(item)),
     [financeiro.formasCusteio],
   );
 
@@ -149,11 +143,6 @@ export function EscolherFormaPagamento({ datas, onSelecionada, snapshot = null, 
   if (carregando || jaEscolheu) return null;
 
   const saldo = Number(financeiro.saldoRestante ?? 0);
-  const parcelasTexto = parcelasRestantes == null
-    ? "Este é o saldo que ainda resta no seu contrato."
-    : parcelasRestantes === 1
-      ? "Este saldo corresponde à 1 parcela restante do seu contrato."
-      : `Este saldo corresponde às ${parcelasRestantes} parcelas restantes do seu contrato.`;
   const totalCartao = financeiro.totalComTaxa ?? (financeiro.taxaCartao ? saldo * (1 + financeiro.taxaCartao / 100) : saldo);
 
   return (
@@ -176,80 +165,88 @@ export function EscolherFormaPagamento({ datas, onSelecionada, snapshot = null, 
               onClick={(event) => {
                 if (event.target === event.currentTarget && !enviando) setModal(false);
               }}
-              className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-[rgba(38,23,25,.34)] px-[10px] py-3 backdrop-blur-[2px] sm:items-center"
+              className="fixed inset-0 z-[100] flex items-end justify-center bg-[rgba(38,23,25,.42)] sm:items-center sm:p-4"
             >
               <motion.div
-                initial={{ opacity: 0, y: 24, scale: 0.985 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 24, scale: 0.985 }}
-                transition={{ duration: 0.2 }}
-                className="w-full max-w-[430px]"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Forma de pagamento do saldo restante"
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", stiffness: 420, damping: 40 }}
+                className="max-h-[92dvh] w-full max-w-[430px] overflow-y-auto overscroll-contain rounded-t-[26px] bg-white px-5 pb-[calc(max(env(safe-area-inset-bottom),0px)+18px)] pt-3 shadow-[0_-18px_50px_rgba(46,36,34,.18)] sm:rounded-[26px]"
               >
-              <div className="max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain rounded-[24px_24px_18px_18px] border border-[#EADFDB] bg-white px-[14px] pb-[15px] pt-[9px] shadow-[0_18px_52px_rgba(48,26,30,.24)] sm:rounded-[24px]">
-                <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[#E7DCD8]" />
+                <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#E3D7D3]" />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[8.5px] font-bold uppercase tracking-[.14em] text-[#B65B67]">Etapa 3 de 4</div>
-                    <div className="pt-[3px] font-heading text-[21px] font-semibold text-[#7D2434]">Pagamento do saldo restante</div>
-                    <p className="pt-1 text-[10px] font-light leading-[1.5] text-[#7A6B67]">
-                      {parcelasTexto} Esse valor deverá ser quitado <strong className="font-semibold text-[#6D5530]">no ato da assinatura dos termos</strong>.
-                    </p>
+                    <div className="text-[11px] font-semibold uppercase tracking-[.14em] text-[#B65B67]">Etapa 3 de 4</div>
+                    <h2 className="m-0 pt-1 font-heading text-[25px] font-semibold leading-[1.1] text-[#2E2422]">Como vai quitar o saldo?</h2>
                   </div>
-                  <button type="button" aria-label="Fechar" onClick={() => !enviando && setModal(false)} className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#7D2434]">×</button>
+                  <button type="button" aria-label="Fechar" onClick={() => !enviando && setModal(false)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[#F6EFED] text-[#7D2434]"><X className="h-4 w-4" /></button>
                 </div>
 
-                <div className="mt-3 rounded-[14px] border border-[#EAD7AE] bg-[#FFF9EF] px-3 py-[11px]">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <div className="text-[8px] font-semibold uppercase tracking-[.11em] text-[#A77A24]">Valor restante</div>
-                      <div className="pt-[2px] font-heading text-[24px] font-semibold text-[#7D2434]">{moeda(saldo)}</div>
-                    </div>
-                    {parcelasRestantes != null && (
-                      <div className="pb-1 text-right text-[9.5px] font-medium text-[#806F6A]">
-                        referente a<br/><strong>{parcelasRestantes} {parcelasRestantes === 1 ? "parcela" : "parcelas"}</strong>
-                      </div>
-                    )}
+                <div className="relative mt-4 overflow-hidden rounded-[20px] bg-[linear-gradient(135deg,#7D2434_0%,#5A1825_100%)] px-5 py-[18px] text-white shadow-[0_14px_30px_rgba(107,31,46,.28)]">
+                  <span className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-white/[.07]" aria-hidden="true" />
+                  <span className="pointer-events-none absolute -bottom-14 right-10 h-28 w-28 rounded-full bg-[#E8D39E]/[.12]" aria-hidden="true" />
+                  <div className="relative text-[11px] font-medium uppercase tracking-[.14em] text-white/70">Saldo a quitar</div>
+                  <div className="relative pt-1 font-heading text-[34px] font-semibold leading-none">{moeda(saldo)}</div>
+                  <div className="relative mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/85">
+                    {parcelasRestantes != null && <span className="rounded-full bg-white/[.14] px-[10px] py-[3px]">{parcelasRestantes} {parcelasRestantes === 1 ? "parcela restante" : "parcelas restantes"}</span>}
+                    <span className="inline-flex items-center gap-1"><CalendarCheck className="h-[14px] w-[14px]" /> quitação na assinatura dos termos</span>
                   </div>
                 </div>
 
-                <div className="mt-3">
-                  <div className="mb-[7px] text-[8px] font-bold uppercase tracking-[.12em] text-[#9A7771]">Formas liberadas pelo financeiro</div>
-                  <div className="flex flex-col gap-[7px]">
-                    {formas.map((item) => (
+                <div className="mt-5 text-[11px] font-semibold uppercase tracking-[.12em] text-[#9A8C88]">Formas liberadas para você</div>
+                <div role="radiogroup" aria-label="Formas de pagamento" className="mt-2 grid grid-cols-2 gap-[10px]">
+                  {formas.map((item) => {
+                    const { Icone, titulo, detalhe } = OPCOES[item];
+                    const ativa = forma === item;
+                    return (
                       <button
                         key={item}
                         type="button"
+                        role="radio"
+                        aria-checked={ativa}
                         onClick={() => setForma(item)}
-                        className="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-[11px] text-left"
-                        style={forma === item ? { borderColor: "#7D2434", background: "#F7EFED", color: "#6B1F2E" } : { borderColor: "#EADFDB", background: "#FFF", color: "#5E4A46" }}
+                        className={`relative flex flex-col items-start gap-[10px] rounded-[18px] border p-[13px] text-left transition-[border-color,background-color,box-shadow] duration-150 ${ativa ? "border-[#7D2434] bg-[#FBF3F1] shadow-[0_0_0_1px_#7D2434]" : "border-[#EADFDB] bg-white"}`}
                       >
-                        <span className="text-[11px] font-semibold">{label(item)}</span>
-                        <span className="text-right text-[9px] text-[#9A7771]">{extra(item)}</span>
+                        <span className={`flex h-9 w-9 items-center justify-center rounded-[11px] ${ativa ? "bg-[#7D2434] text-white" : "bg-[#F6EFED] text-[#7D2434]"}`}>
+                          <Icone className="h-5 w-5" strokeWidth={1.7} />
+                        </span>
+                        <span className={`absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border ${ativa ? "border-[#7D2434] bg-[#7D2434] text-white" : "border-[#DCCDC9] bg-white"}`} aria-hidden="true">
+                          {ativa && <Check className="h-3 w-3" strokeWidth={3} />}
+                        </span>
+                        <span>
+                          <span className="block text-[14px] font-semibold leading-[1.25] text-[#2E2422]">{titulo}</span>
+                          <span className="block pt-[2px] text-[12px] leading-[1.35] text-[#8A7B77]">{detalhe}</span>
+                        </span>
                       </button>
-                    ))}
-                    {formas.length === 0 && (
-                      <div className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] p-3 text-[10px] text-[#8F2A25]">
-                        Nenhuma forma de pagamento foi liberada pelo financeiro para este contrato.
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {forma === "cartao" && saldo > 0 && (
-                  <div className="mt-[9px] rounded-[11px] border border-[#E8DDD9] bg-[#FCF9F8] px-3 py-[9px] text-[9.5px] leading-[1.45] text-[#7A6B67]">
-                    No cartão, o total estimado é <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>, considerando a taxa da maquininha.
+                {formas.length === 0 && (
+                  <div className="mt-2 rounded-[14px] border border-[#F0D3D1] bg-[#FBEBEA] px-4 py-3 text-[13px] text-[#8F2A25]">
+                    Nenhuma forma de pagamento foi liberada pelo financeiro para este contrato. Fale com a nossa equipe.
                   </div>
                 )}
 
-                <div className="mt-[10px] rounded-[11px] border border-[#E2D6D2] bg-[#FAF7F6] px-3 py-[9px] text-[9.5px] font-light leading-[1.5] text-[#796965]">
-                  Ao confirmar, você registra a forma escolhida para quitar o saldo na assinatura dos termos e libera a próxima etapa: <strong className="font-semibold text-[#6B1F2E]">escolha da data</strong>.
-                </div>
+                <AnimatePresence initial={false}>
+                  {forma === "cartao" && saldo > 0 && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-[14px] bg-[#FBF4E7] px-4 py-3 text-[12.5px] text-[#6D5530]">
+                        <span>Total estimado no cartão</span>
+                        <strong className="font-semibold text-[#6B1F2E]">{moeda(totalCartao)}</strong>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-                {erro && <div className="mt-2 rounded-[11px] border border-[#F0D3D1] bg-[#FBEBEA] p-[9px] text-[9.8px] text-[#8F2A25]">{erro}</div>}
-                <button type="button" disabled={!forma || enviando || formas.length === 0} onClick={() => void enviar()} className="mt-[11px] w-full rounded-[12px] bg-[#6B1F2E] p-3 text-[11.5px] font-semibold text-white disabled:opacity-40">
-                  {enviando ? "Confirmando..." : "Confirmar e liberar escolha da data"}
+                {erro && <div role="alert" className="mt-3 rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] px-4 py-3 text-[12.5px] text-[#8F2A25]">{erro}</div>}
+                <button type="button" disabled={!forma || enviando || formas.length === 0} onClick={() => void enviar()} className="mt-5 w-full rounded-[14px] bg-[#6B1F2E] px-4 py-[15px] text-[14.5px] font-semibold text-white shadow-[0_10px_22px_rgba(107,31,46,.22)] disabled:opacity-40 disabled:shadow-none">
+                  {enviando ? "Confirmando…" : forma ? `Confirmar ${forma === "pix" ? "PIX" : OPCOES[forma].titulo.toLowerCase()}` : "Escolha uma forma"}
                 </button>
-              </div>
+                <p className="m-0 pt-3 text-center text-[12px] leading-[1.45] text-[#9A8C88]">Depois disso, você já escolhe a data da assinatura dos termos.</p>
               </motion.div>
             </motion.div>
           )}
