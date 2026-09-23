@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { motion } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
 import { CirurgiaConfirmada } from "@/components/cliente/CirurgiaConfirmada";
 import { Card } from "@/components/ui/Card";
 import { CalendarioAgendamento, type DataDisponivel } from "@/components/cliente/CalendarioAgendamento";
@@ -213,15 +212,6 @@ export function AgendaTab({
 
   const agendamentoAtual = agendamentoAtivo ?? agendamentoConcluido;
   const termosAssinados = termosJaAssinados(agendamentoAtivo, agendamentoConcluido);
-  const assinaturaEm = agendamentoAtual?.termosAssinadosEm ? new Date(agendamentoAtual.termosAssinadosEm) : null;
-  const assinaturaValida = assinaturaEm && !Number.isNaN(assinaturaEm.getTime());
-  const dataAssinatura = assinaturaValida
-    ? assinaturaEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
-    : brDate(agendamentoAtual?.data);
-  const horaAssinatura = assinaturaValida
-    ? assinaturaEm.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
-    : agendamentoAtual?.horario;
-
   const cirurgiaConfirmada = Boolean(agendamentoAtual?.dataCirurgia);
   const tituloAgenda = cirurgiaConfirmada
     ? "Seu grande dia já tem data!"
@@ -315,18 +305,7 @@ export function AgendaTab({
   const agenda = agendamentoAtual?.dataCirurgia ? (
     <CirurgiaConfirmada data={agendamentoAtual.dataCirurgia} />
   ) : termosAssinados && agendamentoAtual ? (
-    <div className="animate-fadeUp space-y-3">
-      <Card className="rounded-[18px] border border-[#D5E8D9] bg-[#F3F9F4] p-[14px] shadow-[0_5px_18px_rgba(63,125,91,.055)]">
-        <div className="flex items-center gap-2 text-[#3F7D5B]">
-          <CheckCircle2 className="h-4 w-4" />
-          <span className="text-[9px] font-semibold uppercase tracking-[.13em]">Termos assinados</span>
-        </div>
-        <h2 className="mt-2 font-heading text-[19px] font-semibold text-[#315F47]">Assinatura confirmada</h2>
-        <p className="mt-1 text-[10.5px] font-light leading-[1.5] text-[#698273]">
-          Sua assinatura foi confirmada em {dataAssinatura}{horaAssinatura ? ` às ${horaAssinatura}` : ""}.
-          {" A próxima etapa será a escolha da data da sua cirurgia assim que a liberação aplicável estiver disponível."}
-        </p>
-      </Card>
+    <div className="animate-fadeUp">
       <SolicitarLiberacaoFinanceira termosAssinados onCirurgiaConfirmada={onAgendaAtualizada} snapshot={snapshot} />
     </div>
   ) : agendamentoAtivo ? (
