@@ -581,3 +581,104 @@ html.dark[data-sra-admin="true"] [data-sonner-toast] [data-close-button] {
   border-color:rgba(236,204,214,.11) !important;
   color:#CFC7CC !important;
 }
+
+
+/* Central V46 — seletor de data transparente e hierarquia refinada */
+.zip-admin .v46 .today-card.today-picker-btn {
+  display: grid;
+  grid-template-columns: 36px minmax(0, auto) 18px;
+  align-items: center;
+  gap: 11px;
+  min-height: 50px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  text-align: left;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+.zip-admin .v46 .today-card.today-picker-btn:hover {
+  background: rgba(173, 104, 107, .07);
+  border-color: rgba(122, 38, 50, .09);
+}
+.zip-admin .v46 .today-card.today-picker-btn:focus-visible {
+  outline: 2px solid rgba(173, 104, 107, .32);
+  outline-offset: 2px;
+}
+.zip-admin .v46 .today-calendar-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(122, 38, 50, .10);
+  border-radius: 10px;
+  background: rgba(173, 104, 107, .08);
+  color: var(--rose);
+}
+.zip-admin .v46 .today-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.zip-admin .v46 .today-card.today-picker-btn .today-copy b {
+  display: block;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.zip-admin .v46 .today-card.today-picker-btn .today-copy small {
+  display: block;
+  margin: 0;
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+}
+.zip-admin .v46 .today-chevron {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--soft);
+  transition: color .16s ease, transform .16s ease;
+}
+.zip-admin .v46 .today-picker-btn:hover .today-chevron {
+  color: var(--rose);
+  transform: translateY(1px);
+}
+.dark .zip-admin .v46 .today-card.today-picker-btn {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--ink) !important;
+}
+.dark .zip-admin .v46 .today-card.today-picker-btn:hover {
+  background: rgba(199, 134, 155, .075) !important;
+  border-color: rgba(236, 204, 214, .10) !important;
+}
+.dark .zip-admin .v46 .today-calendar-icon {
+  background: rgba(199, 134, 155, .10);
+  border-color: rgba(236, 204, 214, .10);
+  color: #D79AAF;
+}
+.dark .zip-admin .v46 .today-card.today-picker-btn .today-copy b {
+  color: #F2EDF0;
+}
+.dark .zip-admin .v46 .today-card.today-picker-btn .today-copy small,
+.dark .zip-admin .v46 .today-chevron {
+  color: #A9A2A8;
+}
+@media (max-width: 760px) {
+  .zip-admin .v46 .today-card.today-picker-btn {
+    grid-template-columns: 34px minmax(0, 1fr) 18px;
+    width: 100%;
+    min-width: 0;
+  }
+}
