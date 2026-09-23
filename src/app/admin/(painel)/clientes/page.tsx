@@ -23,7 +23,7 @@ type SortMode = "recent" | "old" | "az" | "za";
 type PeriodMode = "all" | "today" | "7" | "30";
 
 const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
-const TABS: Funil[] = ["novas", "aguardando", "cadastradas", "canceladas"];
+const TABS: Funil[] = ["aguardando", "cadastradas", "canceladas"];
 const STATUS_LABEL: Record<StatusContratoCliente, string> = { ativo: "Ativa", suspenso: "Suspensa", negativado: "Negativada", cancelado: "Cancelada" };
 
 const Svg = ({ d, fill }: { d: string; fill?: boolean }) => <svg viewBox="0 0 24 24" fill={fill ? "currentColor" : "none"} stroke={fill ? undefined : "currentColor"} strokeWidth="1.7" aria-hidden="true"><path d={d} /></svg>;
