@@ -70,7 +70,7 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
   if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
     const [saldoR, premiosR, extratoR, beneficiosR, indicacoesR, configR, parcelasR, resgatesR] = await Promise.all([
       db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
-      db.from("clube_recompensas").select("*").eq("ativo", true).order("ordem").order("pontos"),
+      db.from("clube_recompensas").select("*").eq("ativo", true).is("excluido_em", null).order("ordem").order("pontos"),
       db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(200),
       db.from("clube_beneficios_cliente").select("*").eq("cliente_id", clienteId),
       db.from("indicacoes_clientes").select("*").eq("indicador_cliente_id", clienteId).order("created_at", { ascending: false }),
@@ -197,7 +197,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
       db.from("indicacoes_clientes").select("*").order("created_at", { ascending: false }).limit(300),
       db.from("clube_beneficios_cliente").select("*").order("created_at", { ascending: false }).limit(300),
       db.from("clube_config").select("*").eq("id", 1).maybeSingle(),
-      db.from("clube_recompensas").select("*").order("ordem").order("pontos"),
+      db.from("clube_recompensas").select("*").is("excluido_em", null).order("ordem").order("pontos"),
       db.from("clube_resgates").select("*").order("created_at", { ascending: false }).limit(300),
       db.from("cliente_pontos").select("cliente_id", { count: "exact", head: true }),
       db.from("indicacoes_clientes").select("id", { count: "exact", head: true }).eq("status", "venda"),
