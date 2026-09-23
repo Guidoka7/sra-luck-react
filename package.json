@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:auto": "node scripts/dev-sync.mjs",
+    "tema:escuro": "node scripts/tema-escuro-cliente.mjs",
+    "prebuild": "node scripts/tema-escuro-cliente.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",

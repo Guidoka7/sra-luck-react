@@ -205,7 +205,13 @@ Procurar:
 
 - `src/features/admin/AdminSettingsPanel.tsx`;
 - `src/features/admin/adminAppearance.ts`;
-- ThemeProvider/ThemeToggle;
+- ThemeProvider/ThemeToggle (painel);
+- app da cliente — modo escuro premium: `src/lib/temaCliente.ts` (claro/escuro/automático,
+  `html[data-tema-cliente]`), controles em `src/components/cliente/tema/ControlesTema.tsx`
+  (menu Mais e Configurações → Aparência), paleta gerada por `scripts/tema-escuro-cliente.mjs`
+  → `src/styles/client-dark.generated.css` (roda no `prebuild`; não editar à mão) e ajustes
+  finos em `src/styles/client-dark.css`. Cor nova no app claro entra no escuro ao rodar
+  `npm run tema:escuro`;
 - tokens CSS;
 - API/configurações no Worker;
 - tabela `configuracoes`.
