@@ -35,6 +35,11 @@ export interface Env {
   SANTANDER_WEBHOOK_SECRET?: string;
   SICREDI_WEBHOOK_SECRET?: string;
   EFI_WEBHOOK_SECRET?: string;
+
+  // Agente de leitura de carnês (Claude) — opcional; sem a chave, folhas sem
+  // texto legível seguem para revisão manual.
+  ANTHROPIC_API_KEY?: string;
+  CARNE_AGENTE_MODELO?: string;
 }
 
 export function createServiceSupabaseClient(env: Env): SupabaseClient {

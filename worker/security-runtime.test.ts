@@ -92,7 +92,7 @@ describe("HTTP ingress and real router", () => {
     const form = new FormData(); form.append("arquivo", new Blob([new Uint8Array(400_000)], { type: "application/pdf" }), "proof.pdf");
     const safe = await protectRequest(new Request("https://app.test/api/cliente/boletos/test/anexar", { method: "POST", body: form }));
     expect(safe).toBeInstanceOf(Request);
-    expect(((await (safe as Request).formData()).get("arquivo") as File).size).toBe(400_000);
+    expect(((await (safe as Request).formData()).get("arquivo") as Blob).size).toBe(400_000);
   });
   it("does not apply cookie CSRF to independently authenticated webhooks", async () => {
     const r = req("/api/integrations/rd-station/webhook", "POST", {}); r.headers.set("Origin", "https://provider.test");

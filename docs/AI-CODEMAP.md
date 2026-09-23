@@ -111,6 +111,10 @@ Procurar:
 - APIs administrativas de pagamentos;
 - tabelas `boletos`/parcelas e logs;
 - migrations de gestão/numeração/suspensão no PWA e React.
+- carnê em PDF → boletos no app: `worker/admin-carnes.ts` (endpoints), `worker/carne-leitura.ts`
+  (texto por folha), `worker/boleto-febraban.ts` (linha digitável/DVs/valor/vencimento),
+  `worker/carne-agente.ts` (agente Claude para folhas sem texto), `worker/carne-vinculo.ts`
+  (folha → parcela, anexação automática); UI em `src/components/admin/cliente-drawer/FinanceiroPanel.tsx`.
 
 Regra crítica: percentual operacional usa quantidade de parcelas pagas.
 

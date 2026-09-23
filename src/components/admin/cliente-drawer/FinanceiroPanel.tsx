@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { QUANTIDADE_PARCELAS_OPCOES, type Boleto } from "@/types/database";
+import { QUANTIDADE_PARCELAS_OPCOES, type Boleto, type ImportacaoBoleto, type ResumoImportacaoCarne } from "@/types/database";
 import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { PARCELA_LABEL, descreverHistorico, ehHistoricoFinanceiro, formatCurrency, formatDate, hojeSaoPaulo, statusParcela, type ParcelaStatus } from "./drawerFormat";
@@ -65,6 +65,8 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     setEditandoPlano(false);
   }
   useImperativeHandle(ref, () => ({ salvar: salvarPlano, editando: () => editandoPlano || boletos.length === 0 }));
+
+  const sugestoes = cad.pendentesRevisao.filter((i) => i.status_vinculacao === "aguardando_confirmacao" && i.boleto_sugerido_id).length;
 
   function abrirMenu(e: MouseEvent<HTMLButtonElement>, b: Boleto) {
     e.stopPropagation();
@@ -207,18 +209,16 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
           <div className={styles.field} style={{ alignSelf: "end" }}><button type="submit" className={`${styles.modalBtn} ${styles.secondary}`} style={{ width: "100%" }} disabled={cad.criandoCarne}>{cad.criandoCarne ? "Registrando..." : "Registrar carnê"}</button></div>
         </form>
         <label className={styles.dropzone} style={{ marginTop: 10 }} aria-disabled={cad.importando || !cad.novoCarneBanco}>
-          <DrawerIcon name="upload" width={16} height={16} aria-hidden="true" />{cad.importando ? "Importando…" : cad.novoCarneBanco ? "Importar carnê em PDF" : "Informe a instituição para importar o PDF"}
+          <DrawerIcon name="upload" width={16} height={16} aria-hidden="true" />{cad.importando ? "Lendo o carnê e anexando os boletos…" : cad.novoCarneBanco ? "Importar carnê em PDF (1 folha = 1 boleto; pode ser parcial)" : "Informe a instituição para importar o PDF"}
           <input type="file" accept="application/pdf" hidden disabled={cad.importando || !cad.novoCarneBanco} onChange={(e) => { const f = e.target.files?.[0]; if (f) void cad.importarCarne(f, cad.novoCarneBanco); e.target.value = ""; }} />
         </label>
+        {cad.resumoImportacao && <ResumoCarne resumo={cad.resumoImportacao} />}
         {cad.pendentesRevisao.length > 0 && <div className={styles.miniList} style={{ marginTop: 10 }}>
-          <span className={styles.appAccessKicker}>Páginas para confirmar/revisar</span>
-          {cad.pendentesRevisao.map((i) => <div key={i.id} className={styles.miniRow}>
-            <span>{i.numero_parcela ? `Parcela ${i.numero_parcela}` : "Não identificada"} · {i.status_vinculacao === "revisar" ? "revisar manualmente" : `confiança ${i.nivel_confianca ?? "—"}`}</span>
-            <span style={{ display: "flex", gap: 5 }}>
-              {i.boleto_sugerido_id && <button type="button" className={styles.linkBtn} onClick={() => void cad.vincularImportacao(i)}>Vincular</button>}
-              <button type="button" className={styles.cancel} onClick={() => void cad.ignorarImportacao(i.id)}>Ignorar</button>
-            </span>
-          </div>)}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span className={styles.appAccessKicker}>Folhas para conferir ({cad.pendentesRevisao.length})</span>
+            {sugestoes > 0 && <button type="button" className={styles.linkBtn} disabled={cad.confirmandoSugestoes} onClick={() => void cad.confirmarSugestoes()}>{cad.confirmandoSugestoes ? "Anexando…" : `Confirmar ${sugestoes} sugest${sugestoes === 1 ? "ão" : "ões"}`}</button>}
+          </div>
+          {cad.pendentesRevisao.map((i) => <FolhaPendente key={i.id} importacao={i} boletos={boletos} cad={cad} />)}
         </div>}
       </div>
     </article>}
@@ -359,3 +359,41 @@ function Info({ label, value, wide }: { label: string; value: string; wide?: boo
 function Box({ label, value }: { label: string; value: string }) { return <div className={styles.modalValue}><b>{label}</b>{value}</div>; }
 function Field({ label, id, wide, children }: { label: string; id?: string; wide?: boolean; children: ReactNode }) { return <div className={`${styles.field} ${wide ? styles.span2 : ""}`}><label htmlFor={id}>{label}</label>{children}</div>; }
 function Acoes({ busy, rotulo, onCancel }: { busy: boolean; rotulo: string; onCancel: () => void }) { return <div className={styles.modalActions}><button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={onCancel}>Cancelar</button><button className={`${styles.modalBtn} ${styles.primary}`} type="submit" disabled={busy} aria-busy={busy}>{busy ? "Salvando..." : rotulo}</button></div>; }
+
+const FONTE_LABEL: Record<string, string> = { texto: "texto do PDF", agente: "agente de leitura", nenhuma: "sem leitura" };
+
+function ResumoCarne({ resumo }: { resumo: ResumoImportacaoCarne }) {
+  const pendentes = resumo.sugeridas + resumo.revisar;
+  const semAgente = !resumo.agente.disponivel && resumo.agente.necessario > 0;
+  return <div className={styles.miniList} style={{ marginTop: 10 }} role="status">
+    <div className={styles.miniRow}><span><b>{resumo.anexadas}</b> de {resumo.folhasNovas} folha(s) anexada(s) no app da cliente</span><span>{pendentes ? `${pendentes} para conferir` : "tudo certo"}</span></div>
+    {resumo.jaImportadas > 0 && <div className={styles.muted}>{resumo.jaImportadas} folha(s) deste arquivo já estavam anexadas e foram puladas.</div>}
+    {(resumo.reprocessadas ?? 0) > 0 && <div className={styles.muted}>{resumo.reprocessadas} folha(s) importadas antes sem vínculo foram lidas de novo.</div>}
+    {resumo.agente.folhasLidas > 0 && <div className={styles.muted}>{resumo.agente.folhasLidas} folha(s) sem texto legível foram lidas pelo agente de leitura.</div>}
+    {semAgente && <div className={styles.muted}>{resumo.agente.necessario} folha(s) não têm texto legível (PDF em imagem). Ative o agente de leitura no servidor ou escolha a parcela de cada uma abaixo.</div>}
+    {resumo.agente.falhas > 0 && <div className={styles.muted}>O agente de leitura não respondeu para parte das folhas; elas ficaram para conferência manual.</div>}
+  </div>;
+}
+
+function FolhaPendente({ importacao: i, boletos, cad }: { importacao: ImportacaoBoleto; boletos: Boleto[]; cad: ClienteCadastro }) {
+  const [escolhida, setEscolhida] = useState<string>(i.boleto_sugerido_id ?? "");
+  const [enviando, setEnviando] = useState(false);
+  const folha = i.analise_detalhada?.numeroPagina ?? null;
+  const fonte = i.analise_detalhada?.fonte ? FONTE_LABEL[i.analise_detalhada.fonte] ?? i.analise_detalhada.fonte : null;
+  const dados = [i.vencimento_extraido ? `venc. ${formatDate(i.vencimento_extraido)}` : null, i.valor_extraido != null ? formatCurrency(Number(i.valor_extraido)) : null, fonte].filter(Boolean).join(" · ");
+  return <div className={styles.miniRow} style={{ flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+    <span style={{ minWidth: 0, flex: "1 1 220px" }}>
+      <b>{folha ? `Folha ${folha}` : "Folha"}</b>{dados ? ` · ${dados}` : ""}
+      <br /><small className={styles.muted}>{i.status_vinculacao === "revisar" ? (i.erro_detalhes ?? "Revise e escolha a parcela.") : `Sugestão com confiança ${i.nivel_confianca ?? "—"}.`}</small>
+    </span>
+    <span style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+      <select className={styles.input} style={{ width: 170, height: 30, padding: "0 6px" }} value={escolhida} onChange={(e) => setEscolhida(e.target.value)} aria-label="Parcela desta folha">
+        <option value="">Escolher parcela…</option>
+        {boletos.map((b) => <option key={b.id} value={b.id}>{`${b.numero_parcela}/${b.total_parcelas} · ${formatDate(b.data_vencimento)}${b.boleto_url ? " · já tem boleto" : ""}`}</option>)}
+      </select>
+      <a className={styles.linkBtn} href={`/api/admin/importacoes-boletos/${encodeURIComponent(i.id)}/arquivo`} target="_blank" rel="noreferrer">Ver folha</a>
+      <button type="button" className={styles.linkBtn} disabled={!escolhida || enviando} onClick={async () => { setEnviando(true); try { await cad.vincularImportacao(i, escolhida); } finally { setEnviando(false); } }}>{enviando ? "Anexando…" : "Anexar"}</button>
+      <button type="button" className={styles.cancel} onClick={() => void cad.ignorarImportacao(i.id)}>Ignorar</button>
+    </span>
+  </div>;
+}

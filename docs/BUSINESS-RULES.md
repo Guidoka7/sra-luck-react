@@ -103,6 +103,27 @@ Estados devem representar a realidade operacional, por exemplo:
 
 O sistema deve preservar histórico em vez de apagar eventos relevantes.
 
+### Carnês em PDF (anexar os boletos no app da cliente)
+
+- **1 folha do PDF = 1 boleto.** O sistema corta o carnê em folhas e cada folha vira o boleto de uma
+  parcela, visível no app da cliente (link temporário assinado; arquivo privado).
+- **Carnês parciais são permitidos:** ex.: plano de 72x com um carnê de 60 folhas e depois outro de 12.
+  Parcelas que já têm boleto saem da disputa; o vínculo é pelo vencimento/valor, não pela numeração
+  impressa (o segundo carnê pode vir como "1/12").
+- **Leitura:** a linha digitável é validada pelos dígitos verificadores FEBRABAN e dela saem valor e
+  vencimento (`worker/boleto-febraban.ts`); os rótulos impressos completam. Folhas sem texto legível
+  (PDF em imagem) vão para o **agente de leitura** (Claude, `worker/carne-agente.ts`), cuja leitura
+  também passa pela validação FEBRABAN. O agente só é ligado com o secret `ANTHROPIC_API_KEY` no
+  Worker (modelo opcional em `CARNE_AGENTE_MODELO`); ao usá-lo, as folhas (com nome/CPF da cliente) são
+  enviadas à API da Anthropic.
+- **Anexação automática** (`worker/carne-vinculo.ts`) só com evidência forte e única: identificador já
+  cadastrado na parcela, ou valor + vencimento (dia ou mês) conferindo com uma única parcela livre, a
+  partir de leitura confiável. Posição da folha no PDF nunca decide sozinha.
+- **Vai para a equipe conferir:** CPF impresso diferente do da cliente, mais de um boleto na folha,
+  boleto repetido no arquivo, folha ilegível, valor divergente, indícios fracos (sugestões) e qualquer
+  troca de boleto numa parcela que já tem um (substituição só com confirmação explícita).
+- Reimportar o mesmo PDF pula as folhas já importadas. Toda anexação é auditada em `logs_alteracoes`.
+
 ## 7. Comprovantes
 
 Cliente anexa comprovante → parcela fica aguardando validação → financeiro aprova ou rejeita.

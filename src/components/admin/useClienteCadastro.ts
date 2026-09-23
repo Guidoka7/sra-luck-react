@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { formatarCpf } from "@/lib/cpf";
 import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/lib/utils";
-import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
+import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, ResumoImportacaoCarne, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { dataNascimentoValida } from "../../../worker/app-access";
@@ -70,6 +70,8 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const [novoCarneData, setNovoCarneData] = useState("");
   const [criandoCarne, setCriandoCarne] = useState(false);
   const [importando, setImportando] = useState(false);
+  const [resumoImportacao, setResumoImportacao] = useState<ResumoImportacaoCarne | null>(null);
+  const [confirmandoSugestoes, setConfirmandoSugestoes] = useState(false);
   const [validando, setValidando] = useState(false);
 
   const cartaNumero = Number(desmascararMoeda(carta)) || 0;
@@ -204,6 +206,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   async function importarCarne(arquivo: File, instituicaoFinanceira: string, carneId?: string) {
     if (!cliente?.id) return;
     setImportando(true);
+    setResumoImportacao(null);
     try {
       const form = new FormData();
       form.set("arquivo", arquivo);
@@ -212,9 +215,14 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
       const r = await fetch(`/api/admin/clientes/${cliente.id}/importacoes-boletos`, { method: "POST", body: form });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível importar o carnê.");
-      const revisar = (d.importacoes ?? []).filter((i: ImportacaoBoleto) => i.status_vinculacao === "revisar").length;
-      toast.success(`${(d.importacoes ?? []).length} página(s) importada(s)${revisar ? ` · ${revisar} precisam de revisão manual` : " para confirmação"}.`);
+      const resumo = d.resumo as ResumoImportacaoCarne | undefined;
+      if (resumo) {
+        setResumoImportacao(resumo);
+        const pendentes = resumo.sugeridas + resumo.revisar;
+        toast.success(`${resumo.anexadas} de ${resumo.folhasNovas} boleto(s) anexado(s) ao app da cliente${pendentes ? ` · ${pendentes} para conferir` : ""}.`);
+      }
       void carregarPerfilExtra();
+      void carregarBoletos();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao importar carnê.");
     } finally {
@@ -222,17 +230,40 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
     }
   }
 
-  async function vincularImportacao(importacao: ImportacaoBoleto) {
-    if (!importacao.boleto_sugerido_id) return toast.error("Sem sugestão automática — selecione a parcela manualmente no carnê.");
+  async function vincularImportacao(importacao: ImportacaoBoleto, boletoId?: string | null, substituir = false): Promise<void> {
+    const alvo = boletoId || importacao.boleto_sugerido_id;
+    if (!alvo) { toast.error("Escolha a parcela desta folha."); return; }
     try {
-      const r = await fetch(`/api/admin/importacoes-boletos/${importacao.id}/vincular`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boletoId: importacao.boleto_sugerido_id }) });
+      const r = await fetch(`/api/admin/importacoes-boletos/${importacao.id}/vincular`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boletoId: alvo, substituir }) });
       const d = await r.json();
+      if (r.status === 409 && d.codigo === "PARCELA_JA_TEM_BOLETO" && !substituir) {
+        if (window.confirm(`${d.erro}\n\nSubstituir o boleto atual por esta folha?`)) return vincularImportacao(importacao, alvo, true);
+        return;
+      }
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível vincular.");
-      toast.success("Página vinculada.");
+      toast.success("Boleto anexado à parcela e liberado no app da cliente.");
       void carregarPerfilExtra();
       void carregarBoletos();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao vincular.");
+    }
+  }
+
+  async function confirmarSugestoes() {
+    if (!cliente?.id) return;
+    setConfirmandoSugestoes(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/importacoes-boletos/confirmar-sugestoes`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível confirmar as sugestões.");
+      const falhas = (d.falhas ?? []).length;
+      toast.success(`${d.vinculadas ?? 0} boleto(s) anexado(s)${falhas ? ` · ${falhas} precisam de escolha manual` : ""}.`);
+      void carregarPerfilExtra();
+      void carregarBoletos();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao confirmar sugestões.");
+    } finally {
+      setConfirmandoSugestoes(false);
     }
   }
   async function ignorarImportacao(importacaoId: string) {
@@ -368,7 +399,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
     historico, historicoAberto, setHistoricoAberto,
     carta, atualizarCarta, taxa, atualizarTaxa, quantidade, atualizarQuantidade, parcela, atualizarParcela, vencimento, setVencimento,
     boletos, visiveis, pagas, mostrarTodas, setMostrarTodas, carregandoFin, salvandoFin, gerarOuAjustarParcelas, carregarBoletos,
-    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, criandoCarne, criarCarne, importando, importarCarne, vincularImportacao, ignorarImportacao,
+    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, criandoCarne, criarCarne, importando, importarCarne, vincularImportacao, ignorarImportacao, resumoImportacao, confirmarSugestoes, confirmandoSugestoes,
     proximaLiberacao, aguardandoConferencia, validando, confirmarPagamento, rejeitarComprovante,
     baixaAlvo, setBaixaAlvo, baixaData, setBaixaData, baixaJuros, setBaixaJuros, baixaMulta, setBaixaMulta, baixaForma, setBaixaForma, baixaBanco, setBaixaBanco, baixaObs, setBaixaObs, baixaArquivo, setBaixaArquivo, salvandoBaixa, abrirBaixaManual, confirmarBaixaManual,
     vencidas, situacao, situacaoKind, totalParcelasReal, percentualMeta, metaParcelas, elegivel,
