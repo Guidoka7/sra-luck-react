@@ -33,6 +33,7 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
   useEffect(() => { void carregar(); }, [carregar, recarregarKey]);
 
   async function acaoDia(acao: "liberar" | "bloquear", vagas?: number, msg?: string) {
+    if (data < hoje) { toast.warning("Esta data já passou e está disponível somente para consulta."); return false; }
     if (ocupado) return false;
     setOcupado(true);
     try {
@@ -66,6 +67,7 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
   const candidatas = liberadas.filter((c) => c.cartaDeCredito <= restante);
 
   function abrirNovaCirurgia() {
+    if (data < hoje) { toast.warning("Não é possível criar cirurgia em uma data que já passou."); return; }
     const s = statusDoDia(dia);
     if (!(s.kind === "available" || s.kind === "partial")) { toast.warning("A data selecionada não está disponível."); return; }
     if (tetoAtingido) { toast.warning(`O teto financeiro deste mês já foi atingido (${moeda(teto)}).`); return; }
@@ -103,7 +105,7 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
       <div className="panel panel-pad v46-surgery-calendar-panel">
         <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
-      <DayPanel tipo="surgery" data={data} dia={dia} ocupado={ocupado || !calendario} tetoAtingido={tetoAtingido}
+      <DayPanel tipo="surgery" data={data} hoje={hoje} dia={dia} ocupado={ocupado || !calendario} tetoAtingido={tetoAtingido}
         antesDaLista={atual && <div className={`surgery-financial-cap ${st.cls}`}>
           <div className="surgery-financial-cap-head">
             <div><small>Teto financeiro para cirurgias · {mesAno(data).replace(/^./, (x) => x.toUpperCase())}</small><strong>{moeda(teto)}</strong></div>
