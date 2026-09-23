@@ -202,6 +202,53 @@ export async function monitoramentoErros(request: Request, env: Env) {
     return json({ ok: true }, 201);
   }
 
+  if (url.pathname === "/api/admin/monitoramento-storage" && request.method === "GET") {
+    if (!(await adminComPermissaoMonitoramento(request, env))) return json({ erro: "Sem permissão para visualizar o monitoramento." }, 403);
+    const db = createServiceSupabaseClient(env);
+    const obrigatorios = ["boletos-clientes", "clientes-perfil", "clube-vouchers"];
+
+    try {
+      const inicio = Date.now();
+      const { data: buckets, error } = await db.storage.listBuckets();
+      if (error) {
+        log.error("Falha ao consultar buckets do Storage", { action: "observability.storage.buckets", eventCode: "STORAGE_BUCKETS_READ_FAILED", statusCode: 503, error });
+        return json({ ok: false, erro: "Não foi possível consultar o Storage agora." }, 503);
+      }
+
+      const mapa = new Map((buckets ?? []).map((bucket: any) => [String(bucket.id || bucket.name), bucket]));
+      const checks = await Promise.all(obrigatorios.map(async (id) => {
+        const bucket: any = mapa.get(id);
+        if (!bucket) return { id, existe: false, acessivel: false, privado: null, detalhe: "Bucket obrigatório ausente." };
+
+        const probeInicio = Date.now();
+        const { error: probeError } = await db.storage.from(id).list("", { limit: 1 });
+        return {
+          id,
+          existe: true,
+          acessivel: !probeError,
+          privado: bucket.public === false,
+          fileSizeLimit: bucket.file_size_limit ?? null,
+          allowedMimeTypes: bucket.allowed_mime_types ?? null,
+          ms: Date.now() - probeInicio,
+          detalhe: probeError ? "Falha ao listar o bucket." : bucket.public === false ? "OK" : "Bucket está público e deve ser revisado.",
+        };
+      }));
+
+      const ok = checks.every((check) => check.existe && check.acessivel && check.privado === true);
+      return json({
+        ok,
+        geradoEm: new Date().toISOString(),
+        latenciaMs: Date.now() - inicio,
+        totalBuckets: buckets?.length ?? 0,
+        obrigatorios,
+        checks,
+      }, ok ? 200 : 503);
+    } catch (error) {
+      log.error("Falha inesperada no monitoramento do Storage", { action: "observability.storage.probe", eventCode: "STORAGE_PROBE_FAILED", statusCode: 503, error });
+      return json({ ok: false, erro: "Não foi possível validar o Storage agora." }, 503);
+    }
+  }
+
   if (url.pathname === "/api/admin/monitoramento-erros" && request.method === "GET") {
     if (!(await adminComPermissaoMonitoramento(request, env))) return json({ erro: "Sem permissão para visualizar o monitoramento." }, 403);
     const db = createServiceSupabaseClient(env);
