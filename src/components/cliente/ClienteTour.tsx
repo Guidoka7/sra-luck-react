@@ -75,7 +75,7 @@ export function ClienteTour() {
   const step = steps[indice]; const Icon = step.icon; const ultimo = indice === steps.length - 1;
   const isAgenda = step.id === "agenda" && rect && etapa !== "cirurgia";
   const tooltipStyle = rect ? isAgenda ? { left: Math.max(16, Math.min(window.innerWidth - 336, rect.left + rect.width / 2 - 160)), bottom: Math.max(16, window.innerHeight - rect.top + 14) } : { left: Math.max(16, Math.min(window.innerWidth - 336, rect.left + rect.width / 2 - 160)), top: Math.min(window.innerHeight - 250, Math.max(16, rect.bottom + 14)) } : { left: 16, right: 16, top: "50%", transform: "translateY(-50%)" };
-  const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  const dark = typeof document !== "undefined" && document.documentElement.getAttribute("data-tema-cliente") === "escuro";
 
   return <AnimatePresence><motion.div className="fixed inset-0 z-[100]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
     {!rect && <div className="absolute inset-0 bg-[#241317]/28" />}
