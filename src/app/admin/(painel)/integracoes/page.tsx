@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 import { WebPushSettings } from "@/features/admin/WebPushSettings";
 import { ContaAzulOperacao, CrmOperacao } from "@/features/admin/IntegracoesOperacao";
+import { LogoIntegracao } from "@/features/admin/LogoIntegracao";
 
 type EstadoIntegracao = "pronto_para_configurar" | "credenciais_presentes" | "planejado" | "base_incompleta";
 type GrupoIntegracao = "comunicacao" | "pagamentos" | "crm" | "bancos";
@@ -22,6 +23,13 @@ type CredenciaisPayload = { provedores: ProvedorCredenciais[]; persistenciaPront
 type ResultadoTeste = { conectado: boolean; detalhe: string };
 type EventoHistorico = { id: string; usuario: string; acao: string; entidade_id: string | null; detalhes: Record<string, unknown> | null; created_at: string };
 
+const GRUPOS: { id: GrupoIntegracao; titulo: string; descricao: string }[] = [
+  { id: "comunicacao", titulo: "Comunicação", descricao: "Avisos no celular e mensagem do dia" },
+  { id: "pagamentos", titulo: "Pagamentos e financeiro", descricao: "Cobrança e conciliação das parcelas" },
+  { id: "crm", titulo: "CRM", descricao: "Entrada de clientes, somente leitura" },
+  { id: "bancos", titulo: "Bancos", descricao: "Reservados na arquitetura; homologação futura" },
+];
+
 const CAPACIDADES: Record<string, string[]> = {
   web_push: ["Enviar notificação push a dispositivos inscritos", "Registrar entrega/erro por assinatura"],
   mercado_pago: ["Criar preferência de pagamento por parcela", "Receber evento do provedor", "Encaminhar pagamento aprovado para conferência humana — sem baixa automática"],
@@ -32,7 +40,6 @@ const CAPACIDADES: Record<string, string[]> = {
 
 function estadoKind(estado: EstadoIntegracao): ZipKind { if (estado === "credenciais_presentes") return "warn"; if (estado === "pronto_para_configurar") return "ok"; if (estado === "planejado") return "neutral"; return "bad"; }
 function estadoLabel(estado: EstadoIntegracao) { if (estado === "credenciais_presentes") return "Credenciais presentes"; if (estado === "pronto_para_configurar") return "Pronto para configurar"; if (estado === "planejado") return "Planejado"; return "Base incompleta"; }
-function iconFor(id: string) { if (id === "web_push") return "↗"; if (id === "mercado_pago") return "MP"; if (id === "conta_azul") return "CA"; if (id === "rd_station") return "RD"; if (id === "gemini") return "✦"; return "$"; }
 function dataHora(v?: string | null) { return v ? new Date(v).toLocaleString("pt-BR") : "Ainda não"; }
 
 async function carregarStatus(): Promise<Payload> {
@@ -185,15 +192,47 @@ export default function IntegracoesAdminPage() {
         {historico.length === 0 ? <div style={{ padding: 20, textAlign: "center", fontSize: 10.5, color: "var(--soft)" }}>Nenhum evento registrado ainda.</div> : historico.map((ev) => <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 14px", borderBottom: "1px solid var(--line2)", fontSize: 10.5 }}><span>{ev.acao.replace(/_/g, " ")}{ev.entidade_id ? ` · ${ev.entidade_id}` : ""}</span><span style={{ color: "var(--soft)" }}>{new Date(ev.created_at).toLocaleString("pt-BR")}</span></div>)}
       </div>}
 
-      <div style={{ overflow: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px,1.3fr) 130px 150px 170px", gap: 10, minWidth: 700, padding: "9px 14px", background: "var(--s1)", borderBottom: "1px solid var(--line)" }}>{["Conexão", "Tipo", "Status", "Última verificação"].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}</div>
-        {loading && !data ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Carregando…</div> : (data?.integracoes ?? []).map((i) => <div key={i.id} onClick={() => setDrawer(i)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(200px,1.3fr) 130px 150px 170px", gap: 10, minWidth: 700, alignItems: "center", padding: "12px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}><div style={{ width: 31, height: 31, borderRadius: 9, background: "var(--robg)", display: "grid", placeItems: "center", color: "var(--bg)", fontSize: 9, fontWeight: 800 }}>{iconFor(i.id)}</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{i.nome}</div><div style={{ fontSize: 9.5, color: "var(--soft)" }}>{i.detalhes}</div></div></div>
-          <div style={{ fontSize: 10.5, color: "var(--soft)" }}>{i.grupo}</div>
-          <span style={zipChip(i.conexaoLiveVerificada ? "ok" : estadoKind(i.estado))}>{i.conexaoLiveVerificada ? (i.id === "web_push" ? "Validada" : "Conectada") : estadoLabel(i.estado)}</span>
-          <div className="zip-mono" style={{ fontSize: 10.5, color: "var(--soft)" }}>{resultadoTeste[i.id] ? (resultadoTeste[i.id].conectado ? "Conectada agora" : resultadoTeste[i.id].detalhe) : dataHora(i.ultimaVerificacao)}</div>
-        </div>)}
-      </div>
+      {loading && !data ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Carregando…</div> : <>
+        {data && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", borderBottom: "1px solid var(--line)" }}>
+          {[
+            ["Conectadas", data.integracoes.filter((i) => i.conexaoLiveVerificada).length, "var(--ok)"],
+            ["Prontas para configurar", data.resumo.prontosParaConfigurar, "var(--ink)"],
+            ["Com credenciais", data.resumo.credenciaisPresentes, "var(--gold)"],
+            ["Planejadas", data.resumo.planejados, "var(--soft)"],
+          ].map(([rotulo, valor, cor], idx) => <div key={rotulo as string} style={{ padding: "11px 14px", borderLeft: idx ? "1px solid var(--line2)" : "none" }}>
+            <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--soft)" }}>{rotulo}</div>
+            <div style={{ marginTop: 3, fontSize: 20, fontWeight: 700, color: cor as string }}>{valor}</div>
+          </div>)}
+        </div>}
+
+        {GRUPOS.map(({ id: grupo, titulo, descricao }) => {
+          const itens = (data?.integracoes ?? []).filter((i) => i.grupo === grupo);
+          if (!itens.length) return null;
+          const planejados = grupo === "bancos";
+          return <section key={grupo} style={{ borderBottom: "1px solid var(--line)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, padding: "12px 14px 6px" }}>
+              <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--rose)" }}>{titulo} <span style={{ color: "var(--soft)", fontWeight: 600 }}>· {itens.length}</span></div>
+              <div style={{ fontSize: 10, color: "var(--soft)", textAlign: "right" }}>{descricao}</div>
+            </div>
+            {planejados
+              ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 8, padding: "4px 14px 14px" }}>
+                  {itens.map((i) => <button key={i.id} type="button" onClick={() => setDrawer(i)} className="zip-row-hover" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 11px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--s0)", textAlign: "left", cursor: "pointer", color: "inherit" }}>
+                    <LogoIntegracao id={i.id} nome={i.nome} tamanho={34} />
+                    <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.nome}</div><div style={{ marginTop: 2, fontSize: 9.5, color: i.credenciaisConfiguradas ? "var(--gold)" : "var(--soft)" }}>{estadoLabel(i.estado)} · {i.credenciaisConfiguradas ? "segredo salvo" : "sem credenciais"}</div></div>
+                  </button>)}
+                </div>
+              : <div style={{ overflowX: "auto" }}>{itens.map((i) => <div key={i.id} onClick={() => setDrawer(i)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(260px,1fr) 160px 150px 14px", gap: 14, minWidth: 620, alignItems: "center", padding: "11px 14px", borderTop: "1px solid var(--line2)", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                    <LogoIntegracao id={i.id} nome={i.nome} />
+                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 700 }}>{i.nome}</div><div style={{ marginTop: 2, fontSize: 10, lineHeight: 1.45, color: "var(--soft)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{i.detalhes}</div></div>
+                  </div>
+                  <div><span style={zipChip(i.conexaoLiveVerificada ? "ok" : estadoKind(i.estado))}>{i.conexaoLiveVerificada ? (i.id === "web_push" ? "Validada" : "Conectada") : estadoLabel(i.estado)}</span></div>
+                  <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--soft)" }}>Última verificação</div><div className="zip-mono" style={{ marginTop: 2, fontSize: 10.5 }}>{resultadoTeste[i.id] ? (resultadoTeste[i.id].conectado ? "Conectada agora" : resultadoTeste[i.id].detalhe) : dataHora(i.ultimaVerificacao)}</div></div>
+                  <div style={{ color: "var(--soft)", fontSize: 14 }} aria-hidden>›</div>
+                </div>)}</div>}
+          </section>;
+        })}
+      </>}
     </div>
 
     {erro && <div style={{ marginTop: 10, borderRadius: 9, border: "1px solid var(--badbg)", background: "var(--badbg)", color: "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{erro}</div>}
@@ -202,7 +241,7 @@ export default function IntegracoesAdminPage() {
       <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
       <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: drawerAtual.id === "rd_station" || drawerAtual.id === "conta_azul" ? "min(620px,100vw)" : "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
-          <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Integração</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawerAtual.nome}</h2><div style={{ marginTop: 4, fontSize: 10.5, color: "var(--soft)" }}>{drawerAtual.detalhes}</div></div>
+          <div style={{ display: "flex", gap: 12 }}><LogoIntegracao id={drawerAtual.id} nome={drawerAtual.nome} tamanho={44} /><div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Integração</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawerAtual.nome}</h2><div style={{ marginTop: 4, fontSize: 10.5, color: "var(--soft)" }}>{drawerAtual.detalhes}</div></div></div>
           <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
         </div>
 
