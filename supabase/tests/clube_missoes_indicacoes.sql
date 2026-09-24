@@ -23,7 +23,8 @@ begin
   select c.saldo into v_saldo from public.cliente_pontos c where c.cliente_id=ana;
   if v_saldo <> 60 then raise exception 'reconfirmar parcela nao pode creditar de novo, saldo %', v_saldo; end if;
 
-  insert into public.indicacoes_clientes(indicador_cliente_id,nome_indicado,telefone_indicado) values (ana,'QA Bia','61999990000') returning id into ind;
+  insert into public.indicacoes_clientes(indicador_cliente_id,nome_indicado,telefone_indicado,consentimento_contato,consentimento_registrado_em)
+  values (ana,'QA Bia','61999990000',true,now()) returning id into ind;
   falhou := false;
   begin perform public.clube_atualizar_indicacao(ind,'venda',null,null,'qa'); exception when others then falhou := true; end;
   if not falhou then raise exception 'Fechou sem cliente vinculada deveria falhar'; end if;

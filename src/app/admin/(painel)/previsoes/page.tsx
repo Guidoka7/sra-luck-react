@@ -114,6 +114,7 @@ function iniciais(nome: string) {
 export default function PrevisoesPage() {
   const [detalhes, setDetalhes] = useState(false);
   const [carregando, setCarregando] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ClienteForecast[]>([]);
   const [agenda, setAgenda] = useState<AgendaCliente[]>([]);
   const [boletos, setBoletos] = useState<Boleto[]>([]);
@@ -128,19 +129,28 @@ export default function PrevisoesPage() {
 
   useEffect(() => {
     let ativo = true;
+    const ler = async (url: string) => {
+      const resposta = await fetch(url, { cache: "no-store" });
+      const dados = await resposta.json().catch(() => ({})) as Record<string, unknown> & { erro?: string };
+      if (!resposta.ok) throw new Error(dados.erro || "Não foi possível carregar os dados de previsões.");
+      return dados;
+    };
+    setErroCarga(null);
     Promise.all([
-      fetch("/api/admin/previsao-liberacoes", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/clientes-agendamentos", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/boletos", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/cirurgias-confirmadas", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/clientes", { cache: "no-store" }).then((r) => r.json()),
+      ler("/api/admin/previsao-liberacoes"),
+      ler("/api/admin/clientes-agendamentos"),
+      ler("/api/admin/boletos"),
+      ler("/api/admin/cirurgias-confirmadas"),
+      ler("/api/admin/clientes"),
     ]).then(([f, a, b, c, cl]) => {
       if (!ativo) return;
-      setForecast(f.clientes ?? []);
-      setAgenda(a.clientes ?? []);
-      setBoletos(b.boletos ?? []);
-      setCirurgias(c.cirurgias ?? []);
-      setClientes(cl.clientes ?? []);
+      setForecast((f.clientes as ClienteForecast[] | undefined) ?? []);
+      setAgenda((a.clientes as AgendaCliente[] | undefined) ?? []);
+      setBoletos((b.boletos as Boleto[] | undefined) ?? []);
+      setCirurgias((c.cirurgias as Cirurgia[] | undefined) ?? []);
+      setClientes((cl.clientes as ClienteBase[] | undefined) ?? []);
+    }).catch((e) => {
+      if (ativo) setErroCarga(e instanceof Error ? e.message : "Não foi possível carregar os dados de previsões.");
     }).finally(() => ativo && setCarregando(false));
     return () => { ativo = false; };
   }, []);
@@ -148,16 +158,20 @@ export default function PrevisoesPage() {
   const agendaPorCliente = useMemo(() => new Map(agenda.map((a) => [a.clienteId, a])), [agenda]);
   const clientePorId = useMemo(() => new Map(clientes.map((c) => [c.id, c])), [clientes]);
   const forecastPorId = useMemo(() => new Map(forecast.map((f) => [f.clienteId, f])), [forecast]);
-  const responsaveis = useMemo(() => Array.from(new Set(clientes.map((c) => c.consultora).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [clientes]);
+  const responsaveis = useMemo(() => Array.from(new Set([
+    ...forecast.map((f) => f.responsavel),
+    ...clientes.map((c) => c.consultora),
+  ].filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [forecast, clientes]);
   const procedimentos = useMemo(() => Array.from(new Set(clientes.map((c) => c.procedimento).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [clientes]);
 
   const clientePermitido = useMemo(() => {
     const ids = new Set<string>();
     for (const c of clientes) {
-      if (responsavel !== "todos" && (c.consultora ?? "") !== responsavel) continue;
+      const f = forecastPorId.get(c.id);
+      const responsavelEfetivo = f?.responsavel ?? c.consultora ?? "";
+      if (responsavel !== "todos" && responsavelEfetivo !== responsavel) continue;
       if (procedimento !== "todos" && (c.procedimento ?? "") !== procedimento) continue;
       if (status !== "todos") {
-        const f = forecastPorId.get(c.id);
         if (!f || etapaDe(f, agendaPorCliente.get(c.id)) !== status) continue;
       }
       ids.add(c.id);
@@ -311,7 +325,7 @@ export default function PrevisoesPage() {
   if (detalhes) {
     return <div className="zip-admin">
       <button type="button" className={styles.backButton} onClick={() => setDetalhes(false)}>← Voltar ao painel de previsões</button>
-      <PrevisoesDetalhes />
+      <PrevisoesDetalhes allowedClientIds={Array.from(clientePermitido)} />
     </div>;
   }
 
@@ -328,7 +342,7 @@ export default function PrevisoesPage() {
       <label><span>Status</span><div className={styles.selectBox}><AlertTriangle size={17} /><select value={status} onChange={(e) => setStatus(e.target.value as FiltroStatus)}>{(Object.keys(STATUS_LABEL) as FiltroStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select><ChevronDown size={14} /></div></label>
     </section>
 
-    {carregando ? <div className={styles.loading}>Calculando previsões reais da carteira…</div> : <>
+    {carregando ? <div className={styles.loading}>Calculando previsões reais da carteira…</div> : erroCarga ? <div className={styles.loading} role="alert"><strong>Não foi possível carregar as previsões.</strong><br />{erroCarga}</div> : <>
       <section className={styles.kpis}>
         {kpis.map((k, index) => <article key={k.label} className={styles.kpi}>
           <div className={styles.kpiTop}><span className={styles.kpiIcon}>{k.icon}</span><span>{k.label}</span></div>
@@ -402,10 +416,10 @@ export default function PrevisoesPage() {
         <article className={styles.panel}>
           <div className={styles.panelHead}><h2>Ações rápidas</h2></div>
           <div className={styles.actions}>
-            <button type="button" className={styles.actionPrimary} onClick={() => { setPeriodo(90); chartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><CalendarDays size={20} /><span>Simular receita</span><ArrowRight size={14} /></button>
+            <button type="button" className={styles.actionPrimary} onClick={() => { setPeriodo(90); chartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><CalendarDays size={20} /><span>Projeção 90 dias</span><ArrowRight size={14} /></button>
             <button type="button" onClick={() => attentionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><Users size={20} /><span>Ver inadimplência</span><ArrowRight size={14} /></button>
             <button type="button" onClick={exportarCsv}><Download size={20} /><span>Exportar previsão</span><ArrowRight size={14} /></button>
-            <button type="button" onClick={() => setPeriodo((p) => p === 30 ? 60 : 30)}><BarChart3 size={20} /><span>Comparar períodos</span><ArrowRight size={14} /></button>
+            <button type="button" onClick={() => setPeriodo((p) => p === 30 ? 60 : 30)}><BarChart3 size={20} /><span>Alternar período</span><ArrowRight size={14} /></button>
           </div>
           <div className={styles.compareHint}>Próximo período: {dinheiroCurto(proximoPeriodo.recebimentos)} · {proximoPeriodo.cirurgias} cirurgias · {proximoPeriodo.liberacoes} liberações</div>
         </article>
