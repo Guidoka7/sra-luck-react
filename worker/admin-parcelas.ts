@@ -291,6 +291,13 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     if (atual.status === "pago") return json({ erro: "Parcelas pagas não podem ser alteradas." }, 400);
 
     if (acao === "excluir") {
+      // Vínculo permanente com a Conta Azul (migration_091): a parcela não some sem resolver lá.
+      const { data: vinculo } = await db.from("conta_azul_vinculos").select("id,estado").eq("boleto_id", boletoId).maybeSingle();
+      if (vinculo && vinculo.estado !== "desvinculado") return json({ erro: "Parcela vinculada à Conta Azul. Resolva o lançamento lá e desvincule nas Integrações antes de excluir." }, 409);
+      if (vinculo) {
+        const { data: antigo } = await db.from("conta_azul_vinculos").delete().eq("id", vinculo.id).select("marcador,ca_evento_id,ca_parcela_id").maybeSingle();
+        await db.from("logs_alteracoes").insert({ usuario, acao: "removeu_vinculo_desvinculado_conta_azul", entidade: "boletos", entidade_id: boletoId, detalhes: antigo ?? {} });
+      }
       const { data: todas } = await db.from("boletos").select("id").eq("cliente_id", clienteId);
       const novoTotal = Math.max(0, (todas ?? []).length - 1);
       const { error } = await db.from("boletos").delete().eq("id", boletoId).eq("cliente_id", clienteId);

@@ -30,6 +30,8 @@ export interface Env {
   CONTA_AZUL_CLIENT_SECRET?: string;
   CONTA_AZUL_ACCESS_TOKEN?: string;
   CONTA_AZUL_REFRESH_TOKEN?: string;
+  CONTA_AZUL_REDIRECT_URI?: string;
+  CONTA_AZUL_TOKEN_EXPIRES_AT?: string;
   MERCADO_PAGO_ACCESS_TOKEN?: string;
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
   PUBLIC_APP_URL?: string;

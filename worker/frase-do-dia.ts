@@ -24,6 +24,7 @@
  */
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { obterCredencial } from "./integrations-credenciais";
+import { configDaFuncao, consumirUso, type ConfigGemini } from "./integracoes-registro";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { requestLogger } from "./logger";
@@ -254,13 +255,47 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
   throw new ErroGemini(/^\d+$/.test(ultimo) ? `http_${ultimo}` : ultimo, tentativas);
 }
 
-export async function configuracaoGemini(env: Env) {
-  const [chave, modelo] = await Promise.all([obterCredencial(env, "gemini", "api_key"), obterCredencial(env, "gemini", "modelo")]);
+/** Funções do Sra Luck que usam o Gemini; cada uma tem configuração própria (integracoes_config). */
+export type FuncaoGemini = "mensagem_diaria" | "notificacoes";
+
+/**
+ * Configuração efetiva do Gemini para uma função: chave e modelo geral (cofre/ambiente)
+ * + a configuração da função (liga/desliga, modelo, prompt, temperatura, tokens, limite).
+ * Sem configuração salva, o comportamento é o de antes.
+ */
+export async function configuracaoGemini(env: Env, funcao: FuncaoGemini = "mensagem_diaria", deps: { db?: Db } = {}) {
+  const [chave, modelo, cfg] = await Promise.all([
+    obterCredencial(env, "gemini", "api_key"),
+    obterCredencial(env, "gemini", "modelo"),
+    configDaFuncao<ConfigGemini>(env, "gemini", funcao, deps).catch(() => null),
+  ]);
+  const ativo = cfg?.ativo !== false;
   return {
-    chave: chave?.trim() || null,
-    modelo: normalizarModelo(modelo) ?? MODELO_PADRAO,
-    instrucoes: env.GEMINI_PROMPT?.trim() || PROMPT_PADRAO,
+    funcao,
+    chave: ativo ? chave?.trim() || null : null,
+    /** Motivo de não haver chave quando ela existe mas a função foi desligada. */
+    indisponivel: ativo ? null : "funcao_desativada" as const,
+    modelo: normalizarModelo(cfg?.modelo) ?? normalizarModelo(modelo) ?? MODELO_PADRAO,
+    // Mensagem diária: o prompt da função substitui as instruções de estilo.
+    instrucoes: (funcao === "mensagem_diaria" ? cfg?.prompt : null) || env.GEMINI_PROMPT?.trim() || PROMPT_PADRAO,
+    // Outras funções: orientação extra de tom, somada às regras fixas de segurança.
+    instrucoesExtras: funcao === "mensagem_diaria" ? null : cfg?.prompt ?? null,
+    temperatura: cfg?.temperatura ?? null,
+    maxTokens: cfg?.maxTokens ?? null,
+    limiteDiario: cfg?.limiteDiario ?? null,
   };
+}
+
+export type ConfiguracaoGemini = Awaited<ReturnType<typeof configuracaoGemini>>;
+
+/** Reserva uma chamada no limite diário da função; false = limite do dia atingido. */
+export function reservarChamadaGemini(env: Env, config: ConfiguracaoGemini, deps: { db?: Db } = {}) {
+  return consumirUso(env, "gemini", config.funcao, config.limiteDiario, deps);
+}
+
+/** Opções de geração da função, com o padrão de cada chamada quando não configurado. */
+export function opcoesDaFuncao(config: ConfiguracaoGemini, padrao: OpcoesGeracao = {}): OpcoesGeracao {
+  return { ...padrao, temperatura: config.temperatura ?? padrao.temperatura, maxTokens: config.maxTokens ?? padrao.maxTokens };
 }
 
 export type ResultadoRotina = {
@@ -312,13 +347,14 @@ export async function gerarMensagemDoDia(env: Env, agora = new Date(), deps: { d
   let modelo: string | null = null;
   let motivo: string | undefined;
   let chamouGemini = false;
-  const config = await configuracaoGemini(env);
-  if (!config.chave) motivo = "sem_chave";
+  const config = await configuracaoGemini(env, "mensagem_diaria", { db });
+  if (!config.chave) motivo = config.indisponivel ?? "sem_chave";
+  else if (!(await reservarChamadaGemini(env, config, { db }))) motivo = "limite_diario";
   else {
     chamouGemini = true;
     try {
       const { sistema, usuario } = montarPrompt(agora, base, recentes, config.instrucoes);
-      const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuario, deps.fetcher);
+      const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuario, deps.fetcher, opcoesDaFuncao(config));
       const validacao = validarFraseIa(gerada.texto, recentes);
       if (validacao.ok) { texto = validacao.texto; modelo = gerada.modelo; }
       else motivo = `reprovada:${validacao.motivo}`;
@@ -427,15 +463,17 @@ export async function prepararMensagemDoDia(env: Env, agora = new Date(), deps: 
   let modelo: string | null = null;
   let motivo: string | undefined;
   let chamouGemini = false;
-  const config = await configuracaoGemini(env);
+  const config = await configuracaoGemini(env, "mensagem_diaria", { db });
 
   if (!config.chave) {
-    motivo = "sem_chave";
+    motivo = config.indisponivel ?? "sem_chave";
+  } else if (!(await reservarChamadaGemini(env, config, { db }))) {
+    motivo = "limite_diario";
   } else {
     chamouGemini = true;
     try {
       const { sistema, usuario } = montarPrompt(agora, base, recentes, config.instrucoes);
-      const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuario, deps.fetcher);
+      const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuario, deps.fetcher, opcoesDaFuncao(config));
       const validacao = validarFraseIa(gerada.texto, recentes);
       if (validacao.ok) {
         texto = validacao.texto;
@@ -529,12 +567,13 @@ export function rotinaAutorizada(request: Request, env: Env) {
 
 /** Teste de conexão do painel de Integrações: gera um exemplo sem gravar nada. */
 export async function testarGemini(env: Env) {
-  const config = await configuracaoGemini(env);
-  if (!config.chave) return { conectado: false, detalhe: "Nenhuma chave do Gemini configurada." };
+  const config = await configuracaoGemini(env, "mensagem_diaria");
+  if (!config.chave) return { conectado: false, detalhe: config.indisponivel ? "A função Mensagem diária do Gemini está desligada nas Integrações." : "Nenhuma chave do Gemini configurada." };
+  if (!(await reservarChamadaGemini(env, config))) return { conectado: false, detalhe: `Limite diário da função Mensagem diária atingido (${config.limiteDiario} chamadas). O teste conta como chamada.` };
   try {
     const agora = new Date();
     const { sistema, usuario } = montarPrompt(agora, fraseDoDia(agora), [], config.instrucoes);
-    const { texto, modelo } = await gerarComGemini(config.chave, config.modelo, sistema, usuario);
+    const { texto, modelo } = await gerarComGemini(config.chave, config.modelo, sistema, usuario, fetch, opcoesDaFuncao(config));
     const validacao = validarFraseIa(texto);
     return validacao.ok
       ? { conectado: true, detalhe: `Gemini respondeu (${modelo}). Exemplo: ${validacao.texto.replace(/\*/g, "")}` }
@@ -600,15 +639,20 @@ export type Sugestao =
 /** Gera uma candidata SEM salvar. O painel mostra e a equipe decide se usa. */
 export async function sugerirMensagem(env: Env, pedidoBruto: unknown, agora = new Date(), deps: { db?: Db; fetcher?: typeof fetch } = {}): Promise<Sugestao> {
   const db = deps.db ?? createServiceSupabaseClient(env);
-  const config = await configuracaoGemini(env);
-  if (!config.chave) return { ok: false, codigo: "sem_chave", erro: "O Gemini não tem chave configurada (ou a integração está desligada)." };
+  const config = await configuracaoGemini(env, "mensagem_diaria", { db });
+  if (!config.chave) {
+    return config.indisponivel
+      ? { ok: false, codigo: "funcao_desativada", erro: "A função Mensagem diária do Gemini está desligada nas Integrações." }
+      : { ok: false, codigo: "sem_chave", erro: "O Gemini não tem chave configurada (ou a integração está desligada)." };
+  }
+  if (!(await reservarChamadaGemini(env, config, { db }))) return { ok: false, codigo: "limite_diario", erro: `Limite diário da função Mensagem diária atingido (${config.limiteDiario} chamadas). Ajuste o limite nas Integrações ou tente amanhã.` };
   const base = fraseDoDia(agora);
   const recentes = await textosRecentes(db, base.data, true);
   const pedido = limparPedido(pedidoBruto);
   const { sistema, usuario } = montarPrompt(agora, base, recentes, config.instrucoes);
   const usuarioFinal = pedido ? `${usuario}\nPedido da equipe (siga sem quebrar nenhuma regra): ${pedido}` : usuario;
   try {
-    const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuarioFinal, deps.fetcher);
+    const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuarioFinal, deps.fetcher, opcoesDaFuncao(config));
     const validacao = validarFraseIa(gerada.texto, recentes);
     return validacao.ok
       ? { ok: true, texto: validacao.texto, aprovada: true, modelo: gerada.modelo }
@@ -704,7 +748,7 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
     if (!colaborador) return json({ erro: "Sem permissão." }, 403);
     try {
       if (conversa === "mensagens") {
-        const config = await configuracaoGemini(env);
+        const config = await configuracaoGemini(env, "mensagem_diaria");
         const mensagens = await historicoMensagens(env, Number(url.searchParams.get("limite")) || 14);
         return json({ hoje: fraseDoDia().data, configurado: Boolean(config.chave), modelo: config.modelo, mensagens });
       }
@@ -712,7 +756,7 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
       if (conversa === "sugerir") {
         const sugestao = await sugerirMensagem(env, corpo.pedido);
         log.info("Sugestão de mensagem do dia", { eventCode: "DAILY_MESSAGE_SUGGESTED", ok: sugestao.ok, aprovada: sugestao.ok ? sugestao.aprovada : false, codigo: sugestao.ok ? undefined : sugestao.codigo, tentativas: sugestao.ok ? undefined : sugestao.tentativas });
-        return json(sugestao, sugestao.ok ? 200 : sugestao.codigo === "sem_chave" ? 409 : 502);
+        return json(sugestao, sugestao.ok ? 200 : ["sem_chave", "funcao_desativada"].includes(sugestao.codigo) ? 409 : sugestao.codigo === "limite_diario" ? 429 : 502);
       }
       const definicao = await definirMensagem(env, corpo.texto, { origem: corpo.origem, modelo: corpo.modelo });
       if (!definicao.ok) return json(definicao, definicao.codigo.startsWith("salvar_falhou") ? 500 : definicao.codigo === "migration_087" ? 409 : 400);

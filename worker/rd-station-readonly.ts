@@ -2,6 +2,7 @@ import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from
 import { obterCredencial, salvarCredencialInterna } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm } from "./crm-importacao";
 
 const RD_CRM_BASE = "https://api.rd.services/crm/v2";
 const RD_OAUTH_TOKEN = "https://api.rd.services/oauth2/token";
@@ -51,19 +52,19 @@ function sameOrigin(request: Request) {
   try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
-function objectValue(value: unknown): Json {
+export function objectValue(value: unknown): Json {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 }
 
-function arrayValue(value: unknown): any[] {
+export function arrayValue(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringValue(value: unknown): string {
+export function stringValue(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-function numberValue(value: unknown): number | null {
+export function numberValue(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const raw = stringValue(value).replace(/\s/g, "").replace(/R\$/gi, "");
   if (!raw) return null;
@@ -138,7 +139,7 @@ function idDe(obj: Json, singular: string, plural?: string): string | null {
   return null;
 }
 
-function mapById(items: Json[]) {
+export function mapById(items: Json[]) {
   const mapa = new Map<string, Json>();
   for (const item of items) {
     const id = stringValue(item.id);
@@ -178,12 +179,12 @@ async function hmacBase64Url(secret: string, value: string) {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-async function criarState(adminId: string, segredo: string) {
+export async function criarState(adminId: string, segredo: string) {
   const payload = base64Url(JSON.stringify({ adminId, exp: Date.now() + 10 * 60_000 }));
   return `${payload}.${await hmacBase64Url(segredo, payload)}`;
 }
 
-async function validarState(state: string, segredo: string) {
+export async function validarState(state: string, segredo: string) {
   if (state.length > 8192 || state.split(".").length !== 2) return null;
   const [payload, assinatura] = state.split(".");
   if (!payload || !assinatura) return null;
@@ -250,7 +251,7 @@ async function accessToken(env: Env) {
   return rdCredential(env, "access_token", "api_access_token");
 }
 
-async function rdGet(env: Env, path: string): Promise<Json> {
+export async function rdGet(env: Env, path: string): Promise<Json> {
   assertRdCommercialReadOnly("GET");
   let token = await accessToken(env);
   if (!token) throw new Error("RD_ACCESS_TOKEN_MISSING");
@@ -268,7 +269,7 @@ async function rdGet(env: Env, path: string): Promise<Json> {
   return data;
 }
 
-async function listarTudo(env: Env, resource: string, filter?: string) {
+export async function listarTudo(env: Env, resource: string, filter?: string) {
   const itens: Json[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
     const q = new URLSearchParams();
@@ -289,7 +290,7 @@ async function listarTudo(env: Env, resource: string, filter?: string) {
   return itens;
 }
 
-async function listarSeguro(env: Env, resource: string) {
+export async function listarSeguro(env: Env, resource: string) {
   try { return await listarTudo(env, resource); } catch { return [] as Json[]; }
 }
 
@@ -361,39 +362,7 @@ export function snapshotUpdatePreservandoLocal(snapshot: RdDealSnapshot) {
   };
 }
 
-async function persistirNovaVenda(db: Db, snapshot: RdDealSnapshot) {
-  const { data: existente, error: erroBusca } = await db.from("novas_vendas").select("id,cliente_id,status").eq("rd_station_id", snapshot.rdStationId).maybeSingle();
-  if (erroBusca) throw erroBusca;
-  if (existente) {
-    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshot)).eq("id", existente.id);
-    if (error) throw error;
-    return { criada: false, atualizada: true, ignorada: false, id: existente.id };
-  }
-  if (snapshot.rdStatus && snapshot.rdStatus !== "won") return { criada: false, atualizada: false, ignorada: true, id: null };
-  const insert = {
-    rd_station_id: snapshot.rdStationId,
-    nome_completo: snapshot.nomeOriginal,
-    cpf: snapshot.cpfOriginal,
-    telefone: snapshot.telefoneOriginal,
-    email: snapshot.emailOriginal,
-    data_venda: snapshot.dataVenda,
-    vendedora_responsavel: snapshot.vendedoraOriginal,
-    valor_contrato: snapshot.valorOriginal,
-    quantidade_parcelas: snapshot.quantidadeParcelasOriginal,
-    valor_parcela: snapshot.valorParcelaOriginal,
-    taxa_administrativa: snapshot.taxaAdministrativaOriginal,
-    tipo_venda: snapshot.tipoVendaOriginal,
-    origem_venda: snapshot.origemOriginal,
-    campanha_local: snapshot.campanhaOriginal,
-    status: "aguardando_cadastro",
-    ...snapshotUpdatePreservandoLocal(snapshot),
-  };
-  const { data, error } = await db.from("novas_vendas").insert(insert).select("id").single();
-  if (error) throw error;
-  return { criada: true, atualizada: false, ignorada: false, id: data.id };
-}
-
-async function registrarEvento(db: Db, input: { eventId?: string | null; eventType: string; referencia?: string | null; payload?: unknown; status?: string; erro?: string | null }) {
+export async function registrarEvento(db: Db, input: { eventId?: string | null; eventType: string; referencia?: string | null; payload?: unknown; status?: string; erro?: string | null }) {
   const row = {
     provedor: "rd_station",
     event_id: input.eventId || null,
@@ -432,13 +401,16 @@ async function handleWebhook(request: Request, env: Env) {
     if (duplicado) return json({ ok: true, duplicate: true, id: duplicado.id });
   }
 
-  const snapshot = eventType.startsWith("crm_deal_") ? normalizarDealRd(document) : null;
+  let snapshot: RdDealSnapshot | null = null;
   let persistencia: any = null;
   try {
     if (eventType === "crm_deal_deleted" && dealId) {
       await db.from("novas_vendas").update({ rd_status: "deleted", rd_excluido_em: new Date().toISOString(), rd_snapshot: document, payload_original: document, sincronizado_rd_em: new Date().toISOString() }).eq("rd_station_id", dealId);
-    } else if (snapshot) {
-      persistencia = await persistirNovaVenda(db, snapshot);
+    } else if (eventType.startsWith("crm_deal_")) {
+      // Mesmo filtro, mapeamento e deduplicação da importação (crm-importacao.ts).
+      const r = await importarDoWebhook(env, db, document, transaction);
+      snapshot = r?.snapshot ?? null;
+      persistencia = r ? { resultado: r.item.resultado, id: r.item.nova_venda_id, motivo: r.item.motivo } : null;
     }
 
     await db.from("crm_vendas_entrada").insert({
@@ -468,33 +440,29 @@ async function handleWebhook(request: Request, env: Env) {
 
 async function sincronizar(request: Request, env: Env, adminId: string) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const r = await importarCrm(env, { origem: "manual", ator: `admin:${adminId}` });
+  if (!r.ok) return json({ erro: r.erro }, "ocupado" in r && r.ocupado ? 409 : 502);
+  await createServiceSupabaseClient(env).from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "sincronizou_rd_station_somente_leitura", entidade: "integracoes", entidade_id: "rd_station", detalhes: r });
+  return json(r, r.erros ? 207 : 200);
+}
+
+async function rotasCrm(request: Request, env: Env, adminId: string, path: string): Promise<Response | null> {
   const db = createServiceSupabaseClient(env);
-  try {
-    const deals = await listarTudo(env, "deals", "status:won");
-    const [contatos, usuarios, campanhas, fontes] = await Promise.all([
-      listarSeguro(env, "contacts"), listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources"),
-    ]);
-    const refs = { contatos: mapById(contatos), usuarios: mapById(usuarios), campanhas: mapById(campanhas), fontes: mapById(fontes) };
-    let criadas = 0, atualizadas = 0, ignoradas = 0, erros = 0;
-    for (const deal of deals) {
-      const snapshot = normalizarDealRd(deal, refs);
-      if (!snapshot) { ignoradas++; continue; }
-      try {
-        const r = await persistirNovaVenda(db, snapshot);
-        if (r.criada) criadas++;
-        else if (r.atualizada) atualizadas++;
-        else ignoradas++;
-      } catch { erros++; }
-    }
-    const resumo = { totalRd: deals.length, criadas, atualizadas, ignoradas, erros, somenteLeitura: true };
-    await registrarEvento(db, { eventType: "sync_manual", payload: resumo, status: erros ? "parcial" : "processado" });
-    await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "sincronizou_rd_station_somente_leitura", entidade: "integracoes", entidade_id: "rd_station", detalhes: resumo });
-    return json(resumo, erros ? 207 : 200);
-  } catch (error) {
-    console.error("Falha ao sincronizar RD Station em modo somente leitura:", error);
-    await registrarEvento(db, { eventType: "sync_manual", status: "erro", erro: "Falha na sincronização RD Station", payload: {} });
-    return json({ erro: "Falha ao sincronizar o RD Station em modo somente leitura." }, 502);
+  const url = new URL(request.url);
+  if (path.endsWith("/opcoes") && request.method === "GET") {
+    try { return json(await opcoesCrm(env)); } catch { return json({ erro: "Não foi possível ler funis e campos do RD Station agora." }, 502); }
   }
+  if (path.endsWith("/importacoes") && request.method === "GET") return json(await listarImportacoes(db, Number(url.searchParams.get("limite") || 30)));
+  if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });
+  const itens = path.match(/\/importacoes\/([0-9a-f-]{36})\/itens$/);
+  if (itens && request.method === "GET") return json({ itens: await itensDaImportacao(db, itens[1]) });
+  const revisar = path.match(/\/importacoes\/itens\/([0-9a-f-]{36})\/(importar|descartar)$/);
+  if (revisar && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    const r = revisar[2] === "importar" ? await importarMesmoAssim(db, revisar[1], `admin:${adminId}`) : await descartarRevisao(db, revisar[1], `admin:${adminId}`);
+    return r.ok ? json(r) : json({ erro: r.erro }, r.status);
+  }
+  return null;
 }
 
 async function testar(env: Env, adminId: string) {
@@ -566,7 +534,9 @@ export async function rdStationReadonlyApi(request: Request, env: Env): Promise<
   const adminId = await requireAdminComPermissao(request, env);
   if (!adminId) return json({ erro: "Sem permissão para gerenciar a integração RD Station." }, 403);
   if (path.endsWith("/authorize-url") && request.method === "GET") return authorizationUrl(env, adminId);
-  if (path.endsWith("/sync") && request.method === "POST") return sincronizar(request, env, adminId);
+  if ((path.endsWith("/sync") || path.endsWith("/importar")) && request.method === "POST") return sincronizar(request, env, adminId);
+  const crm = await rotasCrm(request, env, adminId, path);
+  if (crm) return crm;
   if (path.endsWith("/test") && request.method === "POST") return testar(env, adminId);
   return json({ erro: "Rota RD Station não encontrada." }, 404);
 }
