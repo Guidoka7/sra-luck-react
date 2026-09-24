@@ -114,6 +114,7 @@ function iniciais(nome: string) {
 export default function PrevisoesPage() {
   const [detalhes, setDetalhes] = useState(false);
   const [carregando, setCarregando] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ClienteForecast[]>([]);
   const [agenda, setAgenda] = useState<AgendaCliente[]>([]);
   const [boletos, setBoletos] = useState<Boleto[]>([]);
@@ -128,19 +129,28 @@ export default function PrevisoesPage() {
 
   useEffect(() => {
     let ativo = true;
+    const ler = async (url: string) => {
+      const resposta = await fetch(url, { cache: "no-store" });
+      const dados = await resposta.json().catch(() => ({})) as Record<string, unknown> & { erro?: string };
+      if (!resposta.ok) throw new Error(dados.erro || "Não foi possível carregar os dados de previsões.");
+      return dados;
+    };
+    setErroCarga(null);
     Promise.all([
-      fetch("/api/admin/previsao-liberacoes", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/clientes-agendamentos", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/boletos", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/cirurgias-confirmadas", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/clientes", { cache: "no-store" }).then((r) => r.json()),
+      ler("/api/admin/previsao-liberacoes"),
+      ler("/api/admin/clientes-agendamentos"),
+      ler("/api/admin/boletos"),
+      ler("/api/admin/cirurgias-confirmadas"),
+      ler("/api/admin/clientes"),
     ]).then(([f, a, b, c, cl]) => {
       if (!ativo) return;
-      setForecast(f.clientes ?? []);
-      setAgenda(a.clientes ?? []);
-      setBoletos(b.boletos ?? []);
-      setCirurgias(c.cirurgias ?? []);
-      setClientes(cl.clientes ?? []);
+      setForecast((f.clientes as ClienteForecast[] | undefined) ?? []);
+      setAgenda((a.clientes as AgendaCliente[] | undefined) ?? []);
+      setBoletos((b.boletos as Boleto[] | undefined) ?? []);
+      setCirurgias((c.cirurgias as Cirurgia[] | undefined) ?? []);
+      setClientes((cl.clientes as ClienteBase[] | undefined) ?? []);
+    }).catch((e) => {
+      if (ativo) setErroCarga(e instanceof Error ? e.message : "Não foi possível carregar os dados de previsões.");
     }).finally(() => ativo && setCarregando(false));
     return () => { ativo = false; };
   }, []);
@@ -332,7 +342,7 @@ export default function PrevisoesPage() {
       <label><span>Status</span><div className={styles.selectBox}><AlertTriangle size={17} /><select value={status} onChange={(e) => setStatus(e.target.value as FiltroStatus)}>{(Object.keys(STATUS_LABEL) as FiltroStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select><ChevronDown size={14} /></div></label>
     </section>
 
-    {carregando ? <div className={styles.loading}>Calculando previsões reais da carteira…</div> : <>
+    {carregando ? <div className={styles.loading}>Calculando previsões reais da carteira…</div> : erroCarga ? <div className={styles.loading} role="alert"><strong>Não foi possível carregar as previsões.</strong><br />{erroCarga}</div> : <>
       <section className={styles.kpis}>
         {kpis.map((k, index) => <article key={k.label} className={styles.kpi}>
           <div className={styles.kpiTop}><span className={styles.kpiIcon}>{k.icon}</span><span>{k.label}</span></div>
