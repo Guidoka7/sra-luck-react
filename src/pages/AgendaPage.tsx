@@ -22,8 +22,11 @@ import { registrarAcesso } from "@/lib/monitoramento";
 import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
 import { Folha } from "@/components/cliente/clube/ClubeUi";
 import { aplicarTemaCliente, useTemaCliente } from "@/lib/temaCliente";
+import { useRegrasApp } from "@/lib/regrasOperacionais";
 
 export function AgendaPage() {
+  // Percentuais e prazo configurados (Dev): re-renderiza quando chegam do servidor.
+  useRegrasApp();
   // Último estado conhecido (cache local): a área abre na hora ao recarregar
   // e é revalidada em silêncio logo em seguida.
   const [cacheInicial] = useState(lerCacheCliente);

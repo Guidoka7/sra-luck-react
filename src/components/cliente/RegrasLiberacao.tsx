@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { REGRAS_LIBERACAO_AGENDA } from "@/lib/utils";
+import { regrasLiberacaoAgenda } from "@/lib/utils";
 
 export function RegrasLiberacao({ quantidadeParcelas }: { quantidadeParcelas: number | null }) {
   const [aberto, setAberto] = useState(false);
-  const regraDoContrato = REGRAS_LIBERACAO_AGENDA.find((regra) => regra.parcelas === quantidadeParcelas);
+  const regraDoContrato = regrasLiberacaoAgenda().find((regra) => regra.parcelas === quantidadeParcelas);
   const parcelasNecessarias = regraDoContrato ? Math.ceil((regraDoContrato.parcelas * regraDoContrato.percentual) / 100) : null;
 
   return (

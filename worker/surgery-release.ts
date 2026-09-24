@@ -1,3 +1,4 @@
+import { regrasOperacionais } from "./regras-operacionais";
 const TIME_ZONE = "America/Sao_Paulo";
 
 /**
@@ -11,6 +12,7 @@ const TIME_ZONE = "America/Sao_Paulo";
  * mais recente entre os dois eventos, e começa a valer no PRÓXIMO dia útil
  * após esse marco.
  */
+/** Padrão histórico; o valor em vigor vem de regras_operacionais (migration_094). */
 export const PRAZO_PADRAO_LIBERACAO_CIRURGICA_DIAS_UTEIS = 5;
 
 export function dataSaoPaulo(valor: string | Date | null | undefined): string | null {
@@ -109,7 +111,7 @@ export function calcularLiberacaoCirurgica(
   const quitacao = dataSaoPaulo(custeioConfirmadoEm);
   if (!termos || !quitacao) return null;
   const base = termos >= quitacao ? termos : quitacao;
-  return adicionarDiasUteis(base, PRAZO_PADRAO_LIBERACAO_CIRURGICA_DIAS_UTEIS);
+  return adicionarDiasUteis(base, regrasOperacionais().prazoLiberacaoDiasUteis);
 }
 
 /**

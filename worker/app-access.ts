@@ -1,11 +1,21 @@
 import { hojeSaoPaulo } from "../src/lib/dataCivil";
-export type AppAccessRequirementKey = "nome" | "cpf" | "data_nascimento" | "financeiro";
+export type AppAccessRequirementKey = "nome" | "cpf" | "data_nascimento" | "financeiro" | "procedimento";
 
 export interface AppAccessRequirementsInput {
   name?: string | null;
   cpf?: string | null;
   birthDate?: string | null;
   installmentCount?: number | null;
+  procedure?: string | null;
+}
+
+/**
+ * Requisitos opcionais (regras_operacionais, alteráveis só pelo Dev).
+ * CPF válido e data de nascimento são sempre exigidos: são o login da cliente.
+ */
+export interface AppAccessOptions {
+  requireFinancial?: boolean;
+  requireProcedure?: boolean;
 }
 
 export interface AppAccessRequirements {
@@ -51,17 +61,21 @@ export function dataNascimentoValida(valorBruto: string | null | undefined, hoje
   return valor <= hojeIso;
 }
 
-export function getAppAccessRequirements(input: AppAccessRequirementsInput, hojeIso?: string): AppAccessRequirements {
+export function getAppAccessRequirements(input: AppAccessRequirementsInput, hojeIso?: string, opcoes: AppAccessOptions = {}): AppAccessRequirements {
+  const exigeFinanceiro = opcoes.requireFinancial ?? true;
+  const exigeProcedimento = opcoes.requireProcedure ?? false;
   const hasName = Boolean(input.name?.trim());
   const hasCpf = Boolean(input.cpf?.trim()) && cpfValido(input.cpf ?? "");
   const hasBirthDate = dataNascimentoValida(input.birthDate, hojeIso);
   const hasFinancial = Number(input.installmentCount ?? 0) > 0;
+  const hasProcedure = Boolean(input.procedure?.trim());
 
   const missing: AppAccessRequirementKey[] = [];
   if (!hasName) missing.push("nome");
   if (!hasCpf) missing.push("cpf");
   if (!hasBirthDate) missing.push("data_nascimento");
-  if (!hasFinancial) missing.push("financeiro");
+  if (exigeFinanceiro && !hasFinancial) missing.push("financeiro");
+  if (exigeProcedimento && !hasProcedure) missing.push("procedimento");
 
   return { hasName, hasCpf, hasBirthDate, hasFinancial, canRelease: missing.length === 0, missing };
 }

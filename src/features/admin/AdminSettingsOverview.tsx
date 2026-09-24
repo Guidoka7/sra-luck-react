@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, CalendarDays, Cable, Check, ChevronRight, LockKeyhole, RotateCcw, Save, ShieldCheck, Smartphone, Users } from "lucide-react";
 import styles from "./AdminWorkspace.module.css";
+import { useRegrasApp } from "@/lib/regrasOperacionais";
 
 type WorkspaceTab = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes" | "integracoes" | "monitoramento";
 type Config = { meta_orcamento_mensal?: number };
@@ -19,6 +20,9 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
   const [salvando,setSalvando]=useState(false);
   const [configDisponivel,setConfigDisponivel]=useState(false);
   const [feedback,setFeedback]=useState<string|null>(null);
+  // Regras protegidas (regras_operacionais): o Admin só vê; somente o Dev altera, pelo Dev Console.
+  const regras=useRegrasApp(true);
+  const pct=(v:number)=>`${Number(v).toLocaleString("pt-BR",{maximumFractionDigits:2})}%`;
 
   useEffect(()=>{
     let ativo=true;
@@ -85,24 +89,24 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
       <section className={styles.settingsCard}>
         <div className={styles.cardTitle}><span><CalendarDays size={20}/></span><div><h2>Agenda e operação</h2><p>Configure parâmetros reais do planejamento e da liberação.</p></div></div>
         <SettingRow title="Referência mensal de orçamento" desc="Valor usado nos painéis de previsão e planejamento."><div className={styles.moneyInput}><span>R$</span><input type="number" min={0} value={Number(config.meta_orcamento_mensal??0)} onChange={e=>setConfig(v=>({...v,meta_orcamento_mensal:Number(e.target.value)||0}))}/></div></SettingRow>
-        <SettingRow title="Prazo automático após comparecimento + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><span className={styles.fixedValue}>5 dias úteis <LockKeyhole size={12}/></span></SettingRow>
-        <SettingRow title="Teto mensal operacional" desc="Protegido transacionalmente na confirmação e na reserva da cirurgia."><span className={styles.fixedValue}>R$ 100.000 <LockKeyhole size={12}/></span></SettingRow>
+        <SettingRow title="Prazo automático após comparecimento + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><Travado><span className={styles.fixedValue}>{regras.prazoLiberacaoDiasUteis} {regras.prazoLiberacaoDiasUteis===1?"dia útil":"dias úteis"} <LockKeyhole size={12}/></span></Travado></SettingRow>
+        <SettingRow title="Teto mensal operacional" desc="Protegido transacionalmente na confirmação e na reserva da cirurgia."><Travado><span className={styles.fixedValue}>{Number(regras.tetoMensalOperacional??100000).toLocaleString("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0})} <LockKeyhole size={12}/></span></Travado></SettingRow>
       </section>
 
       <section className={styles.settingsCard}>
         <div className={styles.cardTitle}><span><ShieldCheck size={20}/></span><div><h2>Regras de elegibilidade</h2><p>Critérios V46 usados para liberar a próxima etapa.</p></div></div>
-        <SettingRow title="12x, 18x e 24x" desc="Percentual mínimo de parcelas pagas."><span className={styles.rulePill}>60% <LockKeyhole size={11}/></span></SettingRow>
-        <SettingRow title="36x" desc="Percentual mínimo de parcelas pagas."><span className={styles.rulePill}>70% <LockKeyhole size={11}/></span></SettingRow>
-        <SettingRow title="48x, 60x e 72x" desc="Percentual mínimo de parcelas pagas."><span className={styles.rulePill}>80% <LockKeyhole size={11}/></span></SettingRow>
-        <SettingRow title="Solicitação da cliente obrigatória" desc="Atingir o percentual não move a cliente automaticamente."><Switch checked readOnly/></SettingRow>
+        <SettingRow title="12x, 18x e 24x" desc="Percentual mínimo de parcelas pagas."><Travado><span className={styles.rulePill}>{pct(regras.percentual12a24x)} <LockKeyhole size={11}/></span></Travado></SettingRow>
+        <SettingRow title="36x" desc="Percentual mínimo de parcelas pagas."><Travado><span className={styles.rulePill}>{pct(regras.percentual36x)} <LockKeyhole size={11}/></span></Travado></SettingRow>
+        <SettingRow title="48x, 60x e 72x" desc="Percentual mínimo de parcelas pagas."><Travado><span className={styles.rulePill}>{pct(regras.percentual48a72x)} <LockKeyhole size={11}/></span></Travado></SettingRow>
+        <SettingRow title="Solicitação da cliente obrigatória" desc="Atingir o percentual não move a cliente automaticamente."><Travado estrutural><Switch checked readOnly/></Travado></SettingRow>
       </section>
 
       <section className={styles.settingsCard}>
         <div className={styles.cardTitle}><span><Smartphone size={20}/></span><div><h2>Acesso ao app da cliente</h2><p>Requisitos reais para liberar o acesso ao aplicativo.</p></div></div>
-        <SettingRow title="CPF válido e data de nascimento" desc="Dados obrigatórios antes da liberação do app."><Switch checked readOnly/></SettingRow>
-        <SettingRow title="Ao menos 1 parcela persistida" desc="O financeiro precisa existir para liberar o acesso."><Switch checked readOnly/></SettingRow>
-        <SettingRow title="Procedimento não é requisito" desc="O acesso pode ser liberado mesmo antes de definir o procedimento."><Switch checked readOnly/></SettingRow>
-        <SettingRow title="Liberação controlada pelo Admin" desc="O botão de liberação continua disponível no Perfil da cliente."><Switch checked readOnly/></SettingRow>
+        <SettingRow title="CPF válido e data de nascimento" desc="Dados obrigatórios antes da liberação do app."><Travado estrutural><Switch checked readOnly/></Travado></SettingRow>
+        <SettingRow title="Ao menos 1 parcela persistida" desc="O financeiro precisa existir para liberar o acesso."><Travado><Switch checked={regras.appExigeParcela!==false} readOnly/></Travado></SettingRow>
+        <SettingRow title={regras.appExigeProcedimento?"Procedimento é requisito":"Procedimento não é requisito"} desc={regras.appExigeProcedimento?"O acesso só é liberado depois de definir o procedimento.":"O acesso pode ser liberado mesmo antes de definir o procedimento."}><Travado><Switch checked readOnly/></Travado></SettingRow>
+        <SettingRow title="Liberação controlada pelo Admin" desc="O botão de liberação continua disponível no Perfil da cliente."><Travado estrutural><Switch checked readOnly/></Travado></SettingRow>
       </section>
 
       <section className={styles.settingsCard}>
@@ -132,5 +136,7 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
     </div>
   </div>;
 }
+/** Valor protegido: o Admin vê, mas só o Dev altera (Dev Console). Estrutural = regra fixa do sistema. */
+function Travado({children,estrutural=false}:{children:ReactNode;estrutural?:boolean}){return <span title={estrutural?"Regra estrutural do sistema.":"Valor protegido."} style={{display:"inline-flex",cursor:"help"}}>{children}</span>;}
 function SettingRow({title,desc,children}:{title:string;desc:string;children:ReactNode}){return <div className={styles.settingRow}><div><strong>{title}</strong><small>{desc}</small></div><div>{children}</div></div>;}
 function Switch({checked,onClick,readOnly=false}:{checked:boolean;onClick?:()=>void;readOnly?:boolean}){return <button type="button" aria-pressed={checked} disabled={readOnly} className={styles.switch} data-on={checked} onClick={onClick}><span>{checked&&readOnly?<Check size={11}/>:null}</span></button>;}

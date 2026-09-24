@@ -1,3 +1,4 @@
+import { opcoesAcessoApp } from "./regras-operacionais";
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenAdmin } from "./session";
@@ -292,7 +293,7 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
 
     const id=decodeURIComponent(liberarAcessoApp[1]);
     const [{data:clienteAcesso,error:erroClienteAcesso},{count:parcelasCount,error:erroParcelas}]=await Promise.all([
-      supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,ativo,acesso_app_liberado,acesso_app_liberado_em").eq("id",id).maybeSingle(),
+      supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,procedimento,ativo,acesso_app_liberado,acesso_app_liberado_em").eq("id",id).maybeSingle(),
       supabase.from("boletos").select("id",{count:"exact",head:true}).eq("cliente_id",id),
     ]);
     if(erroClienteAcesso)return json({erro:"Não foi possível validar os dados da cliente."},500);
@@ -305,7 +306,8 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
       cpf:clienteAcesso.cpf,
       birthDate:clienteAcesso.data_nascimento,
       installmentCount:parcelasCount??0,
-    });
+      procedure:clienteAcesso.procedimento,
+    },undefined,opcoesAcessoApp());
     if(!requisitos.canRelease){
       return json({erro:"A cliente ainda não possui todos os requisitos para acesso ao app.",faltando:requisitos.missing,requisitos},409);
     }

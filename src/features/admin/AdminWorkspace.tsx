@@ -5,6 +5,7 @@ import { Bell, Cable, CalendarDays, Gauge, LockKeyhole, Settings2, ShieldCheck, 
 import { ADMIN_PERMISSIONS as P, FINANCE_PERMISSIONS, pode, type AdminAccessProfile } from "@/lib/adminAccess";
 import "@/styles/admin-zip.css";
 import styles from "./AdminWorkspace.module.css";
+import { percentualDoPlano, useRegrasApp } from "@/lib/regrasOperacionais";
 import { AdminSettingsPanel } from "./AdminSettingsPanel";
 import { AdminSettingsOverview } from "./AdminSettingsOverview";
 import AdminNotificacoes from "@/app/admin/(painel)/notificacoes/page";
@@ -77,12 +78,13 @@ export function AdminWorkspace(){
   </div>;
 }
 function AgendaRulesPanel(){
+  const r=useRegrasApp(true);
   const regras=[
     ["Condições para iniciar o prazo","Comparecimento confirmado e quitação paga são obrigatórios."],
-    ["Prazo automático","5 dias úteis contados a partir da condição concluída por último."],
+    ["Prazo automático",`${r.prazoLiberacaoDiasUteis} ${r.prazoLiberacaoDiasUteis===1?"dia útil contado":"dias úteis contados"} a partir da condição concluída por último.`],
     ["Ajuste administrativo","+1, +3 ou +5 dias úteis, sempre auditado no histórico."],
     ["Liberação antecipada","Pode ser feita manualmente após comparecimento e quitação, com registro de quem liberou."],
-    ["Teto mensal operacional","R$ 100.000 por mês, revalidado transacionalmente na previsão e na reserva da cirurgia."],
+    ["Teto mensal operacional",`${Number(r.tetoMensalOperacional??100000).toLocaleString("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0})} por mês, revalidado transacionalmente na previsão e na reserva da cirurgia.`],
     ["Escolha da cirurgia","A cliente só agenda depois que a agenda cirúrgica estiver efetivamente liberada."],
   ];
   return <div className={styles.eligibilityPanel}>
@@ -91,6 +93,7 @@ function AgendaRulesPanel(){
   </div>;
 }
 function EligibilityPanel(){
-  const regras=[["12x","60%"],["18x","60%"],["24x","60%"],["36x","70%"],["48x","80%"],["60x","80%"],["72x","80%"]];
+  useRegrasApp(true);
+  const regras=[12,18,24,36,48,60,72].map(n=>[`${n}x`,`${percentualDoPlano(n).toLocaleString("pt-BR",{maximumFractionDigits:2})}%`]);
   return <div className={styles.eligibilityPanel}><div className={styles.eligibilityHeader}><span><ShieldCheck size={20}/></span><div><h2>Regras de elegibilidade V46</h2><p>Regras protegidas pelo fluxo operacional. A elegibilidade considera parcelas pagas reais persistidas.</p></div></div><div className={styles.ruleGrid}>{regras.map(([parcelas,pct])=><div key={parcelas}><span>{parcelas}</span><strong>{pct}</strong><small>mínimo pago</small></div>)}</div><div className={styles.ruleNote}><LockKeyhole size={15}/><div><strong>Movimentação não é automática.</strong><p>Mesmo após atingir o percentual, a cliente permanece na etapa até solicitar a liberação financeira no aplicativo.</p></div></div></div>;
 }

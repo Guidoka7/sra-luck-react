@@ -9,6 +9,7 @@ import { AppErrorBoundary } from "./components/ui/AppErrorBoundary";
 import { PwaRegister } from "./components/ui/PwaRegister";
 import { instalarMonitoramentoGlobal, registrarAcesso } from "./lib/monitoramento";
 import { limparFlagsPwaAntigas } from "./lib/pwaInstall";
+import { carregarRegrasApp } from "./lib/regrasOperacionais";
 import { AdminAppearanceBootstrap } from "./features/admin/AdminModuleShell";
 import AdminLayout from "./app/admin/(painel)/layout";
 import "./app/globals.css";
@@ -133,6 +134,8 @@ function App() {
 
 limparFlagsPwaAntigas();
 instalarRecargaDeVersao();
+// Regras operacionais (percentuais, prazo; no painel também teto e requisitos do app).
+if (!window.location.pathname.startsWith("/login")) void carregarRegrasApp(window.location.pathname.startsWith("/admin"));
 const cleanupMonitoramento = instalarMonitoramentoGlobal();
 
 createRoot(document.getElementById("root")!).render(

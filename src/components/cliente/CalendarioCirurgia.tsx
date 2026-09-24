@@ -4,7 +4,7 @@ import { type FC, type ReactNode, useEffect, useMemo, useRef, useState } from "r
 import { addMonths, format, getDaysInMonth, isBefore, isToday, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { subscribeAgendaSync } from "@/lib/agendaRealtime";
-import { PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS, type AgendaData } from "@/lib/clienteAgenda";
+import { prazoLiberacaoDiasUteis, type AgendaData } from "@/lib/clienteAgenda";
 
 export interface DataCirurgiaDisponivel { id: string; data: string; vagasRestantes: number; }
 type FormaCusteio = "cartao" | "pix" | "cheques" | "boleto_100";
@@ -196,7 +196,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   const liberarEm = snapshot?.agendaCirurgicaLiberarEm ?? null;
-  const informativoInicio = `Sua agenda cirúrgica é liberada em até ${PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS} dias úteis após a assinatura dos termos e a quitação do saldo.`;
+  const informativoInicio = `Sua agenda cirúrgica é liberada em até ${prazoLiberacaoDiasUteis()} dias úteis após a assinatura dos termos e a quitação do saldo.`;
 
   if (!modoAlteracao && !termosAssinados && !custeioConfirmado) {
     return <MolduraCirurgica estado="bloqueada" titulo="Data da sua cirurgia" resumo="Liberada após a assinatura dos termos e a quitação do saldo.">
@@ -214,7 +214,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
   }
 
   if (!modoAlteracao && !agendaLiberada) {
-    return <MolduraCirurgica estado="liberacao" ariaLabel="Agenda cirúrgica aguardando liberação" titulo="Liberação em andamento" resumo={liberarEm ? `Previsão de liberação: ${format(parseDataLocal(liberarEm.slice(0, 10)), "dd/MM/yyyy")}.` : `Em até ${PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS} dias úteis após termos e quitação.`}>
+    return <MolduraCirurgica estado="liberacao" ariaLabel="Agenda cirúrgica aguardando liberação" titulo="Liberação em andamento" resumo={liberarEm ? `Previsão de liberação: ${format(parseDataLocal(liberarEm.slice(0, 10)), "dd/MM/yyyy")}.` : `Em até ${prazoLiberacaoDiasUteis()} dias úteis após termos e quitação.`}>
       <div className="relative isolate grid min-h-[340px]">
       <div aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 select-none p-[13px] opacity-[.36] blur-[4px]">
         <CalendarGrid mesAtual={mesAtual} celulas={celulas} porData={porData} hoje={hoje} selecionado={null} onSelecionar={() => {}} mudarMes={mudarMes} bloqueado />
@@ -225,7 +225,7 @@ export const CalendarioCirurgia: FC<CalendarioCirurgiaProps> = ({ dataAssinatura
             <svg aria-hidden="true" width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.25"><circle cx="9" cy="9" r="6.2"/><path d="M9 5.6V9l2.3 1.5"/></svg>
           </span>
           <h3 className="pt-[9px] font-heading text-[18px] font-semibold text-[#7D2434]">Aguardando liberação</h3>
-          <p className="pt-[5px] text-[11px] font-light leading-[1.5] text-[#7A6B67]">{termosAssinados && custeioConfirmado ? `Termos assinados e quitação confirmada. Sua agenda cirúrgica é liberada em até ${PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS} dias úteis.` : informativoInicio} Depois, é só escolher a data aqui.</p>
+          <p className="pt-[5px] text-[11px] font-light leading-[1.5] text-[#7A6B67]">{termosAssinados && custeioConfirmado ? `Termos assinados e quitação confirmada. Sua agenda cirúrgica é liberada em até ${prazoLiberacaoDiasUteis()} dias úteis.` : informativoInicio} Depois, é só escolher a data aqui.</p>
           {deveExibirInformativoAnaliseCusteio(formaCusteio) && (
             <details className="mt-3 text-[10px] leading-[1.5] text-[#7A6B67]">
               <summary className="cursor-pointer rounded py-1 font-medium text-[#7D2434] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Como funciona a liberação?</summary>

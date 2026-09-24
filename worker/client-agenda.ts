@@ -1,3 +1,4 @@
+import { regrasOperacionais } from "./regras-operacionais";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { agoraSaoPaulo } from "./surgery-release";
@@ -117,7 +118,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     const primeiraData = typeof dataMinima === "string" ? dataMinima.slice(0, 10) : null;
     datasCirurgiaDisponiveis = (datasCirurgia ?? [])
       .filter((d: any) => !primeiraData || String(d.data) >= primeiraData)
-      .filter((d: any) => (comprometidoPorMes.get(String(d.data).slice(0, 7)) ?? 0) + cartaDeCredito <= 100000)
+      .filter((d: any) => (comprometidoPorMes.get(String(d.data).slice(0, 7)) ?? 0) + cartaDeCredito <= regrasOperacionais().tetoMensalOperacional)
       .map((d: any) => ({
         id: d.id,
         data: d.data,

@@ -1,5 +1,5 @@
 import type { StatusRevisaoFinanceira } from "@/lib/clienteAgenda";
-export { PRAZO_LIBERACAO_CIRURGICA_DIAS_UTEIS } from "@/lib/clienteAgenda";
+export { prazoLiberacaoDiasUteis } from "@/lib/clienteAgenda";
 
 type AgendamentoResumo = { id: string; data: string; horario: string | null; dataCirurgia: string | null; termosAssinadosEm?: string | null } | null;
 

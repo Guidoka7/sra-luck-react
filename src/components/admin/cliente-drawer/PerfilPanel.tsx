@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useRegrasApp } from "@/lib/regrasOperacionais";
 import { formatarCpf } from "@/lib/cpf";
 import { dataNascimentoValida, getAppAccessRequirements } from "../../../../worker/app-access";
 import { calcularPrevisaoElegibilidade } from "../../../../worker/eligibility-forecast";
@@ -26,7 +27,8 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
   useEffect(() => { setHistoricoAberto(false); }, [cad.cliente?.id]);
 
   const hojeIso = new Date().toISOString().slice(0, 10);
-  const requisitos = getAppAccessRequirements({ name: cad.nome, cpf: cad.cpf, birthDate: cad.nascimento, installmentCount: cad.boletos.length }, hojeIso);
+  const regrasApp = useRegrasApp(true);
+  const requisitos = getAppAccessRequirements({ name: cad.nome, cpf: cad.cpf, birthDate: cad.nascimento, installmentCount: cad.boletos.length, procedure: cad.procedimento }, hojeIso, { requireFinancial: regrasApp.appExigeParcela, requireProcedure: regrasApp.appExigeProcedimento });
   const acessoComDadosInvalidos = cad.acessoLiberado && !requisitos.canRelease;
 
   function editar(s: Secao) {

@@ -11,6 +11,7 @@ import { adminApi } from "./admin-api";
 import { adminParcelas } from "./admin-parcelas";
 import { adminNotificacoes } from "./admin-notificacoes";
 import { agendarDespacho } from "./notificacoes-despacho";
+import { atualizarRegrasOperacionais, regrasOperacionaisApi } from "./regras-operacionais";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
@@ -375,6 +376,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
     const denied = await exigirAdmin(request, env, ["GET", "HEAD"].includes(request.method) ? adminReadPermissions(url.pathname) : null);
     if (denied) return denied;
+    // Regras operacionais (prazo, teto, percentuais) em cache de 1 min, só depois da autenticação.
+    await atualizarRegrasOperacionais(env).catch(() => undefined);
   }
 
   if (url.pathname === "/api/admin/session" && request.method === "GET") {
@@ -435,7 +438,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
     const bloqueio = await exigirClienteComAcesso(request, env);
     if (bloqueio) return bloqueio;
+    await atualizarRegrasOperacionais(env).catch(() => undefined);
   }
+
+  const regras = await regrasOperacionaisApi(request, env);
+  if (regras) return regras;
 
   const homeCampanhas = await homeCampanhasApi(request, env);
   if (homeCampanhas) return homeCampanhas;

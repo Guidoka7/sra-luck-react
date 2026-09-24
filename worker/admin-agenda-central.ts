@@ -1,3 +1,4 @@
+import { opcoesAcessoApp, regrasOperacionais } from "./regras-operacionais";
 import { publicError } from "./http-security";
 import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { createServiceSupabaseClient, type Env } from "./supabase";
@@ -210,7 +211,8 @@ async function visaoGeral(env: Env) {
       cpf: cliente.cpf,
       birthDate: cliente.data_nascimento,
       installmentCount: parcelas.total || cliente.quantidade_parcelas || 0,
-    });
+      procedure: cliente.procedimento,
+    }, undefined, opcoesAcessoApp());
 
     let estagio: keyof typeof filas;
     if (agendamento?.processo_concluido_em) {
@@ -300,7 +302,8 @@ async function clienteCentral(env: Env, clienteId: string) {
     cpf: cliente.cpf,
     birthDate: cliente.data_nascimento,
     installmentCount: total,
-  });
+    procedure: cliente.procedimento,
+  }, undefined, opcoesAcessoApp());
 
   let estagio: string;
   if (agendamento?.processo_concluido_em) estagio = "concluido";
@@ -449,7 +452,7 @@ async function agendaCirurgia(url: URL, env: Env) {
     };
   });
 
-  return json({ ano, mes, calendario, mapaCirurgico, tetoMensal: 100000, comprometidoMensal: Number(comprometido ?? 0) });
+  return json({ ano, mes, calendario, mapaCirurgico, tetoMensal: regrasOperacionais().tetoMensalOperacional, comprometidoMensal: Number(comprometido ?? 0) });
 }
 
 // ----------------------------------------------------------------------------

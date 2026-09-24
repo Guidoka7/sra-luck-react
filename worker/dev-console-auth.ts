@@ -28,6 +28,7 @@ const ALLOWED_READ_PREFIXES = [
   "/api/admin/staff",
   "/api/admin/configuracoes",
   "/api/admin/clientes",
+  "/api/admin/regras-operacionais",
 ];
 
 const ALLOWED_NOTIFICATION_ACTIONS = new Set([
@@ -258,6 +259,16 @@ async function validateAllowedMutation(request: Request, pathname: string): Prom
       || Object.keys(config as Record<string, unknown>).some((k) => !campos.includes(k))
       || (body.versao !== undefined && !Number.isInteger(body.versao))) {
       return json("Configuração de integração não autorizada para a integração técnica.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
+  // Regras operacionais protegidas (prazo, teto, percentuais, requisitos do app):
+  // só owner/developer e só os campos conhecidos. O Admin nunca altera.
+  if (pathname === "/api/admin/regras-operacionais") {
+    const campos = ["prazoLiberacaoDiasUteis", "tetoMensalOperacional", "percentual12a24x", "percentual36x", "percentual48a72x", "appExigeParcela", "appExigeProcedimento"];
+    if (!["owner", "developer"].includes(papel) || !Object.keys(body).length || Object.keys(body).some((k) => !campos.includes(k))) {
+      return json("Alteração de regra operacional não autorizada para a integração técnica.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
     }
     return null;
   }

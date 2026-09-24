@@ -1,3 +1,4 @@
+import { percentualDoPlano } from "@/lib/regrasOperacionais";
 import { type ClassValue, clsx } from "clsx";
 
 export function cn(...inputs: ClassValue[]) {
@@ -52,18 +53,13 @@ export function desmascararMoeda(valorMascarado: string): number {
 // Espelha exatamente a função `pode_agendar` em supabase/migration_003_boletos.sql —
 // qualquer mudança de regra deve ser feita nos dois lugares.
 // ============================================================================
-export const REGRAS_LIBERACAO_AGENDA: { parcelas: number; percentual: number }[] = [
-  { parcelas: 12, percentual: 60 },
-  { parcelas: 18, percentual: 60 },
-  { parcelas: 24, percentual: 60 },
-  { parcelas: 36, percentual: 70 },
-  { parcelas: 48, percentual: 80 },
-  { parcelas: 60, percentual: 80 },
-  { parcelas: 72, percentual: 80 },
-];
+/** Planos e percentual mínimo de parcelas pagas de cada um (valores de regras_operacionais). */
+export function regrasLiberacaoAgenda(): { parcelas: number; percentual: number }[] {
+  return [12, 18, 24, 36, 48, 60, 72].map((parcelas) => ({ parcelas, percentual: percentualDoPlano(parcelas) }));
+}
 
 /** Percentual mínimo de parcelas pagas para liberar a agenda, dado o total de parcelas do contrato. */
 export function percentualNecessario(quantidadeParcelas: number | null | undefined): number {
-  const regra = REGRAS_LIBERACAO_AGENDA.find((r) => r.parcelas === quantidadeParcelas);
-  return regra?.percentual ?? 60;
+  // Plano fora da tabela: mantém o padrão histórico do app (faixa 12x–24x).
+  return [12, 18, 24, 36, 48, 60, 72].includes(Number(quantidadeParcelas)) ? percentualDoPlano(quantidadeParcelas) : percentualDoPlano(12);
 }
