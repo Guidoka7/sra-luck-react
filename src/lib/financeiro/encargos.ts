@@ -8,7 +8,7 @@
  * O cálculo usa data civil de Brasília/São Paulo para não depender do timezone
  * do navegador ou do runtime serverless.
  */
-import { hojeSaoPaulo, ordinalDataCivil } from "@/lib/dataCivil";
+import { hojeSaoPaulo, ordinalDataCivil } from "../dataCivil";
 
 export const JUROS_MORA_DIARIO = 0.002;
 export const MULTA_ATRASO = 0.02;

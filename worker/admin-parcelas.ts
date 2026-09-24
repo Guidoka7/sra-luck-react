@@ -2,6 +2,7 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -251,7 +252,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     const total = ultima + quantidade;
     if (total > 240) return json({ erro: "O contrato não pode ultrapassar 240 parcelas." }, 400);
 
-    const primeiro = primeiroVencimento || existentes?.[0]?.data_vencimento || new Date().toISOString().slice(0, 10);
+    const primeiro = primeiroVencimento || existentes?.[0]?.data_vencimento || hojeSaoPaulo();
     const totalBase = Number((cliente as any).custo_total ?? cliente.valor_contrato ?? 0);
     const valor = valorParcela ?? Number((totalBase / Math.max(total, 1)).toFixed(2));
     const rows = Array.from({ length: quantidade }, (_, index) => {
