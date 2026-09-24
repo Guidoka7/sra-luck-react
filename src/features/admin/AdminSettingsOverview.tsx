@@ -5,7 +5,7 @@ import { Bell, CalendarDays, Cable, Check, ChevronRight, LockKeyhole, RotateCcw,
 import styles from "./AdminWorkspace.module.css";
 
 type WorkspaceTab = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes" | "integracoes" | "monitoramento";
-type Config = { meta_orcamento_mensal?: number; agenda_liberacao_financeira_bloqueada?: boolean };
+type Config = { meta_orcamento_mensal?: number };
 type Colaborador = { id:string; nome:string; email:string; cargo:string; ativo:boolean; permissoes?:string[] };
 type Integracao = { id:string; nome:string; detalhes:string; conexaoLiveVerificada:boolean; estado:string };
 type NotifConfig = { atraso_habilitado?:boolean; frequencia_atraso_horas?:number; max_tentativas?:number };
@@ -17,32 +17,45 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
   const [integracoes,setIntegracoes]=useState<Integracao[]>([]);
   const [notif,setNotif]=useState<NotifConfig>({});
   const [salvando,setSalvando]=useState(false);
+  const [configDisponivel,setConfigDisponivel]=useState(false);
   const [feedback,setFeedback]=useState<string|null>(null);
 
   useEffect(()=>{
     let ativo=true;
+    const ler=async(url:string)=>{
+      const r=await fetch(url,{cache:"no-store"});
+      const body=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(body?.erro||"Não foi possível carregar este módulo.");
+      return body;
+    };
     Promise.allSettled([
-      fetch("/api/admin/configuracoes",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/staff",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/integrations/status",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/notificacoes/automacao",{cache:"no-store"}).then(r=>r.json()),
+      ler("/api/admin/configuracoes"),
+      ler("/api/admin/staff"),
+      ler("/api/admin/integrations/status"),
+      ler("/api/admin/notificacoes/automacao"),
     ]).then(resultados=>{
       if(!ativo)return;
-      const cfg=resultados[0].status==="fulfilled" ? resultados[0].value?.configuracoes ?? {} : {};
-      setConfig(cfg);setOriginal(cfg);
+      if(resultados[0].status==="fulfilled"){
+        const cfg=resultados[0].value?.configuracoes ?? {};
+        setConfig(cfg);setOriginal(cfg);setConfigDisponivel(true);
+      }else{
+        setConfigDisponivel(false);
+      }
       if(resultados[1].status==="fulfilled")setStaff(resultados[1].value?.colaboradores ?? []);
       if(resultados[2].status==="fulfilled")setIntegracoes(resultados[2].value?.integracoes ?? []);
       if(resultados[3].status==="fulfilled")setNotif(resultados[3].value?.config ?? {});
+      const falhas=resultados.filter(r=>r.status==="rejected").length;
+      if(falhas)setFeedback(falhas===4?"Não foi possível carregar as configurações agora.":`${falhas} módulo(s) não puderam ser carregados; os demais dados continuam disponíveis.`);
     });
     return()=>{ativo=false};
   },[]);
 
   async function salvar(){
+    if(!configDisponivel){setFeedback("Recarregue a página antes de salvar: a configuração principal não foi carregada.");return;}
     setSalvando(true);setFeedback(null);
     try{
       const r=await fetch("/api/admin/configuracoes",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         metaOrcamentoMensal:Number(config.meta_orcamento_mensal ?? 0),
-        agendaLiberacaoFinanceiraBloqueada:Boolean(config.agenda_liberacao_financeira_bloqueada),
       })});
       const body=await r.json().catch(()=>({}));
       if(!r.ok)throw new Error(body?.erro||"Não foi possível salvar.");
@@ -52,20 +65,19 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
     finally{setSalvando(false);}
   }
 
-  function restaurarPadrao(){setConfig(v=>({...v,meta_orcamento_mensal:100000,agenda_liberacao_financeira_bloqueada:false}));setFeedback("Padrão carregado. Salve para aplicar.");}
-  function toggleBlocked(){setConfig(v=>({...v,agenda_liberacao_financeira_bloqueada:!v.agenda_liberacao_financeira_bloqueada}));}
+  function restaurarPadrao(){setConfig(v=>({...v,meta_orcamento_mensal:100000}));setFeedback("Padrão carregado. Salve para aplicar.");}
 
   const webPush=integracoes.find(i=>i.id==="web_push");
   const ativos=staff.filter(s=>s.ativo);
   const integracoesVisiveis=integracoes.slice(0,4);
-  const sujo=Number(config.meta_orcamento_mensal??0)!==Number(original.meta_orcamento_mensal??0)||Boolean(config.agenda_liberacao_financeira_bloqueada)!==Boolean(original.agenda_liberacao_financeira_bloqueada);
+  const sujo=Number(config.meta_orcamento_mensal??0)!==Number(original.meta_orcamento_mensal??0);
 
   return <div className={styles.overview}>
     <div className={styles.overviewActions}>
       <div>{feedback&&<span className={styles.feedback}>{feedback}</span>}</div>
       <div className={styles.actionButtons}>
         <button type="button" onClick={restaurarPadrao}><RotateCcw size={15}/>Restaurar padrão</button>
-        <button type="button" className={styles.saveButton} disabled={salvando||!sujo} onClick={()=>void salvar()}><Save size={15}/>{salvando?"Salvando…":"Salvar alterações"}</button>
+        <button type="button" className={styles.saveButton} disabled={salvando||!sujo||!configDisponivel} onClick={()=>void salvar()}><Save size={15}/>{salvando?"Salvando…":"Salvar alterações"}</button>
       </div>
     </div>
 
@@ -73,8 +85,8 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
       <section className={styles.settingsCard}>
         <div className={styles.cardTitle}><span><CalendarDays size={20}/></span><div><h2>Agenda e operação</h2><p>Configure parâmetros reais do planejamento e da liberação.</p></div></div>
         <SettingRow title="Referência mensal de orçamento" desc="Valor usado nos painéis de previsão e planejamento."><div className={styles.moneyInput}><span>R$</span><input type="number" min={0} value={Number(config.meta_orcamento_mensal??0)} onChange={e=>setConfig(v=>({...v,meta_orcamento_mensal:Number(e.target.value)||0}))}/></div></SettingRow>
-        <SettingRow title="Bloquear novas liberações financeiras" desc="Quando ativo, impede a liberação da agenda por regra administrativa."><Switch checked={Boolean(config.agenda_liberacao_financeira_bloqueada)} onClick={toggleBlocked}/></SettingRow>
-        <SettingRow title="Prazo automático após termos + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><span className={styles.fixedValue}>5 dias úteis <LockKeyhole size={12}/></span></SettingRow>
+        <SettingRow title="Prazo automático após comparecimento + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><span className={styles.fixedValue}>5 dias úteis <LockKeyhole size={12}/></span></SettingRow>
+        <SettingRow title="Teto mensal operacional" desc="Protegido transacionalmente na confirmação e na reserva da cirurgia."><span className={styles.fixedValue}>R$ 100.000 <LockKeyhole size={12}/></span></SettingRow>
       </section>
 
       <section className={styles.settingsCard}>

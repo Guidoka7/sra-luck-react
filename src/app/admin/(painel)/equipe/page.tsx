@@ -20,12 +20,23 @@ const CARGOS: Array<{ value: Cargo; label: string; descricao: string; area: stri
 ];
 
 const PERMISSOES_DISPONIVEIS: Array<{ chave: string; label: string }> = [
+  { chave: "clientes.editar", label: "Editar dados de clientes" },
   { chave: "clientes.alterar_status_contrato", label: "Alterar status de contrato" },
+  { chave: "clientes.liberar_acesso_app", label: "Liberar acesso ao app" },
   { chave: "clientes.excluir", label: "Excluir perfil de cliente" },
+  { chave: "agenda.gerenciar", label: "Gerenciar agenda e jornada" },
+  { chave: "configuracoes.gerenciar", label: "Gerenciar configurações" },
+  { chave: "financeiro.revisao", label: "Executar revisão financeira" },
   { chave: "financeiro.baixa_manual", label: "Registrar baixa manual" },
   { chave: "financeiro.validar_comprovante", label: "Validar/rejeitar comprovante" },
+  { chave: "credito.gerenciar", label: "Gerenciar operação de crédito" },
+  { chave: "notificacoes.gerenciar", label: "Gerenciar notificações" },
   { chave: "integracoes.gerenciar_credenciais", label: "Gerenciar credenciais de integrações" },
-  { chave: "equipe.gerenciar", label: "Gerenciar equipe" },
+  { chave: "integracoes.operar_financeiro", label: "Operar integrações financeiras" },
+  { chave: "relatorios.visualizar", label: "Visualizar relatórios" },
+  { chave: "relatorios.exportar", label: "Exportar relatórios" },
+  { chave: "monitoramento.visualizar", label: "Visualizar monitoramento" },
+  { chave: "equipe.gerenciar", label: "Gerenciar equipe e permissões" },
 ];
 
 function iniciais(nome: string) { const p = nome.trim().split(/\s+/); return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase() || "—"; }
@@ -109,7 +120,7 @@ export default function EquipeAdminPage() {
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Nome</label><input style={fieldInput} value={nome} onChange={(e) => setNome(e.target.value)} required /></div>
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>E-mail corporativo</label><input type="email" style={fieldInput} value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Cargo</label><select style={fieldInput} value={cargo} onChange={(e) => setCargo(e.target.value as Cargo)}>{CARGOS.map((o) => <option key={o.value} value={o.value}>{o.label} — {o.descricao}</option>)}</select></div>
-          <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Senha temporária</label><input type="password" style={fieldInput} value={senha} onChange={(e) => setSenha(e.target.value)} minLength={8} required /><p style={{ marginTop: 4, fontSize: 10, color: "var(--soft)" }}>Mínimo de 8 caracteres.</p></div>
+          <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", marginBottom: 4 }}>Senha temporária</label><input type="password" style={fieldInput} value={senha} onChange={(e) => setSenha(e.target.value)} minLength={12} required /><p style={{ marginTop: 4, fontSize: 10, color: "var(--soft)" }}>Mínimo de 12 caracteres.</p></div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line)", paddingTop: 12 }}><button type="button" onClick={() => setModal(false)} disabled={criando} style={{ height: 34, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 12, fontWeight: 600 }}>Cancelar</button><button type="submit" disabled={criando} style={{ height: 34, padding: "0 15px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 12, fontWeight: 600 }}>{criando ? "Criando…" : "Criar acesso"}</button></div>
         </form>
       </div>
@@ -123,7 +134,7 @@ export default function EquipeAdminPage() {
           <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
         </div>
         <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {[["E-mail", drawer.email], ["Cargo", CARGOS.find((c) => c.value === drawer.cargo)?.label ?? drawer.cargo], ["Área", areaDe(drawer.cargo)], ["Status", drawer.ativo ? "Ativo" : "Desativado"], ["Último acesso", new Date(drawer.updated_at).toLocaleString("pt-BR")]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span></div>)}
+          {[["E-mail", drawer.email], ["Cargo", CARGOS.find((c) => c.value === drawer.cargo)?.label ?? drawer.cargo], ["Área", areaDe(drawer.cargo)], ["Status", drawer.ativo ? "Ativo" : "Desativado"], ["Cadastro atualizado", new Date(drawer.updated_at).toLocaleString("pt-BR")]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span></div>)}
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", margin: "8px 0 4px" }}>Cargo</label><select style={fieldInput} value={drawer.cargo} disabled={salvando === drawer.id} onChange={(e) => void atualizar(drawer.id, { cargo: e.target.value as Cargo })}>{CARGOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
         </div>
         <div style={{ margin: "0 15px", borderTop: "1px solid var(--line)" }} />

@@ -39,8 +39,14 @@ export function AdminWorkspace(){
     <div className={styles.workspace}>
       <nav className={styles.sideNav} aria-label="Seções de Configurações">{ABAS.map(item=><button key={item.id} type="button" data-active={aba===item.id} onClick={()=>navegar(item.id)}><item.icon size={17}/><span>{item.label}</span></button>)}</nav>
       <main className={styles.content}>
-        {aba==="geral"&&<AdminSettingsOverview onNavigate={navegar}/>}
-        {aba==="agenda"&&<AdminSettingsPanel/>}
+        {aba==="geral"&&<div className={styles.generalStack}>
+          <AdminSettingsOverview onNavigate={navegar}/>
+          <details className={styles.institutionalDetails}>
+            <summary><span>Empresa, aparência e PIX</span><small>Preferências institucionais e de recebimento</small></summary>
+            <div className={styles.institutionalBody}><AdminSettingsPanel/></div>
+          </details>
+        </div>}
+        {aba==="agenda"&&<AgendaRulesPanel/>}
         {aba==="elegibilidade"&&<EligibilityPanel/>}
         {aba==="notificacoes"&&<AdminNotificacoes/>}
         {(aba==="equipe"||aba==="permissoes")&&<EquipeAdminPage/>}
@@ -48,6 +54,20 @@ export function AdminWorkspace(){
         {aba==="monitoramento"&&<MonitoramentoPage/>}
       </main>
     </div>
+  </div>;
+}
+function AgendaRulesPanel(){
+  const regras=[
+    ["Condições para iniciar o prazo","Comparecimento confirmado e quitação paga são obrigatórios."],
+    ["Prazo automático","5 dias úteis contados a partir da condição concluída por último."],
+    ["Ajuste administrativo","+1, +3 ou +5 dias úteis, sempre auditado no histórico."],
+    ["Liberação antecipada","Pode ser feita manualmente após comparecimento e quitação, com registro de quem liberou."],
+    ["Teto mensal operacional","R$ 100.000 por mês, revalidado transacionalmente na previsão e na reserva da cirurgia."],
+    ["Escolha da cirurgia","A cliente só agenda depois que a agenda cirúrgica estiver efetivamente liberada."],
+  ];
+  return <div className={styles.eligibilityPanel}>
+    <div className={styles.eligibilityHeader}><span><CalendarDays size={20}/></span><div><h2>Agenda e liberação cirúrgica</h2><p>Regras V46 atualmente executadas pelo banco. Não há controles decorativos nesta seção.</p></div></div>
+    <div className={styles.agendaRules}>{regras.map(([titulo,descricao])=><div key={titulo} className={styles.agendaRule}><div><strong>{titulo}</strong><p>{descricao}</p></div><span><LockKeyhole size={12}/> Regra ativa</span></div>)}</div>
   </div>;
 }
 function EligibilityPanel(){
