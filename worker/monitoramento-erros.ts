@@ -3,6 +3,7 @@ import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { integrationsStatusApi } from "./integrations-status";
 import { pseudonymizeActorId, requestLogger, sanitizeLogValue } from "./logger";
+import { monitoramentoAcessos } from "./monitoramento-acessos";
 
 const ADMIN_COOKIE = "admin_session";
 const CLIENT_COOKIE = "cliente_session";
@@ -74,6 +75,8 @@ function nivelRecebido(value: unknown): "info" | "warn" | "error" | "fatal" {
 export async function monitoramentoErros(request: Request, env: Env) {
   const integrationsStatus = await integrationsStatusApi(request, env);
   if (integrationsStatus) return integrationsStatus;
+  const acessos = await monitoramentoAcessos(request, env);
+  if (acessos) return acessos;
 
   const url = new URL(request.url);
   const log = requestLogger(request);
