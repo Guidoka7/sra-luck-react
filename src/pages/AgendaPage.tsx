@@ -20,6 +20,7 @@ import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaDat
 import { LOGO_SRC } from "@/assets/brand";
 import { registrarAcesso } from "@/lib/monitoramento";
 import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
+import { Folha } from "@/components/cliente/clube/ClubeUi";
 import { aplicarTemaCliente, useTemaCliente } from "@/lib/temaCliente";
 
 export function AgendaPage() {
@@ -123,10 +124,35 @@ export function AgendaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregar]);
 
+  // Botão "voltar" do celular: nunca leva ao login nem desloga sozinho.
+  // Uma entrada-guarda no histórico segura o voltar: em outra aba volta para a
+  // Início; na Início pergunta se a cliente quer sair da conta.
+  const [confirmarSaida, setConfirmarSaida] = useState(false);
+  const saindoRef = useRef(false);
+  const estadoVoltarRef = useRef({ aba, notificacoesAbertas, confirmarSaida });
+  estadoVoltarRef.current = { aba, notificacoesAbertas, confirmarSaida };
+  useEffect(() => {
+    const armar = () => window.history.pushState({ slGuardaVoltar: true }, "", window.location.href);
+    if (!(window.history.state as { slGuardaVoltar?: boolean } | null)?.slGuardaVoltar) armar();
+    const aoVoltar = () => {
+      if (saindoRef.current) return;
+      armar();
+      const atual = estadoVoltarRef.current;
+      if (atual.confirmarSaida) setConfirmarSaida(false);
+      else if (atual.notificacoesAbertas) setNotificacoesAbertas(false);
+      else if (atual.aba !== "inicio") setAba("inicio");
+      else setConfirmarSaida(true);
+    };
+    window.addEventListener("popstate", aoVoltar);
+    return () => window.removeEventListener("popstate", aoVoltar);
+  }, []);
+
   async function sair() {
+    saindoRef.current = true;
+    setConfirmarSaida(false);
     limparCacheCliente();
     await fetch("/api/cliente/logout", { method: "POST", credentials: "same-origin" });
-    window.history.pushState({}, "", "/login");
+    window.history.replaceState({}, "", "/login");
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
@@ -342,6 +368,14 @@ export function AgendaPage() {
         onMarcarTodasLidas={() => void notificacoesState.marcarTodasLidas()}
         onAcao={abrirNotificacao}
       />
+
+      <Folha aberta={confirmarSaida} onFechar={() => setConfirmarSaida(false)} titulo="Sair da sua conta?">
+        <p className="m-0 text-[13.5px] leading-[1.5] text-[#7F6F6B]">Você vai precisar entrar de novo com CPF e data de nascimento. Para só fechar o app, use o botão de início do celular.</p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button type="button" onClick={() => setConfirmarSaida(false)} className="w-full rounded-[14px] bg-[#6B1F2E] px-4 py-[14px] text-[14.5px] font-semibold text-white">Continuar no app</button>
+          <button type="button" onClick={() => void sair()} className="w-full rounded-[14px] border border-[#E7D4D0] bg-transparent px-4 py-[13px] text-[14px] font-semibold text-[#8F2A25]">Sair da conta</button>
+        </div>
+      </Folha>
 
       <WhatsAppFab numero={whatsappContato} />
       <BottomNav aba={aba} onSelecionar={selecionarAba} />

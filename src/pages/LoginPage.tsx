@@ -16,15 +16,20 @@ type ConfigPublica = { whatsappContato?: string | null };
 export function LoginPage() {
   const[cpf,setCpf]=useState("");const[nascimento,setNascimento]=useState("");const[loading,setLoading]=useState(false);const[erro,setErro]=useState<string|null>(null);const[whatsappContato,setWhatsappContato]=useState("");
 
-  // Sem sessão: nenhum dado local de uma cliente anterior deve sobreviver.
-  useEffect(()=>{limparCacheCliente()},[]);
+  // Já logada (ex.: abriu o app pelo endereço do site ou voltou pelo histórico):
+  // vai direto para a área da cliente. Sem sessão, nenhum dado local de uma
+  // cliente anterior deve sobreviver.
+  const[verificando,setVerificando]=useState(true);
+  useEffect(()=>{let ativo=true;fetch("/api/cliente/session",{cache:"no-store",credentials:"same-origin"}).then(r=>r.ok?r.json():{}).then((data:{autenticado?:boolean})=>{if(!ativo)return;if(data.autenticado===true){window.history.replaceState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"));return}limparCacheCliente();setVerificando(false)}).catch(()=>{if(ativo){limparCacheCliente();setVerificando(false)}});return()=>{ativo=false}},[]);
 
   useEffect(()=>{let ativo=true;apiJson<ConfigPublica>("/api/cliente/config-publica").then(data=>{if(ativo)setWhatsappContato(data.whatsappContato||"")}).catch(()=>{});return()=>{ativo=false}},[]);
 
-  async function submit(event:FormEvent){event.preventDefault();if(loading)return;const iso=paraIso(nascimento);if(cpf.replace(/\D/g,"").length<11||!iso){setErro("Confira o CPF e a data de nascimento e tente novamente.");return}setErro(null);setLoading(true);try{await apiJson("/api/cliente/auth",{method:"POST",body:JSON.stringify({cpf,dataNascimento:iso})});window.history.pushState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"))}catch(error){setErro(error instanceof Error?error.message:"Não foi possível confirmar seus dados.")}finally{setLoading(false)}}
+  async function submit(event:FormEvent){event.preventDefault();if(loading)return;const iso=paraIso(nascimento);if(cpf.replace(/\D/g,"").length<11||!iso){setErro("Confira o CPF e a data de nascimento e tente novamente.");return}setErro(null);setLoading(true);try{await apiJson("/api/cliente/auth",{method:"POST",body:JSON.stringify({cpf,dataNascimento:iso})});window.history.replaceState({},"","/agenda");window.dispatchEvent(new Event("app:navigate"))}catch(error){setErro(error instanceof Error?error.message:"Não foi possível confirmar seus dados.")}finally{setLoading(false)}}
 
   const whatsappNumero=whatsappContato.replace(/\D/g,"");
   const whatsappHref=whatsappNumero?`https://wa.me/${whatsappNumero}?text=${encodeURIComponent("Olá! Preciso de ajuda para acessar minha área de cliente da Sra. Luck.")}`:"";
+
+  if(verificando)return <main className="client-app min-h-[100dvh]" aria-busy="true"><div className="mobile-app-frame min-h-[100dvh]" /></main>;
 
   return <main className="client-app min-h-[100dvh]">
     <div className="mobile-app-frame">
