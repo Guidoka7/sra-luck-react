@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
+import { calcularEncargosAtraso } from "@/lib/financeiro/encargos";
 
 export type PagamentoConfig = {
   pixChave: string | null;
   pixQrCodeUrl: string | null;
   pixDescontoPercentual?: number;
+  cartaoDisponivel?: boolean;
 };
 
 type StatusBoleto = "nao_pago" | "pago" | "pendente_confirmacao" | "rejeitado";
@@ -40,19 +42,12 @@ function dataBr(valor: string | null) {
 }
 
 function calcularValores(boleto: Boleto, pagamento?: PagamentoConfig) {
-  const vencimento = new Date(`${boleto.data_vencimento}T00:00:00`);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const dias = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
+  const { diasEmAtraso: dias, juros, multa, encargos, valorAtualizado } = calcularEncargosAtraso(boleto.valor, boleto.data_vencimento);
   const vencida = dias > 0 && boleto.status === "nao_pago";
-  const juros = boleto.valor * dias * 0.002;
-  const multa = boleto.valor * Math.ceil(dias / 30) * 0.02;
-  const encargos = juros + multa;
   const percentualDescontoPix = pagamento?.pixDescontoPercentual ?? 0;
   const temDescontoPix = vencida && percentualDescontoPix > 0;
   const economiaPix = encargos * (percentualDescontoPix / 100);
-  const valorAtualizado = vencida ? boleto.valor + encargos : boleto.valor;
-  const valorHoje = temDescontoPix ? valorAtualizado - economiaPix : valorAtualizado;
+  const valorHoje = temDescontoPix ? valorAtualizado - economiaPix : vencida ? valorAtualizado : boleto.valor;
   return { dias, vencida, juros, multa, encargos, percentualDescontoPix, temDescontoPix, economiaPix, valorAtualizado, valorHoje };
 }
 
@@ -119,7 +114,7 @@ export function ParcelasPrototype({ pagamento }: { pagamento?: PagamentoConfig }
   }
 
   async function abrirCartao() {
-    if (!selecionada) return;
+    if (!selecionada || pagamento?.cartaoDisponivel !== true) return;
     setPagandoCartao(true);
     try {
       const resposta = await fetch("/api/cliente/payments/mercado-pago/preference", {
@@ -274,10 +269,13 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
 
           {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><FileText className="h-5 w-5 text-[#8A7B77]" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Abrir arquivo</span></span></a> : <span className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#EEE6E3] bg-[#F7F3F2] px-3.5 py-3 text-left text-[#B3A5A1]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/70"><FileText className="h-5 w-5" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal">Indisponível</span></span></span>}
 
-          <button type="button" onClick={onCard} disabled={cardBusy} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED] disabled:opacity-50">
+          {pagamento?.cartaoDisponivel === true ? <button type="button" onClick={onCard} disabled={cardBusy} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED] disabled:opacity-50">
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><CreditCard className="h-5 w-5 text-[#8A7B77]" /></span>
             <span><span className="block text-[11.5px] font-semibold">{cardBusy ? "Abrindo..." : "Cartão"}</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Checkout seguro</span></span>
-          </button>
+          </button> : <span className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#EEE6E3] bg-[#F7F3F2] px-3.5 py-3 text-left text-[#B3A5A1]">
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/70"><CreditCard className="h-5 w-5" /></span>
+            <span><span className="block text-[11.5px] font-semibold">Cartão</span><span className="mt-0.5 block text-[9px] font-normal">Indisponível no momento</span></span>
+          </span>}
 
           <button type="button" onClick={onUpload} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E7D4D0] bg-[#FFF8F7] px-3.5 py-3 text-left text-[#6B1F2E] shadow-sm transition-colors duration-100 hover:bg-[#F7EFED]">
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><Paperclip className="h-5 w-5 text-[#B86575]" /></span>

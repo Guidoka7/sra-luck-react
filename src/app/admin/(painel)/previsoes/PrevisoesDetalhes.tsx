@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { formatarMoeda } from "@/lib/utils";
+import { hojeSaoPaulo } from "@/lib/dataCivil";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 
 /**
@@ -54,24 +55,32 @@ function statusLabelDe(grupo: Grupo, f: ClienteForecast): { label: string; kind:
   return { label: f.situacao === "elegivel" ? "Elegível" : "Em acompanhamento", kind: "neutral" };
 }
 
-export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientIds?: string[] }) {
+export default function PrevisoesDetalhes({ allowedClientIds, initialHorizonMonths = 8 }: { allowedClientIds?: string[]; initialHorizonMonths?: number }) {
   const [clientes, setClientes] = useState<ClienteForecast[]>([]);
   const [meses, setMeses] = useState<MesForecast[]>([]);
   const [agenda, setAgenda] = useState<Map<string, AgendaCliente>>(new Map());
   const [metaOrcamento, setMetaOrcamento] = useState(100000);
-  const [horizonte, setHorizonte] = useState(8);
+  const [horizonte, setHorizonte] = useState(() => Math.min(12, Math.max(1, initialHorizonMonths)));
   const [filtro, setFiltro] = useState<Grupo>("todos");
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [aba, setAba] = useState<"prev" | "perfil">("prev");
 
   useEffect(() => {
     let ativo = true;
+    const ler = async (url: string) => {
+      const resposta = await fetch(url, { cache: "no-store" });
+      const corpo = await resposta.json().catch(() => ({})) as Record<string, any>;
+      if (!resposta.ok) throw new Error(typeof corpo.erro === "string" ? corpo.erro : "Não foi possível carregar as previsões.");
+      return corpo;
+    };
+    setErroCarga(null);
     Promise.all([
-      fetch("/api/admin/previsao-liberacoes", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/clientes-agendamentos", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/configuracoes", { cache: "no-store" }).then((r) => r.json()),
+      ler("/api/admin/previsao-liberacoes"),
+      ler("/api/admin/clientes-agendamentos"),
+      ler("/api/admin/configuracoes"),
     ]).then(([f, a, cfg]) => {
       if (!ativo) return;
       setClientes(f.clientes ?? []);
@@ -81,7 +90,12 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
       for (const item of (a.clientes ?? []) as AgendaCliente[]) mapa.set(item.clienteId, item);
       setAgenda(mapa);
       if (!selecionado && f.clientes?.[0]) setSelecionado(f.clientes[0].clienteId);
-    }).catch(() => toast.error("Não foi possível carregar as previsões.")).finally(() => ativo && setCarregando(false));
+    }).catch((e) => {
+      if (!ativo) return;
+      const mensagem = e instanceof Error ? e.message : "Não foi possível carregar as previsões.";
+      setErroCarga(mensagem);
+      toast.error(mensagem);
+    }).finally(() => ativo && setCarregando(false));
     return () => { ativo = false; };
   }, []);
 
@@ -97,13 +111,13 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
     return base.filter((c) => [c.nome, c.responsavel, c.campanha].some((v) => v?.toLowerCase().includes(termo)));
   }, [classificados, filtro, termo]);
 
-  const isoHoje = new Date().toISOString().slice(0, 7);
+  const isoHoje = hojeSaoPaulo().slice(0, 7);
   const proximosMeses = useMemo(() => meses.filter((m) => m.mes >= isoHoje).slice(0, horizonte), [meses, horizonte, isoHoje]);
   const barras = useMemo(() => {
     const valoresPorMes = new Map<string, number>();
     for (const c of classificados) { if (!c.previsao) continue; const mes = c.previsao.slice(0, 7); valoresPorMes.set(mes, (valoresPorMes.get(mes) ?? 0) + Number(c.valorCarta ?? 0)); }
     const maxValor = Math.max(...proximosMeses.map((m) => valoresPorMes.get(m.mes) ?? 0), metaOrcamento * 1.2, 1);
-    return proximosMeses.map((m) => { const valor = valoresPorMes.get(m.mes) ?? 0; const [, mm] = m.mes.split("-"); return { mes: m.mes, label: MESES_PT[Number(mm) - 1], valor, acima: valor > metaOrcamento, altura: Math.max(4, Math.round((valor / maxValor) * 100)) }; });
+    return proximosMeses.map((m) => { const valor = valoresPorMes.get(m.mes) ?? 0; const [, mm] = m.mes.split("-"); return { mes: m.mes, label: MESES_PT[Number(mm) - 1], valor, acima: valor > metaOrcamento, altura: valor > 0 ? Math.max(4, Math.round((valor / maxValor) * 100)) : 0 }; });
   }, [classificados, proximosMeses, metaOrcamento]);
   const refBottomPct = useMemo(() => { const maxValor = Math.max(...barras.map((b) => b.valor), metaOrcamento * 1.2, 1); return Math.round((metaOrcamento / maxValor) * 100); }, [barras, metaOrcamento]);
 
@@ -113,8 +127,10 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
   const liberacaoHorizonte = barras.reduce((s, b) => s + b.valor, 0);
   const valorNecessarioJanela = janela.reduce((s, c) => s + Math.max(0, Number(c.valorCarta ?? 0) * ((c.parcelasNecessarias ?? 0) - c.parcelasPagas) / (c.totalParcelas || 1)), 0);
 
+  const mesesHorizonte = new Set(proximosMeses.map((m) => m.mes));
+  const proximasOuElegiveis = classificados.filter((c) => c.grupo === "solicit" || (c.grupo === "aprox" && c.previsao && mesesHorizonte.has(c.previsao.slice(0, 7)))).length;
   const indicadores = [
-    { label: `Solicitações previstas em ${horizonte} meses`, valor: String(classificados.filter((c) => c.grupo === "solicit" || c.grupo === "aprox").length), nota: "Carteira atual" },
+    { label: `Elegíveis ou próximas em ${horizonte} ${horizonte === 1 ? "mês" : "meses"}`, valor: String(proximasOuElegiveis), nota: "Elegíveis agora + previsões no horizonte" },
     { label: "Clientes elegíveis hoje", valor: String(elegiveis), nota: "Pagas ≥ meta" },
     { label: "Liberação prevista no horizonte", valor: formatarMoeda(liberacaoHorizonte), nota: "Soma dos meses" },
     { label: "Em risco de prolongamento", valor: String(risco), nota: "Atraso, suspensão ou negativação" },
@@ -134,13 +150,13 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
   return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 560px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
-        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p>{allowedClientSet && <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--rose)", fontWeight: 700 }}>Filtros da visão anterior preservados · {classificados.length} cliente(s) no escopo</div>}</div>
+        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p>{allowedClientSet && <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--rose)", fontWeight: 700 }}>Filtros da carteira preservados · horizonte inicial de {initialHorizonMonths} {initialHorizonMonths === 1 ? "mês" : "meses"} · {classificados.length} cliente(s) no escopo</div>}</div>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, padding: "8px 10px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", marginBottom: 12 }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--rose)", marginRight: 2 }}>Horizonte</span>
         <div style={{ display: "flex", alignItems: "center", gap: 2, height: 30, padding: "0 4px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s0)" }}>
-          <button onClick={() => setHorizonte((h) => Math.max(3, h - 1))} style={{ height: 22, width: 22, borderRadius: 7, border: 0, background: "transparent", color: "var(--soft)" }}>‹</button>
+          <button onClick={() => setHorizonte((h) => Math.max(1, h - 1))} style={{ height: 22, width: 22, borderRadius: 7, border: 0, background: "transparent", color: "var(--soft)" }}>‹</button>
           <span style={{ minWidth: 74, textAlign: "center", fontSize: 11.5, fontWeight: 600 }}>{horizonte} meses</span>
           <button onClick={() => setHorizonte((h) => Math.min(12, h + 1))} style={{ height: 22, width: 22, borderRadius: 7, border: 0, background: "transparent", color: "var(--soft)" }}>›</button>
         </div>
@@ -206,7 +222,7 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
           <div style={{ display: "grid", gridTemplateColumns: "minmax(150px,1.3fr) 92px minmax(150px,1.2fr) 100px 150px 130px", gap: 11, minWidth: 900, padding: "0 14px", height: 33, alignItems: "center", background: "var(--s1)", borderBottom: "1px solid var(--line)", position: "sticky", top: 0 }}>
             {["Cliente", "Pagas / Total", "Etapa atual", "Previsão", "Impacto", "Status"].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}
           </div>
-          {carregando ? <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</div> : filtrados.length === 0 ? <div style={{ padding: "46px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma cliente neste filtro</div></div>
+          {carregando ? <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando…</div> : erroCarga ? <div role="alert" style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--bad)" }}>{erroCarga}</div> : filtrados.length === 0 ? <div style={{ padding: "46px 20px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma cliente neste filtro</div></div>
             : filtrados.map((r) => { const status = statusLabelDe(r.grupo, r); return <div key={r.clienteId} onClick={() => { setSelecionado(r.clienteId); setAba("prev"); }} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(150px,1.3fr) 92px minmax(150px,1.2fr) 100px 150px 130px", gap: 11, minWidth: 900, padding: "0 14px", height: 44, alignItems: "center", cursor: "pointer", borderBottom: "1px solid var(--line2)" }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.nome}</div>
               <div style={{ fontSize: 12, fontWeight: 600 }} className="zip-mono">{r.parcelasPagas} / {r.totalParcelas}</div>

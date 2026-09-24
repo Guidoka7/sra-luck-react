@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/ui/ThemeProvider";
+import { ADMIN_PERMISSIONS as P, CLIENT_PERMISSIONS, FINANCE_PERMISSIONS, pode, type AdminAccessProfile } from "@/lib/adminAccess";
 import "@/styles/admin-zip.css";
 
 /**
@@ -14,17 +15,16 @@ import "@/styles/admin-zip.css";
  */
 
 const NAV_OPERACAO = [
-  { href: "/admin/visao-geral", label: "Visão geral", icon: "◫" },
-  { href: "/admin/agenda", label: "Agenda", icon: "◷" },
-  { href: "/admin/clientes", label: "Clientes", icon: "☻" },
-  { href: "/admin/financeiro", label: "Financeiro", icon: "$" },
-  { href: "/admin/clube", label: "Clube", icon: "♡" },
+  { href: "/admin/visao-geral", label: "Visão geral", icon: "◫", perms: [P.RELATORIOS_VISUALIZAR] },
+  { href: "/admin/agenda", label: "Agenda", icon: "◷", perms: [P.AGENDA_GERENCIAR, P.RELATORIOS_VISUALIZAR, ...FINANCE_PERMISSIONS] },
+  { href: "/admin/clientes", label: "Clientes", icon: "☻", perms: [...CLIENT_PERMISSIONS] },
+  { href: "/admin/financeiro", label: "Financeiro", icon: "$", perms: [...FINANCE_PERMISSIONS] },
+  { href: "/admin/clube", label: "Clube", icon: "♡", perms: [P.CREDITO_GERENCIAR] },
 ];
 
 const NAV_GESTAO = [
-  { href: "/admin/previsoes", label: "Previsões", icon: "↗" },
-  { href: "/admin/relatorios", label: "Relatórios", icon: "▥" },
-  { href: "/admin/configuracoes", label: "Configurações", icon: "⚙" },
+  { href: "/admin/previsoes", label: "Previsões", icon: "↗", perms: [P.AGENDA_GERENCIAR, P.RELATORIOS_VISUALIZAR] },
+  { href: "/admin/relatorios", label: "Relatórios", icon: "▥", perms: [P.RELATORIOS_VISUALIZAR] },
 ];
 
 const CARGO_LABEL: Record<string, string> = {
@@ -56,7 +56,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
-  const [perfil, setPerfil] = useState<{ nome: string; cargo: string } | null>(null);
+  const [perfil, setPerfil] = useState<({ nome: string; cargo: string } & AdminAccessProfile) | null>(null);
   // Em telas estreitas (≤760px) a sidebar vira um painel sobreposto.
   const [menuAberto, setMenuAberto] = useState(false);
   useEffect(() => { setMenuAberto(false); }, [pathname]);
@@ -64,7 +64,12 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let ativo = true;
     fetch("/api/admin/session", { cache: "no-store" }).then((r) => r.json()).then((d) => {
-      if (ativo && d?.nome) setPerfil({ nome: d.nome, cargo: d.cargo ?? "administrativo" });
+      if (ativo && d?.autenticado) setPerfil({
+        nome: d.nome ?? "Administração",
+        cargo: d.cargo ?? "administrativo",
+        permissoes: Array.isArray(d.permissoes) ? d.permissoes.filter((p: unknown): p is string => typeof p === "string") : [],
+        acessoTotal: d.acessoTotal === true,
+      });
     }).catch(() => {});
     return () => { ativo = false; };
   }, []);
@@ -75,6 +80,14 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   }
 
   const ativo = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const navOperacao = NAV_OPERACAO.filter((item) => pode(perfil, ...item.perms));
+  const navGestao = NAV_GESTAO.filter((item) => pode(perfil, ...item.perms));
+  const configHref = !perfil || pode(perfil, P.CONFIGURACOES_GERENCIAR) ? "/admin/configuracoes"
+    : pode(perfil, P.NOTIFICACOES_GERENCIAR) ? "/admin/notificacoes"
+    : pode(perfil, P.EQUIPE_GERENCIAR) ? "/admin/equipe"
+    : pode(perfil, P.INTEGRACOES_GERENCIAR_CREDENCIAIS) ? "/admin/integracoes"
+    : pode(perfil, P.MONITORAMENTO_VISUALIZAR) ? "/admin/configuracoes/monitoramento"
+    : null;
 
   return (
     <div className={`zip-admin zip-shell${dark ? " dark" : ""}${menuAberto ? " zip-shell-menu-open" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -91,7 +104,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
 
           <div style={{ padding: "0 8px 7px", fontSize: 8, fontWeight: 600, letterSpacing: ".22em", textTransform: "uppercase", color: "var(--rose)", opacity: .7 }}>Operação</div>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {NAV_OPERACAO.map((item) => {
+            {navOperacao.map((item) => {
               const on = ativo(item.href);
               return <Link key={item.href} href={item.href} className={`zip-nav-item${on ? " active" : ""}`} style={navItemStyle(on)}>
                 <span style={iconBadgeStyle(on)}>{item.icon}</span>{item.label}
@@ -101,13 +114,16 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
 
           <div style={{ padding: "16px 8px 7px", fontSize: 8, fontWeight: 600, letterSpacing: ".22em", textTransform: "uppercase", color: "var(--rose)", opacity: .7 }}>Gestão</div>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {NAV_GESTAO.map((item) => {
+            {navGestao.map((item) => {
               const on = ativo(item.href);
               return <Link key={item.href} href={item.href} className={`zip-nav-item${on ? " active" : ""}`} style={navItemStyle(on)}>
                 <span style={iconBadgeStyle(on)}>{item.icon}</span>{item.label}
               </Link>;
             })}
           </nav>
+          {configHref && <Link href={configHref} className={`zip-nav-item${pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes") ? " active" : ""}`} style={navItemStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes"))}>
+            <span style={iconBadgeStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes"))}>⚙</span>Configurações
+          </Link>}
         </div>
 
         <div style={{ marginTop: "auto", paddingTop: 16 }}>

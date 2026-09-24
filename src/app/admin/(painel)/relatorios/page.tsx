@@ -141,7 +141,7 @@ export default function RelatoriosPage() {
       <label><span>Responsável</span><div className={styles.selectBox}><UserRound size={17}/><select value={responsavel} onChange={e=>setResponsavel(e.target.value)}><option value="todos">Todos</option>{dados?.opcoes.responsaveis.map(r=><option key={r} value={r}>{r}</option>)}</select><ChevronDown size={14}/></div></label>
       <label><span>Procedimento</span><div className={styles.selectBox}><Scissors size={17}/><select value={procedimento} onChange={e=>setProcedimento(e.target.value)}><option value="todos">Todos</option>{dados?.opcoes.procedimentos.map(p=><option key={p} value={p}>{p}</option>)}</select><ChevronDown size={14}/></div></label>
       <label><span>Status</span><div className={styles.selectBox}><CircleDollarSign size={17}/><select value={status} onChange={e=>setStatus(e.target.value as StatusContrato)}>{(Object.keys(STATUS_LABEL) as StatusContrato[]).map(s=><option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select><ChevronDown size={14}/></div></label>
-      <div className={styles.exports}><button type="button" className={styles.exportPrimary} onClick={()=>window.print()}><FileText size={16}/>Exportar PDF</button><button type="button" onClick={exportarPlanilha}><FileSpreadsheet size={16}/>Exportar planilha</button></div>
+      <div className={styles.exports}><button type="button" className={styles.exportPrimary} onClick={()=>window.print()} title="Abre a janela de impressão, onde é possível salvar em PDF."><FileText size={16}/>Imprimir / PDF</button><button type="button" onClick={exportarPlanilha}><FileSpreadsheet size={16}/>Exportar CSV</button></div>
     </section>
 
     {carregando?<div className={styles.loading}>Consolidando dados reais do período…</div>:!dados?<div className={styles.loading} role="alert"><strong>Não foi possível carregar os relatórios.</strong><br/>{erroCarga||"Tente novamente em instantes."}</div>:<>
@@ -152,7 +152,7 @@ export default function RelatoriosPage() {
           <div className={styles.panelHead}><h2>Funil de conversão operacional</h2><button type="button" onClick={()=>setCatalogo(true)}>Ver detalhes <ArrowRight size={13}/></button></div>
           <div className={styles.funnel}>
             <div className={styles.funnelSteps}>{dados.funil.map((f,i)=><div className={styles.funnelStep} key={f.id}><span className={styles.funnelIcon}>{[<Users key="u" size={18}/>,<FileText key="f" size={18}/>,<CalendarDays key="c" size={18}/>,<Scissors key="s" size={18}/>,<CheckCircle2 key="o" size={18}/>][i]}</span><div>{f.label}</div><strong>{f.valor.toLocaleString("pt-BR")}</strong>{i<dados.funil.length-1&&<ArrowRight size={14}/>}</div>)}</div>
-            <div className={styles.funnelBar}>{dados.funil.map((f,i)=><span key={f.id} style={{flex:Math.max(1,f.valor/maxFunil*10)}} data-tone={i}/>)}</div>
+            <div className={styles.funnelBar}>{dados.funil.map((f,i)=><span key={f.id} style={{flexGrow:f.valor>0?f.valor/maxFunil*10:0,flexBasis:f.valor>0?8:0,minWidth:f.valor>0?3:0}} data-tone={i}/>)}</div>
             <div className={styles.funnelPct}>{dados.funil.map(f=><span key={f.id}>{Math.round(f.valor/totalFunil*100)}%</span>)}</div>
           </div>
         </article>
@@ -160,20 +160,20 @@ export default function RelatoriosPage() {
         <article className={styles.panel}>
           <div className={styles.panelHead}><h2>Recebimentos x inadimplência</h2><span className={styles.monthPill}>{labelPeriodo(periodo)}</span></div>
           <div className={styles.chartLegend}><span><i className={styles.receivedDot}/>Recebimentos (R$)</span><span><i className={styles.overdueDot}/>Inadimplência (R$)</span></div>
-          <div className={styles.dualChart}>{meses4.map(m=><div className={styles.monthBars} key={m.mes}><div className={styles.bars}><i className={styles.receivedBar} style={{height:Math.max(3,m.recebimentos/maxFin*100)+"%"}}/><i className={styles.overdueBar} style={{height:Math.max(3,m.inadimplencia/maxFin*100)+"%"}}/></div><strong>{MES[Number(m.mes.slice(5,7))-1]}</strong><small>{abreviar(m.recebimentos)}</small></div>)}</div>
+          <div className={styles.dualChart}>{meses4.map(m=><div className={styles.monthBars} key={m.mes}><div className={styles.bars}><i className={styles.receivedBar} style={{height:(m.recebimentos>0?Math.max(3,m.recebimentos/maxFin*100):0)+"%"}}/><i className={styles.overdueBar} style={{height:(m.inadimplencia>0?Math.max(3,m.inadimplencia/maxFin*100):0)+"%"}}/></div><strong>{MES[Number(m.mes.slice(5,7))-1]}</strong><small>{abreviar(m.recebimentos)}</small></div>)}</div>
         </article>
       </section>
 
       <section className={styles.bottomGrid}>
         <article className={styles.panel}>
           <div className={styles.panelHead}><h2>Cirurgias por mês</h2><span className={styles.monthPill}>Últimos 6 meses</span></div>
-          <div className={styles.chartLegend}><span><i className={styles.receivedDot}/>Confirmadas</span><span><i className={styles.overdueDot}/>Canceladas</span></div>
-          <div className={styles.surgeryChart}>{dados.meses.map(m=><div className={styles.surgeryMonth} key={m.mes}><div className={styles.bars}><i className={styles.receivedBar} style={{height:Math.max(3,m.cirurgiasConfirmadas/maxCir*100)+"%"}}/><i className={styles.overdueBar} style={{height:Math.max(3,m.cirurgiasCanceladas/maxCir*100)+"%"}}/></div><span>{MES[Number(m.mes.slice(5,7))-1]}</span></div>)}</div>
+          <div className={styles.chartLegend}><span><i className={styles.receivedDot}/>Com data</span><span><i className={styles.overdueDot}/>Canceladas</span></div>
+          <div className={styles.surgeryChart}>{dados.meses.map(m=><div className={styles.surgeryMonth} key={m.mes}><div className={styles.bars}><i className={styles.receivedBar} style={{height:(m.cirurgiasConfirmadas>0?Math.max(3,m.cirurgiasConfirmadas/maxCir*100):0)+"%"}}/><i className={styles.overdueBar} style={{height:(m.cirurgiasCanceladas>0?Math.max(3,m.cirurgiasCanceladas/maxCir*100):0)+"%"}}/></div><span>{MES[Number(m.mes.slice(5,7))-1]}</span></div>)}</div>
         </article>
 
         <article className={styles.panel}>
-          <div className={styles.panelHead}><h2>Desempenho por responsável</h2><span className={styles.monthPill}>Cirurgias confirmadas</span></div>
-          <div className={styles.performance}>{dados.desempenho.length===0?<div className={styles.empty}>Sem cirurgias confirmadas neste recorte.</div>:dados.desempenho.map((r,i)=><div className={styles.performanceRow} key={r.nome}><span className={styles.avatar}>{r.nome.split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}</span><strong>{r.nome}</strong><div><i style={{width:(r.total/maxResp*100)+"%"}}/></div><b>{r.total}</b></div>)}</div>
+          <div className={styles.panelHead}><h2>Desempenho por responsável</h2><span className={styles.monthPill}>Cirurgias no período</span></div>
+          <div className={styles.performance}>{dados.desempenho.length===0?<div className={styles.empty}>Sem cirurgias com data neste recorte.</div>:dados.desempenho.map((r,i)=><div className={styles.performanceRow} key={r.nome}><span className={styles.avatar}>{r.nome.split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}</span><strong>{r.nome}</strong><div><i style={{width:(r.total/maxResp*100)+"%"}}/></div><b>{r.total}</b></div>)}</div>
         </article>
 
         <article className={styles.panel}>
@@ -182,7 +182,7 @@ export default function RelatoriosPage() {
             <div><span className={dados.insights.recebimentosVariacao!=null&&dados.insights.recebimentosVariacao<0?styles.insightRose:styles.insightGood}>{dados.insights.recebimentosVariacao==null?"•":dados.insights.recebimentosVariacao<0?"↓":"↑"}</span><p><strong>{dados.insights.recebimentosVariacao==null?"Primeiro período comparável":(dados.insights.recebimentosVariacao>=0?"Aumento de ":"Queda de ")+Math.abs(dados.insights.recebimentosVariacao).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%"}</strong><small>nos recebimentos em relação ao mês anterior.</small></p></div>
             <div><span className={styles.insightRose}><Users size={14}/></span><p><strong>{dados.insights.reativacoes} reativações</strong><small>registradas por mudança real de status no período.</small></p></div>
             <div><span className={styles.insightRose}><CircleDollarSign size={14}/></span><p><strong>Inadimplência em {dados.insights.taxaInadimplencia.toLocaleString("pt-BR",{maximumFractionDigits:1})}%</strong><small>do valor das parcelas com vencimento no período.</small></p></div>
-            <div><span className={styles.insightRose}>★</span><p><strong>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.nome:"Sem destaque no período"}</strong><small>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.total+" cirurgias confirmadas no recorte.":"Não houve cirurgias suficientes para comparar."}</small></p></div>
+            <div><span className={styles.insightRose}>★</span><p><strong>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.nome:"Sem destaque no período"}</strong><small>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.total+" cirurgias com data no recorte.":"Não houve cirurgias suficientes para comparar."}</small></p></div>
           </div>
         </article>
       </section>

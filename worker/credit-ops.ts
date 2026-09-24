@@ -3,6 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { clubeAdminApi, clubeClienteApi } from "./clube";
+import { dataCivilValida, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
 
 interface InstallmentSummaryRow {
   id: string;
@@ -136,14 +137,15 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
     }
 
     if (path === "/api/admin/credit-ops/finance/daily" && request.method === "GET") {
-      const day = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
-      const start = `${day}T00:00:00.000Z`;
-      const end = `${day}T23:59:59.999Z`;
+      const solicitado = url.searchParams.get("date");
+      if (solicitado && !dataCivilValida(solicitado)) return json({ erro: "Data inválida." }, 400);
+      const day = solicitado || hojeSaoPaulo();
+      const { inicio: start, fimExclusivo: end } = intervaloDiaOperacionalUtc(day);
       const [paid, proofs, overdue, events] = await Promise.all([
-        db.from("boletos").select("*, clientes(id,nome_completo)").gte("recebido_em", start).lte("recebido_em", end).order("recebido_em", { ascending: false }),
+        db.from("boletos").select("*, clientes(id,nome_completo)").gte("recebido_em", start).lt("recebido_em", end).order("recebido_em", { ascending: false }),
         db.from("comprovantes_pagamento").select("*, clientes(id,nome_completo), boletos(id,numero_parcela,total_parcelas,valor,banco_emissor)").in("status", ["aguardando_validacao", "em_analise"]).order("created_at", { ascending: false }).limit(200),
         db.from("boletos").select("*, clientes(id,nome_completo)").lt("data_vencimento", day).neq("status", "pago").order("data_vencimento", { ascending: true }).limit(200),
-        db.from("conciliacao_financeira_eventos").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false }).limit(300),
+        db.from("conciliacao_financeira_eventos").select("*").gte("created_at", start).lt("created_at", end).order("created_at", { ascending: false }).limit(300),
       ]);
       const errors = [paid.error, proofs.error, overdue.error, events.error]
         .filter((value): value is NonNullable<typeof value> => Boolean(value))
