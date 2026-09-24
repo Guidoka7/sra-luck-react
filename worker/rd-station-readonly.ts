@@ -1,5 +1,5 @@
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
-import { obterCredencial, salvarCredencialInterna } from "./integrations-credenciais";
+import { obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm } from "./crm-importacao";
@@ -212,6 +212,10 @@ async function requireAdminComPermissao(request: Request, env: Env) {
 async function rdCredential(env: Env, chave: string, legado?: string) {
   return (await obterCredencial(env, "rd_station", chave)) || (legado ? await obterCredencial(env, "rd_station", legado) : null);
 }
+async function rdCredentialConfiguracao(env: Env, chave: string, legado?: string) {
+  return (await obterCredencialParaValidacao(env, "rd_station", chave))
+    || (legado ? await obterCredencialParaValidacao(env, "rd_station", legado) : null);
+}
 
 async function persistirTokens(env: Env, actor: string, token: Json) {
   const access = stringValue(token.access_token);
@@ -226,8 +230,8 @@ async function persistirTokens(env: Env, actor: string, token: Json) {
 }
 
 async function tokenRequest(env: Env, params: Record<string, string>) {
-  const clientId = await rdCredential(env, "client_id");
-  const clientSecret = await rdCredential(env, "client_secret");
+  const clientId = await rdCredentialConfiguracao(env, "client_id");
+  const clientSecret = await rdCredentialConfiguracao(env, "client_secret");
   if (!clientId || !clientSecret) throw new Error("RD_OAUTH_CLIENT_NOT_CONFIGURED");
   const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, ...params });
   const response = await fetch(RD_OAUTH_TOKEN, {
@@ -483,8 +487,8 @@ async function testar(env: Env, adminId: string) {
 
 async function authorizationUrl(env: Env, adminId: string) {
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Segredo de sessão não configurado." }, 503);
-  const clientId = await rdCredential(env, "client_id");
-  const redirectUri = await rdCredential(env, "redirect_uri") || `${(env.PUBLIC_APP_URL || "").replace(/\/$/, "")}/api/integrations/rd-station/oauth/callback`;
+  const clientId = await rdCredentialConfiguracao(env, "client_id");
+  const redirectUri = await rdCredentialConfiguracao(env, "redirect_uri") || `${(env.PUBLIC_APP_URL || "").replace(/\/$/, "")}/api/integrations/rd-station/oauth/callback`;
   if (!clientId || !redirectUri.startsWith("https://")) return json({ erro: "Configure Client ID e Redirect URI HTTPS do RD Station." }, 409);
   const state = await criarState(adminId, env.CLIENTE_SESSION_SECRET);
   const url = new URL(RD_OAUTH_AUTHORIZE);
@@ -503,21 +507,22 @@ async function oauthCallback(request: Request, env: Env) {
   const adminId = await validarState(state, env.CLIENTE_SESSION_SECRET);
   if (!code || !adminId) return json({ erro: "Retorno OAuth inválido ou expirado." }, 400);
 
-  // O cookie administrativo usa Path=/api/admin e, por desenho, não é
-  // enviado ao callback OAuth em /api/integrations. O state assinado e
-  // expirável identifica quem iniciou o fluxo; aqui revalidamos que esse
-  // colaborador continua ativo e autorizado antes de persistir tokens.
-  const colaborador = await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
-  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
+  // O state é assinado e curto. Para sessão humana, revalidamos o colaborador;
+  // para o Dev Console, o próprio adminId sintético já foi emitido após M2M válido.
+  const ehDev = adminId.startsWith("dev-console:");
+  const colaborador = ehDev ? null : await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
+  if (!ehDev && (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS))) {
     return json({ erro: "Sem permissão para concluir a autorização do RD Station." }, 403);
   }
+  const ator = ehDev ? adminId : colaborador!.id;
 
-  const redirectUri = await rdCredential(env, "redirect_uri") || `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/api/integrations/rd-station/oauth/callback`;
+  const redirectUri = await rdCredentialConfiguracao(env, "redirect_uri") || `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/api/integrations/rd-station/oauth/callback`;
   try {
     const token = await tokenRequest(env, { code, redirect_uri: redirectUri, grant_type: "authorization_code" });
-    await persistirTokens(env, colaborador.id, token);
+    await persistirTokens(env, ator, token);
     const db = createServiceSupabaseClient(env);
-    await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "autorizou_oauth_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { somenteLeitura: true } });
+    await db.from("logs_alteracoes").insert({ usuario: ator, acao: "autorizou_oauth_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { somenteLeitura: true, origem: ehDev ? "dev_console" : "admin" } });
+    if (ehDev) return new Response("<!doctype html><meta charset='utf-8'><title>RD Station conectado</title><body style='font-family:system-ui;padding:32px'><h2>RD Station autorizado</h2><p>As credenciais OAuth foram salvas. Volte ao Dev Console e clique em Validar e ativar.</p><script>setTimeout(()=>window.close(),1800)</script></body>", { headers: { "Content-Type": "text/html; charset=utf-8" } });
     const destino = `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/admin/integracoes?rd=conectado`;
     return Response.redirect(destino, 302);
   } catch (error) {
