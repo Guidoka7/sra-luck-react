@@ -30,12 +30,11 @@ import { requestLogger } from "./logger";
 import { DATAS_ESPECIAIS, TEMAS_SEMANA, fraseDoDia, type FraseDoDia } from "../src/lib/fraseDoDia";
 
 const MODELO_PADRAO = "gemini-3.5-flash-lite";
-/** Máximo de falhas lentas (429/5xx/timeout/rede) numa execução; cada uma pode custar até TIMEOUT_MS. */
+/** Máximo de falhas não recuperáveis rapidamente (429/5xx exceto 503, timeout/rede) numa execução. */
 const MAX_TENTATIVAS = 3;
 /**
- * Máximo de modelos testados numa execução. Um 404 ("modelo não existe ou não está disponível para
- * esta chave") volta em milissegundos e não conta como falha lenta: o ListModels lista modelos
- * que a chave não pode mais usar, então é preciso poder pular vários até achar um que responda.
+ * Máximo de modelos testados numa execução. Respostas 404 e 503 podem ser rápidas e não devem
+ * esgotar a busca antes de chegar aos demais modelos listados pela chave.
  */
 const MAX_MODELOS = 6;
 const TIMEOUT_MS = 12_000;
@@ -150,9 +149,9 @@ export function normalizarModelo(nome: string | null | undefined): string | null
 }
 
 /** Lista (ListModels) os modelos que a chave pode usar. Usada só quando o modelo configurado falha. */
-export async function descobrirModelos(chave: string, fetcher: typeof fetch = fetch): Promise<string[]> {
+export async function descobrirModelos(chave: string, fetcher: typeof fetch = fetch, timeoutMs = 6_000): Promise<string[]> {
   const controle = new AbortController();
-  const timer = setTimeout(() => controle.abort(), 6_000);
+  const timer = setTimeout(() => controle.abort(), timeoutMs);
   try {
     const resposta = await fetcher(`${BASE_GEMINI}/models?pageSize=1000`, { headers: { "x-goog-api-key": chave }, signal: controle.signal });
     if (!resposta.ok) return [];
@@ -173,7 +172,8 @@ function erroDeChave(corpo: string) {
 /**
  * Uma geração: chama o modelo configurado. Só passa para outro modelo quando a
  * chamada falha (404/429/5xx/timeout → consulta os modelos disponíveis e tenta
- * o próximo), no máximo MAX_TENTATIVAS chamadas. Chave recusada interrompe na hora.
+ * o próximo). Respostas 503 recebem espera progressiva dentro do orçamento total.
+ * Chave recusada interrompe na hora.
  */
 export type OpcoesGeracao = { schema?: Record<string, unknown>; temperatura?: number; maxTokens?: number };
 
@@ -185,20 +185,28 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
   if (!configurado) tentativas.push(`${String(modeloPreferido ?? "").slice(0, 60) || "(vazio)"}:nome_invalido`);
   const fila = [configurado ?? MODELO_PADRAO];
   const tentados = new Set<string>();
-  let descobriu = false, lentas = 0;
+  let descobriu = false, lentas = 0, falhas503 = 0, espera503 = 0;
   const inicio = Date.now();
-  while (lentas < MAX_TENTATIVAS && tentados.size < MAX_MODELOS && Date.now() - inicio < ORCAMENTO_MS) {
+  while (lentas < MAX_TENTATIVAS && tentados.size < MAX_MODELOS && Date.now() - inicio < ORCAMENTO_MS - 250) {
     if (!fila.length) {
       if (descobriu) break;
       descobriu = true;
-      fila.push(...(await descobrirModelos(chave, fetcher)));
+      const restante = ORCAMENTO_MS - (Date.now() - inicio);
+      if (restante <= 1_000) break;
+      fila.push(...(await descobrirModelos(chave, fetcher, Math.min(6_000, restante - 1_000))));
       continue;
     }
     const modelo = fila.shift()!;
     if (tentados.has(modelo)) continue;
+    if (espera503) {
+      // O Google recomenda backoff em 503. Não iniciar uma chamada que já ultrapassaria o orçamento.
+      if (Date.now() - inicio + espera503 + 1_000 >= ORCAMENTO_MS) break;
+      await new Promise((resolve) => setTimeout(resolve, espera503));
+      espera503 = 0;
+    }
     tentados.add(modelo);
     const controle = new AbortController();
-    const timer = setTimeout(() => controle.abort(), Math.max(1_000, Math.min(TIMEOUT_MS, ORCAMENTO_MS - (Date.now() - inicio))));
+    const timer = setTimeout(() => controle.abort(), Math.max(1, Math.min(TIMEOUT_MS, ORCAMENTO_MS - (Date.now() - inicio) - 250)));
     try {
       const resposta = await fetcher(`${BASE_GEMINI}/models/${encodeURIComponent(modelo)}:generateContent`, {
         method: "POST",
@@ -220,7 +228,14 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
         tentativas.push(`${modelo}:${status}`);
         throw new ErroGemini(`http_${status}`, tentativas);
       }
-      if (!resposta.ok) { tentativas.push(`${modelo}:${status}`); if (status !== 404) lentas += 1; continue; }
+      if (!resposta.ok) {
+        tentativas.push(`${modelo}:${status}`);
+        if (status === 503) {
+          falhas503 += 1;
+          espera503 = Math.min(4_000, 500 * 2 ** (falhas503 - 1));
+        } else if (status !== 404) lentas += 1;
+        continue;
+      }
       const corpo = await resposta.json() as RespostaGemini;
       const bruto = (corpo.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
       if (!bruto) { tentativas.push(`${modelo}:vazio`); lentas += 1; continue; }
@@ -720,3 +735,4 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
   if (!data) return json({ texto: base.texto, tema: base.tema, data: base.data, origem: "reserva" });
   return json({ texto: data.texto, tema: data.tema, data: base.data, origem: data.origem });
 }
+
