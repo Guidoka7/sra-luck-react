@@ -2,7 +2,7 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-import { credenciaisApi, integracaoDesativada, obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
+import { CATALOGO_PROVEDORES, credenciaisApi, integracaoDesativada, obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
@@ -212,9 +212,27 @@ type ResultadoTesteIntegracao = {
   tipoValidacao: "api_real" | "criptografica";
 };
 
+async function credenciaisObrigatoriasAusentes(env: Env, provedor: string) {
+  const config = CATALOGO_PROVEDORES[provedor];
+  if (!config) return ["Provedor desconhecido"];
+  const ausentes: string[] = [];
+  for (const campo of config.campos.filter((c) => c.obrigatorio)) {
+    const valor = await obterCredencialParaValidacao(env, provedor, campo.chave);
+    if (!valor?.trim()) ausentes.push(campo.label);
+  }
+  return ausentes;
+}
+
 async function testarProvedorReal(env: Env, provedor: string): Promise<ResultadoTesteIntegracao> {
   const inicio = Date.now();
   const finalizar = (parcial: Omit<ResultadoTesteIntegracao, "latenciaMs">): ResultadoTesteIntegracao => ({ ...parcial, latenciaMs: Date.now() - inicio });
+  const ausentes = await credenciaisObrigatoriasAusentes(env, provedor);
+  if (ausentes.length) return finalizar({
+    conectado: false,
+    detalhe: `Credenciais obrigatórias ausentes: ${ausentes.join(", ")}.`,
+    codigo: "CREDENCIAL_AUSENTE",
+    tipoValidacao: "api_real",
+  });
 
   if (provedor === "mercado_pago") {
     const accessToken = await obterCredencialParaValidacao(env, "mercado_pago", "access_token");
