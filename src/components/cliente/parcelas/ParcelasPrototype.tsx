@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, X } from "lucide-react";
+import "@/styles/pagamento-folha.css";
+import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { toast } from "sonner";
 import { calcularEncargosAtraso } from "@/lib/financeiro/encargos";
 
@@ -206,7 +208,7 @@ function PixChave({ chave }: { chave: string }) {
     }
   }
 
-  return <button type="button" onClick={copiar} className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-[#E8DCD8] bg-white px-3 py-2.5 text-left text-xs font-medium text-[#6B1F2E] shadow-sm"><span className="truncate">{chave}</span>{copiado ? <Check className="h-4 w-4 flex-none text-[#3F7D5B]" /> : <Copy className="h-4 w-4 flex-none text-[#B86575]" />}</button>;
+  return <button type="button" onClick={copiar} className="sl-pag-chave"><span className="truncate">{chave}</span><span className="sl-pag-chave-acao">{copiado ? <><Check className="h-3.5 w-3.5" /> Copiada</> : <><Copy className="h-3.5 w-3.5" /> Copiar</>}</span></button>;
 }
 
 function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }: { boleto: Boleto; pagamento?: PagamentoConfig; onClose: () => void; onUpload: () => void; onCard: () => void; cardBusy: boolean }) {
@@ -226,83 +228,91 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
     return () => document.removeEventListener("keydown", aoPressionarTecla);
   }, [onClose]);
 
-  return <div
-    className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-8 backdrop-blur-[2px] sm:items-center sm:px-4 sm:py-6"
-    onClick={(evento) => { if (evento.target === evento.currentTarget) onClose(); }}
-  >
+  const vencimento = boleto.data_vencimento ? boleto.data_vencimento.slice(0, 10).split("-").reverse().slice(0, 2).join("/") : "";
+  const status = valores.vencida
+    ? { texto: `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}`, tom: "vencida" }
+    : { texto: vencimento ? `Vence em ${vencimento}` : "Em aberto", tom: "aberta" };
+  const cartaoDisponivel = pagamento?.cartaoDisponivel === true;
+
+  return <div className="sl-pag-fundo" onClick={(evento) => { if (evento.target === evento.currentTarget) onClose(); }}>
     <motion.div
       role="dialog"
       aria-modal="true"
-      aria-label={valores.vencida ? `Resolver parcela ${boleto.numero_parcela}` : `Pagar parcela ${boleto.numero_parcela}`}
-      initial={{ y: 32, opacity: 0.96, scale: 0.99 }}
-      animate={{ y: 0, opacity: 1, scale: 1 }}
-      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-      className="flex max-h-[calc(100dvh-32px)] w-full max-w-md flex-col overflow-hidden rounded-[26px] border border-[#E9DDDA] bg-white shadow-2xl"
+      aria-label={`Pagar parcela ${boleto.numero_parcela}`}
+      initial={{ y: "100%" }}
+      animate={{ y: 0 }}
+      transition={{ type: "spring", stiffness: 420, damping: 40 }}
+      className="sl-pag"
     >
-      <div className="flex-none px-5 pb-3 pt-3 sm:px-6 sm:pt-4">
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#DCCECB]" />
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#B18B4B]">Pagamento</p>
-            <h3 className="mt-1 font-heading text-[22px] font-semibold leading-tight text-[#6B1F2E]">{valores.vencida ? `Resolver parcela ${boleto.numero_parcela}` : `Pagar parcela ${boleto.numero_parcela}`}</h3>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-[#8A7B77]">{valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : "Parcela em aberto"}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[#F7EFED] text-[#8A7B77] transition hover:bg-[#F1E5E2]">
-            <X className="h-[18px] w-[18px]" />
-          </button>
+      <div className="sl-pag-alca" aria-hidden="true" />
+      <div className="sl-pag-topo">
+        <div className="min-w-0">
+          <MarcaSraLuck className="sl-pag-marca" />
+          <h3 className="sl-pag-titulo">Pagar parcela {boleto.numero_parcela}</h3>
         </div>
-
-        <div className="mt-4 rounded-[18px] border border-[#E9D8D4] bg-[#FFF9F8] px-4 py-3.5">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#A99894]">Valor para pagar hoje</p>
-          <p className="mt-1 font-heading text-[28px] font-bold leading-none text-[#8F2A45]">{brl(valores.valorHoje)}</p>
-          {valores.vencida && <p className="mt-1.5 text-[9.5px] text-[#9A7770]">Valor atualizado para pagamento nesta data.</p>}
-        </div>
+        <button type="button" onClick={onClose} aria-label="Fechar" className="sl-pag-fechar"><X className="h-4 w-4" /></button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
-        <p className="mb-2.5 text-[10px] font-medium text-[#6F5C58]">Escolha como deseja pagar</p>
-        <div className="grid grid-cols-2 gap-2.5">
-          <button type="button" onClick={() => setPixAberto((aberto) => !aberto)} className={`flex min-h-[76px] items-center gap-3 rounded-[15px] border px-3.5 py-3 text-left transition-colors duration-100 ${pixAberto ? "border-[#D8A6B0] bg-[#FAEEF1] text-[#8F2A45]" : "border-[#E9DDDA] bg-[#FBF6F4] text-[#6B1F2E] hover:bg-[#F7EFED]"}`}>
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><QrCode className="h-5 w-5" /></span>
-            <span><span className="block text-[11.5px] font-semibold">PIX</span><span className="mt-0.5 block text-[9px] font-normal opacity-70">{pixAberto ? "Ocultar dados" : "Ver dados"}</span></span>
-          </button>
-
-          {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><FileText className="h-5 w-5 text-[#8A7B77]" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Abrir arquivo</span></span></a> : <span className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#EEE6E3] bg-[#F7F3F2] px-3.5 py-3 text-left text-[#B3A5A1]"><span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/70"><FileText className="h-5 w-5" /></span><span><span className="block text-[11.5px] font-semibold">Boleto</span><span className="mt-0.5 block text-[9px] font-normal">Indisponível</span></span></span>}
-
-          {pagamento?.cartaoDisponivel === true ? <button type="button" onClick={onCard} disabled={cardBusy} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E9DDDA] bg-[#FBF6F4] px-3.5 py-3 text-left text-[#6B1F2E] transition-colors duration-100 hover:bg-[#F7EFED] disabled:opacity-50">
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><CreditCard className="h-5 w-5 text-[#8A7B77]" /></span>
-            <span><span className="block text-[11.5px] font-semibold">{cardBusy ? "Abrindo..." : "Cartão"}</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Checkout seguro</span></span>
-          </button> : <span className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#EEE6E3] bg-[#F7F3F2] px-3.5 py-3 text-left text-[#B3A5A1]">
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/70"><CreditCard className="h-5 w-5" /></span>
-            <span><span className="block text-[11.5px] font-semibold">Cartão</span><span className="mt-0.5 block text-[9px] font-normal">Indisponível no momento</span></span>
-          </span>}
-
-          <button type="button" onClick={onUpload} className="flex min-h-[76px] items-center gap-3 rounded-[15px] border border-[#E7D4D0] bg-[#FFF8F7] px-3.5 py-3 text-left text-[#6B1F2E] shadow-sm transition-colors duration-100 hover:bg-[#F7EFED]">
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[12px] bg-white/80"><Paperclip className="h-5 w-5 text-[#B86575]" /></span>
-            <span><span className="block text-[11.5px] font-semibold">Já paguei</span><span className="mt-0.5 block text-[9px] font-normal text-[#8A7B77]">Enviar comprovante</span></span>
-          </button>
+      <div className="sl-pag-rolagem">
+        <div className="sl-pag-valor">
+          <div className="sl-pag-valor-topo">
+            <span className="sl-pag-rotulo">Valor para hoje</span>
+            <span className={`sl-pag-status sl-pag-status--${status.tom}`}>{status.texto}</span>
+          </div>
+          <strong className="sl-pag-quantia">{brl(valores.valorHoje)}</strong>
+          <span className="sl-pag-detalhe">
+            {valores.vencida
+              ? <>Parcela {brl(boleto.valor)} + encargos {brl(valores.encargos)}{valores.temDescontoPix ? `, já com ${valores.percentualDescontoPix}% de desconto via PIX` : ""}. Valor para pagar hoje.</>
+              : "Valor da parcela."}
+          </span>
         </div>
 
-        <AnimatePresence initial={false}>
-          {pixAberto && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.12 }} className="overflow-hidden">
-            {pixDisponivel ? <div className="mt-3 rounded-[18px] border border-[#E8D9D5] bg-[#FFFDFC] p-3.5">
-              <div className="flex items-center justify-between gap-2 border-b border-[#F1E8E5] pb-2.5">
-                <div className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-[#B86575]" /><span className="text-[11px] font-semibold text-[#6B1F2E]">{valores.temDescontoPix ? "Pague via PIX e economize" : "Pague via PIX"}</span></div>
-                {valores.temDescontoPix && <span className="rounded-full bg-[#EAF5EE] px-2 py-1 text-[8px] font-semibold text-[#3F7D5B]">{valores.percentualDescontoPix}% nos encargos</span>}
-              </div>
-              <div className="mt-3 flex items-center gap-3.5">
-                {pagamento?.pixQrCodeUrl && <img src={pagamento.pixQrCodeUrl} alt="QR Code para pagamento via PIX" className="h-[92px] w-[92px] rounded-xl border border-[#E8D9D5] bg-white object-contain p-1.5 shadow-sm" />}
+        <span className="sl-pag-secao">Como deseja pagar</span>
+        <div className="sl-pag-lista">
+          <button type="button" onClick={() => setPixAberto((aberto) => !aberto)} className="sl-pag-opcao" aria-expanded={pixAberto}>
+            <span className="sl-pag-icone"><QrCode className="h-[18px] w-[18px]" /></span>
+            <span className="sl-pag-opcao-texto"><b>PIX</b><small>{pixDisponivel ? "QR Code ou chave, na hora" : "Ainda não configurado"}</small></span>
+            {valores.temDescontoPix && <span className="sl-pag-selo">{valores.percentualDescontoPix}% off</span>}
+            <ChevronDown className={`sl-pag-seta ${pixAberto ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {pixAberto && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.14 }} className="overflow-hidden">
+              {pixDisponivel ? <div className="sl-pag-pix">
+                {pagamento?.pixQrCodeUrl && <img src={pagamento.pixQrCodeUrl} alt="QR Code para pagamento via PIX" className="sl-pag-qr" />}
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#9A8985]">Valor via PIX</p>
-                  <p className="font-heading text-xl font-bold text-[#8F2A45]">{brl(valores.valorHoje)}</p>
-                  {valores.temDescontoPix && valores.economiaPix > 0 && <p className="pt-1 text-[9px] font-medium text-[#3F7D5B]">Economia de {brl(valores.economiaPix)} nos encargos</p>}
+                  <span className="sl-pag-pix-rotulo">Valor via PIX</span>
+                  <strong className="sl-pag-pix-valor">{brl(valores.valorHoje)}</strong>
+                  {valores.temDescontoPix && valores.economiaPix > 0 && <span className="sl-pag-pix-economia">Economia de {brl(valores.economiaPix)} nos encargos</span>}
                   {pagamento?.pixChave && <PixChave chave={pagamento.pixChave} />}
                 </div>
-              </div>
-              <div className="mt-3 flex items-start gap-2 rounded-[11px] bg-[#F9F1F0] px-3 py-2.5 text-[9.5px] leading-relaxed text-[#786764]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-[#B86575]" /><span>Após o pagamento, toque em <strong className="text-[#6B1F2E]">Já paguei</strong> e envie o comprovante.</span></div>
-            </div> : <div className="mt-3 rounded-[18px] border border-[#EEE3E0] bg-[#FAF7F6] px-4 py-5 text-center text-[10.5px] text-[#8A7B77]">PIX ainda não configurado para este contrato.</div>}
-          </motion.div>}
-        </AnimatePresence>
+              </div> : <p className="sl-pag-pix-vazio">O PIX ainda não foi configurado para este contrato. Use outra forma ou fale com a equipe.</p>}
+            </motion.div>}
+          </AnimatePresence>
+
+          {cartaoDisponivel ? <button type="button" onClick={onCard} disabled={cardBusy} className="sl-pag-opcao">
+            <span className="sl-pag-icone"><CreditCard className="h-[18px] w-[18px]" /></span>
+            <span className="sl-pag-opcao-texto"><b>{cardBusy ? "Abrindo checkout…" : "Cartão de crédito"}</b><small>Checkout seguro</small></span>
+            <ChevronRight className="sl-pag-seta" aria-hidden="true" />
+          </button> : <div className="sl-pag-opcao sl-pag-opcao--off" aria-disabled="true">
+            <span className="sl-pag-icone"><CreditCard className="h-[18px] w-[18px]" /></span>
+            <span className="sl-pag-opcao-texto"><b>Cartão de crédito</b><small>Indisponível no momento</small></span>
+          </div>}
+
+          {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="sl-pag-opcao">
+            <span className="sl-pag-icone"><FileText className="h-[18px] w-[18px]" /></span>
+            <span className="sl-pag-opcao-texto"><b>Boleto</b><small>Abrir o arquivo da parcela</small></span>
+            <ChevronRight className="sl-pag-seta" aria-hidden="true" />
+          </a> : <div className="sl-pag-opcao sl-pag-opcao--off" aria-disabled="true">
+            <span className="sl-pag-icone"><FileText className="h-[18px] w-[18px]" /></span>
+            <span className="sl-pag-opcao-texto"><b>Boleto</b><small>Indisponível para esta parcela</small></span>
+          </div>}
+        </div>
+
+        <button type="button" onClick={onUpload} className="sl-pag-ja-paguei">
+          <Paperclip className="h-4 w-4" aria-hidden="true" /> Já paguei · enviar comprovante
+        </button>
+        <p className="sl-pag-nota"><ShieldCheck className="h-3.5 w-3.5 flex-none" aria-hidden="true" /> Depois de pagar, envie o comprovante para o financeiro confirmar.</p>
       </div>
     </motion.div>
   </div>;

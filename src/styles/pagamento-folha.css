@@ -1,0 +1,217 @@
+/* Folha "Pagar parcela" (ParcelasPrototype → PaymentSheet). Mesmo padrão das folhas do app. */
+.sl-pag-fundo {
+  --pag-fundo: #FBF7F5;
+  --pag-cartao: #FFFFFF;
+  --pag-valor-fundo:
+    radial-gradient(110% 90% at 100% 0%, rgba(214, 150, 160, 0.2) 0%, rgba(214, 150, 160, 0) 55%),
+    linear-gradient(150deg, #FFFFFF 0%, #FBF1F1 55%, #F4E1E4 100%);
+  --pag-sombra-cartao: 0 10px 26px rgba(94, 31, 43, 0.08);
+  --pag-texto: #3D2426;
+  --pag-titulo: #6B1F2E;
+  --pag-suave: #8A7471;
+  --pag-dourado: #A8773F;
+  --pag-borda: #EEDDD9;
+  --pag-linha: #F3E8E5;
+  --pag-grupo: #FFFFFF;
+  --pag-icone-fundo: linear-gradient(145deg, #FBEFEF, #F3DCDF);
+  --pag-icone: #7A2632;
+  --pag-quantia: #6B1F2E;
+  --pag-vencida-fundo: #FBEBEA;
+  --pag-vencida-texto: #8F2A25;
+  --pag-aberta-fundo: #F7EFED;
+  --pag-aberta-texto: #7D2434;
+  --pag-selo-fundo: #EAF5EE;
+  --pag-selo-texto: #3F7D5B;
+  --pag-botao-fundo: #6B1F2E;
+  --pag-botao-texto: #FFFFFF;
+
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(38, 23, 25, 0.46);
+}
+html[data-tema-cliente="escuro"] .sl-pag-fundo {
+  --pag-fundo: #161518;
+  --pag-cartao: #1C1B1E;
+  --pag-valor-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(230, 162, 178, 0.2) 0%, rgba(230, 162, 178, 0) 55%),
+    linear-gradient(150deg, #3E2029 0%, #2C1820 60%, #221419 100%);
+  --pag-sombra-cartao: 0 12px 28px rgba(0, 0, 0, 0.35);
+  --pag-texto: #F2EEF0;
+  --pag-titulo: #F0C4CE;
+  --pag-suave: #A7A0A5;
+  --pag-dourado: #D8B26A;
+  --pag-borda: #2F2D31;
+  --pag-linha: #2A282C;
+  --pag-grupo: #1C1B1E;
+  --pag-icone-fundo: linear-gradient(145deg, #3A2229, #2A1B20);
+  --pag-icone: #E6A2B2;
+  --pag-quantia: #F2EEF0;
+  --pag-vencida-fundo: rgba(214, 96, 96, 0.14);
+  --pag-vencida-texto: #F0A3A3;
+  --pag-aberta-fundo: rgba(230, 162, 178, 0.12);
+  --pag-aberta-texto: #E6A2B2;
+  --pag-selo-fundo: rgba(95, 180, 130, 0.16);
+  --pag-selo-texto: #8FD1A9;
+  --pag-botao-fundo: #B0526A;
+  --pag-botao-texto: #FFFFFF;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.sl-pag {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 430px;
+  max-height: 90dvh;
+  overflow: hidden;
+  border-radius: 26px 26px 0 0;
+  background: var(--pag-fundo);
+  color: var(--pag-texto);
+  box-shadow: 0 -18px 50px rgba(46, 36, 34, 0.18);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+}
+.sl-pag-alca { flex: none; width: 40px; height: 4px; margin: 10px auto 0; border-radius: 999px; background: var(--pag-borda); }
+.sl-pag-topo {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px 4px;
+}
+.sl-pag-topo .sl-marca.sl-pag-marca { width: 92px; margin: 0 0 8px; filter: none; }
+.sl-pag-rotulo { display: block; color: var(--pag-dourado); font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.sl-pag-titulo {
+  margin: 2px 0 0;
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--pag-titulo);
+}
+.sl-pag-fechar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pag-aberta-fundo);
+  color: var(--pag-suave);
+}
+
+.sl-pag-rolagem {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 20px calc(max(env(safe-area-inset-bottom), 0px) + 18px);
+}
+
+.sl-pag-valor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 16px 16px 15px;
+  border: 1px solid var(--pag-borda);
+  border-radius: 22px;
+  background: var(--pag-valor-fundo);
+  box-shadow: var(--pag-sombra-cartao);
+}
+.sl-pag-valor-topo { display: flex; align-self: stretch; align-items: center; justify-content: space-between; gap: 8px; }
+.sl-pag-status { padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.sl-pag-status--vencida { background: var(--pag-vencida-fundo); color: var(--pag-vencida-texto); }
+.sl-pag-status--aberta { background: var(--pag-aberta-fundo); color: var(--pag-aberta-texto); }
+.sl-pag-quantia {
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1;
+  margin-top: 2px;
+  color: var(--pag-quantia);
+  font-variant-numeric: tabular-nums;
+}
+.sl-pag-detalhe { color: var(--pag-suave); font-size: 11.5px; line-height: 1.45; }
+
+.sl-pag-secao { display: block; margin: 16px 0 8px; color: var(--pag-suave); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.sl-pag-lista { overflow: hidden; border: 1px solid var(--pag-borda); border-radius: 20px; background: var(--pag-grupo); box-shadow: var(--pag-sombra-cartao); }
+.sl-pag-opcao {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--pag-texto);
+  text-align: left;
+  text-decoration: none;
+}
+.sl-pag-lista > * + * { border-top: 1px solid var(--pag-linha); }
+.sl-pag-opcao:active:not(.sl-pag-opcao--off) { background: var(--pag-linha); }
+.sl-pag-opcao:disabled { opacity: 0.6; }
+.sl-pag-icone {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--pag-icone-fundo);
+  color: var(--pag-icone);
+}
+.sl-pag-opcao-texto { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.sl-pag-opcao-texto b { font-size: 14px; font-weight: 600; }
+.sl-pag-opcao-texto small { margin-top: 1px; color: var(--pag-suave); font-size: 11.5px; }
+.sl-pag-opcao--off { opacity: 0.5; }
+.sl-pag-opcao--off .sl-pag-icone { background: var(--pag-linha); color: var(--pag-suave); }
+.sl-pag-seta { flex: none; width: 18px; height: 18px; color: var(--pag-suave); transition: transform 160ms ease; }
+.sl-pag-selo { flex: none; padding: 3px 8px; border-radius: 999px; background: var(--pag-selo-fundo); color: var(--pag-selo-texto); font-size: 10.5px; font-weight: 700; }
+
+.sl-pag-pix { display: flex; align-items: center; gap: 14px; padding: 4px 14px 14px; }
+.sl-pag-qr { flex: none; width: 96px; height: 96px; padding: 6px; border: 1px solid var(--pag-borda); border-radius: 14px; background: #FFFFFF; object-fit: contain; }
+.sl-pag-pix-rotulo { display: block; color: var(--pag-suave); font-size: 10.5px; }
+.sl-pag-pix-valor { display: block; font-family: var(--font-heading, Georgia, serif); font-size: 22px; font-weight: 600; color: var(--pag-quantia); }
+.sl-pag-pix-economia { display: block; margin-top: 2px; color: var(--pag-selo-texto); font-size: 10.5px; font-weight: 600; }
+.sl-pag-pix-vazio { margin: 0; padding: 4px 14px 14px; color: var(--pag-suave); font-size: 12px; line-height: 1.45; }
+.sl-pag-chave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--pag-borda);
+  border-radius: 12px;
+  background: var(--pag-cartao);
+  color: var(--pag-texto);
+  font-size: 12px;
+  text-align: left;
+}
+.sl-pag-chave-acao { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--pag-titulo); font-size: 11px; font-weight: 700; }
+
+.sl-pag-ja-paguei {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--pag-botao-fundo);
+  color: var(--pag-botao-texto);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(107, 31, 46, 0.18);
+}
+.sl-pag-nota { display: flex; align-items: flex-start; justify-content: center; gap: 6px; margin: 10px 0 0; color: var(--pag-suave); font-size: 11px; line-height: 1.4; text-align: center; }
