@@ -74,7 +74,7 @@ function buildEnv(request: Request): Env {
   };
 }
 
-export default async function handler(request: Request) {
+export default async function handler(request: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/api/pwa/origin") {
@@ -103,5 +103,5 @@ export default async function handler(request: Request) {
   const authorizedRequest = await authorizeDevConsoleRequest(trustedRequest, env);
   if (authorizedRequest instanceof Response) return authorizedRequest;
 
-  return worker.fetch(authorizedRequest, env);
+  return worker.fetch(authorizedRequest, env, context);
 }

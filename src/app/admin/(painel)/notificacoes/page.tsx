@@ -2,6 +2,7 @@
 import { fetchInstant, refreshInstant, getInstantCache } from "@/lib/instantCache";
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipChip } from "@/components/admin-zip/zipUi";
+import { AvisosJornada, type EventoAviso } from "@/features/admin/AvisosJornada";
 
 /**
  * Aba NOTIFICAÇÕES (Configurações). Tudo numa tela compacta:
@@ -9,6 +10,8 @@ import { zipChip } from "@/components/admin-zip/zipUi";
  *   - régua de parcelas: D-2, D-1, D0, um texto por dia de 1 a 30 e o texto
  *     único 31+ (worker/notificacao-templates-padrao.ts), com editor ao lado,
  *     versão "2 ou mais parcelas" e pré-visualização;
+ *   - aba "Avisos da jornada" (src/features/admin/AvisosJornada.tsx):
+ *     pagamentos, agenda, liberação e Clube, disparados pelo banco;
  *   - histórico e envio manual em abas.
  * O envio é sempre unificado: uma notificação por cliente por rodada.
  */
@@ -89,6 +92,10 @@ export default function AdminNotificacoes() {
   const [edit, setEdit] = useState<Edicao>({ titulo: '', corpo: '', titulo_multiplas: '', corpo_multiplas: '', emoji: '' });
   const [salvandoTemplate, setSalvandoTemplate] = useState(false);
   const [aba, setAba] = useState<'manual' | 'historico'>('historico');
+  const [modo, setModo] = useState<'regua' | 'jornada'>('regua');
+  const [eventos, setEventos] = useState<EventoAviso[] | null>([]);
+  const [eventosPadrao, setEventosPadrao] = useState<EventoAviso[]>([]);
+  const [categorias, setCategorias] = useState<Record<string, string>>({});
 
   function aplicarDados(data: any) {
     setConfig({ ...emptyConfig, ...(data?.config ?? {}) });
@@ -100,6 +107,9 @@ export default function AdminNotificacoes() {
     setAtrasadas(Number(data?.atrasadas ?? 0));
     setAVencer(Number(data?.aVencer ?? 0));
     setDispositivos(Number(data?.pushSubscriptions ?? 0));
+    setEventos(Array.isArray(data?.eventos) ? data.eventos : data?.eventos === null ? null : []);
+    setEventosPadrao(Array.isArray(data?.eventosPadrao) ? data.eventosPadrao.map((e: any) => ({ ...e, is_active: true })) : []);
+    setCategorias(data?.categoriasEventos ?? {});
   }
 
   const carregar = useCallback(async (force = false) => {
@@ -259,12 +269,20 @@ export default function AdminNotificacoes() {
       <button onClick={enviarAgoraTodas} disabled={running || sendingAll || atrasadas === 0} title="Envia agora o aviso de atraso para todas as clientes com parcela vencida" style={botaoPrincipal}>{sendingAll ? "Enviando..." : "Enviar agora"}</button>
     </div>
 
-    {/* Régua: lista compacta + editor com pré-visualização */}
-    <div style={{ ...cartao, overflow: "hidden", display: "grid", gridTemplateColumns: "minmax(280px,.9fr) minmax(360px,1.1fr)" }}>
+    {/* Régua de cobrança e avisos da jornada: lista compacta + editor com pré-visualização */}
+    <div style={{ ...cartao, overflow: "hidden" }}>
+    <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, background: "var(--s2)" }}>
+        {([['regua', `Cobrança de parcelas (${templates.length})`], ['jornada', `Avisos da jornada (${eventos?.length ?? 0})`]] as const).map(([v, r]) => <button key={v} onClick={() => setModo(v)} style={{ height: 28, padding: "0 14px", border: 0, borderRadius: 7, background: modo === v ? "var(--s0)" : "transparent", color: modo === v ? "var(--ink)" : "var(--soft)", fontSize: 11, fontWeight: 700, boxShadow: modo === v ? "0 1px 3px rgba(0,0,0,.1)" : "none" }}>{r}</button>)}
+      </div>
+      <span style={{ fontSize: 10.5, color: "var(--soft)" }}>{modo === 'regua' ? "Lembretes e cobrança: D-2 até 31+ dias." : "Pagamentos, agenda, liberação e Clube."}</span>
+    </div>
+    {modo === 'jornada'
+      ? <AvisosJornada eventos={eventos} padroes={eventosPadrao} categorias={categorias} onFeedback={setFeedback} onAtualizado={(ev) => setEventos((old) => (old ?? []).map((x) => x.chave === ev.chave ? ev : x))} />
+      : <div style={{ display: "grid", gridTemplateColumns: "minmax(280px,.9fr) minmax(360px,1.1fr)" }}>
       <div style={{ borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--line)" }}>
-          <h2 style={{ fontSize: 15 }}>Régua de parcelas</h2>
-          <div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)", lineHeight: 1.45 }}>Uma notificação por cliente, com todas as parcelas em aberto. Para quando a parcela é paga.</div>
+          <div style={{ fontSize: 10.5, color: "var(--soft)", lineHeight: 1.45 }}>Uma notificação por cliente, com todas as parcelas em aberto. Para quando a parcela é paga.</div>
           <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 7, height: 30, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", padding: "0 10px" }}><span style={{ color: "var(--soft)", fontSize: 11 }}>⌕</span><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por dia ou texto..." style={{ flex: 1, border: 0, outline: 0, background: "transparent", color: "var(--ink)", fontSize: 11 }} /></div>
         </div>
         <div style={{ overflowY: "auto", maxHeight: 560 }}>
@@ -337,6 +355,7 @@ export default function AdminNotificacoes() {
           </div>
         </>}
       </div>
+    </div>}
     </div>
 
     {/* Histórico e envio manual */}

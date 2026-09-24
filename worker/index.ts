@@ -10,6 +10,7 @@ import { adminVisaoGeral } from "./admin-visao-geral";
 import { adminApi } from "./admin-api";
 import { adminParcelas } from "./admin-parcelas";
 import { adminNotificacoes } from "./admin-notificacoes";
+import { agendarDespacho } from "./notificacoes-despacho";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
@@ -525,8 +526,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   return apiJson({ ok: false, error: "ROTA_NAO_ENCONTRADA", message: "A API solicitada não existe." }, 404);
 }
 
+function deveDespacharPush(request: Request) {
+  const { pathname } = new URL(request.url);
+  if (!pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/cliente/")) return false;
+  return request.method !== "GET" || pathname === "/api/cliente/notificacoes";
+}
+
 export default {
-  async fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: Env, ctx?: { waitUntil?: (p: Promise<unknown>) => void }) {
     installConsoleSanitizer();
     const requestId = getRequestId(request);
     const log = requestLogger(request, requestId);
@@ -534,6 +541,9 @@ export default {
     try {
       const protectedRequest = await protectRequest(request);
       const response = protectedRequest instanceof Response ? protectedRequest : await handleRequest(protectedRequest, env);
+      // Avisos gravados pelo banco (agenda, pagamentos, clube) saem como Web Push
+      // na próxima ação do painel ou do app, em segundo plano.
+      if (response.status < 400 && deveDespacharPush(request)) agendarDespacho(env, ctx);
       const durationMs = Date.now() - inicio;
       const context = { action: "http.request", statusCode: response.status, durationMs };
       if (response.status >= 500) log.error("Requisição concluída com falha de servidor", { ...context, eventCode: "HTTP_5XX" });

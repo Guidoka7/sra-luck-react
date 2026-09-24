@@ -44,6 +44,6 @@ function buildEnv(request: Request): Env {
   };
 }
 
-export default async function handler(request: Request) {
-  return worker.fetch(request, buildEnv(request));
+export default async function handler(request: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
+  return worker.fetch(request, buildEnv(request), context);
 }

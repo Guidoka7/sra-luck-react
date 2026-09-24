@@ -350,10 +350,14 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
     }
     if (beneficio.arquivo_path && beneficio.arquivo_path !== caminho) await db.storage.from(BUCKET_VOUCHERS).remove([beneficio.arquivo_path]);
     await db.from("logs_alteracoes").insert({ usuario, acao: "anexou_voucher_clube", entidade: "clube_beneficios_cliente", entidade_id: id, detalhes: { cliente_id: beneficio.cliente_id, tipo: tipo.mime, tamanho: arquivoEnviado.size } });
-    await db.from("notificacoes_cliente").insert({
-      cliente_id: beneficio.cliente_id, tipo: "clube", titulo: "Seu voucher está disponível",
-      mensagem: "A equipe liberou o seu voucher de consulta. Abra o Clube de Vantagens para visualizar.", emoji: "🎟️", destino: "clube", referencia_id: id,
-    });
+    // Aviso pelo caminho único (texto editável em Configurações > Notificações, com Web Push).
+    const { error: avisoErro } = await db.rpc("notificar_cliente", { p_cliente_id: beneficio.cliente_id, p_evento: "clube_voucher_disponivel", p_vars: {}, p_referencia_id: id, p_chave_dedupe: null });
+    if (avisoErro) {
+      await db.from("notificacoes_cliente").insert({
+        cliente_id: beneficio.cliente_id, tipo: "clube", titulo: "Seu voucher está disponível",
+        mensagem: "A equipe liberou o seu voucher de consulta. Abra o Clube de Vantagens para visualizar.", emoji: "🎟️", destino: "clube", referencia_id: id,
+      });
+    }
     return json({ sucesso: true });
   }
   if (voucherArquivo && request.method === "GET") {

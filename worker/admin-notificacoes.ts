@@ -7,6 +7,8 @@ import { adicionarDiasCivil, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "..
 import { DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID } from "./dev-console-auth";
 import { rotinaAutorizada } from "./frase-do-dia";
 import { DIA_RECORRENTE, TEMPLATES_PADRAO, VARIAVEIS_TEMPLATE } from "./notificacao-templates-padrao";
+import { EVENTOS_PADRAO, NOMES_CATEGORIA } from "./notificacao-eventos-padrao";
+import { despacharPushPendentes } from "./notificacoes-despacho";
 import {
   aprovarLote, cancelarLote, carregarConfigCentral, conversarSobreLote, detalharLote, editarItem, explicarLote, gerarMensagens,
   listarLotes, prepararLote, reprocessarFalhas, rotinaFinanceira, SEGMENTOS, validarAlteracaoConfig, type Contexto,
@@ -148,12 +150,12 @@ export function montarMensagemUnificada(template: TemplateTexto, itens: any[], h
 const VARIAVEIS_VALIDAS = new Set(VARIAVEIS_TEMPLATE.map((v) => v.chave));
 
 /** Recusa texto vazio, longo demais ou com variável que o envio não conhece. */
-export function validarTextoTemplate(campo: string, texto: unknown, limite: number, obrigatorio: boolean) {
+export function validarTextoTemplate(campo: string, texto: unknown, limite: number, obrigatorio: boolean, permitidas: ReadonlySet<string> = VARIAVEIS_VALIDAS) {
   const valor = String(texto ?? "").trim();
   if (!valor) return obrigatorio ? `${campo} é obrigatório.` : null;
   if (valor.length > limite) return `${campo} deve ter até ${limite} caracteres.`;
-  const desconhecidas = [...valor.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1]).filter((v) => !VARIAVEIS_VALIDAS.has(v));
-  if (desconhecidas.length) return `${campo}: variável {{${desconhecidas[0]}}} não existe.`;
+  const desconhecidas = [...valor.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1]).filter((v) => !permitidas.has(v));
+  if (desconhecidas.length) return `${campo}: variável {{${desconhecidas[0]}}} não existe${permitidas === VARIAVEIS_VALIDAS ? "" : " neste aviso"}.`;
   return null;
 }
 
@@ -235,7 +237,9 @@ export async function registrarNotificacao(env: Env, db: Db, input: {
     status: "enviada",
     push_enviadas: 0,
     push_falhas: 0,
-    push_status: "pendente",
+    // Este caminho entrega o push logo abaixo; "enviando" impede que o
+    // despacho de pendentes (notificacoes-despacho.ts) mande de novo.
+    push_status: "enviando",
   });
   if (logError) console.error("Falha ao registrar log da notificação:", logError.message);
 
@@ -456,11 +460,24 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     catch (error) { console.error("Falha na automação de notificações:", error); return json({ erro: "Falha ao executar automação." }, 500); }
   }
 
+  // Entrega do Web Push dos avisos gravados pelo banco (notificar_cliente, migration_093).
+  if (path === "/api/internal/notificacoes/despachar") {
+    if (request.method !== "POST" && request.method !== "GET") return json({ erro: "Método não suportado." }, 405);
+    if (!rotinaAutorizada(request, env)) return json({ erro: "Rotina não autorizada." }, 401);
+    const body = request.method === "POST" ? await parse(request) : {};
+    const notificacaoId = typeof body.notificacaoId === "string" && /^[0-9a-f-]{36}$/i.test(body.notificacaoId) ? body.notificacaoId : undefined;
+    return json(await despacharPushPendentes(env, { notificacaoId, limite: notificacaoId ? 1 : 50 }));
+  }
+
   // Vercel Cron: rotina diária da Central (libera a fila e prepara o lote do dia; não aprova sozinha por padrão).
   if (path === "/api/cron/notificacoes-financeiras") {
     if (request.method !== "GET") return json({ erro: "Método não suportado." }, 405);
     if (!rotinaAutorizada(request, env)) return json({ erro: "Rotina não autorizada." }, 401);
-    try { return json(await executarAutomacaoNotificacoes(env, "central_rotina")); }
+    try {
+      const central = await executarAutomacaoNotificacoes(env, "central_rotina");
+      const push = await despacharPushPendentes(env, { limite: 50 }).catch(() => null);
+      return json({ ...central, pushPendentes: push });
+    }
     catch (error) { console.error("Falha na rotina da Central de Notificações:", error); return json({ erro: "Falha ao executar a rotina." }, 500); }
   }
 
@@ -502,7 +519,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
 
   if (path === "/api/admin/notificacoes/automacao") {
     if (request.method === "GET") {
-      const [cfg, templates, logs, clientes, atrasadas, aVencer, subscriptions] = await Promise.all([
+      const [cfg, templates, logs, clientes, atrasadas, aVencer, subscriptions, eventos] = await Promise.all([
         db.from("notificacoes_config").select("chave,valor,tipo"),
         db.from("notificacao_templates").select("*").in("tipo", ["parcela_vencer", "parcela_atrasada"]).order("tipo").order("dias_referencia"),
         db.from("notificacao_logs").select("id,cliente_id,tipo,titulo,corpo,status,erro_mensagem,push_enviadas,push_falhas,push_status,created_at,clientes(nome_completo)").order("created_at", { ascending: false }).limit(200),
@@ -510,6 +527,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", hojeSaoPaulo()).eq("status", "nao_pago"),
         db.from("boletos").select("id", { count: "exact", head: true }).gte("data_vencimento", hojeSaoPaulo()).lte("data_vencimento", adicionarDiasCivil(hojeSaoPaulo(), 2)).eq("status", "nao_pago"),
         db.from("web_push_subscriptions").select("id", { count: "exact", head: true }),
+        db.from("notificacao_eventos").select("*").order("categoria").order("chave"),
       ]);
       if (cfg.error || templates.error || logs.error || clientes.error || atrasadas.error || aVencer.error || subscriptions.error) return json({ erro: "Não foi possível carregar o painel de notificações." }, 500);
       const raw = Object.fromEntries((cfg.data ?? []).map((x: any) => [x.chave, x.valor]));
@@ -517,6 +535,8 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         config: { atraso_habilitado: raw.atraso_habilitado !== "false", frequencia_atraso_horas: Number(raw.frequencia_atraso_horas ?? 24), max_tentativas: Number(raw.max_tentativas ?? 3), atraso_recorrente_intervalo_dias: Number(raw.atraso_recorrente_intervalo_dias ?? 1) },
         templates: templates.data ?? [], padroes: TEMPLATES_PADRAO, variaveis: VARIAVEIS_TEMPLATE, diaRecorrente: DIA_RECORRENTE, logs: logs.data ?? [], clientes: clientes.data ?? [], atrasadas: atrasadas.count ?? 0, aVencer: aVencer.count ?? 0,
         pushSubscriptions: subscriptions.count ?? 0,
+        // Avisos da jornada (migration_093). Ausente = estrutura ainda não aplicada neste ambiente.
+        eventos: eventos.error ? null : eventos.data ?? [], eventosPadrao: EVENTOS_PADRAO, categoriasEventos: NOMES_CATEGORIA,
       });
     }
 
@@ -564,6 +584,24 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     if (error) return json({ erro: publicError(error) }, 400);
     await db.from("logs_alteracoes").insert({ usuario: atorNotificacoes ?? `admin:${admin}`, acao: "editou_template_notificacao", entidade: "notificacao_templates", entidade_id: String(b.id), detalhes: { campos: Object.keys(patch).filter((k) => k !== "updated_at") } });
     return json({ template: data, mensagem: "Template atualizado." });
+  }
+
+  if (path === "/api/admin/notificacoes/eventos" && request.method === "PATCH") {
+    const b = await parse(request);
+    const chave = String(b.chave ?? "");
+    const padrao = EVENTOS_PADRAO.find((e) => e.chave === chave);
+    if (!padrao) return json({ erro: "Aviso não encontrado." }, 404);
+    const permitidas = new Set(padrao.variaveis);
+    const conferir = (campo: string, texto: unknown, limite: number) => validarTextoTemplate(campo, texto, limite, true, permitidas);
+    const erroTexto = [b.titulo !== undefined ? conferir("Título", b.titulo, 80) : null, b.corpo !== undefined ? conferir("Mensagem", b.corpo, 300) : null].find(Boolean);
+    if (erroTexto) return json({ erro: erroTexto }, 400);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const k of ["titulo", "corpo", "emoji"]) if (typeof b[k] === "string") patch[k] = b[k].trim();
+    if (b.is_active !== undefined) patch.is_active = Boolean(b.is_active);
+    const { data, error } = await db.from("notificacao_eventos").update(patch).eq("chave", chave).select("*").single();
+    if (error) return json({ erro: publicError(error) }, 400);
+    await db.from("logs_alteracoes").insert({ usuario: atorNotificacoes ?? `admin:${admin}`, acao: "editou_aviso_jornada", entidade: "notificacao_eventos", detalhes: { chave, campos: Object.keys(patch).filter((k) => k !== "updated_at") } });
+    return json({ evento: data, mensagem: "Aviso atualizado." });
   }
 
   if (path === "/api/admin/notificacoes/templates" && request.method === "POST") {
