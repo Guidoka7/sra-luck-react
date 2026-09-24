@@ -227,7 +227,7 @@ grant execute on function public.integracao_liberar_trava(text) to service_role;
 --   select vault.create_secret('https://SEU-DOMINIO', 'sra_luck_app_url');
 --   select vault.create_secret('<mesmo valor de CRON_SECRET>', 'sra_luck_cron_secret');
 -- ---------------------------------------------------------------------------
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions;
 
 create or replace function public.integracoes_disparar_sync()
 returns void
