@@ -78,3 +78,19 @@ describe("Web Push administrativo", () => {
     expect(sender).toContain('from("web_push_subscriptions").delete()');
   });
 });
+
+describe("Central de Notificações (lotes) no módulo de notificações", () => {
+  it("com a central ligada, a rotina por parcela não envia (evita cobrança dupla)", () => {
+    expect(source).toContain("if ((await carregarConfigCentral(db)).ativa)");
+    expect(source).toContain('ignorado: "central_de_lotes_ativa"');
+  });
+  it("o lote usa o mesmo envio (registrarNotificacao) e o cron autenticado da rotina", () => {
+    expect(source).toContain("enviar: registrarNotificacao");
+    expect(source).toContain('path === "/api/cron/notificacoes-financeiras"');
+    expect(source).toContain("rotinaAutorizada(request, env)");
+  });
+  it("auditoria da central é só leitura e restrita às entidades da central", () => {
+    expect(source).toContain('path === "/api/admin/notificacoes/lotes/auditoria" && request.method === "GET"');
+    expect(source).toContain('.in("entidade", ["notificacao_lotes", "notificacoes_config"])');
+  });
+});

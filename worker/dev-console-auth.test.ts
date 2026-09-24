@@ -161,3 +161,59 @@ describe("autenticação M2M do Dev Console", () => {
     });
   });
 });
+
+describe("M2M da Central de Notificações (escopos explícitos)", () => {
+  const LOTE = "0b7c2a1e-1111-4222-8333-444455556666";
+  const ITEM = "1c8d3b2f-2222-4333-8444-555566667777";
+  const comPapel = (path: string, body: Record<string, unknown>, papel: string) => request(path, {
+    method: "POST", headers: { "Content-Type": "application/json", "x-dev-actor-role": papel }, body: JSON.stringify(body),
+  });
+
+  it("libera preparar, gerar, editar, chat, aprovar, reprocessar e cancelar com payload fechado", async () => {
+    const casos: [string, Record<string, unknown>][] = [
+      ["/api/admin/notificacoes/lotes/preparar", {}],
+      [`/api/admin/notificacoes/lotes/${LOTE}/gerar`, { instrucao: "mais acolhedora", segmento: "atraso_6_10" }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/itens/${ITEM}/editar`, { mensagem: "texto" }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/chat`, { mensagem: "quem vai receber?", historico: [] }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/explicar`, {}],
+      [`/api/admin/notificacoes/lotes/${LOTE}/aprovar`, {}],
+      [`/api/admin/notificacoes/lotes/${LOTE}/reprocessar-falhas`, {}],
+      [`/api/admin/notificacoes/lotes/${LOTE}/cancelar`, {}],
+    ];
+    for (const [path, body] of casos) {
+      const result = await authorizeDevConsoleRequest(comPapel(path, body, "operator"), env);
+      expect(result, path).toBeInstanceOf(Request);
+    }
+  });
+
+  it("viewer não prepara, não aprova nem cancela", async () => {
+    for (const path of ["/api/admin/notificacoes/lotes/preparar", `/api/admin/notificacoes/lotes/${LOTE}/aprovar`, `/api/admin/notificacoes/lotes/${LOTE}/cancelar`]) {
+      const result = await authorizeDevConsoleRequest(comPapel(path, {}, "viewer"), env);
+      expect((result as Response).status).toBe(403);
+      expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_M2M_ROLE_NOT_ALLOWED" });
+    }
+  });
+
+  it("configuração da central exige developer ou owner", async () => {
+    expect(await authorizeDevConsoleRequest(comPapel("/api/admin/notificacoes/lotes/config", { ativa: true }, "operator"), env)).toBeInstanceOf(Response);
+    expect(await authorizeDevConsoleRequest(comPapel("/api/admin/notificacoes/lotes/config", { ativa: true }, "developer"), env)).toBeInstanceOf(Request);
+  });
+
+  it("rejeita campo extra, texto longo e rotas fora da allowlist (inclusive financeiras)", async () => {
+    const recusadas: [string, Record<string, unknown>][] = [
+      [`/api/admin/notificacoes/lotes/${LOTE}/aprovar`, { forcar: true }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/gerar`, { instrucao: "x".repeat(301) }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/itens/${ITEM}/editar`, {}],
+      ["/api/admin/notificacoes/lotes/config", { ativa: true, max_tentativas: 9 }],
+      ["/api/admin/notificacoes/enviar", { clienteId: "x", titulo: "t", mensagem: "m" }],
+      ["/api/admin/financeiro/recebiveis/abc/baixa", {}],
+      ["/api/admin/central/prazo/liberar-agora", {}],
+      [`/api/admin/notificacoes/lotes/nao-e-uuid/aprovar`, {}],
+    ];
+    for (const [path, body] of recusadas) {
+      const result = await authorizeDevConsoleRequest(comPapel(path, body, "owner"), env);
+      expect(result, path).toBeInstanceOf(Response);
+      expect((result as Response).status, path).toBe(403);
+    }
+  });
+});

@@ -157,7 +157,11 @@ function erroDeChave(corpo: string) {
  * chamada falha (404/429/5xx/timeout → consulta os modelos disponíveis e tenta
  * o próximo), no máximo MAX_TENTATIVAS chamadas. Chave recusada interrompe na hora.
  */
-export async function gerarComGemini(chave: string, modeloPreferido: string, sistema: string, usuario: string, fetcher: typeof fetch = fetch) {
+export type OpcoesGeracao = { schema?: Record<string, unknown>; temperatura?: number; maxTokens?: number };
+
+const SCHEMA_TEXTO = { type: "OBJECT", properties: { texto: { type: "STRING" } }, required: ["texto"] };
+
+export async function gerarComGemini(chave: string, modeloPreferido: string, sistema: string, usuario: string, fetcher: typeof fetch = fetch, opcoes: OpcoesGeracao = {}) {
   const fila = [modeloPreferido];
   const tentados = new Set<string>();
   const tentativas: string[] = [];
@@ -183,10 +187,10 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
           systemInstruction: { parts: [{ text: sistema }] },
           contents: [{ role: "user", parts: [{ text: usuario }] }],
           generationConfig: {
-            temperature: 1,
-            maxOutputTokens: 2048,
+            temperature: opcoes.temperatura ?? 1,
+            maxOutputTokens: opcoes.maxTokens ?? 2048,
             responseMimeType: "application/json",
-            responseSchema: { type: "OBJECT", properties: { texto: { type: "STRING" } }, required: ["texto"] },
+            responseSchema: opcoes.schema ?? SCHEMA_TEXTO,
           },
         }),
       });
@@ -201,7 +205,7 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
       if (!bruto) { tentativas.push(`${modelo}:vazio`); continue; }
       let texto = bruto;
       try { texto = String((JSON.parse(bruto) as { texto?: unknown }).texto ?? ""); } catch { /* sem JSON: valida como texto */ }
-      return { texto, modelo, tentativas: [...tentativas, `${modelo}:200`] };
+      return { texto, bruto, modelo, tentativas: [...tentativas, `${modelo}:200`] };
     } catch (erro) {
       if (erro instanceof ErroGemini) throw erro;
       tentativas.push(`${modelo}:${erro instanceof Error && erro.name === "AbortError" ? "timeout" : "rede"}`);
@@ -213,7 +217,7 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
   throw new ErroGemini(/^\d+$/.test(ultimo) ? `http_${ultimo}` : ultimo, tentativas);
 }
 
-async function configuracaoGemini(env: Env) {
+export async function configuracaoGemini(env: Env) {
   const [chave, modelo] = await Promise.all([obterCredencial(env, "gemini", "api_key"), obterCredencial(env, "gemini", "modelo")]);
   return {
     chave: chave?.trim() || null,
