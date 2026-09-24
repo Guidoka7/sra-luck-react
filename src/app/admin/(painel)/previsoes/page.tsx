@@ -406,10 +406,10 @@ export default function PrevisoesPage() {
         <article className={styles.panel}>
           <div className={styles.panelHead}><h2>Ações rápidas</h2></div>
           <div className={styles.actions}>
-            <button type="button" className={styles.actionPrimary} onClick={() => { setPeriodo(90); chartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><CalendarDays size={20} /><span>Simular receita</span><ArrowRight size={14} /></button>
+            <button type="button" className={styles.actionPrimary} onClick={() => { setPeriodo(90); chartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><CalendarDays size={20} /><span>Projeção 90 dias</span><ArrowRight size={14} /></button>
             <button type="button" onClick={() => attentionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><Users size={20} /><span>Ver inadimplência</span><ArrowRight size={14} /></button>
             <button type="button" onClick={exportarCsv}><Download size={20} /><span>Exportar previsão</span><ArrowRight size={14} /></button>
-            <button type="button" onClick={() => setPeriodo((p) => p === 30 ? 60 : 30)}><BarChart3 size={20} /><span>Comparar períodos</span><ArrowRight size={14} /></button>
+            <button type="button" onClick={() => setPeriodo((p) => p === 30 ? 60 : 30)}><BarChart3 size={20} /><span>Alternar período</span><ArrowRight size={14} /></button>
           </div>
           <div className={styles.compareHint}>Próximo período: {dinheiroCurto(proximoPeriodo.recebimentos)} · {proximoPeriodo.cirurgias} cirurgias · {proximoPeriodo.liberacoes} liberações</div>
         </article>
