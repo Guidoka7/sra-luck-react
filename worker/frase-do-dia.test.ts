@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErroGemini, descobrirModelos, gerarComGemini, gerarMensagemDoDia, montarPrompt, ordenarModelos, rotinaAutorizada, validarFraseIa } from "./frase-do-dia";
+import { ErroGemini, definirMensagem, descobrirModelos, gerarComGemini, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 import type { Env } from "./supabase";
 
@@ -41,6 +41,10 @@ function bancoFalso(inicial: Linha[] = []) {
       },
       select: () => consulta(),
       update: (p: Record<string, unknown>) => consulta().update(p),
+      upsert: async (l: Linha) => {
+        linhas.set(l.data, { ...(linhas.get(l.data) ?? {}), ...l });
+        return { error: null };
+      },
     }),
   };
   return { db: db as never, linhas };
@@ -197,5 +201,80 @@ describe("autorização da rotina", () => {
     expect(rotinaAutorizada(req({ "user-agent": "vercel-cron/1.0" }), {} as Env)).toBe(true);
     expect(rotinaAutorizada(req({ "x-notificacoes-cron-secret": "abc" }), { NOTIFICACOES_CRON_SECRET: "abc" } as Env)).toBe(true);
     expect(rotinaAutorizada(req({}), {} as Env)).toBe(false);
+  });
+});
+
+describe("conversa do painel com o Gemini (pedir outra e escolher a do dia)", () => {
+  it("sugerir gera uma candidata SEM salvar e leva o pedido da equipe no prompt", async () => {
+    const { db, linhas } = bancoFalso([{ data: DATA, status: "pronta", texto: "Já salva *para hoje* com carinho.", tema: "Quarta de foco", origem: "ia" }]);
+    const corpos: string[] = [];
+    const fetcher = (async (_url: string, init?: RequestInit) => {
+      corpos.push(String(init?.body ?? ""));
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: "Cada passo conta: *siga no seu ritmo* hoje." }) }] } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await sugerirMensagem(env(), "fale de ritmo\n<b>", HOJE, { db, fetcher });
+    expect(r).toMatchObject({ ok: true, aprovada: true, texto: "Cada passo conta: *siga no seu ritmo* hoje." });
+    expect(corpos[0]).toContain("Pedido da equipe");
+    expect(corpos[0]).toContain("fale de ritmo");
+    expect(corpos[0]).not.toContain("<b>");
+    // A mensagem de hoje entra nas recentes (não repetir) e nada é gravado.
+    expect(corpos[0]).toContain("Já salva *para hoje* com carinho.");
+    expect(linhas.get(DATA)?.texto).toBe("Já salva *para hoje* com carinho.");
+  });
+
+  it("sugestão reprovada volta marcada como não aprovada, com o motivo", async () => {
+    const { db } = bancoFalso();
+    const { fetcher } = geminiFalso(["Garanta o corpo *perfeito* já."]);
+    const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+    expect(r).toMatchObject({ ok: true, aprovada: false, motivo: "termo_proibido" });
+  });
+
+  it("sem chave: sugerir não chama o Gemini", async () => {
+    const { db } = bancoFalso();
+    const { fetcher, chamadas } = geminiFalso([]);
+    const r = await sugerirMensagem({} as Env, "", HOJE, { db, fetcher });
+    expect(r).toMatchObject({ ok: false, codigo: "sem_chave" });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("definir troca a mensagem de hoje e a rotina passa a reutilizá-la", async () => {
+    const { db, linhas } = bancoFalso([{ data: DATA, status: "pronta", texto: "Já salva *para hoje* com carinho.", tema: "Quarta de foco", origem: "ia", updated_at: HOJE.toISOString() }]);
+    const r = await definirMensagem(env(), "Seu sonho merece *um plano bem feito*. 💛", { origem: "admin" }, HOJE, { db });
+    expect(r).toMatchObject({ ok: true, data: DATA, origem: "admin" });
+    expect(linhas.get(DATA)).toMatchObject({ status: "pronta", texto: "Seu sonho merece *um plano bem feito*. 💛", origem: "admin", modelo: null });
+    const { fetcher, chamadas } = geminiFalso([]);
+    const rotina = await gerarMensagemDoDia(env(), HOJE, { db, fetcher });
+    expect(rotina).toMatchObject({ texto: "Seu sonho merece *um plano bem feito*. 💛", reutilizada: true, chamouGemini: false });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("definir passa pelos mesmos filtros da IA", async () => {
+    const { db, linhas } = bancoFalso();
+    const r = await definirMensagem(env(), "sem destaque nenhum aqui nesta frase", {}, HOJE, { db });
+    expect(r).toMatchObject({ ok: false, codigo: "destaque" });
+    expect(linhas.size).toBe(0);
+  });
+
+  it("candidata do Gemini é salva como origem ia, com o modelo", async () => {
+    const { db, linhas } = bancoFalso();
+    const r = await definirMensagem(env(), "Cada passo conta: *siga no seu ritmo* hoje.", { origem: "ia", modelo: "gemini-x<script>" }, HOJE, { db });
+    expect(r).toMatchObject({ ok: true, origem: "ia" });
+    expect(linhas.get(DATA)).toMatchObject({ origem: "ia", modelo: "gemini-xscript" });
+  });
+
+  it("histórico lista as mensagens mais recentes primeiro", async () => {
+    const { db } = bancoFalso([
+      { data: "2026-09-21", status: "pronta", texto: "a", tema: "x", origem: "ia" },
+      { data: "2026-09-23", status: "pronta", texto: "c", tema: "x", origem: "admin" },
+      { data: "2026-09-22", status: "pronta", texto: "b", tema: "x", origem: "catalogo" },
+    ]);
+    const r = await historicoMensagens({} as Env, 2, { db });
+    expect(r.map((m) => m.data)).toEqual(["2026-09-23", "2026-09-22"]);
+  });
+
+  it("limparPedido remove marcação e limita o tamanho", () => {
+    expect(limparPedido("  mais {curta}\n<i>por favor</i> ")).toBe("mais curta i por favor /i");
+    expect(limparPedido("x".repeat(500))).toHaveLength(200);
+    expect(limparPedido(null)).toBe("");
   });
 });

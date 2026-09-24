@@ -2,7 +2,7 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-import { credenciaisApi, obterCredencial } from "./integrations-credenciais";
+import { credenciaisApi, integracaoDesativada, obterCredencial } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
@@ -203,6 +203,7 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
 
 async function contaAzulRequest(env: Env, path: string, init: RequestInit = {}) {
   if (!env.CONTA_AZUL_ACCESS_TOKEN) throw new Error("Conta Azul não configurado.");
+  if (await integracaoDesativada(env, "conta_azul")) throw new Error("Conta Azul desativado no painel.");
   const response = await fetch(`https://api-v2.contaazul.com${path}`, { ...init, headers: { Authorization: `Bearer ${env.CONTA_AZUL_ACCESS_TOKEN}`, "Content-Type": "application/json", ...(init.headers || {}) } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Conta Azul HTTP ${response.status}`);
