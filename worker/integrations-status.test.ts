@@ -13,7 +13,7 @@ vi.mock("./session", () => ({
   verificarTokenAdmin: async () => ({ adminId: "admin" }),
 }));
 vi.mock("./integrations-credenciais", () => ({
-  obterCredencial: async (_env: Env, provedor: string, chave: string) =>
+  obterCredencialParaValidacao: async (_env: Env, provedor: string, chave: string) =>
     provedor === "gemini" && chave === "api_key" ? "chave-teste" : null,
   estadosIntegracoes: async () => new Map(),
 }));
