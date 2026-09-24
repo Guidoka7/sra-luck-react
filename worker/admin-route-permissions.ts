@@ -7,7 +7,7 @@ const CLIENTS = [P.CLIENTES_EDITAR, P.CLIENTES_ALTERAR_STATUS_CONTRATO, P.CLIENT
 export function adminReadPermissions(path: string): readonly string[] | null {
   if (path === "/api/admin/session") return null;
   if (/^\/api\/admin\/(staff(?:\/|$)|credit-ops\/team(?:\/|$))/.test(path)) return [P.EQUIPE_GERENCIAR];
-  if (/^\/api\/admin\/(monitoramento-app|monitoramento-erros|monitoramento-storage|diagnostico)$/.test(path)) return [P.MONITORAMENTO_VISUALIZAR];
+  if (/^\/api\/admin\/(monitoramento-app|monitoramento-erros|monitoramento-storage|monitoramento-admin|monitoramento-cliente\/[^/]+|diagnostico)$/.test(path)) return [P.MONITORAMENTO_VISUALIZAR];
   if (/^\/api\/admin\/integrations(?:\/|$)/.test(path)) return [P.INTEGRACOES_GERENCIAR_CREDENCIAIS];
   if (/^\/api\/admin\/notificacoes(?:\/|$)/.test(path)) return [P.NOTIFICACOES_GERENCIAR];
   if (/^\/api\/admin\/relatorios(?:\/|$)/.test(path)) return [P.RELATORIOS_VISUALIZAR, P.RELATORIOS_EXPORTAR];
