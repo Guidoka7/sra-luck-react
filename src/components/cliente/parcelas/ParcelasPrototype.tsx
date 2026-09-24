@@ -302,7 +302,7 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
           <strong className="sl-pag-quantia">{brl(valores.valorHoje)}</strong>
           <span className="sl-pag-detalhe">
             {valores.vencida
-              ? <>Parcela {brl(boleto.valor)} + encargos {brl(valores.encargos)}{valores.temDescontoPix ? `, já com ${valores.percentualDescontoPix}% de desconto via PIX` : ""}. Valor para pagar hoje.</>
+              ? <>Valor atualizado para pagar hoje{valores.temDescontoPix ? `, já com ${valores.percentualDescontoPix}% de desconto via PIX` : ""}.</>
               : "Valor da parcela."}
           </span>
         </div>
