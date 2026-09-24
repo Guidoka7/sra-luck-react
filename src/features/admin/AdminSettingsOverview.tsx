@@ -17,27 +17,41 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
   const [integracoes,setIntegracoes]=useState<Integracao[]>([]);
   const [notif,setNotif]=useState<NotifConfig>({});
   const [salvando,setSalvando]=useState(false);
+  const [configDisponivel,setConfigDisponivel]=useState(false);
   const [feedback,setFeedback]=useState<string|null>(null);
 
   useEffect(()=>{
     let ativo=true;
+    const ler=async(url:string)=>{
+      const r=await fetch(url,{cache:"no-store"});
+      const body=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(body?.erro||"Não foi possível carregar este módulo.");
+      return body;
+    };
     Promise.allSettled([
-      fetch("/api/admin/configuracoes",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/staff",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/integrations/status",{cache:"no-store"}).then(r=>r.json()),
-      fetch("/api/admin/notificacoes/automacao",{cache:"no-store"}).then(r=>r.json()),
+      ler("/api/admin/configuracoes"),
+      ler("/api/admin/staff"),
+      ler("/api/admin/integrations/status"),
+      ler("/api/admin/notificacoes/automacao"),
     ]).then(resultados=>{
       if(!ativo)return;
-      const cfg=resultados[0].status==="fulfilled" ? resultados[0].value?.configuracoes ?? {} : {};
-      setConfig(cfg);setOriginal(cfg);
+      if(resultados[0].status==="fulfilled"){
+        const cfg=resultados[0].value?.configuracoes ?? {};
+        setConfig(cfg);setOriginal(cfg);setConfigDisponivel(true);
+      }else{
+        setConfigDisponivel(false);
+      }
       if(resultados[1].status==="fulfilled")setStaff(resultados[1].value?.colaboradores ?? []);
       if(resultados[2].status==="fulfilled")setIntegracoes(resultados[2].value?.integracoes ?? []);
       if(resultados[3].status==="fulfilled")setNotif(resultados[3].value?.config ?? {});
+      const falhas=resultados.filter(r=>r.status==="rejected").length;
+      if(falhas)setFeedback(falhas===4?"Não foi possível carregar as configurações agora.":`${falhas} módulo(s) não puderam ser carregados; os demais dados continuam disponíveis.`);
     });
     return()=>{ativo=false};
   },[]);
 
   async function salvar(){
+    if(!configDisponivel){setFeedback("Recarregue a página antes de salvar: a configuração principal não foi carregada.");return;}
     setSalvando(true);setFeedback(null);
     try{
       const r=await fetch("/api/admin/configuracoes",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({
@@ -63,7 +77,7 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
       <div>{feedback&&<span className={styles.feedback}>{feedback}</span>}</div>
       <div className={styles.actionButtons}>
         <button type="button" onClick={restaurarPadrao}><RotateCcw size={15}/>Restaurar padrão</button>
-        <button type="button" className={styles.saveButton} disabled={salvando||!sujo} onClick={()=>void salvar()}><Save size={15}/>{salvando?"Salvando…":"Salvar alterações"}</button>
+        <button type="button" className={styles.saveButton} disabled={salvando||!sujo||!configDisponivel} onClick={()=>void salvar()}><Save size={15}/>{salvando?"Salvando…":"Salvar alterações"}</button>
       </div>
     </div>
 
