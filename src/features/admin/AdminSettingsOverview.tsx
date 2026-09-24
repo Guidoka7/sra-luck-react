@@ -5,7 +5,7 @@ import { Bell, CalendarDays, Cable, Check, ChevronRight, LockKeyhole, RotateCcw,
 import styles from "./AdminWorkspace.module.css";
 
 type WorkspaceTab = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes" | "integracoes" | "monitoramento";
-type Config = { meta_orcamento_mensal?: number; agenda_liberacao_financeira_bloqueada?: boolean };
+type Config = { meta_orcamento_mensal?: number };
 type Colaborador = { id:string; nome:string; email:string; cargo:string; ativo:boolean; permissoes?:string[] };
 type Integracao = { id:string; nome:string; detalhes:string; conexaoLiveVerificada:boolean; estado:string };
 type NotifConfig = { atraso_habilitado?:boolean; frequencia_atraso_horas?:number; max_tentativas?:number };
@@ -42,7 +42,6 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
     try{
       const r=await fetch("/api/admin/configuracoes",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         metaOrcamentoMensal:Number(config.meta_orcamento_mensal ?? 0),
-        agendaLiberacaoFinanceiraBloqueada:Boolean(config.agenda_liberacao_financeira_bloqueada),
       })});
       const body=await r.json().catch(()=>({}));
       if(!r.ok)throw new Error(body?.erro||"Não foi possível salvar.");
@@ -52,13 +51,12 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
     finally{setSalvando(false);}
   }
 
-  function restaurarPadrao(){setConfig(v=>({...v,meta_orcamento_mensal:100000,agenda_liberacao_financeira_bloqueada:false}));setFeedback("Padrão carregado. Salve para aplicar.");}
-  function toggleBlocked(){setConfig(v=>({...v,agenda_liberacao_financeira_bloqueada:!v.agenda_liberacao_financeira_bloqueada}));}
+  function restaurarPadrao(){setConfig(v=>({...v,meta_orcamento_mensal:100000}));setFeedback("Padrão carregado. Salve para aplicar.");}
 
   const webPush=integracoes.find(i=>i.id==="web_push");
   const ativos=staff.filter(s=>s.ativo);
   const integracoesVisiveis=integracoes.slice(0,4);
-  const sujo=Number(config.meta_orcamento_mensal??0)!==Number(original.meta_orcamento_mensal??0)||Boolean(config.agenda_liberacao_financeira_bloqueada)!==Boolean(original.agenda_liberacao_financeira_bloqueada);
+  const sujo=Number(config.meta_orcamento_mensal??0)!==Number(original.meta_orcamento_mensal??0);
 
   return <div className={styles.overview}>
     <div className={styles.overviewActions}>
@@ -73,8 +71,8 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
       <section className={styles.settingsCard}>
         <div className={styles.cardTitle}><span><CalendarDays size={20}/></span><div><h2>Agenda e operação</h2><p>Configure parâmetros reais do planejamento e da liberação.</p></div></div>
         <SettingRow title="Referência mensal de orçamento" desc="Valor usado nos painéis de previsão e planejamento."><div className={styles.moneyInput}><span>R$</span><input type="number" min={0} value={Number(config.meta_orcamento_mensal??0)} onChange={e=>setConfig(v=>({...v,meta_orcamento_mensal:Number(e.target.value)||0}))}/></div></SettingRow>
-        <SettingRow title="Bloquear novas liberações financeiras" desc="Quando ativo, impede a liberação da agenda por regra administrativa."><Switch checked={Boolean(config.agenda_liberacao_financeira_bloqueada)} onClick={toggleBlocked}/></SettingRow>
-        <SettingRow title="Prazo automático após termos + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><span className={styles.fixedValue}>5 dias úteis <LockKeyhole size={12}/></span></SettingRow>
+        <SettingRow title="Prazo automático após comparecimento + quitação" desc="Regra operacional protegida no fluxo cirúrgico."><span className={styles.fixedValue}>5 dias úteis <LockKeyhole size={12}/></span></SettingRow>
+        <SettingRow title="Teto mensal operacional" desc="Protegido transacionalmente na confirmação e na reserva da cirurgia."><span className={styles.fixedValue}>R$ 100.000 <LockKeyhole size={12}/></span></SettingRow>
       </section>
 
       <section className={styles.settingsCard}>

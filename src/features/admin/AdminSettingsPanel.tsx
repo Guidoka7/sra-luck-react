@@ -31,7 +31,7 @@ interface ConfiguracoesData extends Record<string, unknown> {
 type Feedback = { tone: "ok" | "error"; text: string } | null;
 const MAX_QR = 1.5 * 1024 * 1024;
 const DESCONTOS = [0, 5, 10, 15, 20, 25, 30];
-type CardId = "company" | "identity" | "pix" | "prefs" | "agenda";
+type CardId = "company" | "identity" | "pix" | "prefs";
 
 async function responseJson<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({}));
@@ -114,14 +114,11 @@ export function AdminSettingsPanel() {
   if (loading && !config) return <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando configurações…</div>;
 
   const c = config ?? {};
-  const locked = Boolean(c.agenda_liberacao_financeira_bloqueada);
-
   const cards: { id: CardId; icon: string; iconBg: string; iconColor: string; title: string; sub: string; rows: [string, string][] }[] = [
     { id: "company", icon: "⌂", iconBg: "var(--robg)", iconColor: "var(--bg)", title: "Perfil da empresa", sub: "Informações institucionais", rows: [["Empresa", String(c.nome_clinica ?? "Sra. Luck")], ["Telefone", String(c.telefone_contato ?? "—")], ["WhatsApp", String(c.whatsapp_contato ?? "—")]] },
     { id: "identity", icon: "◈", iconBg: "var(--gobg)", iconColor: "var(--gold)", title: "Aparência do painel", sub: "Tema e cores administrativas", rows: [["Tema", theme === "dark" ? "Escuro" : "Claro"], ["Cor principal", palette.primary], ["Destaque", palette.highlight]] },
     { id: "pix", icon: "Pix", iconBg: "var(--okbg)", iconColor: "var(--ok)", title: "Recebimentos · Chave PIX", sub: "Chave utilizada nas operações permitidas", rows: [["Chave", String(c.pix_chave || "Não configurada")], ["Desconto", `${Number(c.pix_desconto_percentual ?? 0)}%`], ["QR Code", c.pix_qrcode_base64 ? "Carregado" : "Não enviado"]] },
     { id: "prefs", icon: "⚙", iconBg: "var(--bluebg)", iconColor: "var(--blue)", title: "Preferências do sistema", sub: "Comportamentos administrativos", rows: [["Limite orçamentário", new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(c.meta_orcamento_mensal ?? 0))], ["Fuso", "America/Sao_Paulo"], ["Moeda", "BRL"]] },
-    { id: "agenda", icon: locked ? "🔒" : "✓", iconBg: locked ? "var(--badbg)" : "var(--okbg)", iconColor: locked ? "var(--bad)" : "var(--ok)", title: "Agenda financeira", sub: "Controle global das liberações", rows: [["Estado", locked ? "Pausada" : "Ativa"], ["Descrição", locked ? "Novas liberações bloqueadas" : "Fluxo disponível"]] },
   ];
 
   return <div>
@@ -196,10 +193,6 @@ export function AdminSettingsPanel() {
           <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "identity" ? "Salvando…" : "Salvar alterações"}</button></div>
         </div>}
 
-        {drawer === "agenda" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ border: "1px solid var(--line)", background: locked ? "var(--badbg)" : "var(--okbg)", borderRadius: 10, padding: 12, fontSize: 11.5, color: "var(--ink)", lineHeight: 1.5 }}>{locked ? "Novas liberações estão temporariamente bloqueadas." : "O fluxo de liberações está disponível normalmente."}</div>
-          <button disabled={saving === "agenda"} onClick={() => void patchConfig("agenda", { agendaLiberacaoFinanceiraBloqueada: !locked })} style={{ height: 34, border: `1px solid ${locked ? "var(--bg)" : "var(--bad)"}`, borderRadius: 9, background: locked ? "var(--bg)" : "var(--s0)", color: locked ? "var(--on-accent)" : "var(--bad)", fontSize: 11, fontWeight: 700 }}>{saving === "agenda" ? "Atualizando…" : locked ? "Reabrir agenda" : "Pausar agenda"}</button>
-        </div>}
       </aside>
     </>}
   </div>;
