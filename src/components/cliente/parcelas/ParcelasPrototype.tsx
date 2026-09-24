@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, ChevronRight, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, X } from "lucide-react";
 import "@/styles/pagamento-folha.css";
+import "@/styles/parcelas-lista.css";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { toast } from "sonner";
 import { calcularEncargosAtraso } from "@/lib/financeiro/encargos";
@@ -34,6 +35,20 @@ type Progresso = {
   boletos: Boleto[];
 };
 
+function quandoVence(dias: number) {
+  return dias <= 0 ? "Vence hoje" : dias === 1 ? "Vence amanhã" : `Vence em ${dias} dias`;
+}
+
+/** Quantos dias antes do vencimento a parcela sobe para o cartão de destaque. */
+const DIAS_DESTAQUE = 2;
+
+/** Dias de calendário (Brasília) até o vencimento; negativo se já passou. */
+function diasParaVencer(dataVencimento: string) {
+  const emDias = (iso: string) => { const [a, m, d] = iso.slice(0, 10).split("-").map(Number); return Date.UTC(a, m - 1, d) / 86_400_000; };
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  return Math.round(emDias(dataVencimento) - emDias(hoje));
+}
+
 function brl(valor: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
 }
@@ -51,13 +66,6 @@ function calcularValores(boleto: Boleto, pagamento?: PagamentoConfig) {
   const economiaPix = encargos * (percentualDescontoPix / 100);
   const valorHoje = temDescontoPix ? valorAtualizado - economiaPix : vencida ? valorAtualizado : boleto.valor;
   return { dias, vencida, juros, multa, encargos, percentualDescontoPix, temDescontoPix, economiaPix, valorAtualizado, valorHoje };
-}
-
-function statusVisual(boleto: Boleto) {
-  if (boleto.status === "pendente_confirmacao") return { label: "Em análise", bg: "#FFF8EA", color: "#8B6A22", border: "#F0E0B7" };
-  if (boleto.status === "rejeitado") return { label: "Ajustar comprovante", bg: "#FBEBEA", color: "#8F2A25", border: "#F0D3D1" };
-  if (calcularValores(boleto).vencida) return { label: "Vencida", bg: "#FBEBEA", color: "#8F2A25", border: "#F0D3D1" };
-  return { label: "Em aberto", bg: "#F7EFED", color: "#7D2434", border: "#E7D4D0" };
 }
 
 export function ParcelasPrototype({ pagamento }: { pagamento?: PagamentoConfig }) {
@@ -156,7 +164,12 @@ export function ParcelasPrototype({ pagamento }: { pagamento?: PagamentoConfig }
     }
   }
 
-  return <div className="pb-3">
+  // Parcela em destaque: a primeira em aberto que já venceu ou vence em até 2 dias.
+  const primeiraEmAberto = pendentes.find((boleto) => boleto.status !== "pendente_confirmacao") ?? null;
+  const destaque = primeiraEmAberto && (calcularValores(primeiraEmAberto, pagamento).vencida || diasParaVencer(primeiraEmAberto.data_vencimento) <= DIAS_DESTAQUE) ? primeiraEmAberto : null;
+  const demais = pendentes.filter((boleto) => boleto !== destaque);
+
+  return <div className="sl-parc pb-3">
     <div className="px-5 pt-[18px]">
       <button type="button" onClick={() => setPagasAbertas((aberto) => !aberto)} className="relative w-full overflow-hidden rounded-[19px] border border-[#D5E8D9] bg-gradient-to-br from-[#F3F9F4] to-[#EDF6EF] px-[15px] pb-[14px] pt-[15px] text-left shadow-[0_5px_18px_rgba(63,125,91,.055)]">
         <div className="absolute -right-[26px] -top-[38px] h-[94px] w-[94px] rounded-full bg-[rgba(63,125,91,.045)]" />
@@ -172,17 +185,44 @@ export function ParcelasPrototype({ pagamento }: { pagamento?: PagamentoConfig }
       </button>
     </div>
 
-    <div className="flex items-end justify-between gap-3 px-5 pt-5"><div><div className="text-[10px] font-semibold uppercase tracking-[.13em] text-[#A99894]">Parcelas do contrato</div><div className="pt-[3px] text-[11.5px] font-light text-[#8A7B77]">Vencidas e próximas, na ordem do contrato.</div></div><div className="whitespace-nowrap text-[11px] font-medium text-[#8A7B77]">{pendentes.length} restantes</div></div>
+    {destaque && (() => {
+      const valores = calcularValores(destaque, pagamento);
+      const rejeitado = destaque.status === "rejeitado";
+      return <div className={`sl-parc-destaque ${valores.vencida ? "sl-parc-destaque--vencida" : ""}`}>
+        <div className="sl-parc-destaque-topo">
+          <span className="sl-parc-rotulo">{valores.vencida ? "Pagamento em atraso" : "Sua próxima parcela"}</span>
+          <span className={`sl-parc-chip ${valores.vencida || rejeitado ? "sl-parc-chip--alerta" : ""}`}>{rejeitado ? "Ajustar comprovante" : valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : quandoVence(diasParaVencer(destaque.data_vencimento))}</span>
+        </div>
+        <div className="sl-parc-destaque-corpo">
+          <div className="min-w-0">
+            <span className="sl-parc-destaque-parcela">Parcela {destaque.numero_parcela} de {total}</span>
+            <strong className="sl-parc-destaque-valor">{brl(valores.valorHoje)}</strong>
+            <span className="sl-parc-destaque-nota">{valores.vencida ? "Valor atualizado para pagar hoje" : "Valor da parcela"}</span>
+          </div>
+        </div>
+        <button type="button" onClick={() => abrirPagamento(destaque)} className="sl-parc-cta">{valores.vencida ? "Resolver agora" : "Pagar parcela"}</button>
+      </div>;
+    })()}
 
-    {pendentes.length > 0 ? <div className="flex flex-col gap-2 px-5 pt-[10px]">{pendentes.map((boleto) => {
-      const status = statusVisual(boleto);
+    <div className="sl-parc-cabecalho"><span className="sl-parc-rotulo sl-parc-rotulo--suave">{destaque ? "Demais parcelas" : "Parcelas do contrato"}</span><span className="sl-parc-restantes">{pendentes.length} {pendentes.length === 1 ? "restante" : "restantes"}</span></div>
+
+    {pendentes.length > 0 ? (demais.length > 0 && <div className="sl-parc-lista mx-5">{demais.map((boleto) => {
       const valores = calcularValores(boleto, pagamento);
       const emAnalise = boleto.status === "pendente_confirmacao";
-      return <div key={boleto.id} className="rounded-[17px] border bg-white p-[13px] shadow-[0_4px_14px_rgba(73,42,47,.025)]" style={{ borderColor: valores.vencida ? "#EACFCD" : "#ECE2DF" }}>
-        <div className="flex min-w-0 items-start gap-[11px]"><span className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[12px] border font-heading text-[15px] font-semibold" style={{ background: valores.vencida ? "#FBEBEA" : "#F8F1EF", borderColor: valores.vencida ? "#EECFCD" : "#EADDD9", color: valores.vencida ? "#8F2A25" : "#7D2434" }}>{boleto.numero_parcela}</span><span className="min-w-0 flex-1 pt-px"><span className="flex flex-wrap items-center gap-[7px]"><span className="text-[13px] font-medium text-[#2E2422]">Parcela {boleto.numero_parcela}</span><span className="rounded-full border px-[7px] py-[3px] text-[8px] font-semibold uppercase" style={{ background: status.bg, color: status.color, borderColor: status.border }}>{status.label}</span></span><span className="block pt-[3px] text-[11px] font-light text-[#8A7B77]">{valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : `Vencimento ${dataBr(boleto.data_vencimento)}`}</span></span><span className="flex-none pt-px text-right"><span className="block text-[12.5px] font-medium text-[#2E2422]">{brl(valores.valorHoje)}</span><span className="block pt-[2px] text-[9.5px] font-light text-[#A99894]">{valores.vencida ? "para pagar hoje" : "valor da parcela"}</span></span></div>
-        {emAnalise ? <div className="mt-[10px] flex items-center gap-[7px] rounded-[11px] border border-[#F0E0B7] bg-[#FFF8EA] px-[10px] py-[9px] text-[10.5px] font-medium text-[#8B6A22]"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.8v3.5l2.2 1.3"/></svg>Comprovante recebido · aguardando confirmação do financeiro</div> : <button type="button" onClick={() => abrirPagamento(boleto)} className="mt-[10px] w-full rounded-[11px] px-3 py-[9px] text-[10.5px] font-semibold" style={valores.vencida ? { background: "#8F2A25", color: "#FFF" } : { background: "#F7EFED", color: "#6B1F2E", border: "1px solid #E7D4D0" }}>{valores.vencida ? "Resolver parcela" : "Pagar parcela"}</button>}
-      </div>;
-    })}</div> : <div className="mx-5 mt-3 rounded-[20px] border border-[#D5E8D9] bg-[#F3F9F4] px-[22px] py-7 text-center"><span className="mx-auto flex h-[42px] w-[42px] items-center justify-center rounded-[15px] bg-[#E3F1E6]"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="#3F7D5B" strokeWidth="1.3"><path d="m4 10 3.4 3.5L16 5.8"/></svg></span><div className="pt-[11px] font-heading text-[20px] font-semibold text-[#315F47]">Contrato totalmente quitado</div><div className="pt-1 text-[12px] font-light leading-[1.5] text-[#698273]">Todos os pagamentos já foram confirmados.</div></div>}
+      const rejeitado = boleto.status === "rejeitado";
+      const conteudo = <>
+        <span className={`sl-parc-numero ${valores.vencida ? "sl-parc-numero--alerta" : ""}`}>{boleto.numero_parcela}</span>
+        <span className="sl-parc-linha-texto">
+          <b>Parcela {boleto.numero_parcela}</b>
+          <small className={valores.vencida && !emAnalise ? "sl-parc-alerta" : ""}>{emAnalise ? "Comprovante em análise" : rejeitado ? "Comprovante recusado · reenviar" : valores.vencida ? `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}` : `Vence ${dataBr(boleto.data_vencimento)}`}</small>
+        </span>
+        {emAnalise ? <span className="sl-parc-chip sl-parc-chip--analise">Em análise</span> : <span className="sl-parc-linha-valor">{brl(valores.valorHoje)}</span>}
+        {!emAnalise && <ChevronRight className="sl-parc-seta" aria-hidden="true" />}
+      </>;
+      return emAnalise
+        ? <div key={boleto.id} className="sl-parc-linha">{conteudo}</div>
+        : <button type="button" key={boleto.id} onClick={() => abrirPagamento(boleto)} className="sl-parc-linha" aria-label={`Pagar parcela ${boleto.numero_parcela}`}>{conteudo}</button>;
+    })}</div>) : <div className="sl-parc-quitado"><span className="sl-parc-pagas-icone"><Check className="h-[18px] w-[18px]" /></span><strong>Contrato totalmente quitado</strong><span>Todos os pagamentos já foram confirmados.</span></div>}
 
     {detalhePago && selecionada && <PaidDetail boleto={selecionada} onClose={() => setDetalhePago(false)} />}
     {paySheet && selecionada && <PaymentSheet boleto={selecionada} pagamento={pagamento} onClose={() => setPaySheet(false)} onUpload={() => abrirUpload(selecionada)} onCard={() => void abrirCartao()} cardBusy={pagandoCartao} />}

@@ -1,0 +1,168 @@
+/* Aba Financeiro → lista de parcelas (ParcelasPrototype). Mesma família dos cartões da marca. */
+.sl-parc {
+  --parc-cartao: #FFFFFF;
+  --parc-borda: #EEDDD9;
+  --parc-linha: #F3E8E5;
+  --parc-sombra: 0 10px 26px rgba(94, 31, 43, 0.07);
+  --parc-texto: #3D2426;
+  --parc-titulo: #6B1F2E;
+  --parc-suave: #8A7471;
+  --parc-dourado: #A8773F;
+  --parc-numero-fundo: linear-gradient(145deg, #FBEFEF, #F3DCDF);
+  --parc-numero: #7A2632;
+  --parc-alerta: #9B2F2A;
+  --parc-alerta-fundo: #FBEBEA;
+  --parc-analise: #8B6A22;
+  --parc-analise-fundo: #FFF6E4;
+  --parc-ok: #3F7D5B;
+  --parc-ok-fundo: #EAF4EC;
+  --parc-destaque-fundo:
+    radial-gradient(110% 90% at 100% 0%, rgba(214, 150, 160, 0.2) 0%, rgba(214, 150, 160, 0) 55%),
+    linear-gradient(150deg, #FFFFFF 0%, #FBF1F1 55%, #F4E1E4 100%);
+  --parc-destaque-borda: #EEDDD9;
+  --parc-cta-fundo: #6B1F2E;
+  --parc-cta-texto: #FFFFFF;
+}
+html[data-tema-cliente="escuro"] .sl-parc {
+  --parc-cartao: #1C1B1E;
+  --parc-borda: #2F2D31;
+  --parc-linha: #2A282C;
+  --parc-sombra: 0 12px 28px rgba(0, 0, 0, 0.3);
+  --parc-texto: #F2EEF0;
+  --parc-titulo: #F0C4CE;
+  --parc-suave: #A7A0A5;
+  --parc-dourado: #D8B26A;
+  --parc-numero-fundo: linear-gradient(145deg, #3A2229, #2A1B20);
+  --parc-numero: #E6A2B2;
+  --parc-alerta: #F0A3A3;
+  --parc-alerta-fundo: rgba(214, 96, 96, 0.14);
+  --parc-analise: #E3C07E;
+  --parc-analise-fundo: rgba(216, 178, 106, 0.14);
+  --parc-ok: #8FD1A9;
+  --parc-ok-fundo: rgba(95, 180, 130, 0.14);
+  --parc-destaque-fundo:
+    radial-gradient(120% 90% at 100% 0%, rgba(230, 162, 178, 0.2) 0%, rgba(230, 162, 178, 0) 55%),
+    linear-gradient(150deg, #3E2029 0%, #2C1820 60%, #221419 100%);
+  --parc-destaque-borda: #3A2A30;
+  --parc-cta-fundo: #B0526A;
+  --parc-cta-texto: #FFFFFF;
+}
+
+/* Resumo das parcelas pagas */
+.sl-parc-pagas {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--parc-borda);
+  border-radius: 20px;
+  background: var(--parc-cartao);
+  box-shadow: var(--parc-sombra);
+  color: var(--parc-texto);
+  text-align: left;
+}
+.sl-parc-pagas-icone { display: grid; flex: none; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--parc-ok-fundo); color: var(--parc-ok); }
+.sl-parc-pagas-titulo { display: block; font-size: 14px; font-weight: 600; }
+.sl-parc-pagas-sub { display: block; margin-top: 1px; color: var(--parc-suave); font-size: 11.5px; }
+.sl-parc-pagas-contagem { flex: none; font-family: var(--font-heading, Georgia, serif); font-size: 22px; font-weight: 600; color: var(--parc-titulo); }
+.sl-parc-pagas-contagem small { color: var(--parc-suave); font-size: 13px; }
+.sl-parc-seta { flex: none; width: 18px; height: 18px; color: var(--parc-suave); transition: transform 160ms ease; }
+
+/* Cartão de destaque: a parcela que pede atenção agora */
+.sl-parc-destaque {
+  margin: 14px 20px 0;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--parc-destaque-borda);
+  border-radius: 24px;
+  background: var(--parc-destaque-fundo);
+  box-shadow: var(--parc-sombra);
+  color: var(--parc-texto);
+}
+.sl-parc-destaque-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sl-parc-rotulo { color: var(--parc-dourado); font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.sl-parc-rotulo--suave { color: var(--parc-suave); letter-spacing: 0.12em; }
+.sl-parc-destaque-corpo { margin-top: 10px; }
+.sl-parc-destaque-parcela { display: block; color: var(--parc-suave); font-size: 12px; font-weight: 500; }
+.sl-parc-destaque-valor {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--parc-titulo);
+  font-variant-numeric: tabular-nums;
+}
+html[data-tema-cliente="escuro"] .sl-parc-destaque-valor { color: #FFF7F5; }
+.sl-parc-destaque-nota { display: block; margin-top: 6px; color: var(--parc-suave); font-size: 11.5px; }
+.sl-parc-cta {
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--parc-cta-fundo);
+  color: var(--parc-cta-texto);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(107, 31, 46, 0.18);
+}
+.sl-parc-cta:active { transform: scale(0.98); }
+
+.sl-parc-chip { flex: none; padding: 3px 9px; border-radius: 999px; background: var(--parc-linha); color: var(--parc-suave); font-size: 10.5px; font-weight: 700; }
+.sl-parc-chip--alerta { background: var(--parc-alerta-fundo); color: var(--parc-alerta); }
+.sl-parc-chip--analise { background: var(--parc-analise-fundo); color: var(--parc-analise); }
+
+/* Lista agrupada */
+.sl-parc-cabecalho { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 22px 20px 8px; }
+.sl-parc-restantes { color: var(--parc-suave); font-size: 11.5px; font-weight: 500; }
+.sl-parc-lista { overflow: hidden; border: 1px solid var(--parc-borda); border-radius: 20px; background: var(--parc-cartao); box-shadow: var(--parc-sombra); }
+.sl-parc-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--parc-texto);
+  text-align: left;
+}
+.sl-parc-lista > * + * { border-top: 1px solid var(--parc-linha); }
+button.sl-parc-linha:active { background: var(--parc-linha); }
+.sl-parc-numero {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--parc-numero-fundo);
+  color: var(--parc-numero);
+  font-family: var(--font-heading, Georgia, serif);
+  font-size: 16px;
+  font-weight: 600;
+}
+.sl-parc-numero--alerta { background: var(--parc-alerta-fundo); color: var(--parc-alerta); }
+.sl-parc-numero--paga { background: var(--parc-ok-fundo); color: var(--parc-ok); }
+.sl-parc-linha-texto { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.sl-parc-linha-texto b { font-size: 14px; font-weight: 600; }
+.sl-parc-linha-texto small { margin-top: 1px; color: var(--parc-suave); font-size: 11.5px; }
+.sl-parc-linha-texto small.sl-parc-alerta { color: var(--parc-alerta); font-weight: 600; }
+.sl-parc-linha-valor { flex: none; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.sl-parc-quitado {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 20px 0;
+  padding: 22px;
+  border: 1px solid var(--parc-borda);
+  border-radius: 20px;
+  background: var(--parc-cartao);
+  text-align: center;
+}
+.sl-parc-quitado strong { font-family: var(--font-heading, Georgia, serif); font-size: 20px; color: var(--parc-titulo); }
+.sl-parc-quitado span:last-child { color: var(--parc-suave); font-size: 12px; }

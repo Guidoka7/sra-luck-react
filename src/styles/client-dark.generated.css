@@ -1,5 +1,5 @@
 /* Gerado por scripts/tema-escuro-cliente.mjs — não editar à mão.
- * Modo escuro premium do app da cliente (490 regras de classes/estilos).
+ * Modo escuro premium do app da cliente (461 regras de classes/estilos).
  * Ajustes finos que não saem da regra geral ficam em src/styles/client-dark.css. */
 
 html[data-tema-cliente="escuro"] .accent-\[\#6B1F2E\] { accent-color: #EDB1BF; }
@@ -217,7 +217,6 @@ html[data-tema-cliente="escuro"] .text-\[\#8A6720\] { color: #E2D0AA; }
 html[data-tema-cliente="escuro"] .text-\[\#8A6D67\] { color: #B7B0AE; }
 html[data-tema-cliente="escuro"] .text-\[\#8A7975\] { color: #B3ACAA; }
 html[data-tema-cliente="escuro"] .text-\[\#8A7B77\] { color: #B3ABA9; }
-html[data-tema-cliente="escuro"] .text-\[\#8B6A22\] { color: #E1D0A9; }
 html[data-tema-cliente="escuro"] .text-\[\#8D7D79\] { color: #B2AAA8; }
 html[data-tema-cliente="escuro"] .text-\[\#8E3243\] { color: #E799AB; }
 html[data-tema-cliente="escuro"] .text-\[\#8E4C59\] { color: #E48DA2; }
@@ -285,7 +284,6 @@ html[data-tema-cliente="escuro"] [style*="background: rgb(126, 111, 107)"], html
 html[data-tema-cliente="escuro"] [style*="background: rgb(126, 152, 135)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(126, 152, 135)"] { background: #524F54 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(138, 103, 32)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(138, 103, 32)"] { background: #96732E !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(138, 123, 119)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(138, 123, 119)"] { background: #524F54 !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(139, 106, 34)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(139, 106, 34)"] { background: #977730 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(143, 42, 37)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(143, 42, 37)"] { background: #B0526A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(152, 137, 133)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(152, 137, 133)"] { background: #47383C !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(154, 140, 136)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(154, 140, 136)"] { background: #47383C !important; }
@@ -305,19 +303,14 @@ html[data-tema-cliente="escuro"] [style*="background: rgb(217, 203, 230)"], html
 html[data-tema-cliente="escuro"] [style*="background: rgb(220, 234, 223)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(220, 234, 223)"] { background: #262428 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(227, 241, 230)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(227, 241, 230)"] { background: #252D26 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(230, 208, 203)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(230, 208, 203)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(231, 212, 208)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(231, 212, 208)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(231, 240, 234)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(231, 240, 234)"] { background: #262428 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(232, 201, 196)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(232, 201, 196)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(233, 211, 207)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(233, 211, 207)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(233, 215, 173)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(233, 215, 173)"] { background: #4E3138 !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(233, 218, 214)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(233, 218, 214)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(234, 207, 205)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(234, 207, 205)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(234, 221, 217)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(234, 221, 217)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(234, 223, 219)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(234, 223, 219)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(235, 217, 213)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(235, 217, 213)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(235, 218, 178)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(235, 218, 178)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(236, 226, 223)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(236, 226, 223)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(238, 207, 205)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(238, 207, 205)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(238, 232, 243)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(238, 232, 243)"] { background: #29252D !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(238, 243, 248)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(238, 243, 248)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(238, 246, 240)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(238, 246, 240)"] { background: #252D27 !important; }
@@ -325,7 +318,6 @@ html[data-tema-cliente="escuro"] [style*="background: rgb(239, 217, 169)"], html
 html[data-tema-cliente="escuro"] [style*="background: rgb(239, 217, 170)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(239, 217, 170)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(239, 230, 227)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(239, 230, 227)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(240, 211, 209)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(240, 211, 209)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(240, 224, 183)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(240, 224, 183)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(240, 247, 241)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(240, 247, 241)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(243, 248, 244)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(243, 248, 244)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(244, 238, 247)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(244, 238, 247)"] { background: #18171A !important; }
@@ -333,14 +325,12 @@ html[data-tema-cliente="escuro"] [style*="background: rgb(245, 241, 239)"], html
 html[data-tema-cliente="escuro"] [style*="background: rgb(246, 230, 227)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(246, 230, 227)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(247, 238, 236)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(247, 238, 236)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(247, 239, 237)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(247, 239, 237)"] { background: #37252A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(248, 241, 239)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(248, 241, 239)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(249, 236, 239)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(249, 236, 239)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(250, 245, 244)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(250, 245, 244)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(251, 235, 234)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(251, 235, 234)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(251, 241, 221)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(251, 241, 221)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(251, 244, 231)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(251, 244, 231)"] { background: #37252A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(255, 247, 232)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(255, 247, 232)"] { background: #18171A !important; }
-html[data-tema-cliente="escuro"] [style*="background: rgb(255, 248, 234)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(255, 248, 234)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(255, 249, 239)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(255, 249, 239)"] { background: #18171A !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(255, 255, 255)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(255, 255, 255)"] { background: #1C1B1E !important; }
 html[data-tema-cliente="escuro"] [style*="background: rgb(49, 95, 71)"], html[data-tema-cliente="escuro"] [style*="background-color: rgb(49, 95, 71)"] { background: #3C6952 !important; }
@@ -357,7 +347,6 @@ html[data-tema-cliente="escuro"] [style*="border-color: rgb(126, 111, 107)"] { b
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(126, 152, 135)"] { border-color: #97BAA3 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(138, 103, 32)"] { border-color: #C39C4D !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(138, 123, 119)"] { border-color: #BA9E97 !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(139, 106, 34)"] { border-color: #C39F52 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(143, 42, 37)"] { border-color: #CF6E84 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(152, 137, 133)"] { border-color: #BA9E97 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(154, 140, 136)"] { border-color: #BA9F97 !important; }
@@ -377,19 +366,14 @@ html[data-tema-cliente="escuro"] [style*="border-color: rgb(217, 203, 230)"] { b
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(220, 234, 223)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(227, 241, 230)"] { border-color: #3C493F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(230, 208, 203)"] { border-color: #493C3F !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(231, 212, 208)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(231, 240, 234)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(232, 201, 196)"] { border-color: #4A3B3E !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(233, 211, 207)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(233, 215, 173)"] { border-color: #4C393D !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(233, 218, 214)"] { border-color: #493C3F !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(234, 207, 205)"] { border-color: #493C3F !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(234, 221, 217)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(234, 223, 219)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(235, 217, 213)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(235, 218, 178)"] { border-color: #4C393D !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(236, 226, 223)"] { border-color: #2F2D31 !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(238, 207, 205)"] { border-color: #4A3A3E !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(238, 232, 243)"] { border-color: #433C49 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(238, 243, 248)"] { border-color: #3B4249 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(238, 246, 240)"] { border-color: #3C493F !important; }
@@ -397,7 +381,6 @@ html[data-tema-cliente="escuro"] [style*="border-color: rgb(239, 217, 169)"] { b
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(239, 217, 170)"] { border-color: #4E373C !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(239, 230, 227)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(240, 211, 209)"] { border-color: #4B3A3E !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(240, 224, 183)"] { border-color: #4D373D !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(240, 247, 241)"] { border-color: #3C493E !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(243, 248, 244)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(244, 238, 247)"] { border-color: #453C49 !important; }
@@ -405,21 +388,18 @@ html[data-tema-cliente="escuro"] [style*="border-color: rgb(245, 241, 239)"] { b
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(246, 230, 227)"] { border-color: #4B3A3E !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(247, 238, 236)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(247, 239, 237)"] { border-color: #493C3F !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(248, 241, 239)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(249, 236, 239)"] { border-color: #4B3A3E !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(250, 245, 244)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(251, 235, 234)"] { border-color: #4E373C !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(251, 241, 221)"] { border-color: #4F353B !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(251, 244, 231)"] { border-color: #4E363C !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(255, 247, 232)"] { border-color: #51343B !important; }
-html[data-tema-cliente="escuro"] [style*="border-color: rgb(255, 248, 234)"] { border-color: #51343B !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(255, 249, 239)"] { border-color: #51343B !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(255, 255, 255)"] { border-color: #2F2D31 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(49, 95, 71)"] { border-color: #569172 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(63, 125, 91)"] { border-color: #7BB294 !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(82, 112, 141)"] { border-color: #96A9BB !important; }
 html[data-tema-cliente="escuro"] [style*="border-color: rgb(94, 74, 70)"] { border-color: #9C736A !important; }
-html[data-tema-cliente="escuro"] [style*="border: 1px solid rgb(231, 212, 208)"] { border-color: #493C3F !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(107, 31, 46)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(107, 31, 46)"] { color: #EDB1BF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(111, 138, 120)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(111, 138, 120)"] { color: #ACB5AF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(111, 94, 90)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(111, 94, 90)"] { color: #C1BBBA !important; }
@@ -430,7 +410,6 @@ html[data-tema-cliente="escuro"] [style^="color: rgb(126, 111, 107)"], html[data
 html[data-tema-cliente="escuro"] [style^="color: rgb(126, 152, 135)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(126, 152, 135)"] { color: #A3AEA7 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(138, 103, 32)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(138, 103, 32)"] { color: #E2D0AA !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(138, 123, 119)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(138, 123, 119)"] { color: #B3ABA9 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(139, 106, 34)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(139, 106, 34)"] { color: #E1D0A9 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(143, 42, 37)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(143, 42, 37)"] { color: #E89EB0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(152, 137, 133)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(152, 137, 133)"] { color: #ACA3A1 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(154, 140, 136)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(154, 140, 136)"] { color: #AAA2A0 !important; }
@@ -450,19 +429,14 @@ html[data-tema-cliente="escuro"] [style^="color: rgb(217, 203, 230)"], html[data
 html[data-tema-cliente="escuro"] [style^="color: rgb(220, 234, 223)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(220, 234, 223)"] { color: #859388 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(227, 241, 230)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(227, 241, 230)"] { color: #E3F1E6 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(230, 208, 203)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(230, 208, 203)"] { color: #E48BA0 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(231, 212, 208)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(231, 212, 208)"] { color: #E48BA0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(231, 240, 234)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(231, 240, 234)"] { color: #E7F0EA !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(232, 201, 196)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(232, 201, 196)"] { color: #E48BA0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(233, 211, 207)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(233, 211, 207)"] { color: #E48BA0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(233, 215, 173)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(233, 215, 173)"] { color: #C1A157 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(233, 218, 214)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(233, 218, 214)"] { color: #E48BA0 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(234, 207, 205)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(234, 207, 205)"] { color: #E48BA0 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(234, 221, 217)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(234, 221, 217)"] { color: #938985 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(234, 223, 219)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(234, 223, 219)"] { color: #938985 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(235, 217, 213)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(235, 217, 213)"] { color: #E48BA0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(235, 218, 178)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(235, 218, 178)"] { color: #C2A256 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(236, 226, 223)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(236, 226, 223)"] { color: #ECE2DF !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(238, 207, 205)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(238, 207, 205)"] { color: #E48BA0 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(238, 232, 243)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(238, 232, 243)"] { color: #EEE8F3 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(238, 243, 248)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(238, 243, 248)"] { color: #EEF3F8 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(238, 246, 240)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(238, 246, 240)"] { color: #EEF6F0 !important; }
@@ -470,7 +444,6 @@ html[data-tema-cliente="escuro"] [style^="color: rgb(239, 217, 169)"], html[data
 html[data-tema-cliente="escuro"] [style^="color: rgb(239, 217, 170)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(239, 217, 170)"] { color: #CBA34E !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(239, 230, 227)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(239, 230, 227)"] { color: #EFE6E3 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(240, 211, 209)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(240, 211, 209)"] { color: #E48BA0 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(240, 224, 183)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(240, 224, 183)"] { color: #C8A750 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(240, 247, 241)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(240, 247, 241)"] { color: #F0F7F1 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(243, 248, 244)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(243, 248, 244)"] { color: #F3F8F4 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(244, 238, 247)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(244, 238, 247)"] { color: #F4EEF7 !important; }
@@ -478,14 +451,12 @@ html[data-tema-cliente="escuro"] [style^="color: rgb(245, 241, 239)"], html[data
 html[data-tema-cliente="escuro"] [style^="color: rgb(246, 230, 227)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(246, 230, 227)"] { color: #F6E6E3 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(247, 238, 236)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(247, 238, 236)"] { color: #F7EEEC !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(247, 239, 237)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(247, 239, 237)"] { color: #F7EFED !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(248, 241, 239)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(248, 241, 239)"] { color: #F8F1EF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(249, 236, 239)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(249, 236, 239)"] { color: #F9ECEF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(250, 245, 244)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(250, 245, 244)"] { color: #FAF5F4 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(251, 235, 234)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(251, 235, 234)"] { color: #FBEBEA !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(251, 241, 221)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(251, 241, 221)"] { color: #FBF1DD !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(251, 244, 231)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(251, 244, 231)"] { color: #FBF4E7 !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(255, 247, 232)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(255, 247, 232)"] { color: #FFF7E8 !important; }
-html[data-tema-cliente="escuro"] [style^="color: rgb(255, 248, 234)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(255, 248, 234)"] { color: #FFF8EA !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(255, 249, 239)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(255, 249, 239)"] { color: #FFF9EF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(255, 255, 255)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(255, 255, 255)"] { color: #FFFFFF !important; }
 html[data-tema-cliente="escuro"] [style^="color: rgb(49, 95, 71)"], html[data-tema-cliente="escuro"] [style*="; color: rgb(49, 95, 71)"] { color: #BEDCCD !important; }
