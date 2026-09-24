@@ -3,14 +3,13 @@
  *
  * Fluxo:
  *   Vercel Cron (vercel.json, 00:05 de Brasília) → GET /api/cron/mensagem-do-dia
- *     → já existe mensagem de hoje? reutiliza, sem chamar o Gemini;
- *     → não existe: reserva a data, chama o Gemini UMA vez, valida e salva
- *       (tabela mensagens_do_dia, migration 080);
- *     → Gemini falhou/sem chave/texto reprovado: salva a frase de reserva do
- *       catálogo (src/lib/fraseDoDia.ts) ou, se ela repetir a de ontem, a
- *       última mensagem válida.
- *   App → GET /api/cliente/frase-do-dia → só LÊ a mensagem salva. Nunca chama
- *   o Gemini. Se a rotina ainda não rodou hoje, mostra a frase do catálogo.
+ *     → já existe mensagem pronta ou candidata de hoje? reutiliza;
+ *     → não existe: reserva a data, chama o Gemini UMA vez e valida;
+ *     → candidata válida fica em "aguardando_aprovacao" e NÃO vai para o app;
+ *     → falha/sem chave/texto reprovado fica em "falha_geracao", sem publicação;
+ *     → a equipe revisa no Admin/Dev Console e publica por ação explícita;
+ *   App → GET /api/cliente/frase-do-dia → só LÊ status "pronta". Enquanto a
+ *   candidata aguarda aprovação (ou falha), mostra a frase de reserva do catálogo.
  *
  * Privacidade: o prompt leva só a data, o tema do dia e as mensagens recentes.
  * Nenhum dado de cliente (nome, CPF, nascimento, financeiro, médico) é enviado.
@@ -237,7 +236,8 @@ export type ResultadoRotina = {
 };
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
-type Linha = { data: string; status: "gerando" | "pronta"; texto: string | null; tema: string | null; origem: ResultadoRotina["origem"] | null; updated_at: string };
+type StatusMensagem = "gerando" | "aguardando_aprovacao" | "pronta" | "falha_geracao";
+type Linha = { data: string; status: StatusMensagem; texto: string | null; tema: string | null; origem: ResultadoRotina["origem"] | null; modelo?: string | null; erro?: string | null; updated_at: string };
 
 /**
  * Rotina diária idempotente. Chama o Gemini no máximo uma vez por data: se a
@@ -308,6 +308,162 @@ export async function gerarMensagemDoDia(env: Env, agora = new Date(), deps: { d
   return { data: base.data, texto, tema: base.tema, origem, reutilizada: false, chamouGemini, motivo };
 }
 
+export type ResultadoPreparacao = ResultadoRotina & {
+  status: StatusMensagem;
+  aguardandoAprovacao: boolean;
+};
+
+/**
+ * Rotina usada pelo cron e pelo botão "Mensagem de hoje".
+ *
+ * Ela gera no máximo uma candidata por data, mas nunca publica sozinha.
+ * Somente `definirMensagem` muda o status para "pronta".
+ */
+export async function prepararMensagemDoDia(env: Env, agora = new Date(), deps: { db?: Db; fetcher?: typeof fetch } = {}): Promise<ResultadoPreparacao> {
+  const db = deps.db ?? createServiceSupabaseClient(env);
+  const base = fraseDoDia(agora);
+  const colunas = "data,status,texto,tema,origem,modelo,erro,updated_at";
+  const emAndamento: ResultadoPreparacao = {
+    data: base.data,
+    texto: base.texto,
+    tema: base.tema,
+    origem: "catalogo",
+    reutilizada: true,
+    chamouGemini: false,
+    motivo: "geracao_em_andamento",
+    status: "gerando",
+    aguardandoAprovacao: false,
+  };
+
+  const { error: erroReserva } = await db.from("mensagens_do_dia").insert({ data: base.data, status: "gerando" });
+  if (erroReserva) {
+    if (erroReserva.code !== "23505") throw new Error(`reserva_falhou:${erroReserva.code ?? "?"}`);
+    const { data: existente } = await db.from("mensagens_do_dia").select(colunas).eq("data", base.data).maybeSingle<Linha>();
+
+    if (existente?.status === "pronta") {
+      return {
+        data: existente.data,
+        texto: existente.texto!,
+        tema: existente.tema!,
+        origem: existente.origem!,
+        reutilizada: true,
+        chamouGemini: false,
+        status: "pronta",
+        aguardandoAprovacao: false,
+      };
+    }
+
+    if (existente?.status === "aguardando_aprovacao") {
+      return {
+        data: existente.data,
+        texto: existente.texto!,
+        tema: existente.tema!,
+        origem: existente.origem ?? "ia",
+        reutilizada: true,
+        chamouGemini: false,
+        status: "aguardando_aprovacao",
+        aguardandoAprovacao: true,
+      };
+    }
+
+    if (!existente) return emAndamento;
+
+    if (existente.status === "gerando" && Date.now() - new Date(existente.updated_at).getTime() <= RESERVA_EXPIRA_MS) {
+      return emAndamento;
+    }
+
+    const statusRetomavel = existente.status === "falha_geracao" ? "falha_geracao" : "gerando";
+    const { data: retomada } = await db.from("mensagens_do_dia")
+      .update({ status: "gerando", erro: null, updated_at: new Date().toISOString() })
+      .eq("data", base.data)
+      .eq("status", statusRetomavel)
+      .select("data");
+    if (!retomada?.length) return emAndamento;
+  }
+
+  const { data: ultimas } = await db.from("mensagens_do_dia").select("texto")
+    .eq("status", "pronta").lt("data", base.data).order("data", { ascending: false }).limit(14);
+  const recentes = (ultimas ?? []).map((r: { texto: string | null }) => r.texto).filter((t): t is string => Boolean(t));
+
+  let texto: string | null = null;
+  let modelo: string | null = null;
+  let motivo: string | undefined;
+  let chamouGemini = false;
+  const config = await configuracaoGemini(env);
+
+  if (!config.chave) {
+    motivo = "sem_chave";
+  } else {
+    chamouGemini = true;
+    try {
+      const { sistema, usuario } = montarPrompt(agora, base, recentes, config.instrucoes);
+      const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuario, deps.fetcher);
+      const validacao = validarFraseIa(gerada.texto, recentes);
+      if (validacao.ok) {
+        texto = validacao.texto;
+        modelo = gerada.modelo;
+      } else {
+        motivo = `reprovada:${validacao.motivo}`;
+      }
+    } catch (erro) {
+      motivo = erro instanceof ErroGemini ? `${erro.motivo} (${erro.tentativas.join(", ")})` : "erro";
+    }
+  }
+
+  if (!texto) {
+    const erroTexto = String(motivo || "erro").slice(0, 500);
+    const { error: erroSalvar } = await db.from("mensagens_do_dia")
+      .update({
+        status: "falha_geracao",
+        texto: null,
+        tema: base.tema,
+        origem: null,
+        modelo: null,
+        erro: erroTexto,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("data", base.data)
+      .eq("status", "gerando");
+    if (erroSalvar) throw new Error(`salvar_falhou:${erroSalvar.code ?? "?"}`);
+    return {
+      data: base.data,
+      texto: base.texto,
+      tema: base.tema,
+      origem: "catalogo",
+      reutilizada: false,
+      chamouGemini,
+      motivo,
+      status: "falha_geracao",
+      aguardandoAprovacao: false,
+    };
+  }
+
+  const { error: erroSalvar } = await db.from("mensagens_do_dia")
+    .update({
+      status: "aguardando_aprovacao",
+      texto,
+      tema: base.tema,
+      origem: "ia",
+      modelo,
+      erro: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("data", base.data)
+    .eq("status", "gerando");
+  if (erroSalvar) throw new Error(`salvar_falhou:${erroSalvar.code ?? "?"}`);
+
+  return {
+    data: base.data,
+    texto,
+    tema: base.tema,
+    origem: "ia",
+    reutilizada: false,
+    chamouGemini,
+    status: "aguardando_aprovacao",
+    aguardandoAprovacao: true,
+  };
+}
+
 function iguais(a: string, b: string) {
   const x = new TextEncoder().encode(a);
   const y = new TextEncoder().encode(b);
@@ -344,7 +500,7 @@ export async function testarGemini(env: Env) {
     const validacao = validarFraseIa(texto);
     return validacao.ok
       ? { conectado: true, detalhe: `Gemini respondeu (${modelo}). Exemplo: ${validacao.texto.replace(/\*/g, "")}` }
-      : { conectado: true, detalhe: `Gemini respondeu (${modelo}), mas o exemplo foi reprovado pelos filtros (${validacao.motivo}). Na rotina diária, isso vira a frase de reserva.` };
+      : { conectado: true, detalhe: `Gemini respondeu (${modelo}), mas o exemplo foi reprovado pelos filtros (${validacao.motivo}). Na rotina diária, nada é publicado automaticamente.` };
   } catch (erro) {
     const motivo = erro instanceof Error ? erro.message : "erro";
     const tentativas = erro instanceof ErroGemini && erro.tentativas.length ? ` Tentativas: ${erro.tentativas.join(", ")}.` : "";
@@ -373,9 +529,8 @@ async function adminAutorizado(request: Request, env: Env) {
 }
 
 // ---------------------------------------------------------------------------
-// Conversa com o Gemini no painel: ver as mensagens, pedir outra e escolher a
-// do dia. Nada aqui muda a rotina diária: ela continua gerando uma vez por dia
-// e nunca sobrescreve uma mensagem já pronta (inclusive a escolhida pela equipe).
+// Conversa com o Gemini no painel: ver a candidata do cron, pedir outra e
+// escolher/publicar a mensagem do dia. O cron só prepara; publicar é ação humana.
 // ---------------------------------------------------------------------------
 
 export const LIMITE_PEDIDO = 200;
@@ -385,11 +540,11 @@ export function limparPedido(bruto: unknown) {
   return String(bruto ?? "").replace(/[\u0000-\u001f\u007f<>{}]/g, " ").replace(/\s+/g, " ").trim().slice(0, LIMITE_PEDIDO);
 }
 
-export type MensagemSalva = { data: string; status: string; texto: string | null; tema: string | null; origem: string | null; modelo: string | null; updated_at: string };
+export type MensagemSalva = { data: string; status: string; texto: string | null; tema: string | null; origem: string | null; modelo: string | null; erro: string | null; updated_at: string };
 
 export async function historicoMensagens(env: Env, limite = 14, deps: { db?: Db } = {}) {
   const db = deps.db ?? createServiceSupabaseClient(env);
-  const { data, error } = await db.from("mensagens_do_dia").select("data,status,texto,tema,origem,modelo,updated_at")
+  const { data, error } = await db.from("mensagens_do_dia").select("data,status,texto,tema,origem,modelo,erro,updated_at")
     .order("data", { ascending: false }).limit(Math.min(Math.max(limite, 1), 60));
   if (error) throw new Error(`historico_falhou:${error.code ?? "?"}`);
   return (data ?? []) as MensagemSalva[];
@@ -462,7 +617,7 @@ export async function definirMensagem(env: Env, textoBruto: unknown, opcoes: { o
   const origem = opcoes.origem === "ia" ? "ia" : "admin";
   const modelo = origem === "ia" ? String(opcoes.modelo ?? "").replace(/[^a-z0-9.\-]/gi, "").slice(0, 80) || null : null;
   const { error } = await db.from("mensagens_do_dia").upsert(
-    { data: base.data, status: "pronta", texto: validacao.texto, tema: base.tema, origem, modelo, updated_at: new Date().toISOString() },
+    { data: base.data, status: "pronta", texto: validacao.texto, tema: base.tema, origem, modelo, erro: null, updated_at: new Date().toISOString() },
     { onConflict: "data" },
   );
   if (error) {
@@ -488,8 +643,8 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
       if (!(await adminAutorizado(request, env))) return json({ erro: "Sem permissão." }, 403);
     }
     try {
-      const resultado = await gerarMensagemDoDia(env);
-      log.info("Mensagem do dia verificada", { eventCode: "DAILY_MESSAGE_ROUTINE", origem: resultado.origem, reutilizada: resultado.reutilizada, chamouGemini: resultado.chamouGemini, motivo: resultado.motivo });
+      const resultado = await prepararMensagemDoDia(env);
+      log.info("Mensagem do dia preparada para revisão", { eventCode: "DAILY_MESSAGE_PREPARED", status: resultado.status, origem: resultado.origem, reutilizada: resultado.reutilizada, chamouGemini: resultado.chamouGemini, motivo: resultado.motivo });
       return json(resultado);
     } catch (erro) {
       log.error("Falha na rotina da mensagem do dia", { eventCode: "DAILY_MESSAGE_ROUTINE_FAILED", error: erro });

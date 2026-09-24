@@ -202,6 +202,41 @@ async function validateAllowedMutation(request: Request, pathname: string): Prom
     return null;
   }
 
+  const papel = String(request.headers.get(ROLE_HEADER) || "").trim().toLowerCase();
+
+  if (pathname === "/api/admin/integrations/gemini/mensagem-do-dia") {
+    if (!["owner", "developer", "operator"].includes(papel) || !hasExactKeys(body, [])) {
+      return json("Operação do Gemini não autorizada para a integração técnica.", "DEV_CONSOLE_M2M_GEMINI_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
+  if (pathname === "/api/admin/integrations/gemini/sugerir") {
+    const chaves = Object.keys(body);
+    if (!["owner", "developer", "operator"].includes(papel)
+      || chaves.some((k) => k !== "pedido")
+      || (body.pedido !== undefined && (typeof body.pedido !== "string" || body.pedido.length > 200))) {
+      return json("Payload não autorizado para o chat do Gemini.", "DEV_CONSOLE_M2M_GEMINI_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
+  if (pathname === "/api/admin/integrations/gemini/definir") {
+    const chaves = Object.keys(body);
+    const origemOk = body.origem === undefined || body.origem === "ia" || body.origem === "admin";
+    const modeloOk = body.modelo === undefined || (typeof body.modelo === "string" && body.modelo.length <= 80);
+    if (!["owner", "developer", "operator"].includes(papel)
+      || chaves.some((k) => !["texto", "origem", "modelo"].includes(k))
+      || typeof body.texto !== "string"
+      || body.texto.length < 1
+      || body.texto.length > 300
+      || !origemOk
+      || !modeloOk) {
+      return json("Payload não autorizado para publicar a mensagem do dia.", "DEV_CONSOLE_M2M_GEMINI_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
   const lote = ROTAS_LOTE.find((r) => r.rota.test(pathname));
   if (lote) {
     const papel = String(request.headers.get(ROLE_HEADER) || "").trim().toLowerCase();
