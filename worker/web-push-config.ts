@@ -212,6 +212,11 @@ async function guardarPar(env: Env, adminId: string, config: VapidConfiguracao, 
   await salvarCredencialInterna(env, "web_push", "vapid_subject", config.subject, adminId);
   await salvarCredencialInterna(env, "web_push", "vapid_public_key", config.publicKey, adminId);
   await salvarCredencialInterna(env, "web_push", "vapid_private_key", config.privateKey, adminId);
+  // Salvar este par já inclui validação criptográfica real; por isso a ativação
+  // explícita pode ser persistida aqui sem um segundo caminho de validação.
+  await db.from("integracoes_estado").upsert({
+    provedor: "web_push", ativo: true, atualizado_por: adminId, atualizado_em: new Date().toISOString(),
+  }, { onConflict: "provedor" });
   await db.from("logs_alteracoes").insert({
     usuario: adminId,
     acao: rotacao ? "rotacionou_vapid_web_push" : "configurou_vapid_web_push",
