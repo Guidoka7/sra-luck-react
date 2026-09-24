@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 import { WebPushSettings } from "@/features/admin/WebPushSettings";
+import { ContaAzulOperacao, CrmOperacao } from "@/features/admin/IntegracoesOperacao";
 
 type EstadoIntegracao = "pronto_para_configurar" | "credenciais_presentes" | "planejado" | "base_incompleta";
 type GrupoIntegracao = "comunicacao" | "pagamentos" | "crm" | "bancos";
@@ -24,9 +25,9 @@ type EventoHistorico = { id: string; usuario: string; acao: string; entidade_id:
 const CAPACIDADES: Record<string, string[]> = {
   web_push: ["Enviar notificação push a dispositivos inscritos", "Registrar entrega/erro por assinatura"],
   mercado_pago: ["Criar preferência de pagamento por parcela", "Receber evento do provedor", "Encaminhar pagamento aprovado para conferência humana — sem baixa automática"],
-  conta_azul: ["Criar recebível a partir de uma parcela", "Atualizar parcela existente no Conta Azul"],
+  conta_azul: ["OAuth com renovação automática do token", "Vínculo permanente parcela ↔ lançamento (marcador + IDs)", "Sra Luck é a fonte de valor, vencimento e encargos", "Baixa da Conta Azul aplicada sozinha só com vínculo seguro", "Conflitos vão para revisão; nada é sobrescrito em silêncio", "Sincronização a cada 15 min e manual"],
   gemini: ["1 mensagem do dia, igual para todas as clientes (rotina diária às 00:05)", "O cron prepara uma candidata; publicação exige aprovação humana", "Nenhum dado de cliente enviado ao Gemini", "Se o Gemini falhar, nada é publicado automaticamente"],
-  rd_station: ["Consultar negociações ganhas pela API v2 (GET)", "Receber criação/atualização via webhook", "Atualizar apenas o snapshot externo no Sra. Luck", "Nunca escrever dados comerciais de volta no RD Station"],
+  rd_station: ["Funil, etapas e status configuráveis (GET na API v2)", "Campos importados e mapeamento configuráveis", "Deduplicação por CPF, telefone e e-mail com revisão humana", "Toda cliente nova entra em Aguardando cadastro", "Importação automática configurável e histórico", "Nunca escrever dados comerciais de volta no RD Station"],
 };
 
 function estadoKind(estado: EstadoIntegracao): ZipKind { if (estado === "credenciais_presentes") return "warn"; if (estado === "pronto_para_configurar") return "ok"; if (estado === "planejado") return "neutral"; return "bad"; }
@@ -199,7 +200,7 @@ export default function IntegracoesAdminPage() {
 
     {drawerAtual && <>
       <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
-      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
+      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: drawerAtual.id === "rd_station" || drawerAtual.id === "conta_azul" ? "min(620px,100vw)" : "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Integração</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawerAtual.nome}</h2><div style={{ marginTop: 4, fontSize: 10.5, color: "var(--soft)" }}>{drawerAtual.detalhes}</div></div>
           <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
@@ -229,7 +230,7 @@ export default function IntegracoesAdminPage() {
           {provedorDrawer ? (credenciais?.persistenciaPronta ? (drawerAtual.id === "web_push" ? <WebPushSettings onChanged={() => void atualizar()} /> : <FormularioCredenciaisZip provedor={provedorDrawer} onSalvo={() => void atualizar()} />) : <p style={{ fontSize: 10.5, color: "var(--gold)" }}>Estrutura de persistência ainda não aplicada neste ambiente.</p>) : <p style={{ fontSize: 10.5, color: "var(--soft)" }}>Este provedor não tem campos de credencial cadastrados.</p>}
         </div>
         <div style={{ padding: "0 15px 15px", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 7 }}>
-          {(drawerAtual.id === "mercado_pago" || drawerAtual.id === "gemini") && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}
+          {(drawerAtual.id === "mercado_pago" || drawerAtual.id === "gemini" || drawerAtual.id === "conta_azul") && <button onClick={() => void testarConexao(drawerAtual.id)} disabled={testando === drawerAtual.id || !drawerAtual.credenciaisConfiguradas} style={btn}>{testando === drawerAtual.id ? "Testando…" : "Testar conexão"}</button>}
           {drawerAtual.id === "gemini" && <button onClick={() => void mensagemDeHoje()} disabled={testando === "gemini_mensagem"} style={btn}>{testando === "gemini_mensagem" ? "Preparando…" : "Preparar mensagem de hoje"}</button>}
           {drawerAtual.id === "rd_station" && <>
             <button onClick={() => void conectarRd()} disabled={conectando || !drawerAtual.oauthConfigurado} style={btn}>{conectando ? "Abrindo OAuth…" : drawerAtual.oauthAutorizado ? "Reautorizar OAuth" : "Conectar OAuth"}</button>
@@ -237,6 +238,8 @@ export default function IntegracoesAdminPage() {
             <button onClick={() => void sincronizarRd()} disabled={sincronizando || !drawerAtual.oauthAutorizado} style={{ ...btn, background: "var(--bg)", color: "var(--on-accent)", borderColor: "var(--bg)" }}>{sincronizando ? "Sincronizando…" : "Sincronizar agora"}</button>
           </>}
         </div>
+        {drawerAtual.id === "rd_station" && <div style={{ padding: "0 15px 15px", borderTop: "1px solid var(--line)" }}><CrmOperacao /></div>}
+        {drawerAtual.id === "conta_azul" && <div style={{ padding: "0 15px 15px", borderTop: "1px solid var(--line)" }}><ContaAzulOperacao /></div>}
         {resultadoTeste[drawerAtual.id] && <div style={{ margin: "0 15px 15px", borderRadius: 9, padding: "8px 10px", background: resultadoTeste[drawerAtual.id].conectado ? "var(--okbg)" : "var(--badbg)", color: resultadoTeste[drawerAtual.id].conectado ? "var(--ok)" : "var(--bad)", fontSize: 10.5 }}>{resultadoTeste[drawerAtual.id].detalhe}</div>}
       </aside>
     </>}
