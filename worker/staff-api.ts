@@ -363,7 +363,7 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
     if (staffMatch && request.method === "PATCH") {
       const id = decodeURIComponent(staffMatch[1]);
       const b = await parseBody(request);
-      const { data: atual, error: atualError } = await db.from("colaboradores").select("id,auth_user_id,cargo,ativo,permissoes").eq("id", id).maybeSingle();
+      const { data: atual, error: atualError } = await db.from("colaboradores").select("id,auth_user_id,email,cargo,ativo,permissoes").eq("id", id).maybeSingle();
       if (atualError || !atual) return json({ erro: "Colaborador não encontrado." }, 404);
       if (adminCargo !== "administrativo") {
         if (atual.cargo === "administrativo" || atual.cargo === "gestao") {
@@ -388,6 +388,26 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
         if (!nome) return json({ erro: "Nome inválido." }, 400);
         patch.nome = nome;
       }
+
+      // Dados de acesso (e-mail de login e senha): somente o cargo Administrativo.
+      const novoEmail = b.email !== undefined ? String(b.email).trim().toLowerCase() : null;
+      const novaSenha = b.senhaTemporaria !== undefined ? String(b.senhaTemporaria) : null;
+      if ((novoEmail !== null || novaSenha !== null) && adminCargo !== "administrativo") {
+        return json({ erro: "Somente o perfil administrativo pode alterar e-mail ou senha de acesso." }, 403);
+      }
+      if (novoEmail !== null && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(novoEmail)) return json({ erro: "E-mail inválido." }, 400);
+      if (novaSenha !== null && novaSenha.length < 12) return json({ erro: "A senha temporária deve ter ao menos 12 caracteres." }, 400);
+      if (novoEmail !== null || novaSenha !== null) {
+        const { error: authErro } = await db.auth.admin.updateUserById(String(atual.auth_user_id), {
+          ...(novoEmail !== null ? { email: novoEmail, email_confirm: true } : {}),
+          ...(novaSenha !== null ? { password: novaSenha } : {}),
+        });
+        if (authErro) return json({ erro: publicError(authErro, "Não foi possível atualizar o acesso.") }, 400);
+        if (novoEmail !== null) patch.email = novoEmail;
+        if (novaSenha !== null) {
+          await db.from("logs_alteracoes").insert({ usuario: adminColaboradorId, acao: "redefiniu_senha_colaborador", entidade: "colaboradores", entidade_id: id, detalhes: {} });
+        }
+      }
       if (novoCargo) patch.cargo = novoCargo;
       if (b.ativo !== undefined) patch.ativo = novoAtivo;
       const permissoes = permissoesValidas(b.permissoes);
@@ -396,8 +416,33 @@ export async function staffApi(request: Request, env: Env): Promise<Response | n
       const { data, error } = await db.rpc("admin_salvar_colaborador_auditado", {
         p_actor_auth_id: adminId, p_id: id, p_dados: patch,
       });
-      if (error) return json({ erro: publicError(error) }, error.code === "42501" ? 403 : 400);
+      if (error) {
+        // Mantém login e cadastro coerentes: se o cadastro não salvou, o e-mail de login volta.
+        if (novoEmail !== null && atual.email) await db.auth.admin.updateUserById(String(atual.auth_user_id), { email: String(atual.email), email_confirm: true }).catch(() => undefined);
+        return json({ erro: publicError(error) }, error.code === "42501" ? 403 : 400);
+      }
       return json({ colaborador: data });
+    }
+
+    // Excluir perfil: só Administrativo, nunca o próprio, e só sem histórico ligado.
+    if (staffMatch && request.method === "DELETE") {
+      if (adminCargo !== "administrativo") return json({ erro: "Somente o perfil administrativo pode excluir colaboradores." }, 403);
+      const id = decodeURIComponent(staffMatch[1]);
+      const { data, error } = await db.rpc("admin_excluir_colaborador_auditado", { p_actor_auth_id: adminId, p_id: id });
+      if (error) {
+        const msg = String(error.message ?? "");
+        if (msg.includes("STAFF_HAS_HISTORY")) {
+          let historico: Record<string, number> = {};
+          try { historico = JSON.parse(String((error as { details?: string }).details ?? "{}")); } catch { /* sem detalhe */ }
+          return json({ erro: "Este perfil tem histórico (vendas, clientes, comissões ou agendamentos) e não pode ser excluído. Desative o acesso para preservar o histórico.", codigo: "STAFF_HAS_HISTORY", historico }, 409);
+        }
+        if (msg.includes("STAFF_SELF_DELETE")) return json({ erro: "Você não pode excluir o próprio perfil." }, 409);
+        if (msg.includes("STAFF_NOT_FOUND")) return json({ erro: "Colaborador não encontrado." }, 404);
+        return json({ erro: publicError(error) }, error.code === "42501" ? 403 : 400);
+      }
+      const authUserId = (data as { auth_user_id?: string } | null)?.auth_user_id;
+      if (authUserId) await db.auth.admin.deleteUser(authUserId).catch(() => undefined);
+      return json({ excluido: true });
     }
 
     return null;

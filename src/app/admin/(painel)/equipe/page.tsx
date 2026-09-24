@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 import { PermissoesColaborador } from "@/features/admin/PermissoesColaborador";
+import { DadosColaborador } from "@/features/admin/DadosColaborador";
 import { ABAS_PERMISSOES } from "@/lib/permissoesEquipe";
 
 /**
@@ -71,10 +72,22 @@ export default function EquipeAdminPage() {
     finally { setCriando(false); }
   }
 
-  async function atualizar(id: string, patch: Partial<Pick<Colaborador, "cargo" | "ativo" | "permissoes">>) {
+  async function atualizar(id: string, patch: Record<string, unknown>): Promise<boolean> {
     setSalvando(id); setErro(null);
-    try { const body = await requestJson<{ colaborador: Colaborador }>(`/api/admin/staff/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }); setColaboradores((atual) => atual.map((item) => item.id === id ? body.colaborador : item)); if (drawer?.id === id) setDrawer(body.colaborador); }
-    catch (error) { setErro(error instanceof Error ? error.message : "Não foi possível atualizar o acesso."); await carregar(); }
+    try { const body = await requestJson<{ colaborador: Colaborador }>(`/api/admin/staff/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }); setColaboradores((atual) => atual.map((item) => item.id === id ? body.colaborador : item)); if (drawer?.id === id) setDrawer(body.colaborador); return true; }
+    catch (error) { setErro(error instanceof Error ? error.message : "Não foi possível atualizar o acesso."); await carregar(); return false; }
+    finally { setSalvando(null); }
+  }
+
+  const [excluindo, setExcluindo] = useState<Colaborador | null>(null);
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null);
+  async function excluir(c: Colaborador) {
+    setSalvando(c.id); setErroExclusao(null);
+    try {
+      await requestJson(`/api/admin/staff/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      setColaboradores((atual) => atual.filter((item) => item.id !== c.id));
+      setExcluindo(null); setDrawer(null);
+    } catch (error) { setErroExclusao(error instanceof Error ? error.message : "Não foi possível excluir o perfil."); }
     finally { setSalvando(null); }
   }
 
@@ -124,17 +137,31 @@ export default function EquipeAdminPage() {
           <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
         </div>
         <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {[["E-mail", drawer.email], ["Cargo", CARGOS.find((c) => c.value === drawer.cargo)?.label ?? drawer.cargo], ["Acesso", resumoAcesso(drawer)], ["Status", drawer.ativo ? "Ativo" : "Desativado"], ["Cadastro atualizado", new Date(drawer.updated_at).toLocaleString("pt-BR")]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span></div>)}
-          <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", margin: "8px 0 4px" }}>Cargo</label><select style={fieldInput} value={drawer.cargo} disabled={salvando === drawer.id} onChange={(e) => void atualizar(drawer.id, { cargo: e.target.value as Cargo })}>{CARGOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+          <DadosColaborador colaborador={drawer} cargos={CARGOS} resumoAcesso={resumoAcesso(drawer)} souAdministrativo={souAdministrativo} salvando={salvando === drawer.id} onSalvar={(patch) => atualizar(drawer.id, patch)} />
         </div>
         <div style={{ margin: "0 15px", borderTop: "1px solid var(--line)" }} />
         <div style={{ padding: "13px 15px" }}>
           <PermissoesColaborador cargo={drawer.cargo} permissoes={drawer.permissoes ?? []} podeEditar={souAdministrativo} salvando={salvando === drawer.id} onSalvar={(permissoes) => void atualizar(drawer.id, { permissoes })} />
         </div>
-        <div style={{ padding: "0 15px 15px", display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ padding: "0 15px 15px", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          {souAdministrativo ? <button type="button" disabled={salvando === drawer.id} onClick={() => { setErroExclusao(null); setExcluindo(drawer); }} style={{ height: 31, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--bad)", fontSize: 10.5, fontWeight: 700 }}>Excluir perfil</button> : <span />}
           <button disabled={salvando === drawer.id} onClick={() => { const acao = drawer.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${drawer.nome}?`)) void atualizar(drawer.id, { ativo: !drawer.ativo }); }} style={{ height: 31, padding: "0 10px", border: `1px solid ${drawer.ativo ? "var(--bad)" : "var(--bg)"}`, borderRadius: 9, background: drawer.ativo ? "var(--badbg)" : "var(--bg)", color: drawer.ativo ? "var(--bad)" : "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{drawer.ativo ? "Desativar acesso" : "Ativar acesso"}</button>
         </div>
       </aside>
     </>}
+
+    {excluindo && <div role="dialog" aria-modal="true" aria-labelledby="excluir-colaborador" style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--overlay-bg-strong)", padding: 20 }} className="zip-animate-fade-in" onClick={(e) => { if (e.target === e.currentTarget && !salvando) setExcluindo(null); }}>
+      <div className="zip-animate-pop-in" style={{ width: 400, maxWidth: "100%", background: "var(--s0)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--sh)", padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+        <h2 id="excluir-colaborador" style={{ fontSize: 16 }}>Excluir o perfil de {excluindo.nome}?</h2>
+        <p style={{ fontSize: 11.5, color: "var(--soft)", lineHeight: 1.5, margin: 0 }}>O login e o cadastro serão apagados e não dá para desfazer. Se a pessoa tiver vendas, clientes, comissões ou agendamentos ligados, a exclusão é bloqueada para preservar o histórico: nesse caso, desative o acesso.</p>
+        {erroExclusao && <div style={{ borderRadius: 9, background: "var(--badbg)", color: "var(--bad)", padding: "8px 10px", fontSize: 11, lineHeight: 1.45 }}>{erroExclusao}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" disabled={Boolean(salvando)} onClick={() => setExcluindo(null)} style={{ height: 33, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Cancelar</button>
+          {erroExclusao?.includes("Desative")
+            ? <button type="button" disabled={Boolean(salvando) || !excluindo.ativo} onClick={() => { void atualizar(excluindo.id, { ativo: false }).then((ok) => { if (ok) setExcluindo(null); }); }} style={{ height: 33, padding: "0 13px", border: "1px solid var(--bad)", borderRadius: 9, background: "var(--badbg)", color: "var(--bad)", fontSize: 11, fontWeight: 700 }}>{excluindo.ativo ? "Desativar acesso" : "Já desativado"}</button>
+            : <button type="button" disabled={Boolean(salvando)} onClick={() => void excluir(excluindo)} style={{ height: 33, padding: "0 13px", border: "1px solid var(--bad)", borderRadius: 9, background: "var(--bad)", color: "#FFFFFF", fontSize: 11, fontWeight: 700 }}>{salvando ? "Excluindo..." : "Excluir perfil"}</button>}
+        </div>
+      </div>
+    </div>}
   </div>;
 }
