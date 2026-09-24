@@ -152,7 +152,7 @@ export default function RelatoriosPage() {
           <div className={styles.panelHead}><h2>Funil de conversão operacional</h2><button type="button" onClick={()=>setCatalogo(true)}>Ver detalhes <ArrowRight size={13}/></button></div>
           <div className={styles.funnel}>
             <div className={styles.funnelSteps}>{dados.funil.map((f,i)=><div className={styles.funnelStep} key={f.id}><span className={styles.funnelIcon}>{[<Users key="u" size={18}/>,<FileText key="f" size={18}/>,<CalendarDays key="c" size={18}/>,<Scissors key="s" size={18}/>,<CheckCircle2 key="o" size={18}/>][i]}</span><div>{f.label}</div><strong>{f.valor.toLocaleString("pt-BR")}</strong>{i<dados.funil.length-1&&<ArrowRight size={14}/>}</div>)}</div>
-            <div className={styles.funnelBar}>{dados.funil.map((f,i)=><span key={f.id} style={{flex:Math.max(1,f.valor/maxFunil*10)}} data-tone={i}/>)}</div>
+            <div className={styles.funnelBar}>{dados.funil.map((f,i)=><span key={f.id} style={{flexGrow:f.valor>0?f.valor/maxFunil*10:0,flexBasis:f.valor>0?8:0,minWidth:f.valor>0?3:0}} data-tone={i}/>)}</div>
             <div className={styles.funnelPct}>{dados.funil.map(f=><span key={f.id}>{Math.round(f.valor/totalFunil*100)}%</span>)}</div>
           </div>
         </article>
