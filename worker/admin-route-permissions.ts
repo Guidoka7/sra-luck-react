@@ -12,6 +12,7 @@ export function adminReadPermissions(path: string): readonly string[] | null {
   if (/^\/api\/admin\/notificacoes(?:\/|$)/.test(path)) return [P.NOTIFICACOES_GERENCIAR];
   if (/^\/api\/admin\/relatorios(?:\/|$)/.test(path)) return [P.RELATORIOS_VISUALIZAR, P.RELATORIOS_EXPORTAR];
   if (path === "/api/admin/configuracoes") return [P.CONFIGURACOES_GERENCIAR];
+  if (/^\/api\/admin\/home-campanhas(?:\/|$)/.test(path)) return [P.CONFIGURACOES_GERENCIAR];
   if (path === "/api/admin/credit-ops/finance/daily") return FINANCE;
   if (/^\/api\/admin\/credit-ops(?:\/|$)/.test(path)) return [P.CREDITO_GERENCIAR];
   if (/^\/api\/admin\/clientes\/[^/]+\/(boletos|parcelas|carnes|importacoes-boletos)$/.test(path)) return FINANCE;
