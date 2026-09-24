@@ -148,16 +148,20 @@ export default function PrevisoesPage() {
   const agendaPorCliente = useMemo(() => new Map(agenda.map((a) => [a.clienteId, a])), [agenda]);
   const clientePorId = useMemo(() => new Map(clientes.map((c) => [c.id, c])), [clientes]);
   const forecastPorId = useMemo(() => new Map(forecast.map((f) => [f.clienteId, f])), [forecast]);
-  const responsaveis = useMemo(() => Array.from(new Set(clientes.map((c) => c.consultora).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [clientes]);
+  const responsaveis = useMemo(() => Array.from(new Set([
+    ...forecast.map((f) => f.responsavel),
+    ...clientes.map((c) => c.consultora),
+  ].filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [forecast, clientes]);
   const procedimentos = useMemo(() => Array.from(new Set(clientes.map((c) => c.procedimento).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [clientes]);
 
   const clientePermitido = useMemo(() => {
     const ids = new Set<string>();
     for (const c of clientes) {
-      if (responsavel !== "todos" && (c.consultora ?? "") !== responsavel) continue;
+      const f = forecastPorId.get(c.id);
+      const responsavelEfetivo = f?.responsavel ?? c.consultora ?? "";
+      if (responsavel !== "todos" && responsavelEfetivo !== responsavel) continue;
       if (procedimento !== "todos" && (c.procedimento ?? "") !== procedimento) continue;
       if (status !== "todos") {
-        const f = forecastPorId.get(c.id);
         if (!f || etapaDe(f, agendaPorCliente.get(c.id)) !== status) continue;
       }
       ids.add(c.id);
@@ -311,7 +315,7 @@ export default function PrevisoesPage() {
   if (detalhes) {
     return <div className="zip-admin">
       <button type="button" className={styles.backButton} onClick={() => setDetalhes(false)}>← Voltar ao painel de previsões</button>
-      <PrevisoesDetalhes />
+      <PrevisoesDetalhes allowedClientIds={Array.from(clientePermitido)} />
     </div>;
   }
 
