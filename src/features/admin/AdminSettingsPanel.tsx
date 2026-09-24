@@ -85,8 +85,10 @@ export function AdminSettingsPanel() {
       const data = await responseJson<{ configuracoes?: ConfiguracoesData }>(response);
       if (data.configuracoes) setConfig(data.configuracoes);
       setFeedback({ tone: "ok", text: "Configurações salvas com sucesso." });
+      return true;
     } catch (error) {
       setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Não foi possível salvar as configurações." });
+      return false;
     } finally {
       setSaving(null);
     }
@@ -106,9 +108,10 @@ export function AdminSettingsPanel() {
   }
 
   async function saveAppearance() {
-    const normalized = salvarPaletaLocal(palette);
+    const normalized = normalizarPaleta(palette);
     setPalette(normalized);
-    await patchConfig("appearance", { temaCorPrimaria: normalized.primary, temaCorSecundaria: normalized.accent, temaCorDestaque: normalized.highlight });
+    const salvo = await patchConfig("appearance", { temaCorPrimaria: normalized.primary, temaCorSecundaria: normalized.accent, temaCorDestaque: normalized.highlight });
+    if (salvo) salvarPaletaLocal(normalized);
   }
 
   if (loading && !config) return <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando configurações…</div>;
@@ -118,7 +121,7 @@ export function AdminSettingsPanel() {
     { id: "company", icon: "⌂", iconBg: "var(--robg)", iconColor: "var(--bg)", title: "Perfil da empresa", sub: "Informações institucionais", rows: [["Empresa", String(c.nome_clinica ?? "Sra. Luck")], ["Telefone", String(c.telefone_contato ?? "—")], ["WhatsApp", String(c.whatsapp_contato ?? "—")]] },
     { id: "identity", icon: "◈", iconBg: "var(--gobg)", iconColor: "var(--gold)", title: "Aparência do painel", sub: "Tema e cores administrativas", rows: [["Tema", theme === "dark" ? "Escuro" : "Claro"], ["Cor principal", palette.primary], ["Destaque", palette.highlight]] },
     { id: "pix", icon: "Pix", iconBg: "var(--okbg)", iconColor: "var(--ok)", title: "Recebimentos · Chave PIX", sub: "Chave utilizada nas operações permitidas", rows: [["Chave", String(c.pix_chave || "Não configurada")], ["Desconto", `${Number(c.pix_desconto_percentual ?? 0)}%`], ["QR Code", c.pix_qrcode_base64 ? "Carregado" : "Não enviado"]] },
-    { id: "prefs", icon: "⚙", iconBg: "var(--bluebg)", iconColor: "var(--blue)", title: "Preferências do sistema", sub: "Comportamentos administrativos", rows: [["Limite orçamentário", new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(c.meta_orcamento_mensal ?? 0))], ["Fuso", "America/Sao_Paulo"], ["Moeda", "BRL"]] },
+    { id: "prefs", icon: "⚙", iconBg: "var(--bluebg)", iconColor: "var(--blue)", title: "Preferências institucionais", sub: "Mensagem, fuso e moeda do sistema", rows: [["Mensagem executiva", String(c.frase_sonho || "Não configurada")], ["Fuso", "America/Sao_Paulo"], ["Moeda", "BRL"]] },
   ];
 
   return <div>
@@ -154,7 +157,7 @@ export function AdminSettingsPanel() {
           <div><label style={fieldLabel}>Nome da empresa</label><input style={fieldInput} value={String(c.nome_clinica ?? "")} onChange={(e) => update("nome_clinica", e.target.value)} /></div>
           <div><label style={fieldLabel}>Telefone</label><input style={fieldInput} value={String(c.telefone_contato ?? "")} onChange={(e) => update("telefone_contato", e.target.value)} /></div>
           <div><label style={fieldLabel}>WhatsApp</label><input style={fieldInput} value={String(c.whatsapp_contato ?? "")} onChange={(e) => update("whatsapp_contato", e.target.value)} /></div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 7 }}><button onClick={() => setDrawer(null)} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Cancelar</button><button disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", telefoneContato: c.telefone_contato ?? "", whatsappContato: c.whatsapp_contato ?? "", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "identity" ? "Salvando…" : "Salvar alterações"}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 7 }}><button onClick={() => setDrawer(null)} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Cancelar</button><button disabled={saving === "company"} onClick={() => void patchConfig("company", { nomeClinica: c.nome_clinica ?? "Sra. Luck", telefoneContato: c.telefone_contato ?? "", whatsappContato: c.whatsapp_contato ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "company" ? "Salvando…" : "Salvar alterações"}</button></div>
         </div>}
 
         {drawer === "identity" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -168,11 +171,11 @@ export function AdminSettingsPanel() {
           {([["primary", "Cor principal"], ["accent", "Cor secundária"], ["highlight", "Destaque"]] as const).map(([key, label]) => <div key={key}>
             <label style={fieldLabel}>{label}</label>
             <div style={{ display: "flex", gap: 7 }}>
-              <input type="color" value={palette[key]} onChange={(e) => { const next = { ...palette, [key]: e.target.value }; setPalette(next); salvarPaletaLocal(next); }} style={{ width: 34, height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)" }} />
+              <input type="color" value={palette[key]} onChange={(e) => setPalette({ ...palette, [key]: e.target.value })} style={{ width: 34, height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)" }} />
               <input style={{ ...fieldInput, flex: 1 }} value={palette[key]} onChange={(e) => setPalette({ ...palette, [key]: e.target.value })} />
             </div>
           </div>)}
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}><button onClick={() => { setPalette(DEFAULT_ADMIN_PALETTE); salvarPaletaLocal(DEFAULT_ADMIN_PALETTE); }} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Restaurar padrão</button><button disabled={saving === "appearance"} onClick={() => void saveAppearance()} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "appearance" ? "Salvando…" : "Salvar aparência"}</button></div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}><button onClick={() => setPalette(DEFAULT_ADMIN_PALETTE)} style={{ height: 32, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 11, fontWeight: 700 }}>Restaurar padrão</button><button disabled={saving === "appearance"} onClick={() => void saveAppearance()} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "appearance" ? "Salvando…" : "Salvar aparência"}</button></div>
         </div>}
 
         {drawer === "pix" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -183,14 +186,13 @@ export function AdminSettingsPanel() {
             {c.pix_qrcode_base64 ? <div style={{ display: "flex", alignItems: "center", gap: 10 }}><img src={String(c.pix_qrcode_base64)} alt="QR PIX" style={{ width: 56, height: 56, borderRadius: 8, border: "1px solid var(--line)" }} /><div style={{ display: "flex", gap: 6 }}><button onClick={() => fileRef.current?.click()} style={{ height: 30, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--s0)", fontSize: 10, fontWeight: 700 }}>Trocar</button><button onClick={() => update("pix_qrcode_base64", "")} style={{ height: 30, padding: "0 10px", border: "1px solid var(--badbg)", borderRadius: 8, background: "var(--badbg)", color: "var(--bad)", fontSize: 10, fontWeight: 700 }}>Remover</button></div></div> : <button onClick={() => fileRef.current?.click()} style={{ width: "100%", height: 60, border: "1px dashed var(--line)", borderRadius: 10, background: "var(--s1)", fontSize: 11, fontWeight: 700, color: "var(--bg)" }}>+ Adicionar QR Code do PIX</button>}
             <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => selectQr(e.target.files?.[0] ?? null)} />
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "payments"} onClick={() => void patchConfig("payments", { pixChave: c.pix_chave ?? "", pixQrCodeBase64: c.pix_qrcode_base64 ?? "", pixDescontoPercentual: c.pix_desconto_percentual ?? 0, whatsappContato: c.whatsapp_contato ?? "", telefoneContato: c.telefone_contato ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "payments" ? "Salvando…" : "Salvar alterações"}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "payments"} onClick={() => void patchConfig("payments", { pixChave: c.pix_chave ?? "", pixQrCodeBase64: c.pix_qrcode_base64 ?? "", pixDescontoPercentual: c.pix_desconto_percentual ?? 0 })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "payments" ? "Salvando…" : "Salvar alterações"}</button></div>
         </div>}
 
         {drawer === "prefs" && <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div><label style={fieldLabel}>Limite orçamentário mensal</label><input type="number" min="0" step="0.01" style={fieldInput} value={Number(c.meta_orcamento_mensal ?? 0)} onChange={(e) => update("meta_orcamento_mensal", Number(e.target.value))} /></div>
           <div><label style={fieldLabel}>Mensagem executiva</label><textarea style={{ ...fieldInput, height: "auto", padding: 9 }} rows={4} value={String(c.frase_sonho ?? "")} onChange={(e) => update("frase_sonho", e.target.value)} /></div>
           <div><label style={fieldLabel}>Fuso horário</label><input style={fieldInput} value="America/Sao_Paulo" disabled /></div>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "identity"} onClick={() => void patchConfig("identity", { nomeClinica: c.nome_clinica ?? "Sra. Luck", metaOrcamentoMensal: c.meta_orcamento_mensal ?? 0, fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "identity" ? "Salvando…" : "Salvar alterações"}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={saving === "preferences"} onClick={() => void patchConfig("preferences", { fraseSonho: c.frase_sonho ?? "" })} style={{ height: 32, padding: "0 13px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving === "company" ? "Salvando…" : "Salvar alterações"}</button></div>
         </div>}
 
       </aside>

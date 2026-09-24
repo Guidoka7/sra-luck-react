@@ -155,7 +155,8 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       negativadas: clientes.filter((c) => statusContrato(c.status_contrato) === "negativado").length,
       canceladas: clientes.filter((c) => statusContrato(c.status_contrato) === "cancelado").length,
     };
-    const totalClientes = clientStats.ativas + clientStats.suspensas + clientStats.negativadas + clientStats.canceladas;
+    // Canceladas (incluindo perfis arquivados) não fazem parte do funil operacional V46.
+    const totalClientes = clientStats.ativas + clientStats.suspensas + clientStats.negativadas;
     const novasClientesHoje = clientes.filter((c) => dataBrasil(String(c.created_at ?? "")) === agoraBrasil).length;
     const novasClientesRecentes = clientes.slice(0, 6).map((c) => ({
       clienteId: c.id,
