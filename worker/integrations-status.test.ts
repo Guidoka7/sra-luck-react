@@ -15,6 +15,7 @@ vi.mock("./session", () => ({
 vi.mock("./integrations-credenciais", () => ({
   obterCredencial: async (_env: Env, provedor: string, chave: string) =>
     provedor === "gemini" && chave === "api_key" ? "chave-teste" : null,
+  estadosIntegracoes: async () => new Map(),
 }));
 vi.mock("./web-push-config", () => ({
   validarConfiguracaoVapid: async () => ({ valido: false }),
