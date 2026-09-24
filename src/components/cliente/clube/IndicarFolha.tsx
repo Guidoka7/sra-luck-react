@@ -22,16 +22,17 @@ export function IndicarFolha({ aberta, onFechar, onEnviada, pontosPorIndicacao, 
 }) {
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [consentimento, setConsentimento] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [enviada, setEnviada] = useState<{ nome: string; telefone: string } | null>(null);
 
   useEffect(() => {
-    if (aberta) { setNome(""); setTelefone(""); setErro(null); setEnviada(null); }
+    if (aberta) { setNome(""); setTelefone(""); setConsentimento(false); setErro(null); setEnviada(null); }
   }, [aberta]);
 
   const digitos = telefone.replace(/\D/g, "");
-  const valido = nome.trim().length >= 2 && digitos.length >= 10;
+  const valido = nome.trim().length >= 2 && digitos.length >= 10 && consentimento;
 
   async function escolherContato() {
     try {
@@ -47,7 +48,7 @@ export function IndicarFolha({ aberta, onFechar, onEnviada, pontosPorIndicacao, 
     setEnviando(true);
     setErro(null);
     try {
-      await indicarAmiga(nome.trim(), digitos);
+      await indicarAmiga(nome.trim(), digitos, consentimento);
       setEnviada({ nome: nome.trim(), telefone: digitos });
       onEnviada();
     } catch (e) {
@@ -93,6 +94,15 @@ export function IndicarFolha({ aberta, onFechar, onEnviada, pontosPorIndicacao, 
           <label className="flex flex-col gap-[6px] text-[11px] font-medium uppercase tracking-[.1em] text-[#9A8C88]">
             WhatsApp com DDD
             <input value={telefone} onChange={(e) => setTelefone(mascaraTelefone(e.target.value))} inputMode="tel" autoComplete="off" placeholder="(61) 99999-0000" className="rounded-[14px] border border-[#E6DAD6] bg-white px-4 py-[14px] text-[16px] normal-case tracking-normal text-[#2E2422] outline-none focus:border-[#6B1F2E]" />
+          </label>
+          <label className="flex items-start gap-3 rounded-[14px] border border-[#E6DAD6] bg-[#FAF7F6] px-4 py-3 text-[12.5px] leading-[1.45] text-[#5E4A46]">
+            <input
+              type="checkbox"
+              checked={consentimento}
+              onChange={(e) => setConsentimento(e.target.checked)}
+              className="mt-[2px] h-4 w-4 shrink-0 accent-[#6B1F2E]"
+            />
+            <span>Confirmo que minha amiga autorizou o compartilhamento do WhatsApp dela para receber este contato da Sra. Luck.</span>
           </label>
           {erro && <div role="alert" className="rounded-[12px] border border-[#F0D3D1] bg-[#FBEBEA] px-4 py-3 text-[12.5px] text-[#8F2A25]">{erro}</div>}
           <button type="submit" disabled={!valido || enviando} className="mt-1 w-full rounded-[14px] bg-[#6B1F2E] px-4 py-[15px] text-[14.5px] font-semibold text-white disabled:opacity-45">

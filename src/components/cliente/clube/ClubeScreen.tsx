@@ -5,7 +5,7 @@ import { CalendarCheck, Check, ChevronRight, Clock3, Gift, History, Info, Lock, 
 import { toast } from "sonner";
 import {
   abrirArquivoVoucher, buscarClube, resgatarPremio, solicitarVoucher, usarBeneficio, VOUCHER_CONSULTA_KEY,
-  type ClubeData, type ClubeRecompensa,
+  type ClubeCampanha, type ClubeData, type ClubeRecompensa,
 } from "@/lib/clube";
 import { Folha, ImagemPremio, Moeda } from "./ClubeUi";
 import { IndicarFolha } from "./IndicarFolha";
@@ -16,6 +16,11 @@ interface ClubeScreenProps { onVoltar?: () => void; onIrParcelas: () => void; no
 type Aba = "premios" | "missoes" | "indicacoes";
 
 const PADRAO = { pontosPrimeiraParcela: 50, pontosParcelaEmDia: 10, pontosIndicacao: 200 };
+const CAMPANHAS_PADRAO: ClubeCampanha[] = [
+  { id: "primeira-parcela", chave: "primeira_parcela", tipo: "primeira_parcela", titulo: "Pague a 1ª parcela", descricao: "Ao confirmar o seu primeiro pagamento, você ganha pontos e libera o voucher de consulta com o Doutor.", recompensa_texto: null, ativo: true, ordem: 10, created_at: "" },
+  { id: "parcela-em-dia", chave: "parcela_em_dia", tipo: "parcela_em_dia", titulo: "Pague em dia", descricao: "Toda parcela paga até o vencimento vale pontos. Quanto mais em dia, mais perto do seu prêmio.", recompensa_texto: null, ativo: true, ordem: 20, created_at: "" },
+  { id: "indicacao", chave: "indicacao", tipo: "indicacao", titulo: "Indique uma amiga", descricao: "Você ganha quando a amiga indicada fechar contrato e pagar a 1ª parcela.", recompensa_texto: null, ativo: true, ordem: 30, created_at: "" },
+];
 
 function dataCurta(iso?: string | null) {
   if (!iso) return "";
@@ -54,6 +59,7 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
   const meta = useMemo(() => proximoPremio(recompensas, saldo), [recompensas, saldo]);
   const voucher = dados?.beneficios.find((b) => b.beneficio_key === VOUCHER_CONSULTA_KEY) ?? null;
   const indicacoes = dados?.indicacoes.itens ?? [];
+  const campanhas = (dados?.campanhas?.length ? dados.campanhas : CAMPANHAS_PADRAO).filter((c) => c.ativo).sort((a,b) => a.ordem-b.ordem);
   const pontosIndicacoes = indicacoes.reduce((t, i) => t + (i.pontos_creditados || 0), 0);
   const aCaminho = pontosACaminho(indicacoes, config.pontosIndicacao);
   const caminho = meta.alvo ? caminhoAteMeta({
@@ -202,26 +208,16 @@ export function ClubeScreen({ onVoltar, onIrParcelas, nomeCliente }: ClubeScreen
 
             {aba === "missoes" && (
               <div className="flex flex-col gap-3">
-                <Missao
-                  Icone={Gift} titulo="Pague a 1ª parcela" recompensa={`+${config.pontosPrimeiraParcela} pts + voucher`}
-                  descricao="Ao confirmar o seu primeiro pagamento, você ganha pontos e libera o voucher de consulta com o Doutor."
-                  concluida={Boolean(dados?.missoes?.primeiraParcela.concluida)}
-                  status={dados?.missoes?.primeiraParcela.concluida ? "Missão concluída" : undefined}
-                  acao={dados?.missoes?.primeiraParcela.concluida ? undefined : { rotulo: "Ver minhas parcelas", onClick: onIrParcelas }}
-                />
-                <Missao
-                  Icone={CalendarCheck} titulo="Pague em dia" recompensa={`+${config.pontosParcelaEmDia} pts por parcela`}
-                  descricao="Toda parcela paga até o vencimento vale pontos. Quanto mais em dia, mais perto do seu prêmio."
-                  status={dados?.missoes?.parcelaEmDia.vezes ? `Você já ganhou ${dados.missoes.parcelaEmDia.vezes}× · ${pts(dados.missoes.parcelaEmDia.pontosGanhos)}` : undefined}
-                  destaque={dados?.missoes?.parcelaEmDia.proxima?.vencimento ? `Próxima: parcela ${dados.missoes.parcelaEmDia.proxima.numero} vence em ${dataCurta(dados.missoes.parcelaEmDia.proxima.vencimento)}` : undefined}
-                  acao={{ rotulo: "Ver parcelas", onClick: onIrParcelas }}
-                />
-                <Missao
-                  Icone={Users} titulo="Indique uma amiga" recompensa={`+${config.pontosIndicacao} pts`}
-                  descricao="Você ganha quando a amiga indicada fechar contrato e pagar a 1ª parcela."
-                  status={dados?.missoes?.indicacao.creditadas ? `${dados.missoes.indicacao.creditadas} ${dados.missoes.indicacao.creditadas === 1 ? "indicação premiada" : "indicações premiadas"} · ${pts(dados.missoes.indicacao.pontosGanhos)}` : undefined}
-                  acao={{ rotulo: "Indicar agora", onClick: () => setIndicarAberta(true) }}
-                />
+                {campanhas.map((campanha) => {
+                  if (campanha.tipo === "primeira_parcela") return <Missao key={campanha.id} Icone={Gift} titulo={campanha.titulo} recompensa={`+${config.pontosPrimeiraParcela} pts + voucher`} descricao={campanha.descricao || "Pague a primeira parcela para concluir esta missão."} concluida={Boolean(dados?.missoes?.primeiraParcela.concluida)} status={dados?.missoes?.primeiraParcela.concluida ? "Missão concluída" : undefined} acao={dados?.missoes?.primeiraParcela.concluida ? undefined : { rotulo: "Ver minhas parcelas", onClick: onIrParcelas }} />;
+                  if (campanha.tipo === "parcela_em_dia") return <Missao key={campanha.id} Icone={CalendarCheck} titulo={campanha.titulo} recompensa={`+${config.pontosParcelaEmDia} pts por parcela`} descricao={campanha.descricao || "Mantenha suas parcelas em dia para ganhar pontos."} status={dados?.missoes?.parcelaEmDia.vezes ? `Você já ganhou ${dados.missoes.parcelaEmDia.vezes}× · ${pts(dados.missoes.parcelaEmDia.pontosGanhos)}` : undefined} destaque={dados?.missoes?.parcelaEmDia.proxima?.vencimento ? `Próxima: parcela ${dados.missoes.parcelaEmDia.proxima.numero} vence em ${dataCurta(dados.missoes.parcelaEmDia.proxima.vencimento)}` : undefined} acao={{ rotulo: "Ver parcelas", onClick: onIrParcelas }} />;
+                  if (campanha.tipo === "indicacao") return <Missao key={campanha.id} Icone={Users} titulo={campanha.titulo} recompensa={`+${config.pontosIndicacao} pts`} descricao={campanha.descricao || "Indique uma amiga e acompanhe o andamento pelo Clube."} status={dados?.missoes?.indicacao.creditadas ? `${dados.missoes.indicacao.creditadas} ${dados.missoes.indicacao.creditadas === 1 ? "indicação premiada" : "indicações premiadas"} · ${pts(dados.missoes.indicacao.pontosGanhos)}` : undefined} acao={{ rotulo: "Indicar agora", onClick: () => setIndicarAberta(true) }} />;
+                  if (campanha.tipo === "resgate") {
+                    const feitos = dados?.resgates?.filter((r) => r.status !== "cancelado").length ?? 0;
+                    return <Missao key={campanha.id} Icone={Gift} titulo={campanha.titulo} recompensa="Use seus pontos" descricao={campanha.descricao || "Troque seus pontos por um benefício disponível."} status={feitos ? `${feitos} ${feitos === 1 ? "resgate realizado" : "resgates realizados"}` : undefined} acao={{ rotulo: "Ver prêmios", onClick: () => setAba("premios") }} />;
+                  }
+                  return <Missao key={campanha.id} Icone={Info} titulo={campanha.titulo} recompensa={campanha.recompensa_texto || "Novidade"} descricao={campanha.descricao || "Confira esta novidade do Clube Sra. Luck."} />;
+                })}
                 <button type="button" onClick={() => setFolha("como")} className="mt-1 flex items-center justify-center gap-2 py-2 text-[13px] font-semibold text-[#7D2434]"><Info className="h-4 w-4" /> Como funciona o Clube</button>
               </div>
             )}

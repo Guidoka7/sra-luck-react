@@ -206,7 +206,7 @@ async function fetchRecebimentos(db: Db) {
 async function fetchAgendamentos(db: Db) {
   const { data, error } = await db
     .from("agendamentos")
-    .select("id,cliente_id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,prazo_cirurgico_dias_extras,created_at,clientes(nome_completo,cpf,status_cirurgia,consultora,custeio_confirmado_em)");
+    .select("id,cliente_id,status,termos_assinados_em,data_cirurgia,previsao_liberacao_financeira,agenda_cirurgica_liberada_em,prazo_cirurgico_dias_extras,created_at,clientes(nome_completo,cpf,status_cirurgia,consultora,custeio_confirmado_em)");
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -716,15 +716,16 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
           && detalhes.para === "ativo"
           && ["suspenso", "negativado", "cancelado"].includes(String(detalhes.de ?? ""));
       }).length;
-      const contaCancelamentos = (ini: string, fim: string) => clientes.filter((c: any) =>
-        c.status_contrato === "cancelado"
-        && String(c.updated_at ?? c.created_at ?? "").slice(0, 10) >= ini
-        && String(c.updated_at ?? c.created_at ?? "").slice(0, 10) < fim
-      ).length;
+      const contaCancelamentos = (ini: string, fim: string) => logs.filter((l: any) => {
+        if (l.acao !== "alterou_status_contrato") return false;
+        const data = String(l.created_at ?? "").slice(0, 10);
+        const detalhes = (l.detalhes ?? {}) as Record<string, unknown>;
+        return data >= ini && data < fim && detalhes.para === "cancelado";
+      }).length;
       const contaLiberacoes = (ini: string, fim: string) => agendamentos.filter((a: any) =>
-        a.previsao_liberacao_financeira
-        && String(a.previsao_liberacao_financeira).slice(0, 10) >= ini
-        && String(a.previsao_liberacao_financeira).slice(0, 10) < fim
+        a.agenda_cirurgica_liberada_em
+        && String(a.agenda_cirurgica_liberada_em).slice(0, 10) >= ini
+        && String(a.agenda_cirurgica_liberada_em).slice(0, 10) < fim
       ).length;
 
       const valorRecebido = somaRecebimentos(inicio, proximo);

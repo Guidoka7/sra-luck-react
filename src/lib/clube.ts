@@ -42,6 +42,11 @@ export interface ClubeIndicacao {
 }
 
 export interface ClubeConfig { pontosPrimeiraParcela: number; pontosParcelaEmDia: number; pontosIndicacao: number }
+export type ClubeCampanhaTipo = "primeira_parcela" | "parcela_em_dia" | "indicacao" | "resgate" | "informativa";
+export interface ClubeCampanha {
+  id: string; chave?: string | null; tipo: ClubeCampanhaTipo; titulo: string; descricao: string | null;
+  recompensa_texto: string | null; ativo: boolean; ordem: number; created_at: string;
+}
 
 export interface ClubeMissoes {
   primeiraParcela: { concluida: boolean; pontos: number };
@@ -59,6 +64,7 @@ export interface ClubeData {
   indicacoes: { confirmadas: number; emAnalise: number; itens: ClubeIndicacao[] };
   config?: ClubeConfig;
   missoes?: ClubeMissoes;
+  campanhas?: ClubeCampanha[];
   resgates?: ClubeResgate[];
 }
 
@@ -85,10 +91,10 @@ export function resgatarPremio(recompensaId: string, idempotencyKey: string) {
   });
 }
 
-export function indicarAmiga(nome: string, telefone: string) {
+export function indicarAmiga(nome: string, telefone: string, consentimentoContato: boolean) {
   return api<{ indicacao: unknown }>("/api/cliente/credit-ops/referrals", {
     method: "POST",
-    body: JSON.stringify({ nome, telefone }),
+    body: JSON.stringify({ nome, telefone, consentimentoContato }),
   });
 }
 

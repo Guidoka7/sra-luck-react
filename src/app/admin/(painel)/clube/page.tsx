@@ -37,6 +37,11 @@ interface Voucher {
   solicitado_em?: string | null; arquivo_disponivel: boolean; arquivo_anexado_em?: string | null; cliente: Pessoa;
 }
 interface Config { pontosPrimeiraParcela: number; pontosParcelaEmDia: number; pontosIndicacao: number }
+type TipoCampanha = "primeira_parcela" | "parcela_em_dia" | "indicacao" | "resgate" | "informativa";
+interface Campanha {
+  id: string; chave?: string | null; tipo: TipoCampanha; titulo: string; descricao?: string | null;
+  recompensa_texto?: string | null; ativo: boolean; ordem: number; created_at: string;
+}
 interface Recompensa {
   id: string; titulo: string; descricao?: string | null; categoria?: string | null; pontos: number;
   estoque?: number | null; ativo: boolean; imagem_url?: string | null; ordem?: number | null;
@@ -60,9 +65,10 @@ interface ClubeOverview {
   vouchers: Voucher[];
   recompensas: Recompensa[];
   resgates: Resgate[];
+  campanhas: Campanha[];
   metricas: MetricasClube;
 }
-type AbaClube = "painel" | "beneficios" | "indicacoes" | "vouchers" | "resgates" | "pontuacao";
+type AbaClube = "painel" | "beneficios" | "indicacoes" | "vouchers" | "resgates" | "campanhas" | "pontuacao";
 
 const STATUS: Record<StatusIndicacao, { rotulo: string; kind: ZipKind }> = {
   enviada: { rotulo: "Enviada", kind: "neutral" },
@@ -112,6 +118,7 @@ export default function ClubeAdminPage() {
     { id: "indicacoes", rotulo: "Indicações", n: (dados?.indicacoes ?? []).filter((i) => i.status === "enviada" || i.status === "qualificada").length },
     { id: "vouchers", rotulo: "Vouchers", n: vouchersPendentes },
     { id: "resgates", rotulo: "Resgates", n: dados?.metricas?.resgatesPendentes ?? 0 },
+    { id: "campanhas", rotulo: "Campanhas", n: (dados?.campanhas ?? []).filter((c) => c.ativo).length },
     { id: "pontuacao", rotulo: "Pontuação", n: 0 },
   ];
 
@@ -166,7 +173,8 @@ export default function ClubeAdminPage() {
 
         {aba === "beneficios" && <PainelBeneficios recompensas={dados.recompensas} onAtualizado={carregar} />}
         {aba === "vouchers" && <PainelVouchers vouchers={dados.vouchers} onAtualizado={carregar} />}
-        {aba === "resgates" && <PainelResgates resgates={dados.resgates} />}
+        {aba === "resgates" && <PainelResgates resgates={dados.resgates} onAtualizado={carregar} />}
+        {aba === "campanhas" && <PainelCampanhas campanhas={dados.campanhas} config={dados.config} onAtualizado={carregar} />}
         {aba === "pontuacao" && <PainelPontuacao config={dados.config} onSalvo={carregar} />}
       </>}
     </div>
@@ -286,6 +294,116 @@ function PainelVouchers({ vouchers, onAtualizado }: { vouchers: Voucher[]; onAtu
   </div>;
 }
 
+function PainelCampanhas({ campanhas, config, onAtualizado }: { campanhas: Campanha[]; config: Config; onAtualizado: () => Promise<void> }) {
+  type FormCampanha = { titulo: string; descricao: string; tipo: TipoCampanha; recompensaTexto: string; ordem: number };
+  const vazio: FormCampanha = { titulo: "", descricao: "", tipo: "informativa", recompensaTexto: "", ordem: 0 };
+  const [formAberto, setFormAberto] = useState(false);
+  const [editando, setEditando] = useState<Campanha | null>(null);
+  const [form, setForm] = useState<FormCampanha>(vazio);
+  const [ocupado, setOcupado] = useState<string | null>(null);
+
+  const tipos: Array<[TipoCampanha, string]> = [
+    ["primeira_parcela", "1ª parcela paga"],
+    ["parcela_em_dia", "Parcela paga em dia"],
+    ["indicacao", "Indicação premiada"],
+    ["resgate", "Resgate de benefício"],
+    ["informativa", "Informativa"],
+  ];
+  const recompensaAutomatica = (tipo: TipoCampanha) =>
+    tipo === "primeira_parcela" ? `+${config.pontosPrimeiraParcela} pts + voucher`
+    : tipo === "parcela_em_dia" ? `+${config.pontosParcelaEmDia} pts por parcela`
+    : tipo === "indicacao" ? `+${config.pontosIndicacao} pts`
+    : tipo === "resgate" ? "Resgate com pontos"
+    : null;
+
+  function abrirNovo() { setEditando(null); setForm(vazio); setFormAberto(true); }
+  function abrirEdicao(c: Campanha) {
+    setEditando(c);
+    setForm({ titulo: c.titulo, descricao: c.descricao ?? "", tipo: c.tipo, recompensaTexto: c.recompensa_texto ?? "", ordem: c.ordem });
+    setFormAberto(true);
+  }
+  function fechar() { setEditando(null); setForm(vazio); setFormAberto(false); }
+
+  async function salvar() {
+    if (form.titulo.trim().length < 2) return toast.error("Informe o nome da campanha.");
+    setOcupado(editando?.id ?? "novo");
+    try {
+      await api(editando ? `/api/admin/credit-ops/club/campanhas/${encodeURIComponent(editando.id)}` : "/api/admin/credit-ops/club/campanhas", {
+        method: editando ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: form.titulo.trim(),
+          descricao: form.descricao.trim() || null,
+          tipo: form.tipo,
+          recompensaTexto: form.tipo === "informativa" ? form.recompensaTexto.trim() || null : null,
+          ordem: Math.floor(form.ordem || 0),
+          ativo: editando?.ativo ?? true,
+        }),
+      });
+      toast.success(editando ? "Campanha atualizada no app das clientes." : "Campanha criada e publicada no Clube.");
+      fechar();
+      await onAtualizado();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível salvar a campanha."); }
+    finally { setOcupado(null); }
+  }
+
+  async function alternar(c: Campanha) {
+    setOcupado(c.id);
+    try {
+      await api(`/api/admin/credit-ops/club/campanhas/${encodeURIComponent(c.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ativo: !c.ativo }),
+      });
+      toast.success(c.ativo ? "Campanha pausada no app." : "Campanha reativada no app.");
+      await onAtualizado();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível alterar a campanha."); }
+    finally { setOcupado(null); }
+  }
+
+  async function excluir(c: Campanha) {
+    if (!window.confirm(`Excluir “${c.titulo}”? Ela deixará de aparecer no Clube das clientes.`)) return;
+    setOcupado(c.id);
+    try {
+      await api(`/api/admin/credit-ops/club/campanhas/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      toast.success("Campanha excluída.");
+      if (editando?.id === c.id) fechar();
+      await onAtualizado();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível excluir a campanha."); }
+    finally { setOcupado(null); }
+  }
+
+  return <div style={cartao}>
+    <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+      <div><strong style={{ fontSize: 13 }}>Campanhas e missões</strong><div style={{ fontSize: 10.5, color: "var(--soft)", marginTop: 3 }}>O que estiver ativo aparece na aba Missões do app. Regras automáticas usam a pontuação real configurada no Clube.</div></div>
+      <button type="button" style={botao(true)} onClick={() => formAberto ? fechar() : abrirNovo()}>{formAberto ? "Fechar editor" : "Nova campanha"}</button>
+    </div>
+
+    {formAberto && <div style={{ padding: 14, borderBottom: "1px solid var(--line)", display: "grid", gap: 10, background: "var(--s1)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr 110px", gap: 10 }}>
+        <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--soft)" }}>Nome<input style={campo} value={form.titulo} onChange={(e) => setForm((v) => ({ ...v, titulo: e.target.value }))} /></label>
+        <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--soft)" }}>Tipo<select style={campo} value={form.tipo} onChange={(e) => setForm((v) => ({ ...v, tipo: e.target.value as TipoCampanha }))}>{tipos.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}</select></label>
+        <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--soft)" }}>Ordem<input style={campo} type="number" value={form.ordem} onChange={(e) => setForm((v) => ({ ...v, ordem: Math.floor(Number(e.target.value) || 0) }))} /></label>
+      </div>
+      <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--soft)" }}>Descrição<textarea style={{ ...campo, height: "auto", padding: 10, resize: "vertical" }} rows={3} value={form.descricao} onChange={(e) => setForm((v) => ({ ...v, descricao: e.target.value }))} /></label>
+      {form.tipo === "informativa" ? <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--soft)" }}>Selo/recompensa exibida<input style={campo} value={form.recompensaTexto} maxLength={120} placeholder="Ex.: Condição especial" onChange={(e) => setForm((v) => ({ ...v, recompensaTexto: e.target.value }))} /></label>
+      : <div style={{ fontSize: 10.8, color: "var(--soft)" }}>Recompensa vinculada: <b style={{ color: "var(--ink)" }}>{recompensaAutomatica(form.tipo)}</b>. Para alterar pontos, use a aba Pontuação.</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 7 }}><button type="button" style={botao()} onClick={fechar}>Cancelar</button><button type="button" style={botao(true)} disabled={ocupado !== null} onClick={() => void salvar()}>{ocupado ? "Salvando…" : editando ? "Salvar alterações" : "Criar campanha"}</button></div>
+    </div>}
+
+    {campanhas.length === 0 ? <div className={styles.empty}>Nenhuma campanha cadastrada.</div> : <div style={{ display: "grid" }}>
+      {[...campanhas].sort((a,b) => Number(b.ativo)-Number(a.ativo) || a.ordem-b.ordem).map((c) => <div key={c.id} style={{ padding: "12px 14px", borderBottom: "1px solid var(--line2)", display: "grid", gridTemplateColumns: "minmax(220px,1fr) 170px 95px auto", gap: 10, alignItems: "center", opacity: c.ativo ? 1 : .58 }}>
+        <div><strong style={{ fontSize: 12.5 }}>{c.titulo}</strong><div style={{ fontSize: 10.5, color: "var(--soft)", marginTop: 3 }}>{c.descricao || "Sem descrição."}</div></div>
+        <div><span style={zipChip(c.ativo ? "ok" : "neutral")}>{c.ativo ? "Ativa no app" : "Pausada"}</span><div style={{ fontSize: 9.5, color: "var(--soft)", marginTop: 4 }}>{tipos.find(([id]) => id === c.tipo)?.[1]} · ordem {c.ordem}</div></div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: "var(--rose)" }}>{recompensaAutomatica(c.tipo) || c.recompensa_texto || "Informativa"}</div>
+        <div style={{ display: "flex", gap: 5, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <button type="button" style={botao()} disabled={ocupado === c.id} onClick={() => abrirEdicao(c)}><Pencil size={12}/> Editar</button>
+          <button type="button" style={botao()} disabled={ocupado === c.id} onClick={() => void alternar(c)}>{c.ativo ? <Pause size={12}/> : <Play size={12}/>} {c.ativo ? "Pausar" : "Ativar"}</button>
+          <button type="button" style={{ ...botao(), color: "var(--bad)" }} disabled={ocupado === c.id} onClick={() => void excluir(c)}><Trash2 size={12}/> Excluir</button>
+        </div>
+      </div>)}
+    </div>}
+  </div>;
+}
+
 function PainelPontuacao({ config, onSalvo }: { config: Config; onSalvo: () => Promise<void> }) {
   const [valores, setValores] = useState(config);
   const [salvando, setSalvando] = useState(false);
@@ -365,11 +483,8 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
     },
   ];
 
-  const campanhas = [
-    { titulo: "Indique e ganhe", descricao: "Cada indicação elegível rende +" + dados.config.pontosIndicacao + " pontos.", cor: "var(--ok)" },
-    { titulo: "Parcela em dia", descricao: "Pagamento no prazo rende +" + dados.config.pontosParcelaEmDia + " pontos.", cor: "var(--rose)" },
-    { titulo: "Bônus da primeira parcela", descricao: "Primeiro pagamento rende +" + dados.config.pontosPrimeiraParcela + " pontos e voucher.", cor: "var(--soft)" },
-  ];
+  const campanhas = dados.campanhas.filter((c) => c.ativo).sort((a, b) => a.ordem - b.ordem);
+  const corCampanha = (tipo: TipoCampanha) => tipo === "indicacao" ? "var(--ok)" : tipo === "parcela_em_dia" ? "var(--rose)" : tipo === "primeira_parcela" ? "var(--gold)" : tipo === "resgate" ? "var(--bg)" : "var(--soft)";
 
   const alertas = [
     {
@@ -471,15 +586,15 @@ function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | 
       <article className={styles.panel}>
         <div className={styles.panelHeader}>
           <h2>Campanhas ativas</h2>
-          <button type="button" className={styles.panelLink} onClick={() => onOpen("pontuacao")}>Ver regras <ChevronRight size={13} /></button>
+          <button type="button" className={styles.panelLink} onClick={() => onOpen("campanhas")}>Gerenciar <ChevronRight size={13} /></button>
         </div>
-        <div className={styles.campaignList}>
-          {campanhas.map((c) => <div className={styles.campaignRow} key={c.titulo}>
-            <span className={styles.campaignDot} style={{ background: c.cor }} />
-            <div><div className={styles.campaignTitle}>{c.titulo}</div><div className={styles.campaignDesc}>{c.descricao}</div></div>
+        {campanhas.length === 0 ? <div className={styles.empty}>Nenhuma campanha ativa.</div> : <div className={styles.campaignList}>
+          {campanhas.slice(0, 5).map((c) => <button type="button" className={styles.campaignRow} key={c.id} onClick={() => onOpen("campanhas")} style={{ width: "100%", border: 0, background: "transparent", textAlign: "left", color: "inherit" }}>
+            <span className={styles.campaignDot} style={{ background: corCampanha(c.tipo) }} />
+            <span><span className={styles.campaignTitle}>{c.titulo}</span><span className={styles.campaignDesc}>{c.descricao || "Campanha ativa no Clube."}</span></span>
             <span className={styles.statusPill}>Ativa</span>
-          </div>)}
-        </div>
+          </button>)}
+        </div>}
       </article>
 
       <article className={styles.panel}>
@@ -681,7 +796,8 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
   </div>;
 }
 
-function PainelResgates({ resgates }: { resgates: Resgate[] }) {
+function PainelResgates({ resgates, onAtualizado }: { resgates: Resgate[]; onAtualizado: () => Promise<void> }) {
+  const [ocupado, setOcupado] = useState<string | null>(null);
   const kind = (status: string): ZipKind => status === "entregue" ? "ok" : status === "cancelado" ? "bad" : status === "solicitado" ? "warn" : "rose";
   const rotulo = (status: string) => ({
     solicitado: "Solicitado",
@@ -690,18 +806,48 @@ function PainelResgates({ resgates }: { resgates: Resgate[] }) {
     entregue: "Entregue",
     cancelado: "Cancelado",
   } as Record<string, string>)[status] ?? status;
+  const proximos = (status: string): Array<{ status: string; label: string; danger?: boolean }> => {
+    if (status === "solicitado") return [{ status: "aprovado", label: "Aprovar" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    if (status === "aprovado") return [{ status: "separacao", label: "Em separação" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    if (status === "separacao") return [{ status: "entregue", label: "Entregue" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    return [];
+  };
+
+  async function atualizar(r: Resgate, novoStatus: string) {
+    if (novoStatus === "cancelado" && !window.confirm(`Cancelar o resgate de “${r.recompensa?.titulo ?? "Benefício"}”? Os ${r.pontos.toLocaleString("pt-BR")} pontos serão devolvidos à cliente e o estoque será reposto.`)) return;
+    setOcupado(r.id);
+    try {
+      await api(`/api/admin/credit-ops/club/resgates/${encodeURIComponent(r.id)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: novoStatus }),
+      });
+      toast.success(novoStatus === "cancelado" ? "Resgate cancelado e pontos devolvidos." : `Resgate atualizado para “${rotulo(novoStatus)}”.`);
+      await onAtualizado();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível atualizar o resgate.");
+    } finally {
+      setOcupado(null);
+    }
+  }
 
   return <div style={cartao}>
-    <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", fontSize: 11.5, color: "var(--soft)" }}>Histórico recente de resgates feitos pelas clientes no catálogo de benefícios.</div>
+    <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", fontSize: 11.5, color: "var(--soft)" }}>Acompanhe e processe os resgates. Cancelamentos antes da entrega devolvem os pontos automaticamente e recompõem o estoque.</div>
     {resgates.length === 0 ? <div className={styles.empty}>Nenhum resgate registrado ainda.</div> : <div className={styles.redemptionTable}>
-      <div className={styles.redemptionHead}><span>Cliente</span><span>Benefício</span><span>Pontos</span><span>Data</span><span>Status</span></div>
-      {resgates.map((r) => <div key={r.id} className={styles.redemptionRow}>
-        <div><strong>{r.cliente?.nome_completo ?? "—"}</strong><div style={{ color: "var(--soft)", fontSize: 9, marginTop: 2 }}>{r.cliente?.cpf ?? ""}</div></div>
-        <div>{r.recompensa?.titulo ?? "Benefício"}</div>
-        <strong style={{ color: "var(--bg)" }}>{r.pontos.toLocaleString("pt-BR")}</strong>
-        <span style={{ color: "var(--soft)" }}>{data(r.created_at)}</span>
-        <span style={zipChip(kind(r.status))}>{rotulo(r.status)}</span>
-      </div>)}
+      <div className={styles.redemptionHead}><span>Cliente</span><span>Benefício</span><span>Pontos</span><span>Data</span><span>Status</span><span>Ações</span></div>
+      {resgates.map((r) => {
+        const acoes = proximos(r.status);
+        return <div key={r.id} className={styles.redemptionRow}>
+          <div><strong>{r.cliente?.nome_completo ?? "—"}</strong><div style={{ color: "var(--soft)", fontSize: 9, marginTop: 2 }}>{r.cliente?.cpf ?? ""}</div></div>
+          <div>{r.recompensa?.titulo ?? "Benefício"}</div>
+          <strong style={{ color: "var(--bg)" }}>{r.pontos.toLocaleString("pt-BR")}</strong>
+          <span style={{ color: "var(--soft)" }}>{data(r.created_at)}</span>
+          <span style={zipChip(kind(r.status))}>{rotulo(r.status)}</span>
+          <div className={styles.redemptionActions}>
+            {acoes.length === 0 ? <span className={styles.redemptionDone}>Concluído</span> : acoes.map((a) => <button type="button" key={a.status} disabled={ocupado === r.id} data-danger={Boolean(a.danger)} onClick={() => void atualizar(r, a.status)}>{ocupado === r.id ? "…" : a.label}</button>)}
+          </div>
+        </div>;
+      })}
     </div>}
   </div>;
 }

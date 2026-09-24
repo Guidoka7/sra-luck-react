@@ -54,7 +54,7 @@ function statusLabelDe(grupo: Grupo, f: ClienteForecast): { label: string; kind:
   return { label: f.situacao === "elegivel" ? "Elegível" : "Em acompanhamento", kind: "neutral" };
 }
 
-export default function PrevisoesDetalhes() {
+export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientIds?: string[] }) {
   const [clientes, setClientes] = useState<ClienteForecast[]>([]);
   const [meses, setMeses] = useState<MesForecast[]>([]);
   const [agenda, setAgenda] = useState<Map<string, AgendaCliente>>(new Map());
@@ -85,7 +85,10 @@ export default function PrevisoesDetalhes() {
     return () => { ativo = false; };
   }, []);
 
-  const classificados = useMemo(() => clientes.map((c) => ({ ...c, grupo: grupoDe(c, agenda.get(c.clienteId)) })), [clientes, agenda]);
+  const allowedClientSet = useMemo(() => allowedClientIds ? new Set(allowedClientIds) : null, [allowedClientIds]);
+  const classificados = useMemo(() => clientes
+    .filter((c) => !allowedClientSet || allowedClientSet.has(c.clienteId))
+    .map((c) => ({ ...c, grupo: grupoDe(c, agenda.get(c.clienteId)) })), [clientes, agenda, allowedClientSet]);
   const termo = busca.trim().toLowerCase();
   const filtrados = useMemo(() => {
     let base = classificados;
@@ -98,10 +101,10 @@ export default function PrevisoesDetalhes() {
   const proximosMeses = useMemo(() => meses.filter((m) => m.mes >= isoHoje).slice(0, horizonte), [meses, horizonte, isoHoje]);
   const barras = useMemo(() => {
     const valoresPorMes = new Map<string, number>();
-    for (const c of clientes) { if (!c.previsao) continue; const mes = c.previsao.slice(0, 7); valoresPorMes.set(mes, (valoresPorMes.get(mes) ?? 0) + Number(c.valorCarta ?? 0)); }
+    for (const c of classificados) { if (!c.previsao) continue; const mes = c.previsao.slice(0, 7); valoresPorMes.set(mes, (valoresPorMes.get(mes) ?? 0) + Number(c.valorCarta ?? 0)); }
     const maxValor = Math.max(...proximosMeses.map((m) => valoresPorMes.get(m.mes) ?? 0), metaOrcamento * 1.2, 1);
     return proximosMeses.map((m) => { const valor = valoresPorMes.get(m.mes) ?? 0; const [, mm] = m.mes.split("-"); return { mes: m.mes, label: MESES_PT[Number(mm) - 1], valor, acima: valor > metaOrcamento, altura: Math.max(4, Math.round((valor / maxValor) * 100)) }; });
-  }, [clientes, proximosMeses, metaOrcamento]);
+  }, [classificados, proximosMeses, metaOrcamento]);
   const refBottomPct = useMemo(() => { const maxValor = Math.max(...barras.map((b) => b.valor), metaOrcamento * 1.2, 1); return Math.round((metaOrcamento / maxValor) * 100); }, [barras, metaOrcamento]);
 
   const elegiveis = classificados.filter((c) => c.situacao === "elegivel").length;
@@ -131,7 +134,7 @@ export default function PrevisoesDetalhes() {
   return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 560px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
-        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p></div>
+        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p>{allowedClientSet && <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--rose)", fontWeight: 700 }}>Filtros da visão anterior preservados · {classificados.length} cliente(s) no escopo</div>}</div>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, padding: "8px 10px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", marginBottom: 12 }}>

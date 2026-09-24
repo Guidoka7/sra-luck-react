@@ -7,14 +7,15 @@ export const DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID = "00000000-0000-4000-8000-000
 const TOKEN_HEADER = "x-dev-console-token";
 const ACTOR_HEADER = "x-dev-actor-id";
 const ROLE_HEADER = "x-dev-actor-role";
+const MAX_MUTATION_BODY_BYTES = 4_096;
 
-const ALLOWED_EXACT = new Set([
+const ALLOWED_READ_EXACT = new Set([
   "/api/admin/session",
   "/api/admin/visao-geral",
   "/api/admin/previsao-liberacoes",
 ]);
 
-const ALLOWED_PREFIXES = [
+const ALLOWED_READ_PREFIXES = [
   "/api/admin/central/",
   "/api/admin/financeiro/",
   "/api/admin/credit-ops/finance/",
@@ -29,6 +30,16 @@ const ALLOWED_PREFIXES = [
   "/api/admin/clientes",
 ];
 
+const ALLOWED_NOTIFICATION_ACTIONS = new Set([
+  "verificar_atrasos",
+  "verificar_momentos_especiais",
+]);
+
+const ALLOWED_INTEGRATION_PROVIDERS = new Set([
+  "gemini",
+  "mercado_pago",
+]);
+
 function json(erro: string, codigo: string, status: number) {
   return new Response(JSON.stringify({ erro, codigo }), {
     status,
@@ -39,8 +50,8 @@ function json(erro: string, codigo: string, status: number) {
   });
 }
 
-function allowedPath(pathname: string) {
-  return ALLOWED_EXACT.has(pathname) || ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+function allowedReadPath(pathname: string) {
+  return ALLOWED_READ_EXACT.has(pathname) || ALLOWED_READ_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 function normalizeActor(value: string | null) {
@@ -82,6 +93,92 @@ function stripTechnicalHeaders(request: Request) {
   return new Request(request, { headers });
 }
 
+function hasExactKeys(body: Record<string, unknown>, expected: readonly string[]) {
+  const actual = Object.keys(body).sort();
+  const wanted = [...expected].sort();
+  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
+}
+
+async function validateAllowedMutation(request: Request, pathname: string): Promise<Response | null> {
+  if (request.method.toUpperCase() !== "POST") {
+    return json(
+      "Esta mutação não é permitida para a integração técnica.",
+      "DEV_CONSOLE_M2M_MUTATION_NOT_ALLOWED",
+      403,
+    );
+  }
+
+  const length = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(length) && length > MAX_MUTATION_BODY_BYTES) {
+    return json("Payload técnico muito grande.", "DEV_CONSOLE_M2M_PAYLOAD_TOO_LARGE", 413);
+  }
+
+  const contentType = String(request.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) {
+    return json(
+      "A mutação técnica exige application/json.",
+      "DEV_CONSOLE_M2M_CONTENT_TYPE_REQUIRED",
+      415,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await request.clone().json();
+  } catch {
+    return json("Payload técnico inválido.", "DEV_CONSOLE_M2M_PAYLOAD_INVALID", 400);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return json("Payload técnico inválido.", "DEV_CONSOLE_M2M_PAYLOAD_INVALID", 400);
+  }
+  const body = parsed as Record<string, unknown>;
+
+  if (pathname === "/api/admin/notificacoes/automacao") {
+    if (!hasExactKeys(body, ["acao"])) {
+      return json(
+        "Payload não autorizado para a rotina de notificações.",
+        "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED",
+        403,
+      );
+    }
+    const acao = typeof body.acao === "string" ? body.acao : "";
+    if (!ALLOWED_NOTIFICATION_ACTIONS.has(acao)) {
+      return json(
+        "Ação de notificação não autorizada para a integração técnica.",
+        "DEV_CONSOLE_M2M_ACTION_NOT_ALLOWED",
+        403,
+      );
+    }
+    return null;
+  }
+
+  if (pathname === "/api/admin/integrations/testar-conexao") {
+    if (!hasExactKeys(body, ["provedor"])) {
+      return json(
+        "Payload não autorizado para o teste de integração.",
+        "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED",
+        403,
+      );
+    }
+    const provedor = typeof body.provedor === "string" ? body.provedor : "";
+    if (!ALLOWED_INTEGRATION_PROVIDERS.has(provedor)) {
+      return json(
+        "Provedor não autorizado para teste pela integração técnica.",
+        "DEV_CONSOLE_M2M_PROVIDER_NOT_ALLOWED",
+        403,
+      );
+    }
+    return null;
+  }
+
+  return json(
+    "Rota de mutação não autorizada para a integração técnica.",
+    "DEV_CONSOLE_M2M_MUTATION_NOT_ALLOWED",
+    403,
+  );
+}
+
 export function isDevConsoleSyntheticAdminId(value: string) {
   return value.startsWith(DEV_CONSOLE_ADMIN_PREFIX)
     && value.length > DEV_CONSOLE_ADMIN_PREFIX.length
@@ -93,7 +190,9 @@ export function isDevConsoleSyntheticAdminId(value: string) {
  *
  * - Sem header técnico: mantém o fluxo normal do Admin intacto.
  * - Em rotas não administrativas: remove headers técnicos e segue normalmente.
- * - Em /api/admin/*: aceita somente GET/HEAD de uma allowlist explícita.
+ * - Leituras administrativas: somente GET/HEAD em uma allowlist explícita.
+ * - Mutações administrativas: somente POST em duas rotas explícitas, com payload
+ *   validado campo a campo antes de criar a sessão técnica.
  * - Após validar o segredo, converte a identidade técnica em uma sessão admin
  *   assinada e efêmera, consumida pelos guardrails já existentes do Worker.
  */
@@ -109,17 +208,19 @@ export async function authorizeDevConsoleRequest(request: Request, env: Env): Pr
     return json("Integração técnica indisponível.", "DEV_CONSOLE_M2M_NOT_CONFIGURED", 503);
   }
 
-  if (!["GET", "HEAD"].includes(request.method.toUpperCase())) {
-    return json("A integração técnica está restrita a consultas.", "DEV_CONSOLE_M2M_READ_ONLY", 403);
-  }
-
-  if (!allowedPath(pathname)) {
-    return json("Rota não autorizada para a integração técnica.", "DEV_CONSOLE_ROUTE_NOT_ALLOWED", 403);
-  }
-
   const supplied = presented.trim();
   if (!supplied || !(await safeEqual(supplied, expected))) {
     return json("Credencial técnica inválida.", "DEV_CONSOLE_TOKEN_INVALID", 401);
+  }
+
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD") {
+    if (!allowedReadPath(pathname)) {
+      return json("Rota não autorizada para a integração técnica.", "DEV_CONSOLE_ROUTE_NOT_ALLOWED", 403);
+    }
+  } else {
+    const mutationError = await validateAllowedMutation(request, pathname);
+    if (mutationError) return mutationError;
   }
 
   const actor = normalizeActor(request.headers.get(ACTOR_HEADER));
