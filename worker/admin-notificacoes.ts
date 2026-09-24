@@ -3,7 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-sender";
-import { adicionarDiasCivil, hojeSaoPaulo } from "../src/lib/dataCivil";
+import { adicionarDiasCivil, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
 
 const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3 };
 
@@ -67,6 +67,71 @@ function diferencaDias(dataISO: string, hojeISO: string) {
   const [hy, hm, hd] = hojeISO.split("-").map(Number);
   if (![y, m, d, hy, hm, hd].every(Number.isFinite)) return null;
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(hy, hm - 1, hd)) / 86_400_000);
+}
+
+function clienteDoBoleto(boleto: any) {
+  return Array.isArray(boleto?.clientes) ? boleto.clientes[0] : boleto?.clientes;
+}
+
+export function boletoPodeReceberCobrancaAutomatica(boleto: any) {
+  const cliente = clienteDoBoleto(boleto);
+  const statusContrato = String(cliente?.status_contrato ?? "ativo");
+  return Boolean(
+    boleto?.cliente_id
+    && boleto?.status === "nao_pago"
+    && boleto?.suspensa !== true
+    && cliente
+    && cliente.ativo !== false
+    && !["cancelado", "suspenso"].includes(statusContrato)
+  );
+}
+
+export function agruparBoletosNotificaveis(boletos: any[]) {
+  const grupos = new Map<string, any[]>();
+  for (const boleto of boletos.filter(boletoPodeReceberCobrancaAutomatica)) {
+    const atual = grupos.get(String(boleto.cliente_id)) ?? [];
+    atual.push(boleto);
+    grupos.set(String(boleto.cliente_id), atual);
+  }
+  return [...grupos.entries()].map(([clienteId, itens]) => ({
+    clienteId,
+    cliente: clienteDoBoleto(itens[0]),
+    boletos: itens.sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento))),
+  }));
+}
+
+function escolherTemplateAtraso(templates: any[], diasAtraso: number) {
+  const referencias = [...new Set(templates.map((t) => Number(t.dias_referencia)).filter((d) => Number.isFinite(d) && d <= diasAtraso))].sort((a, b) => b - a);
+  const alvo = referencias[0];
+  return alvo === undefined ? null : templates.find((t) => Number(t.dias_referencia) === alvo) ?? null;
+}
+
+function listarParcelas(itens: any[], hoje: string, atraso: boolean) {
+  const exibidas = itens.slice(0, 4).map((b) => {
+    const numero = `${b.numero_parcela ?? "—"}/${b.total_parcelas ?? "—"}`;
+    const data = formatarData(String(b.data_vencimento));
+    if (!atraso) return `${numero} · ${data}`;
+    const diff = diferencaDias(String(b.data_vencimento), hoje);
+    const dias = diff == null ? 0 : Math.max(0, -diff);
+    return `${numero} · ${dias}d`;
+  });
+  if (itens.length > 4) exibidas.push(`+ ${itens.length - 4} outra(s)`);
+  return exibidas.join(", ");
+}
+
+function mensagemAgrupadaVencimento(nome: string, itens: any[], hoje: string) {
+  const total = itens.reduce((s, b) => s + Number(b.valor ?? 0), 0);
+  return `Olá, ${nome}! Você tem ${itens.length} parcelas com vencimento próximo: ${listarParcelas(itens, hoje, false)}. Valor base total: ${formatarMoeda(total)}. Programe-se para manter seu contrato em dia. 💛`;
+}
+
+function mensagemAgrupadaAtraso(nome: string, itens: any[], hoje: string) {
+  const total = itens.reduce((s, b) => s + Number(b.valor ?? 0), 0);
+  const atrasos = itens.map((b) => {
+    const diff = diferencaDias(String(b.data_vencimento), hoje);
+    return diff == null ? 0 : Math.max(0, -diff);
+  });
+  const maior = Math.max(0, ...atrasos);
+  return `Olá, ${nome}. Identificamos ${itens.length} parcelas em atraso: ${listarParcelas(itens, hoje, true)}. A mais antiga está há ${maior} dias em atraso. Valor base total: ${formatarMoeda(total)}. Se já regularizou alguma delas, desconsidere o item correspondente. Estamos à disposição para ajudar.`;
 }
 
 export function classificarStatusPush(push: WebPushResultado) {
@@ -186,129 +251,153 @@ async function registrarNotificacao(env: Env, db: Db, input: {
 
 async function executarVencimentos(env: Env, db: Db) {
   const hoje = hojeSaoPaulo();
-  const limite = adicionarDiasCivil(hojeSaoPaulo(), 2);
+  const limite = adicionarDiasCivil(hoje, 2);
+  const { inicio: inicioHoje, fimExclusivo: fimHoje } = intervaloDiaOperacionalUtc(hoje);
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
-    db.from("notificacao_templates").select("id,dias_referencia,titulo,corpo,emoji").eq("tipo", "parcela_vencer").eq("is_active", true),
-    db.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,clientes(nome_completo)").gte("data_vencimento", hoje).lte("data_vencimento", limite).neq("status", "pago"),
+    db.from("notificacao_templates")
+      .select("id,dias_referencia,titulo,corpo,emoji,updated_at")
+      .eq("tipo", "parcela_vencer").eq("is_active", true)
+      .order("dias_referencia", { ascending: true }).order("updated_at", { ascending: false }),
+    db.from("boletos")
+      .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,suspensa,data_vencimento,clientes(nome_completo,status_contrato,ativo)")
+      .gte("data_vencimento", hoje).lte("data_vencimento", limite).eq("status", "nao_pago"),
   ]);
   if (templatesError) throw new Error(templatesError.message);
   if (boletosError) throw new Error(boletosError.message);
 
-  let enviadas = 0, ignoradas = 0, falhas = 0;
+  let enviadas = 0, ignoradas = 0, falhas = 0, parcelasIncluidas = 0;
+  const porDiasParaVencer: Record<string, number> = {};
   const push = novoResumoPush();
-  for (const boleto of (boletos ?? []) as any[]) {
-    const diasParaVencer = diferencaDias(String(boleto.data_vencimento), hoje);
+
+  for (const grupo of agruparBoletosNotificaveis((boletos ?? []) as any[])) {
+    const principal = grupo.boletos[0];
+    const diasParaVencer = diferencaDias(String(principal.data_vencimento), hoje);
+    if (diasParaVencer == null) continue;
     const template = (templates ?? []).find((t: any) => Number(t.dias_referencia) === diasParaVencer);
     if (!template) continue;
 
-    const { data: recent } = await db.from("notificacao_logs").select("id")
-      .eq("cliente_id", boleto.cliente_id)
-      .eq("tipo", "parcela_vencer")
-      .eq("referencia_id", boleto.id)
-      .eq("titulo", template.titulo)
-      .limit(1);
+    const { data: recent, error: recentError } = await db.from("notificacao_logs").select("id")
+      .eq("cliente_id", grupo.clienteId).eq("tipo", "parcela_vencer")
+      .gte("created_at", inicioHoje).lt("created_at", fimHoje).limit(1);
+    if (recentError) throw new Error(recentError.message);
     if (recent?.length) { ignoradas++; continue; }
 
-    const cliente = Array.isArray(boleto.clientes) ? boleto.clientes[0] : boleto.clientes;
+    const nome = grupo.cliente?.nome_completo ?? "cliente";
     const vars = {
-      cliente: cliente?.nome_completo ?? "cliente",
-      parcela: boleto.numero_parcela ?? "—",
-      total: boleto.total_parcelas ?? "—",
-      vencimento: formatarData(String(boleto.data_vencimento)),
-      valor: formatarMoeda(boleto.valor),
+      cliente: nome,
+      parcela: principal.numero_parcela ?? "—",
+      total: principal.total_parcelas ?? "—",
+      vencimento: formatarData(String(principal.data_vencimento)),
+      valor: formatarMoeda(principal.valor),
     };
     const titulo = renderTemplate(String(template.titulo), vars);
-    const mensagem = renderTemplate(String(template.corpo), vars);
+    const mensagem = grupo.boletos.length > 1
+      ? mensagemAgrupadaVencimento(nome, grupo.boletos, hoje)
+      : renderTemplate(String(template.corpo), vars);
     try {
+      const unica = grupo.boletos.length === 1;
       const resultado = await registrarNotificacao(env, db, {
-        clienteId: boleto.cliente_id,
+        clienteId: grupo.clienteId,
         tipo: "parcela_vencer",
         titulo,
         mensagem,
         emoji: template.emoji ?? "💳",
         destino: "pagamentos",
-        referenciaId: boleto.id,
-        url: `/agenda?abrirComprovante=${encodeURIComponent(boleto.id)}`,
-        tag: `parcela-vencer-${boleto.id}-${diasParaVencer}`,
-        action: "upload_receipt",
+        referenciaId: unica ? principal.id : null,
+        url: unica ? `/agenda?abrirComprovante=${encodeURIComponent(principal.id)}` : "/agenda?destino=pagamentos",
+        tag: `parcelas-vencer-${grupo.clienteId}-${hoje}`,
+        action: unica ? "upload_receipt" : null,
       });
       acumularPush(push, resultado.push);
       enviadas++;
+      parcelasIncluidas += grupo.boletos.length;
+      porDiasParaVencer[String(diasParaVencer)] = (porDiasParaVencer[String(diasParaVencer)] ?? 0) + 1;
     } catch (error) {
       falhas++;
       console.error("Falha ao registrar lembrete de vencimento:", error);
     }
   }
-  return { executado: true, enviadas, ignoradas, falhas, push, data: hoje };
+  return { executado: true, enviadas, clientesNotificadas: enviadas, parcelasIncluidas, ignoradas, falhas, porDiasParaVencer, push, data: hoje };
 }
 
 async function executarAtrasos(env: Env, db: Db, forcar = false) {
   const config = await carregarConfig(db);
   if (!config.atraso_habilitado && !forcar) {
-    return { executado: true, habilitado: false, enviadas: 0, ignoradas: 0, falhas: 0, push: novoResumoPush() };
+    return { executado: true, habilitado: false, enviadas: 0, clientesNotificadas: 0, parcelasIncluidas: 0, ignoradas: 0, falhas: 0, porDiasAtraso: {}, push: novoResumoPush() };
   }
 
   const frequenciaHoras = Math.max(1, Number(config.frequencia_atraso_horas || 24));
   const cutoff = new Date(Date.now() - frequenciaHoras * 60 * 60 * 1000).toISOString();
   const hoje = hojeSaoPaulo();
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
-    db.from("notificacao_templates").select("id,dias_referencia,titulo,corpo,emoji").eq("tipo", "parcela_atrasada").eq("is_active", true).order("dias_referencia", { ascending: true }),
-    db.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,clientes(nome_completo)").lt("data_vencimento", hoje).neq("status", "pago"),
+    db.from("notificacao_templates")
+      .select("id,dias_referencia,titulo,corpo,emoji,updated_at")
+      .eq("tipo", "parcela_atrasada").eq("is_active", true)
+      .order("dias_referencia", { ascending: true }).order("updated_at", { ascending: false }),
+    db.from("boletos")
+      .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,suspensa,data_vencimento,clientes(nome_completo,status_contrato,ativo)")
+      .lt("data_vencimento", hoje).eq("status", "nao_pago"),
   ]);
   if (templatesError) throw new Error(templatesError.message);
   if (boletosError) throw new Error(boletosError.message);
 
-  let enviadas = 0, ignoradas = 0, falhas = 0;
+  let enviadas = 0, ignoradas = 0, falhas = 0, parcelasIncluidas = 0;
+  const porDiasAtraso: Record<string, number> = {};
   const push = novoResumoPush();
-  for (const boleto of (boletos ?? []) as any[]) {
-    const diff = diferencaDias(String(boleto.data_vencimento), hoje);
+
+  for (const grupo of agruparBoletosNotificaveis((boletos ?? []) as any[])) {
+    const principal = grupo.boletos[0];
+    const diff = diferencaDias(String(principal.data_vencimento), hoje);
     const diasAtraso = diff == null ? 0 : Math.max(0, -diff);
-    const template = (templates ?? []).filter((t: any) => Number(t.dias_referencia) <= diasAtraso).at(-1);
+    const template = escolherTemplateAtraso((templates ?? []) as any[], diasAtraso);
     if (!template) continue;
 
     if (!forcar) {
-      const { data: recent } = await db.from("notificacao_logs").select("id")
-        .eq("cliente_id", boleto.cliente_id)
-        .eq("tipo", "parcela_atrasada")
-        .eq("referencia_id", boleto.id)
-        .gte("created_at", cutoff)
-        .limit(1);
+      const { data: recent, error: recentError } = await db.from("notificacao_logs").select("id")
+        .eq("cliente_id", grupo.clienteId).eq("tipo", "parcela_atrasada")
+        .gte("created_at", cutoff).limit(1);
+      if (recentError) throw new Error(recentError.message);
       if (recent?.length) { ignoradas++; continue; }
     }
 
-    const cliente = Array.isArray(boleto.clientes) ? boleto.clientes[0] : boleto.clientes;
+    const nome = grupo.cliente?.nome_completo ?? "cliente";
     const vars = {
-      cliente: cliente?.nome_completo ?? "cliente",
-      parcela: boleto.numero_parcela ?? "—",
-      total: boleto.total_parcelas ?? "—",
-      vencimento: formatarData(String(boleto.data_vencimento)),
-      valor: formatarMoeda(boleto.valor),
+      cliente: nome,
+      parcela: principal.numero_parcela ?? "—",
+      total: principal.total_parcelas ?? "—",
+      vencimento: formatarData(String(principal.data_vencimento)),
+      valor: formatarMoeda(principal.valor),
       dias_atraso: diasAtraso,
     };
     const titulo = renderTemplate(String(template.titulo), vars);
-    const mensagem = renderTemplate(String(template.corpo), vars);
+    const mensagem = grupo.boletos.length > 1
+      ? mensagemAgrupadaAtraso(nome, grupo.boletos, hoje)
+      : renderTemplate(String(template.corpo), vars);
     try {
+      const unica = grupo.boletos.length === 1;
       const resultado = await registrarNotificacao(env, db, {
-        clienteId: boleto.cliente_id,
+        clienteId: grupo.clienteId,
         tipo: "parcela_atrasada",
         titulo,
         mensagem,
         emoji: template.emoji ?? "💳",
         destino: "pagamentos",
-        referenciaId: boleto.id,
-        url: `/agenda?abrirComprovante=${encodeURIComponent(boleto.id)}`,
-        tag: `parcela-atrasada-${boleto.id}`,
-        action: "upload_receipt",
+        referenciaId: unica ? principal.id : null,
+        url: unica ? `/agenda?abrirComprovante=${encodeURIComponent(principal.id)}` : "/agenda?destino=pagamentos",
+        tag: `parcelas-atrasadas-${grupo.clienteId}`,
+        action: unica ? "upload_receipt" : null,
       });
       acumularPush(push, resultado.push);
       enviadas++;
+      parcelasIncluidas += grupo.boletos.length;
+      porDiasAtraso[String(diasAtraso)] = (porDiasAtraso[String(diasAtraso)] ?? 0) + 1;
     } catch (error) {
       falhas++;
       console.error("Falha ao registrar notificação de atraso:", error);
     }
   }
 
-  return { executado: true, habilitado: true, enviadas, ignoradas, falhas, frequencia_horas: frequenciaHoras, forcaram_envio: forcar, push };
+  return { executado: true, habilitado: true, enviadas, clientesNotificadas: enviadas, parcelasIncluidas, ignoradas, falhas, frequencia_horas: frequenciaHoras, forcaram_envio: forcar, porDiasAtraso, push };
 }
 
 export async function executarAutomacaoNotificacoes(env: Env, acao: AcaoAutomacao) {
@@ -368,8 +457,8 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         db.from("notificacao_templates").select("id,tipo,dias_referencia,titulo,corpo,emoji,is_active,updated_at").order("tipo").order("dias_referencia"),
         db.from("notificacao_logs").select("id,cliente_id,tipo,titulo,corpo,status,erro_mensagem,push_enviadas,push_falhas,push_status,created_at,clientes(nome_completo)").order("created_at", { ascending: false }).limit(200),
         db.from("clientes").select("id,nome_completo,telefone,ativo").eq("ativo", true).order("nome_completo"),
-        db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", hojeSaoPaulo()).neq("status", "pago"),
-        db.from("boletos").select("id", { count: "exact", head: true }).gte("data_vencimento", hojeSaoPaulo()).lte("data_vencimento", adicionarDiasCivil(hojeSaoPaulo(), 2)).neq("status", "pago"),
+        db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", hojeSaoPaulo()).eq("status", "nao_pago"),
+        db.from("boletos").select("id", { count: "exact", head: true }).gte("data_vencimento", hojeSaoPaulo()).lte("data_vencimento", adicionarDiasCivil(hojeSaoPaulo(), 2)).eq("status", "nao_pago"),
         db.from("web_push_subscriptions").select("id", { count: "exact", head: true }),
       ]);
       if (cfg.error || templates.error || logs.error || clientes.error || atrasadas.error || aVencer.error || subscriptions.error) return json({ erro: "Não foi possível carregar o painel de notificações." }, 500);
