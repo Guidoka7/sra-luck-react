@@ -40,6 +40,35 @@ const ALLOWED_INTEGRATION_PROVIDERS = new Set([
   "mercado_pago",
 ]);
 
+/**
+ * Central de Notificações (lotes). Cada rota tem um escopo explícito e um
+ * payload fechado. Nenhuma delas altera dado financeiro: só prepara, aprova,
+ * envia ou cancela NOTIFICAÇÕES, sempre pelas regras do backend.
+ */
+type EscopoLote = "READ" | "PREPARE" | "APPROVE" | "SEND" | "CANCEL" | "CONFIG";
+
+const LOTE_ID = "[0-9a-f-]{36}";
+const ROTAS_LOTE: readonly { rota: RegExp; escopo: EscopoLote; chaves: readonly string[]; obrigatorias?: readonly string[] }[] = [
+  { rota: /^\/api\/admin\/notificacoes\/lotes\/preparar$/, escopo: "PREPARE", chaves: [] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/gerar$`), escopo: "PREPARE", chaves: ["instrucao", "segmento"] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/itens/${LOTE_ID}/editar$`), escopo: "PREPARE", chaves: ["mensagem"], obrigatorias: ["mensagem"] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/chat$`), escopo: "READ", chaves: ["mensagem", "historico"], obrigatorias: ["mensagem"] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/aprovar$`), escopo: "APPROVE", chaves: [] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/reprocessar-falhas$`), escopo: "SEND", chaves: [] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/cancelar$`), escopo: "CANCEL", chaves: [] },
+  { rota: /^\/api\/admin\/notificacoes\/lotes\/config$/, escopo: "CONFIG", chaves: ["ativa", "janelaDedupHoras", "silencioInicio", "silencioFim", "aprovacaoObrigatoria", "segmentos"] },
+];
+
+/** Papel mínimo do operador no Dev Console por escopo (viewer nunca muda nada). */
+const PAPEL_POR_ESCOPO: Record<EscopoLote, readonly string[]> = {
+  READ: ["owner", "developer", "operator"],
+  PREPARE: ["owner", "developer", "operator"],
+  APPROVE: ["owner", "developer", "operator"],
+  SEND: ["owner", "developer", "operator"],
+  CANCEL: ["owner", "developer", "operator"],
+  CONFIG: ["owner", "developer"],
+};
+
 function json(erro: string, codigo: string, status: number) {
   return new Response(JSON.stringify({ erro, codigo }), {
     status,
@@ -172,6 +201,26 @@ async function validateAllowedMutation(request: Request, pathname: string): Prom
     return null;
   }
 
+  const lote = ROTAS_LOTE.find((r) => r.rota.test(pathname));
+  if (lote) {
+    const papel = String(request.headers.get(ROLE_HEADER) || "").trim().toLowerCase();
+    if (!PAPEL_POR_ESCOPO[lote.escopo].includes(papel)) {
+      return json("O papel do operador no Dev Console não permite esta ação.", "DEV_CONSOLE_M2M_ROLE_NOT_ALLOWED", 403);
+    }
+    const chaves = Object.keys(body);
+    if (chaves.some((k) => !lote.chaves.includes(k)) || (lote.obrigatorias ?? []).some((k) => !(k in body))) {
+      return json("Payload não autorizado para a Central de Notificações.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    const textoLongo = (v: unknown, max: number) => v !== undefined && (typeof v !== "string" || v.length > max);
+    if (textoLongo(body.instrucao, 300) || textoLongo(body.segmento, 40) || textoLongo(body.mensagem, 400)) {
+      return json("Payload não autorizado para a Central de Notificações.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    if (body.historico !== undefined && (!Array.isArray(body.historico) || body.historico.length > 8)) {
+      return json("Payload não autorizado para a Central de Notificações.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
   return json(
     "Rota de mutação não autorizada para a integração técnica.",
     "DEV_CONSOLE_M2M_MUTATION_NOT_ALLOWED",
@@ -191,7 +240,8 @@ export function isDevConsoleSyntheticAdminId(value: string) {
  * - Sem header técnico: mantém o fluxo normal do Admin intacto.
  * - Em rotas não administrativas: remove headers técnicos e segue normalmente.
  * - Leituras administrativas: somente GET/HEAD em uma allowlist explícita.
- * - Mutações administrativas: somente POST em duas rotas explícitas, com payload
+ * - Mutações administrativas: somente POST em rotas explícitas (duas rotinas,
+ *   teste de integração e a Central de Notificações por escopo), com payload
  *   validado campo a campo antes de criar a sessão técnica.
  * - Após validar o segredo, converte a identidade técnica em uma sessão admin
  *   assinada e efêmera, consumida pelos guardrails já existentes do Worker.

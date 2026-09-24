@@ -3,11 +3,17 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-sender";
+import { DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID } from "./dev-console-auth";
+import { rotinaAutorizada } from "./frase-do-dia";
+import {
+  aprovarLote, cancelarLote, carregarConfigCentral, conversarSobreLote, detalharLote, editarItem, gerarMensagens,
+  listarLotes, prepararLote, reprocessarFalhas, rotinaFinanceira, SEGMENTOS, validarAlteracaoConfig, type Contexto,
+} from "./notificacoes-lotes";
 
 const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3 };
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
-type AcaoAutomacao = "verificar_atrasos" | "verificar_momentos_especiais" | "enviar_agora_todas";
+type AcaoAutomacao = "verificar_atrasos" | "verificar_momentos_especiais" | "enviar_agora_todas" | "central_rotina";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -100,7 +106,7 @@ async function carregarConfig(db: Db) {
   return config as typeof DEFAULT_CONFIG;
 }
 
-async function registrarNotificacao(env: Env, db: Db, input: {
+export async function registrarNotificacao(env: Env, db: Db, input: {
   clienteId: string;
   tipo: string;
   titulo: string;
@@ -310,8 +316,17 @@ async function executarAtrasos(env: Env, db: Db, forcar = false) {
   return { executado: true, habilitado: true, enviadas, ignoradas, falhas, frequencia_horas: frequenciaHoras, forcaram_envio: forcar, push };
 }
 
+function contextoCentral(env: Env, db: Db, ator: string): Contexto {
+  return { env, db, ator, enviar: registrarNotificacao, reenviarPush: enviarWebPushParaCliente };
+}
+
 export async function executarAutomacaoNotificacoes(env: Env, acao: AcaoAutomacao) {
   const db = createServiceSupabaseClient(env);
+  if (acao === "central_rotina") return rotinaFinanceira(contextoCentral(env, db, "sistema:rotina"));
+  // Com a Central de lotes ligada, o envio por parcela para (evita cobrança dupla).
+  if ((await carregarConfigCentral(db)).ativa) {
+    return { executado: false, ignorado: "central_de_lotes_ativa", mensagem: "A Central de Notificações (lotes com aprovação) está ligada; a rotina por parcela não envia." };
+  }
   if (acao === "verificar_momentos_especiais") return executarVencimentos(env, db);
   return executarAtrasos(env, db, acao === "enviar_agora_todas");
 }
@@ -324,9 +339,17 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     if (!cronAuthorized(request, env)) return json({ erro: "Cron não autorizado." }, 401);
     const body = await parse(request);
     const acao = String(body.acao || "") as AcaoAutomacao;
-    if (!["verificar_atrasos", "verificar_momentos_especiais", "enviar_agora_todas"].includes(acao)) return json({ erro: "Ação inválida." }, 400);
+    if (!["verificar_atrasos", "verificar_momentos_especiais", "enviar_agora_todas", "central_rotina"].includes(acao)) return json({ erro: "Ação inválida." }, 400);
     try { return json(await executarAutomacaoNotificacoes(env, acao)); }
     catch (error) { console.error("Falha na automação de notificações:", error); return json({ erro: "Falha ao executar automação." }, 500); }
+  }
+
+  // Vercel Cron: rotina diária da Central (libera a fila e prepara o lote do dia; não aprova sozinha por padrão).
+  if (path === "/api/cron/notificacoes-financeiras") {
+    if (request.method !== "GET") return json({ erro: "Método não suportado." }, 405);
+    if (!rotinaAutorizada(request, env)) return json({ erro: "Rotina não autorizada." }, 401);
+    try { return json(await executarAutomacaoNotificacoes(env, "central_rotina")); }
+    catch (error) { console.error("Falha na rotina da Central de Notificações:", error); return json({ erro: "Falha ao executar a rotina." }, 500); }
   }
 
   if (path.match(/^\/api\/admin\/boletos\/[^/]+\/comprovante$/) && request.method === "GET") {
@@ -356,9 +379,14 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.NOTIFICACOES_GERENCIAR)) {
       return json({ erro: "Seu papel não tem permissão para gerenciar notificações." }, 403);
     }
-    atorNotificacoes = colaborador.id;
+    // Ações vindas do Dev Console ficam com o operador técnico (dev-console:<id>) na auditoria.
+    atorNotificacoes = colaborador.id === DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID ? colaborador.auth_user_id : colaborador.id;
   }
   const db = createServiceSupabaseClient(env);
+
+  if (path === "/api/admin/notificacoes/lotes" || path.startsWith("/api/admin/notificacoes/lotes/")) {
+    return lotesApi(request, env, db, path, atorNotificacoes ?? `admin:${admin}`);
+  }
 
   if (path === "/api/admin/notificacoes/automacao") {
     if (request.method === "GET") {
@@ -446,4 +474,59 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
   }
 
   return null;
+}
+
+function respostaLote(resultado: { ok: boolean; status?: number | string } & Record<string, unknown>, sucesso = 200) {
+  if (!resultado.ok) return json({ erro: resultado.erro, codigo: resultado.codigo }, Number(resultado.status) || 400);
+  return json(resultado, sucesso);
+}
+
+/** Rotas da Central de Notificações (lotes). O gate de sessão e de permissão já rodou em adminNotificacoes. */
+async function lotesApi(request: Request, env: Env, db: Db, path: string, ator: string): Promise<Response> {
+  const ctx = contextoCentral(env, db, ator);
+  const url = new URL(request.url);
+
+  if (path === "/api/admin/notificacoes/lotes" && request.method === "GET") {
+    const lotes = await listarLotes(db, Number(url.searchParams.get("limite")) || 20);
+    if (!lotes) return json({ erro: "A estrutura de lotes ainda não foi aplicada neste ambiente (migration_088).", codigo: "migration_088" }, 409);
+    return json({ lotes, config: await carregarConfigCentral(db), segmentos: SEGMENTOS });
+  }
+  if (path === "/api/admin/notificacoes/lotes/config") {
+    if (request.method === "GET") return json({ config: await carregarConfigCentral(db), segmentos: SEGMENTOS });
+    if (request.method !== "POST") return json({ erro: "Método não suportado." }, 405);
+    const validacao = validarAlteracaoConfig(await parse(request));
+    if (!validacao.ok) return json({ erro: validacao.erro }, 400);
+    const antes = await carregarConfigCentral(db);
+    for (const linha of validacao.linhas) {
+      const { error } = await db.from("notificacoes_config").upsert(linha, { onConflict: "chave" });
+      if (error) return json({ erro: publicError(error) }, 400);
+    }
+    const depois = await carregarConfigCentral(db);
+    await db.from("logs_alteracoes").insert({ usuario: ator, acao: "alterou_config_central_notificacoes", entidade: "notificacoes_config", detalhes: { antes, depois } });
+    return json({ config: depois, mensagem: "Configuração salva." });
+  }
+  if (path === "/api/admin/notificacoes/lotes/preparar" && request.method === "POST") {
+    return respostaLote(await prepararLote(ctx, "manual"), 201);
+  }
+
+  const m = path.match(/^\/api\/admin\/notificacoes\/lotes\/([0-9a-f-]{36})(?:\/(gerar|aprovar|cancelar|reprocessar-falhas|chat|itens\/([0-9a-f-]{36})\/editar))?$/);
+  if (!m) return json({ erro: "Rota não encontrada." }, 404);
+  const [, loteId, acao, itemId] = m;
+  if (!acao) {
+    if (request.method !== "GET") return json({ erro: "Método não suportado." }, 405);
+    const detalhe = await detalharLote(db, loteId);
+    return detalhe ? json(detalhe) : json({ erro: "Lote não encontrado." }, 404);
+  }
+  if (request.method !== "POST") return json({ erro: "Método não suportado." }, 405);
+  const body = await parse(request);
+  try {
+    if (acao === "gerar") return respostaLote(await gerarMensagens(ctx, loteId, { instrucao: body.instrucao, segmento: body.segmento }));
+    if (acao === "aprovar") return respostaLote(await aprovarLote(ctx, loteId));
+    if (acao === "cancelar") return respostaLote(await cancelarLote(ctx, loteId));
+    if (acao === "reprocessar-falhas") return respostaLote(await reprocessarFalhas(ctx, loteId));
+    if (acao === "chat") return respostaLote(await conversarSobreLote(ctx, loteId, body.mensagem, body.historico));
+    return respostaLote(await editarItem(ctx, loteId, itemId, body.mensagem));
+  } catch (error) {
+    return json({ erro: publicError(error, "Falha ao processar o lote.") }, 500);
+  }
 }
