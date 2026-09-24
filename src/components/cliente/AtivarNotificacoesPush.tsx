@@ -56,6 +56,59 @@ function obterDeviceKey() {
   return value;
 }
 
+async function obterChavePublicaVapid() {
+  const keyRes = await fetch("/api/cliente/push/vapid", { cache: "no-store" });
+  const keyData = await keyRes.json().catch(() => ({}));
+  if (!keyRes.ok || !keyData?.publicKey) {
+    throw new Error(keyData?.erro ?? "Servidor de notificações não configurado.");
+  }
+  return keyData.publicKey as string;
+}
+
+async function salvarAssinaturaPush(subscription: PushSubscription) {
+  const deviceKey = obterDeviceKey();
+  const response = await fetch("/api/cliente/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription: subscription.toJSON(), deviceKey }),
+  });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
+async function garantirAssinaturaPushRegistrada(reg: ServiceWorkerRegistration) {
+  let subscription = await reg.pushManager.getSubscription();
+
+  if (!subscription) {
+    const publicKey = await obterChavePublicaVapid();
+    subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+  }
+
+  let salvo = await salvarAssinaturaPush(subscription);
+
+  // Se este endpoint ficou preso a outra sessão/cliente no backend, invalida
+  // apenas a assinatura local e cria uma nova. O registro antigo será removido
+  // quando o push service responder 404/410 no próximo envio.
+  if (salvo.response.status === 409) {
+    await subscription.unsubscribe().catch(() => false);
+    const publicKey = await obterChavePublicaVapid();
+    subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    salvo = await salvarAssinaturaPush(subscription);
+  }
+
+  if (!salvo.response.ok) {
+    throw new Error(salvo.data?.erro ?? "Não foi possível registrar este celular.");
+  }
+
+  return subscription;
+}
+
 async function atualizarTelemetria(pushActive: boolean) {
   try {
     const deviceKey = obterDeviceKey();
@@ -122,32 +175,7 @@ export function AtivarNotificacoesPush() {
       }
 
       const reg = await navigator.serviceWorker.ready;
-      let subscription = await reg.pushManager.getSubscription();
-
-      if (!subscription) {
-        const keyRes = await fetch("/api/cliente/push/vapid", { cache: "no-store" });
-        const keyData = await keyRes.json().catch(() => ({}));
-        if (!keyRes.ok || !keyData?.publicKey) {
-          throw new Error(keyData?.erro ?? "Servidor de notificações não configurado.");
-        }
-
-        subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
-        });
-      }
-
-      const deviceKey = obterDeviceKey();
-      const saveRes = await fetch("/api/cliente/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: subscription.toJSON(), deviceKey }),
-      });
-      const saveData = await saveRes.json().catch(() => ({}));
-
-      if (!saveRes.ok) {
-        throw new Error(saveData?.erro ?? "Não foi possível registrar este celular.");
-      }
+      await garantirAssinaturaPushRegistrada(reg);
 
       limparSolicitacaoPosInstalacao();
       await atualizarTelemetria(true);
@@ -213,15 +241,15 @@ export function AtivarNotificacoesPush() {
       if (Notification.permission === "granted") {
         try {
           const reg = await navigator.serviceWorker.ready;
-          const subscription = await reg.pushManager.getSubscription();
-          if (subscription) {
-            limparSolicitacaoPosInstalacao();
-            if (!cancelado) setAtivo(true);
-            await atualizarTelemetria(true);
-            window.dispatchEvent(new Event("sra-luck-push-updated"));
-            return;
-          }
-        } catch {}
+          await garantirAssinaturaPushRegistrada(reg);
+          limparSolicitacaoPosInstalacao();
+          if (!cancelado) setAtivo(true);
+          await atualizarTelemetria(true);
+          window.dispatchEvent(new Event("sra-luck-push-updated"));
+          return;
+        } catch {
+          await atualizarTelemetria(false);
+        }
       }
 
       await atualizarTelemetria(false);
