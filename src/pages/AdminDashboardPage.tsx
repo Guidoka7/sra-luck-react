@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
-  AlertTriangle, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3,
+  AlertTriangle, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign,
   FileCheck2, FileText, LayoutDashboard, ReceiptText, Search, ShieldCheck, UserRoundCheck,
-  UsersRound, WalletCards, Zap,
+  UsersRound, Zap,
 } from "lucide-react";
 import { formatarMoeda } from "@/lib/utils";
 import type { EstagioCentral, VisaoGeralResponse } from "@/features/scheduling/types";
@@ -101,7 +101,7 @@ function addDiasIso(iso: string, dias: number) {
 }
 
 function percent(value: number, total: number) {
-  if (total <= 0) return 0;
+  if (value <= 0 || total <= 0) return 0;
   return Math.max(2, Math.min(100, Math.round((value / total) * 100)));
 }
 
@@ -203,7 +203,7 @@ export default function AdminDashboardPage() {
   const kpis = [
     { label: "Clientes ativas", value: String(dados.clientStats.ativas), sub: "contratos ativos na carteira", icon: UsersRound, href: "/admin/clientes" },
     { label: "Próximas liberações", value: String(proximasLiberacoes7), sub: "prazos nos próximos 7 dias", icon: ShieldCheck, href: "/admin/agenda?aba=liberacao" },
-    { label: "Cirurgias confirmadas no mês", value: String(dados.agenda.resumo.cirurgiasMes), sub: "cirurgias com data no período", icon: CalendarDays, href: "/admin/agenda?aba=cirurgia" },
+    { label: "Cirurgias no mês", value: String(dados.agenda.resumo.cirurgiasMes), sub: "cirurgias com data no período", icon: CalendarDays, href: "/admin/agenda?aba=cirurgia" },
     { label: "Recebimentos da semana", value: formatarMoeda(recebimentosSemana), sub: `${dados.financeiro.recebidasSemana ?? dados.financeiro.recebidasNoMes} pagamento(s) confirmado(s)`, icon: CircleDollarSign, href: "/admin/financeiro" },
   ];
 

@@ -114,6 +114,11 @@ export default function ClientesPage() {
       try { const r = await fetch("/api/admin/novas-vendas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setNovasVendas(d.vendas ?? []); } catch { /* staging opcional */ }
     } catch (e) { if (!cached) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); } finally { setCarregando(false); }
   }
+  useEffect(() => {
+    const termoInicial = new URLSearchParams(window.location.search).get("busca")?.trim();
+    if (termoInicial) setBusca(termoInicial);
+  }, []);
+
   useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
 
   useEffect(() => {

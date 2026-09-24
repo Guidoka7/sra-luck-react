@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, Cable, CalendarDays, Gauge, LockKeyhole, Settings2, ShieldCheck, Users } from "lucide-react";
 import "@/styles/admin-zip.css";
 import styles from "./AdminWorkspace.module.css";
@@ -33,7 +33,17 @@ function abaDaUrl():AbaWorkspace{
 }
 export function AdminWorkspace(){
   const [aba,setAba]=useState<AbaWorkspace>(abaDaUrl);
-  function navegar(nova:AbaWorkspace){setAba(nova);window.history.replaceState({},"","/admin/configuracoes?aba="+nova);}
+  useEffect(()=>{
+    const sincronizar=()=>setAba(abaDaUrl());
+    window.addEventListener("popstate",sincronizar);
+    return()=>window.removeEventListener("popstate",sincronizar);
+  },[]);
+  function navegar(nova:AbaWorkspace){
+    setAba(nova);
+    const destino="/admin/configuracoes?aba="+nova;
+    if(window.location.pathname+window.location.search!==destino)window.history.pushState({}, "", destino);
+    window.dispatchEvent(new Event("app:navigate"));
+  }
   return <div className={["zip-admin",styles.page].join(" ")}>
     <header className={styles.hero}><div><div className={styles.eyebrow}>BEM-VINDA, ADMIN!</div><h1>Configurações</h1><p>Gerencie as regras, integrações e preferências do sistema.</p></div><div className={styles.quote}>Disciplina hoje,<br/>mais histórias amanhã.<span/></div></header>
     <div className={styles.workspace}>

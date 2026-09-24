@@ -360,7 +360,7 @@ export default function PrevisoesPage() {
               {[0, .25, .5, .75, 1].map((p) => <line key={p} x1="48" x2="970" y1={chartBottom - chartUsable * p} y2={chartBottom - chartUsable * p} className={styles.gridLine} />)}
               {buckets.map((b, i) => {
                 const x = 50 + step * i + step / 2 - barWidth / 2;
-                const h = Math.max(2, b.recebimentos / maxReceita * chartUsable);
+                const h = b.recebimentos > 0 ? Math.max(2, b.recebimentos / maxReceita * chartUsable) : 0;
                 return <rect key={b.inicio} x={x} y={chartBottom - h} width={barWidth} height={h} rx="3" className={styles.bar} />;
               })}
               <polyline points={linha("cirurgias")} className={styles.lineCirurgia} />
@@ -403,7 +403,7 @@ export default function PrevisoesPage() {
         </article>
 
         <article className={styles.panel}>
-          <div className={styles.panelHead}><h2>Agenda prevista da semana</h2><a href="/admin/agenda">Ver agenda <ArrowRight size={13} /></a></div>
+          <div className={styles.panelHead}><h2>Próximos dias úteis</h2><a href="/admin/agenda">Ver agenda <ArrowRight size={13} /></a></div>
           <div className={styles.weekList}>
             {semana.map((d) => <div className={styles.weekRow} key={d.data}>
               <span className={styles.dateBox}><small>{d.dow}</small><strong>{d.dia}</strong></span>

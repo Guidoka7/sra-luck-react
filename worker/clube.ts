@@ -23,6 +23,15 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function hojeBrasil() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 async function lerCorpo(request: Request): Promise<Record<string, unknown>> {
   try { return await request.json() as Record<string, unknown>; } catch { return {}; }
 }
@@ -80,7 +89,7 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
       db.from("clube_resgates").select("id,pontos,status,created_at,clube_recompensas(titulo)").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(30),
       db.from("clube_campanhas").select("id,chave,tipo,titulo,descricao,recompensa_texto,ativo,ordem,created_at").eq("ativo", true).is("excluido_em", null).order("ordem").order("created_at"),
     ]);
-    const erro = saldoR.error ?? premiosR.error ?? extratoR.error ?? beneficiosR.error ?? indicacoesR.error ?? parcelasR.error ?? campanhasR.error;
+    const erro = saldoR.error ?? premiosR.error ?? extratoR.error ?? beneficiosR.error ?? indicacoesR.error ?? configR.error ?? parcelasR.error ?? resgatesR.error ?? campanhasR.error;
     if (erro) {
       console.error("Falha ao carregar Clube de Vantagens da cliente:", erro);
       return json({ erro: "Não foi possível carregar o Clube de Vantagens agora." }, 500);
@@ -191,8 +200,8 @@ const ERROS_INDICACAO: Array<[RegExp, string, number]> = [
 
 export async function clubeAdminApi(path: string, request: Request, db: Db, usuario: string): Promise<Response | null> {
   if (path === "/api/admin/credit-ops/club/overview" && request.method === "GET") {
-    const agora = new Date();
-    const inicioMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
+    const mesBrasil = hojeBrasil().slice(0, 7);
+    const inicioMes = new Date(`${mesBrasil}-01T00:00:00-03:00`).toISOString();
     const [
       indicacoesR,
       vouchersR,
@@ -224,7 +233,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
         .limit(5000),
     ]);
     const erro =
-      indicacoesR.error ?? vouchersR.error ?? recompensasR.error ?? resgatesR.error ?? campanhasR.error ??
+      indicacoesR.error ?? vouchersR.error ?? configR.error ?? recompensasR.error ?? resgatesR.error ?? campanhasR.error ??
       clientesClubeR.error ?? indicacoesAprovadasR.error ?? beneficiosResgatadosR.error ??
       resgatesPendentesR.error ?? eventosMesR.error;
     if (erro) return json({ erro: publicError(erro) }, 500);
@@ -239,10 +248,11 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
       ...vouchers.map((v) => v.cliente_id),
       ...resgates.map((r) => r.cliente_id),
     ].filter(Boolean) as string[])];
-    const { data: clientes } = ids.length
+    const clientesR = ids.length
       ? await db.from("clientes").select("id,nome_completo,telefone,cpf").in("id", ids)
-      : { data: [] as Array<{ id: string; nome_completo: string; telefone: string | null; cpf: string | null }> };
-    const porId = new Map((clientes ?? []).map((c) => [c.id, c]));
+      : { data: [] as Array<{ id: string; nome_completo: string; telefone: string | null; cpf: string | null }>, error: null };
+    if (clientesR.error) return json({ erro: publicError(clientesR.error) }, 500);
+    const porId = new Map((clientesR.data ?? []).map((c) => [c.id, c]));
     const recompensasPorId = new Map(recompensas.map((r) => [String(r.id), r]));
 
     const clientesPorMotivo = (motivo: string) => new Set(
