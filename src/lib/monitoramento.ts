@@ -117,6 +117,52 @@ export function registrarErro(evento: EventoErro) {
   void enviar(payload).then((ok) => { if (!ok) enfileirar(payload); });
 }
 
+const ACESSO_ENDPOINT = "/api/monitoramento/acesso";
+const DEVICE_KEY = "sra-luck-device-key";
+const SESSAO_KEY = "sra_luck_sessao_navegacao";
+let ultimoAcesso = "";
+let ultimoAcessoEm = 0;
+
+function idSessaoNavegacao() {
+  try {
+    let id = sessionStorage.getItem(SESSAO_KEY);
+    if (!id) { id = requestId(); sessionStorage.setItem(SESSAO_KEY, id); }
+    return id;
+  } catch { return null; }
+}
+
+/**
+ * Registra a tela aberta (histórico de acesso da cliente ou do colaborador).
+ * O backend identifica quem é pela sessão; sem sessão o evento é ignorado.
+ */
+export function registrarAcesso(tela: string) {
+  if (typeof window === "undefined" || !tela) return;
+  const agora = Date.now();
+  const chave = `${window.location.pathname}|${tela}`;
+  if (chave === ultimoAcesso && agora - ultimoAcessoEm < 5000) return;
+  ultimoAcesso = chave;
+  ultimoAcessoEm = agora;
+  let deviceKey: string | null = null;
+  try { deviceKey = localStorage.getItem(DEVICE_KEY); } catch { /* armazenamento indisponível */ }
+  const standalone = window.matchMedia?.("(display-mode: standalone)").matches
+    || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+  const largura = window.innerWidth;
+  const payload = JSON.stringify({
+    tela: tela.slice(0, 200),
+    rota: window.location.pathname.slice(0, 300),
+    sessaoId: idSessaoNavegacao(),
+    deviceKey,
+    deviceType: largura < 768 ? "mobile" : largura < 1024 ? "tablet" : "desktop",
+    displayMode: standalone ? "standalone" : "browser",
+    isPwaInstalled: standalone,
+  });
+  try {
+    if (navigator.sendBeacon && navigator.sendBeacon(ACESSO_ENDPOINT, new Blob([payload], { type: "application/json" }))) return;
+  } catch { /* fallback abaixo */ }
+  const envio = fetchOriginal ?? window.fetch.bind(window);
+  void envio(ACESSO_ENDPOINT, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true }).catch(() => undefined);
+}
+
 export function instalarMonitoramentoGlobal() {
   if (typeof window === "undefined" || instalado) return () => undefined;
   instalado = true;
@@ -142,7 +188,7 @@ export function instalarMonitoramentoGlobal() {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const metodo = init?.method || (input instanceof Request ? input.method : "GET");
-    if (url.includes(ENDPOINT)) return fetchOriginal!(input, init);
+    if (url.includes(ENDPOINT) || url.includes(ACESSO_ENDPOINT)) return fetchOriginal!(input, init);
     const inicio = Date.now();
     try {
       const response = await fetchOriginal!(input, init);

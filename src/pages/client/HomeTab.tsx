@@ -1,6 +1,7 @@
 import { ClientProfileHeader } from "@/components/cliente/home/ClientProfileHeader";
 import { HomeCampaignCarousel } from "@/components/cliente/home/HomeCampaignCarousel";
 import { useState } from "react";
+import { useHomeCampaignSlides } from "@/lib/homeCampanhas";
 import { DisciplinaCard } from "@/components/cliente/home/DisciplinaCard";
 import { AcessoRapido } from "@/components/cliente/home/AcessoRapido";
 import { PorQueSraLuck } from "@/components/cliente/home/PorQueSraLuck";
@@ -18,6 +19,7 @@ interface HomeTabProps {
 
 export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcentagemPagamento, onCampaignAction }: HomeTabProps) {
   const [historiaAberta, setHistoriaAberta] = useState(false);
+  const slidesCarrossel = useHomeCampaignSlides();
   // "historia" abre a folha aqui mesmo; os demais destinos navegam pelo shell do app.
   const abrir = (destino: HomeCampaignDestination) => {
     if (destino === "historia") setHistoriaAberta(true);
@@ -34,6 +36,7 @@ export function HomeTab({ nomeCliente, procedimento, quantidadeParcelas, porcent
       />
 
       <HomeCampaignCarousel
+        slides={slidesCarrossel}
         onAction={(slide) => abrir(slide.action)}
         contexto={{ nome: primeiroNome(nomeCliente), percentualPago: porcentagemPagamento }}
       />

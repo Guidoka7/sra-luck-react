@@ -250,6 +250,73 @@ export const HOME_CAMPAIGN_SLIDES: HomeCampaignSlideConfig[] = [
   },
 ];
 
+export const HOME_CAMPAIGN_TEMAS: readonly HomeCampaignTema[] = ["creme", "vinho", "rose", "blush", "nude", "ameixa"];
+export const HOME_CAMPAIGN_ARTES: readonly HomeCampaignArte[] = ["camila", "clube", "indicacao", "progresso", "jornada", "atendimento", "campanha"];
+/** Destinos que um cartão configurável pode abrir (campanhas não tem tela própria). */
+export const HOME_CAMPAIGN_DESTINOS_CONFIGURAVEIS: readonly HomeCampaignDestination[] = ["historia", "clube", "parcelas", "jornada", "agenda", "notificacoes", "atendimento"];
+export const HOME_CAMPAIGN_TEXTOS = ["eyebrow", "title", "destaque", "description", "cta"] as const;
+
+/** Ajuste salvo pelo Admin/Dev Console para um cartão (existente ou novo). */
+export interface HomeCampaignOverride {
+  id: string;
+  /** Cartão novo: de qual cartão existente copia o visual (cores, onda, imagem). */
+  baseId?: string | null;
+  ativo?: boolean | null;
+  ordem?: number | null;
+  dados?: Partial<Pick<HomeCampaignSlideConfig, "eyebrow" | "title" | "destaque" | "description" | "cta" | "action" | "tema" | "arte">> | null;
+}
+
+function dadosPermitidos(dados: HomeCampaignOverride["dados"]) {
+  const out: Partial<HomeCampaignSlideConfig> = {};
+  if (!dados) return out;
+  for (const campo of HOME_CAMPAIGN_TEXTOS) {
+    const valor = dados[campo];
+    if (typeof valor === "string" && valor.trim()) out[campo] = valor.trim();
+  }
+  if (dados.action && HOME_CAMPAIGN_DESTINOS_CONFIGURAVEIS.includes(dados.action)) out.action = dados.action;
+  if (dados.tema && HOME_CAMPAIGN_TEMAS.includes(dados.tema)) out.tema = dados.tema;
+  if (dados.arte && HOME_CAMPAIGN_ARTES.includes(dados.arte)) out.arte = dados.arte;
+  return out;
+}
+
+/**
+ * Aplica os ajustes salvos sobre o catálogo padrão. Sem ajustes (ou com dados
+ * inválidos) o resultado é exatamente o catálogo padrão. Cartões de campanha
+ * comercial continuam dependendo de `requires-campaign-config`.
+ */
+export function aplicarConfiguracaoCampanhas(
+  base: HomeCampaignSlideConfig[] = HOME_CAMPAIGN_SLIDES,
+  overrides: HomeCampaignOverride[] = [],
+): HomeCampaignSlideConfig[] {
+  const porId = new Map(base.map((slide) => [slide.id, slide]));
+  const resultado = base.map((slide) => {
+    const o = overrides.find((item) => item.id === slide.id && !item.baseId);
+    if (!o) return slide;
+    return {
+      ...slide,
+      ...dadosPermitidos(o.dados),
+      active: typeof o.ativo === "boolean" ? o.ativo : slide.active,
+      order: Number.isFinite(o.ordem) ? Number(o.ordem) : slide.order,
+    };
+  });
+  for (const o of overrides) {
+    const modelo = o.baseId ? porId.get(o.baseId) : undefined;
+    if (!modelo || porId.has(o.id)) continue;
+    const dados = dadosPermitidos(o.dados);
+    if (!dados.title || !dados.description || !dados.cta) continue;
+    resultado.push({
+      ...modelo,
+      ...dados,
+      id: o.id,
+      action: dados.action ?? (modelo.action === "campanhas" ? "clube" : modelo.action),
+      availability: "always",
+      active: o.ativo !== false,
+      order: Number.isFinite(o.ordem) ? Number(o.ordem) : 100,
+    });
+  }
+  return resultado;
+}
+
 /** Dados da cliente usados para personalizar os cartões. */
 export interface HomeCampaignContexto {
   /** Primeiro nome da cliente (vazio = texto genérico). */
