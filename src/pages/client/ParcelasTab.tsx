@@ -14,7 +14,7 @@ export function ParcelasTab({ procedimento }: ParcelasTabProps) {
     fetch("/api/cliente/config", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((dados) => {
-        if (dados) setPagamento({ pixChave: dados.pixChave ?? null, pixQrCodeUrl: dados.pixQrCodeUrl ?? null, pixDescontoPercentual: dados.pixDescontoPercentual ?? 0 });
+        if (dados) setPagamento({ pixChave: dados.pixChave ?? null, pixQrCodeUrl: dados.pixQrCodeUrl ?? null, pixDescontoPercentual: dados.pixDescontoPercentual ?? 0, cartaoDisponivel: dados.cartaoDisponivel === true });
       })
       .catch(() => {});
   }, []);

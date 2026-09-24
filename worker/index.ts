@@ -1,6 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-import { buscarColaboradorAdminAtivo, exigirAdmin } from "./admin-auth";
+import { buscarColaboradorAdminAtivo, exigirAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { agenda, agendar, agendarCirurgia, remarcarAgendamento, solicitarLiberacaoEtapa1, solicitarLiberacaoFinanceira, json as apiJson } from "./client-agenda";
 import { clienteAgendamentoAcao, adminAgendamentoAcao } from "./agendamento-acoes";
 import { handleClienteBoletos } from "./client-boletos";
@@ -391,7 +391,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       ? await db.from("colaboradores").select("nome,cargo").eq("id", colaborador.id).maybeSingle()
       : { data: null, error: null };
     if (perfilError) requestLogger(request).warn("Sessão válida, mas perfil administrativo não foi carregado", { action: "admin.session.profile", eventCode: "ADMIN_SESSION_PROFILE_FAILED", error: perfilError });
-    return json({ autenticado: true, nome: perfil?.nome ?? null, cargo: perfil?.cargo ?? colaborador?.cargo ?? null }, 200, { "Cache-Control": "no-store" });
+    return json({
+      autenticado: true,
+      nome: perfil?.nome ?? null,
+      cargo: perfil?.cargo ?? colaborador?.cargo ?? null,
+      permissoes: colaborador?.cargo === "administrativo" ? Object.values(PERMISSOES_ADMIN) : colaborador?.permissoes ?? [],
+      acessoTotal: colaborador?.cargo === "administrativo",
+    }, 200, { "Cache-Control": "no-store" });
   }
 
   const monitor = await monitoramentoErros(request, env);
