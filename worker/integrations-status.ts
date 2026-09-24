@@ -1,5 +1,5 @@
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
-import { estadosIntegracoes, obterCredencial } from "./integrations-credenciais";
+import { estadosIntegracoes, obterCredencialParaValidacao } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { validarConfiguracaoVapid } from "./web-push-config";
@@ -127,21 +127,21 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     caClientId, caClientSecret, caAccessToken, caRefreshToken,
     rdWebhookSecret, rdClientId, rdClientSecret, rdAccessToken, rdLegacyToken, rdRefreshToken,
   ] = await Promise.all([
-    obterCredencial(env, "web_push", "vapid_public_key"),
-    obterCredencial(env, "web_push", "vapid_private_key"),
-    obterCredencial(env, "web_push", "vapid_subject"),
-    obterCredencial(env, "mercado_pago", "access_token"),
-    obterCredencial(env, "mercado_pago", "webhook_secret"),
-    obterCredencial(env, "conta_azul", "client_id"),
-    obterCredencial(env, "conta_azul", "client_secret"),
-    obterCredencial(env, "conta_azul", "access_token"),
-    obterCredencial(env, "conta_azul", "refresh_token"),
-    obterCredencial(env, "rd_station", "webhook_secret"),
-    obterCredencial(env, "rd_station", "client_id"),
-    obterCredencial(env, "rd_station", "client_secret"),
-    obterCredencial(env, "rd_station", "access_token"),
-    obterCredencial(env, "rd_station", "api_access_token"),
-    obterCredencial(env, "rd_station", "refresh_token"),
+    obterCredencialParaValidacao(env, "web_push", "vapid_public_key"),
+    obterCredencialParaValidacao(env, "web_push", "vapid_private_key"),
+    obterCredencialParaValidacao(env, "web_push", "vapid_subject"),
+    obterCredencialParaValidacao(env, "mercado_pago", "access_token"),
+    obterCredencialParaValidacao(env, "mercado_pago", "webhook_secret"),
+    obterCredencialParaValidacao(env, "conta_azul", "client_id"),
+    obterCredencialParaValidacao(env, "conta_azul", "client_secret"),
+    obterCredencialParaValidacao(env, "conta_azul", "access_token"),
+    obterCredencialParaValidacao(env, "conta_azul", "refresh_token"),
+    obterCredencialParaValidacao(env, "rd_station", "webhook_secret"),
+    obterCredencialParaValidacao(env, "rd_station", "client_id"),
+    obterCredencialParaValidacao(env, "rd_station", "client_secret"),
+    obterCredencialParaValidacao(env, "rd_station", "access_token"),
+    obterCredencialParaValidacao(env, "rd_station", "api_access_token"),
+    obterCredencialParaValidacao(env, "rd_station", "refresh_token"),
   ]);
 
   const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
@@ -213,7 +213,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     {
       id: "mercado_pago", nome: "Mercado Pago", grupo: "pagamentos", estado: estadoBase(paymentTable && eventTable, mpCredenciais),
       credenciaisConfiguradas: mpCredenciais, persistenciaPronta: paymentTable && eventTable,
-      conexaoLiveVerificada: estadoAtivo("mercado_pago").ativo && (testes.get("mercado_pago")?.detalhes as any)?.conectado === true,
+      conexaoLiveVerificada: mpCredenciais && estadoAtivo("mercado_pago").ativo && (testes.get("mercado_pago")?.detalhes as any)?.conectado === true,
       detalhes: mpCredenciais ? "Credenciais salvas. O estado conectado só é exibido após teste real aprovado pelo Mercado Pago." : "Checkout e webhook estão preparados para conferência financeira manual.",
       eventosRegistrados: paymentCount,
       ultimaVerificacao: testes.get("mercado_pago")?.created_at ?? null,
@@ -225,7 +225,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     {
       id: "conta_azul", nome: "Conta Azul", grupo: "pagamentos", estado: estadoBase(contaAzulTable, contaAzulCredenciais),
       credenciaisConfiguradas: contaAzulCredenciais, persistenciaPronta: contaAzulTable,
-      conexaoLiveVerificada: estadoAtivo("conta_azul").ativo && (testes.get("conta_azul")?.detalhes as any)?.conectado === true,
+      conexaoLiveVerificada: contaAzulCredenciais && estadoAtivo("conta_azul").ativo && (testes.get("conta_azul")?.detalhes as any)?.conectado === true,
       detalhes: contaAzulCredenciais ? "Credenciais salvas. A conexão só fica ativa após a Conta Azul responder ao teste real." : "Configure OAuth e autorize a conta antes de ativar.",
       eventosRegistrados: contaAzulCount,
       ultimaVerificacao: testes.get("conta_azul")?.created_at ?? null,
@@ -236,7 +236,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
     {
       id: "rd_station", nome: "RD Station CRM", grupo: "crm", estado: estadoBase(rdPersistencia, rdCredenciais),
-      credenciaisConfiguradas: rdCredenciais, persistenciaPronta: rdPersistencia, conexaoLiveVerificada: estadoAtivo("rd_station").ativo && rdConectado,
+      credenciaisConfiguradas: rdCredenciais, persistenciaPronta: rdPersistencia, conexaoLiveVerificada: rdCredenciais && estadoAtivo("rd_station").ativo && rdConectado,
       detalhes: rdOauthAutorizado
         ? "Integração somente leitura autorizada: o Sra. Luck consulta/recebe dados do RD e nunca escreve dados comerciais de volta."
         : rdOauthConfigurado
@@ -258,7 +258,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   ];
 
   const [geminiChave, frasesTabela, { data: testeGemini }, { count: frasesIa }] = await Promise.all([
-    obterCredencial(env, "gemini", "api_key"),
+    obterCredencialParaValidacao(env, "gemini", "api_key"),
     tabelaDisponivel(db, "mensagens_do_dia", "data"),
     db.from("logs_alteracoes").select("created_at,detalhes").eq("acao", "testou_conexao_integracao").eq("entidade_id", "gemini").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("mensagens_do_dia").select("data", { count: "exact", head: true }).eq("origem", "ia"),
@@ -279,7 +279,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   });
 
   const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = await Promise.all([
-    obterCredencial(env, "brb", "webhook_secret"), obterCredencial(env, "bb", "webhook_secret"), obterCredencial(env, "santander", "webhook_secret"), obterCredencial(env, "sicredi", "webhook_secret"), obterCredencial(env, "efi", "webhook_secret"),
+    obterCredencialParaValidacao(env, "brb", "webhook_secret"), obterCredencialParaValidacao(env, "bb", "webhook_secret"), obterCredencialParaValidacao(env, "santander", "webhook_secret"), obterCredencialParaValidacao(env, "sicredi", "webhook_secret"), obterCredencialParaValidacao(env, "efi", "webhook_secret"),
   ]);
   const bancos = [["brb", "BRB", Boolean(brbSecret)], ["bb", "Banco do Brasil", Boolean(bbSecret)], ["santander", "Santander", Boolean(santanderSecret)], ["sicredi", "Sicredi", Boolean(sicrediSecret)], ["efi", "Efí", Boolean(efiSecret)]] as const;
   for (const [id, nome, credenciais] of bancos) {
