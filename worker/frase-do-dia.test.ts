@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErroGemini, definirMensagem, descobrirModelos, gerarComGemini, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, prepararMensagemDoDia, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
+import { ErroGemini, definirMensagem, descobrirModelos, explicarFalhaGemini, gerarComGemini, normalizarModelo, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, prepararMensagemDoDia, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 import type { Env } from "./supabase";
 
@@ -246,6 +246,46 @@ describe("chamada ao Gemini", () => {
     expect(chamadas.filter((u) => u.includes(":generateContent"))).toHaveLength(2);
   });
 
+  it("normaliza o nome do modelo para v1beta/models/{modelo}:generateContent", () => {
+    expect(normalizarModelo("models/gemini-3.5-flash-lite")).toBe("gemini-3.5-flash-lite");
+    expect(normalizarModelo("  \"Gemini-2.5-Flash\" ")).toBe("gemini-2.5-flash");
+    expect(normalizarModelo("gemini 2.5 flash")).toBeNull();
+    expect(normalizarModelo("gemini/../x")).toBeNull();
+    expect(normalizarModelo("")).toBeNull();
+  });
+
+  it("modelo salvo com prefixo models/ vira a URL oficial (sem models/models%2F)", async () => {
+    const urls: string[] = [];
+    const fetcher = (async (url: string) => { urls.push(url); return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"texto\": \"ok *deu certo* aqui\"}" }] } }] }), { status: 200 }); }) as unknown as typeof fetch;
+    const r = await gerarComGemini("k", "models/gemini-3.5-flash-lite", "s", "u", fetcher);
+    expect(urls).toEqual(["https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"]);
+    expect(r.modelo).toBe("gemini-3.5-flash-lite");
+  });
+
+  it("404 não esgota as tentativas: pula modelos listados mas indisponíveis até achar um que responda", async () => {
+    const chamadas: string[] = [];
+    const fetcher = (async (url: string) => {
+      chamadas.push(url);
+      if (url.includes("/models?")) return new Response(JSON.stringify({ models: ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash"].map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 });
+      if (!url.includes("gemini-2.5-flash:")) return new Response(JSON.stringify({ error: { code: 404, message: "not found" } }), { status: 404 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "{\"texto\": \"ok *deu certo* aqui\"}" }] } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await gerarComGemini("k", "gemini-3.5-flash-lite", "s", "u", fetcher);
+    expect(r.modelo).toBe("gemini-2.5-flash");
+    expect(r.tentativas).toEqual(["gemini-3.5-flash-lite:404", "gemini-3.1-flash-lite:404", "gemini-2.5-flash-lite:404", "gemini-2.0-flash-lite:404", "gemini-2.5-flash:200"]);
+  });
+
+  it("falhas lentas continuam limitadas a 3 chamadas", async () => {
+    let chamadas = 0;
+    const fetcher = (async (url: string) => {
+      if (url.includes("/models?")) return new Response(JSON.stringify({ models: ["a-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.9-flash"].map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 });
+      chamadas += 1; return new Response("{}", { status: 503 });
+    }) as unknown as typeof fetch;
+    const erro = await gerarComGemini("k", "gemini-3.5-flash-lite", "s", "u", fetcher).catch((e: unknown) => e) as ErroGemini;
+    expect(erro.motivo).toBe("http_503");
+    expect(chamadas).toBe(3);
+  });
+
   it("chave recusada para na hora", async () => {
     let chamadas = 0;
     const fetcher = (async () => { chamadas += 1; return new Response(JSON.stringify({ error: { message: "API key not valid" } }), { status: 400 }); }) as unknown as typeof fetch;
@@ -304,6 +344,24 @@ describe("conversa do painel com o Gemini (pedir outra e escolher a do dia)", ()
     const { fetcher } = geminiFalso(["Garanta o corpo *perfeito* já."]);
     const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
     expect(r).toMatchObject({ ok: true, aprovada: false, motivo: "termo_proibido" });
+  });
+
+  it("pedir outra opção com todos os modelos em 404 explica o modelo e mostra as tentativas, sem salvar", async () => {
+    const { db, linhas } = bancoFalso();
+    const fetcher = (async (url: string) => (url.includes("/models?")
+      ? new Response(JSON.stringify({ models: [] }), { status: 200 })
+      : new Response("{}", { status: 404 }))) as unknown as typeof fetch;
+    const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+    expect(r).toMatchObject({ ok: false, codigo: "http_404", tentativas: ["gemini-3.5-flash-lite:404"] });
+    expect(r.ok ? "" : r.erro).toContain('O modelo "gemini-3.5-flash-lite" não existe ou não está disponível para esta chave');
+    expect(r.ok ? "" : r.erro).toContain("Tentativas: gemini-3.5-flash-lite:404.");
+    expect(linhas.size).toBe(0);
+  });
+
+  it("explicarFalhaGemini mantém as mensagens de chave, cota e sobrecarga", () => {
+    expect(explicarFalhaGemini("http_403", "m", [])).toMatch(/recusou a chave/);
+    expect(explicarFalhaGemini("http_429", "m", ["m:429"])).toBe("Cota gratuita do Gemini esgotada no momento. Tente mais tarde. Tentativas: m:429.");
+    expect(explicarFalhaGemini("timeout", "m", [])).toMatch(/sobrecarregado/);
   });
 
   it("sem chave: sugerir não chama o Gemini", async () => {

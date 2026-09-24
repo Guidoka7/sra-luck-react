@@ -30,9 +30,18 @@ import { requestLogger } from "./logger";
 import { DATAS_ESPECIAIS, TEMAS_SEMANA, fraseDoDia, type FraseDoDia } from "../src/lib/fraseDoDia";
 
 const MODELO_PADRAO = "gemini-3.5-flash-lite";
-/** Máximo de chamadas de geração numa execução (só passa ao próximo modelo se o anterior falhar). */
+/** Máximo de falhas lentas (429/5xx/timeout/rede) numa execução; cada uma pode custar até TIMEOUT_MS. */
 const MAX_TENTATIVAS = 3;
+/**
+ * Máximo de modelos testados numa execução. Um 404 ("modelo não existe ou não está disponível para
+ * esta chave") volta em milissegundos e não conta como falha lenta: o ListModels lista modelos
+ * que a chave não pode mais usar, então é preciso poder pular vários até achar um que responda.
+ */
+const MAX_MODELOS = 6;
 const TIMEOUT_MS = 12_000;
+/** Orçamento total de uma geração (a rota do painel precisa responder antes do limite da função). */
+const ORCAMENTO_MS = 22_000;
+const BASE_GEMINI = "https://generativelanguage.googleapis.com/v1beta";
 /** Reserva "gerando" abandonada (execução interrompida) pode ser retomada após este prazo. */
 const RESERVA_EXPIRA_MS = 5 * 60_000;
 
@@ -130,12 +139,22 @@ export function ordenarModelos(nomes: string[]) {
   return candidatos.sort((a, b) => grupo(a) - grupo(b) || versao(b) - versao(a) || a.localeCompare(b));
 }
 
+/**
+ * Nome do modelo como a API espera em v1beta/models/{modelo}:generateContent: sem o prefixo
+ * "models/" (que o ListModels devolve e às vezes é colado assim no cofre), sem espaços ou aspas.
+ * Nome com caractere inválido volta null (a URL ficaria quebrada e o Google responderia 404).
+ */
+export function normalizarModelo(nome: string | null | undefined): string | null {
+  const limpo = String(nome ?? "").trim().replace(/^["'`]+|["'`]+$/g, "").trim().replace(/^models\//i, "").toLowerCase();
+  return /^[a-z0-9][a-z0-9._-]{1,79}$/.test(limpo) ? limpo : null;
+}
+
 /** Lista (ListModels) os modelos que a chave pode usar. Usada só quando o modelo configurado falha. */
 export async function descobrirModelos(chave: string, fetcher: typeof fetch = fetch): Promise<string[]> {
   const controle = new AbortController();
   const timer = setTimeout(() => controle.abort(), 6_000);
   try {
-    const resposta = await fetcher("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": chave }, signal: controle.signal });
+    const resposta = await fetcher(`${BASE_GEMINI}/models?pageSize=1000`, { headers: { "x-goog-api-key": chave }, signal: controle.signal });
     if (!resposta.ok) return [];
     const corpo = await resposta.json() as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
     return ordenarModelos((corpo.models ?? []).filter((m) => m.name && (m.supportedGenerationMethods ?? []).includes("generateContent")).map((m) => m.name!));
@@ -161,11 +180,14 @@ export type OpcoesGeracao = { schema?: Record<string, unknown>; temperatura?: nu
 const SCHEMA_TEXTO = { type: "OBJECT", properties: { texto: { type: "STRING" } }, required: ["texto"] };
 
 export async function gerarComGemini(chave: string, modeloPreferido: string, sistema: string, usuario: string, fetcher: typeof fetch = fetch, opcoes: OpcoesGeracao = {}) {
-  const fila = [modeloPreferido];
-  const tentados = new Set<string>();
   const tentativas: string[] = [];
-  let descobriu = false;
-  while (tentativas.length < MAX_TENTATIVAS) {
+  const configurado = normalizarModelo(modeloPreferido);
+  if (!configurado) tentativas.push(`${String(modeloPreferido ?? "").slice(0, 60) || "(vazio)"}:nome_invalido`);
+  const fila = [configurado ?? MODELO_PADRAO];
+  const tentados = new Set<string>();
+  let descobriu = false, lentas = 0;
+  const inicio = Date.now();
+  while (lentas < MAX_TENTATIVAS && tentados.size < MAX_MODELOS && Date.now() - inicio < ORCAMENTO_MS) {
     if (!fila.length) {
       if (descobriu) break;
       descobriu = true;
@@ -176,9 +198,9 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
     if (tentados.has(modelo)) continue;
     tentados.add(modelo);
     const controle = new AbortController();
-    const timer = setTimeout(() => controle.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controle.abort(), Math.max(1_000, Math.min(TIMEOUT_MS, ORCAMENTO_MS - (Date.now() - inicio))));
     try {
-      const resposta = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
+      const resposta = await fetcher(`${BASE_GEMINI}/models/${encodeURIComponent(modelo)}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": chave },
         signal: controle.signal,
@@ -198,21 +220,22 @@ export async function gerarComGemini(chave: string, modeloPreferido: string, sis
         tentativas.push(`${modelo}:${status}`);
         throw new ErroGemini(`http_${status}`, tentativas);
       }
-      if (!resposta.ok) { tentativas.push(`${modelo}:${status}`); continue; }
+      if (!resposta.ok) { tentativas.push(`${modelo}:${status}`); if (status !== 404) lentas += 1; continue; }
       const corpo = await resposta.json() as RespostaGemini;
       const bruto = (corpo.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
-      if (!bruto) { tentativas.push(`${modelo}:vazio`); continue; }
+      if (!bruto) { tentativas.push(`${modelo}:vazio`); lentas += 1; continue; }
       let texto = bruto;
       try { texto = String((JSON.parse(bruto) as { texto?: unknown }).texto ?? ""); } catch { /* sem JSON: valida como texto */ }
       return { texto, bruto, modelo, tentativas: [...tentativas, `${modelo}:200`] };
     } catch (erro) {
       if (erro instanceof ErroGemini) throw erro;
       tentativas.push(`${modelo}:${erro instanceof Error && erro.name === "AbortError" ? "timeout" : "rede"}`);
+      lentas += 1;
     } finally {
       clearTimeout(timer);
     }
   }
-  const ultimo = tentativas[tentativas.length - 1]?.split(":")[1] ?? "sem_modelo";
+  const ultimo = tentativas[tentativas.length - 1]?.split(":").pop() ?? "sem_modelo";
   throw new ErroGemini(/^\d+$/.test(ultimo) ? `http_${ultimo}` : ultimo, tentativas);
 }
 
@@ -220,7 +243,7 @@ export async function configuracaoGemini(env: Env) {
   const [chave, modelo] = await Promise.all([obterCredencial(env, "gemini", "api_key"), obterCredencial(env, "gemini", "modelo")]);
   return {
     chave: chave?.trim() || null,
-    modelo: modelo?.trim() || MODELO_PADRAO,
+    modelo: normalizarModelo(modelo) ?? MODELO_PADRAO,
     instrucoes: env.GEMINI_PROMPT?.trim() || PROMPT_PADRAO,
   };
 }
@@ -503,15 +526,7 @@ export async function testarGemini(env: Env) {
       : { conectado: true, detalhe: `Gemini respondeu (${modelo}), mas o exemplo foi reprovado pelos filtros (${validacao.motivo}). Na rotina diária, nada é publicado automaticamente.` };
   } catch (erro) {
     const motivo = erro instanceof Error ? erro.message : "erro";
-    const tentativas = erro instanceof ErroGemini && erro.tentativas.length ? ` Tentativas: ${erro.tentativas.join(", ")}.` : "";
-    const detalhe = /^http_(400|401|403)$/.test(motivo)
-      ? "O Gemini recusou a chave (verifique se ela foi copiada inteira e se a Generative Language API está ativa)."
-      : motivo === "http_429"
-        ? "Cota gratuita do Gemini esgotada no momento. Tente mais tarde."
-        : /^http_5\d\d$|timeout/.test(motivo)
-          ? "O Gemini está sobrecarregado agora (erro do Google, não da chave)."
-          : `Falha ao contatar o Gemini (${motivo}).`;
-    return { conectado: false, detalhe: detalhe + tentativas };
+    return { conectado: false, detalhe: explicarFalhaGemini(motivo, config.modelo, erro instanceof ErroGemini ? erro.tentativas : []) };
   }
 }
 
@@ -565,7 +580,7 @@ function proximoDia(data: string) {
 
 export type Sugestao =
   | { ok: true; texto: string; aprovada: boolean; motivo?: string; modelo: string }
-  | { ok: false; codigo: string; erro: string };
+  | { ok: false; codigo: string; erro: string; tentativas?: string[] };
 
 /** Gera uma candidata SEM salvar. O painel mostra e a equipe decide se usa. */
 export async function sugerirMensagem(env: Env, pedidoBruto: unknown, agora = new Date(), deps: { db?: Db; fetcher?: typeof fetch } = {}): Promise<Sugestao> {
@@ -585,12 +600,20 @@ export async function sugerirMensagem(env: Env, pedidoBruto: unknown, agora = ne
       : { ok: true, texto: String(gerada.texto || "").trim().slice(0, 300), aprovada: false, motivo: validacao.motivo, modelo: gerada.modelo };
   } catch (erro) {
     const motivo = erro instanceof ErroGemini ? erro.motivo : "erro";
-    const texto = /^http_(400|401|403)$/.test(motivo) ? "O Gemini recusou a chave."
+    const tentativas = erro instanceof ErroGemini ? erro.tentativas : [];
+    return { ok: false, codigo: motivo, erro: explicarFalhaGemini(motivo, config.modelo, tentativas), tentativas };
+  }
+}
+
+/** Mensagem para a equipe; sempre cita o modelo configurado e cada tentativa (modelo:resultado). */
+export function explicarFalhaGemini(motivo: string, modelo: string, tentativas: string[]) {
+  const lista = tentativas.length ? ` Tentativas: ${tentativas.join(", ")}.` : "";
+  const texto = /^http_(400|401|403)$/.test(motivo) ? "O Gemini recusou a chave (confira se foi copiada inteira e se a Generative Language API está ativa)."
+    : motivo === "http_404" ? `O modelo "${modelo}" não existe ou não está disponível para esta chave, e nenhum modelo alternativo listado pela chave respondeu. Configure um modelo válido em Admin → Integrações → Gemini.`
       : motivo === "http_429" ? "Cota gratuita do Gemini esgotada no momento. Tente mais tarde."
         : /^http_5\d\d$|timeout/.test(motivo) ? "O Gemini está sobrecarregado agora (erro do Google)."
           : `Falha ao contatar o Gemini (${motivo}).`;
-    return { ok: false, codigo: motivo, erro: texto };
-  }
+  return texto + lista;
 }
 
 export type Definicao = { ok: true; data: string; texto: string; tema: string; origem: "ia" | "admin" } | { ok: false; codigo: string; erro: string };
@@ -673,7 +696,7 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
       const corpo = await request.json().catch(() => ({})) as { pedido?: unknown; texto?: unknown; origem?: unknown; modelo?: unknown };
       if (conversa === "sugerir") {
         const sugestao = await sugerirMensagem(env, corpo.pedido);
-        log.info("Sugestão de mensagem do dia", { eventCode: "DAILY_MESSAGE_SUGGESTED", ok: sugestao.ok, aprovada: sugestao.ok ? sugestao.aprovada : false });
+        log.info("Sugestão de mensagem do dia", { eventCode: "DAILY_MESSAGE_SUGGESTED", ok: sugestao.ok, aprovada: sugestao.ok ? sugestao.aprovada : false, codigo: sugestao.ok ? undefined : sugestao.codigo, tentativas: sugestao.ok ? undefined : sugestao.tentativas });
         return json(sugestao, sugestao.ok ? 200 : sugestao.codigo === "sem_chave" ? 409 : 502);
       }
       const definicao = await definirMensagem(env, corpo.texto, { origem: corpo.origem, modelo: corpo.modelo });
