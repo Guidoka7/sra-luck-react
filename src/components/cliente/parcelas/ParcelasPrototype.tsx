@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
+import { calcularEncargosAtraso } from "@/lib/financeiro/encargos";
 
 export type PagamentoConfig = {
   pixChave: string | null;
@@ -41,19 +42,12 @@ function dataBr(valor: string | null) {
 }
 
 function calcularValores(boleto: Boleto, pagamento?: PagamentoConfig) {
-  const vencimento = new Date(`${boleto.data_vencimento}T00:00:00`);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const dias = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
+  const { diasEmAtraso: dias, juros, multa, encargos, valorAtualizado } = calcularEncargosAtraso(boleto.valor, boleto.data_vencimento);
   const vencida = dias > 0 && boleto.status === "nao_pago";
-  const juros = boleto.valor * dias * 0.002;
-  const multa = boleto.valor * Math.ceil(dias / 30) * 0.02;
-  const encargos = juros + multa;
   const percentualDescontoPix = pagamento?.pixDescontoPercentual ?? 0;
   const temDescontoPix = vencida && percentualDescontoPix > 0;
   const economiaPix = encargos * (percentualDescontoPix / 100);
-  const valorAtualizado = vencida ? boleto.valor + encargos : boleto.valor;
-  const valorHoje = temDescontoPix ? valorAtualizado - economiaPix : valorAtualizado;
+  const valorHoje = temDescontoPix ? valorAtualizado - economiaPix : vencida ? valorAtualizado : boleto.valor;
   return { dias, vencida, juros, multa, encargos, percentualDescontoPix, temDescontoPix, economiaPix, valorAtualizado, valorHoje };
 }
 
