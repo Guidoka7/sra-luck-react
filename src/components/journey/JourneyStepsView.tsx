@@ -29,22 +29,22 @@ export function JourneyStepsView({ passos }: { passos: JourneyStep[]; variant?: 
           : { background: "#F4F0EE", color: "#9A8D89", border: "#E9E1DE" };
 
       return (
-        <div key={passo.id} className="flex items-stretch gap-[11px]">
+        <div key={passo.id} className={`sl-journey-row sl-journey-row--${done ? "done" : current ? "current" : "next"} flex items-stretch gap-[11px]`}>
           <div className="flex w-[34px] flex-none flex-col items-center">
-            <div style={{ width: 28, height: 28, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", flex: "none", border: `1px solid ${badge.border}`, background: badge.background, color: badge.color, fontSize: 10, fontWeight: 600 }}>
+            <div className="sl-journey-badge" style={{ width: 28, height: 28, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", flex: "none", border: `1px solid ${badge.border}`, background: badge.background, color: badge.color, fontSize: 10, fontWeight: 600 }}>
               {done ? <Check className="h-[14px] w-[14px]" strokeWidth={1.8} /> : <span>{indice + 1}</span>}
             </div>
-            {indice < passos.length - 1 && <div style={{ width: 1, flex: 1, minHeight: 14, background: done ? "#D9E8DD" : "#E9DDDA" }} />}
+            {indice < passos.length - 1 && <div className="sl-journey-connector" style={{ width: 1, flex: 1, minHeight: 14, background: done ? "#D9E8DD" : "#E9DDDA" }} />}
           </div>
-          <div style={{ flex: 1, minWidth: 0, marginBottom: 10, padding: "11px 12px", borderRadius: 15, background: card.background, border: `1px solid ${card.border}`, boxShadow: card.shadow }}>
+          <div className="sl-journey-card" style={{ flex: 1, minWidth: 0, marginBottom: 10, padding: "11px 12px", borderRadius: 15, background: card.background, border: `1px solid ${card.border}`, boxShadow: card.shadow }}>
             <div className="flex items-start justify-between gap-[9px]">
               <div className="min-w-0">
-                <div className="text-[8px] font-semibold uppercase tracking-[.12em]" style={{ color: done ? "#6E9A7D" : current ? "#B65B67" : "#A99894" }}>Etapa {indice + 1}</div>
-                <div className="pt-[2px] font-heading text-[16px] font-semibold leading-[1.15]" style={{ color: current ? "#6B1F2E" : done ? "#466A53" : "#6E5F5B" }}>{passo.title}</div>
+                <div className="sl-journey-kicker text-[8px] font-semibold uppercase tracking-[.12em]" style={{ color: done ? "#6E9A7D" : current ? "#B65B67" : "#A99894" }}>Etapa {indice + 1}</div>
+                <div className="sl-journey-title pt-[2px] font-heading text-[16px] font-semibold leading-[1.15]" style={{ color: current ? "#6B1F2E" : done ? "#466A53" : "#6E5F5B" }}>{passo.title}</div>
               </div>
-              <span style={{ display: "inline-flex", padding: "3px 7px", borderRadius: 999, border: `1px solid ${tagStyle.border}`, background: tagStyle.background, color: tagStyle.color, fontSize: 8, fontWeight: 600, whiteSpace: "nowrap" }}>{tag}</span>
+              <span className="sl-journey-tag" style={{ display: "inline-flex", padding: "3px 7px", borderRadius: 999, border: `1px solid ${tagStyle.border}`, background: tagStyle.background, color: tagStyle.color, fontSize: 8, fontWeight: 600, whiteSpace: "nowrap" }}>{tag}</span>
             </div>
-            <div className="pt-1 text-[9.8px] font-light leading-[1.48] text-[#8A7B77]">{passo.description}</div>
+            <div className="sl-journey-description pt-1 text-[9.8px] font-light leading-[1.48] text-[#8A7B77]">{passo.description}</div>
           </div>
         </div>
       );
