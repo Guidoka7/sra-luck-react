@@ -2,9 +2,9 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
-import { credenciaisApi, integracaoDesativada, obterCredencial } from "./integrations-credenciais";
+import { credenciaisApi, integracaoDesativada, obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
 import { rdStationReadonlyApi } from "./rd-station-readonly";
-import { webPushConfigApi } from "./web-push-config";
+import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
@@ -204,43 +204,143 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   return json({ ok: true, statusProvedor, aguardandoConferencia: statusProvedor === "approved", baixaAutomatica: false }, 200);
 }
 
+type ResultadoTesteIntegracao = {
+  conectado: boolean;
+  detalhe: string;
+  latenciaMs: number;
+  codigo?: string;
+  tipoValidacao: "api_real" | "criptografica";
+};
+
+async function testarProvedorReal(env: Env, provedor: string): Promise<ResultadoTesteIntegracao> {
+  const inicio = Date.now();
+  const finalizar = (parcial: Omit<ResultadoTesteIntegracao, "latenciaMs">): ResultadoTesteIntegracao => ({ ...parcial, latenciaMs: Date.now() - inicio });
+
+  if (provedor === "mercado_pago") {
+    const accessToken = await obterCredencialParaValidacao(env, "mercado_pago", "access_token");
+    if (!accessToken) return finalizar({ conectado: false, detalhe: "Access Token não configurado.", codigo: "CREDENCIAL_AUSENTE", tipoValidacao: "api_real" });
+    try {
+      const response = await fetch("https://api.mercadopago.com/v1/payment_methods", { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (response.ok) return finalizar({ conectado: true, detalhe: "Mercado Pago autenticou o Access Token e respondeu à API real.", tipoValidacao: "api_real" });
+      return finalizar({ conectado: false, detalhe: `Mercado Pago rejeitou a credencial (HTTP ${response.status}).`, codigo: response.status === 401 || response.status === 403 ? "AUTENTICACAO_RECUSADA" : "PROVEDOR_RECUSOU", tipoValidacao: "api_real" });
+    } catch {
+      return finalizar({ conectado: false, detalhe: "Falha de rede ao contatar o Mercado Pago.", codigo: "PROVEDOR_INDISPONIVEL", tipoValidacao: "api_real" });
+    }
+  }
+
+  if (provedor === "gemini") {
+    const apiKey = await obterCredencialParaValidacao(env, "gemini", "api_key");
+    const modelo = await obterCredencialParaValidacao(env, "gemini", "modelo");
+    if (!apiKey) return finalizar({ conectado: false, detalhe: "API Key do Gemini não configurada.", codigo: "CREDENCIAL_AUSENTE", tipoValidacao: "api_real" });
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, { headers: { Accept: "application/json" } });
+      const data = await response.json().catch(() => ({})) as any;
+      if (!response.ok) return finalizar({ conectado: false, detalhe: `Google Gemini rejeitou a chave (HTTP ${response.status}).`, codigo: response.status === 400 || response.status === 401 || response.status === 403 ? "AUTENTICACAO_RECUSADA" : "PROVEDOR_RECUSOU", tipoValidacao: "api_real" });
+      const nomes = Array.isArray(data?.models) ? data.models.map((m: any) => String(m?.name || "").replace(/^models\//, "")) : [];
+      if (modelo && nomes.length && !nomes.includes(modelo.replace(/^models\//, ""))) {
+        return finalizar({ conectado: false, detalhe: `A chave é válida, mas o modelo configurado "${modelo}" não está disponível para ela.`, codigo: "CONFIGURACAO_INVALIDA", tipoValidacao: "api_real" });
+      }
+      return finalizar({ conectado: true, detalhe: modelo ? `Gemini autenticado; modelo "${modelo}" disponível.` : "Gemini autenticado; a API listou os modelos disponíveis.", tipoValidacao: "api_real" });
+    } catch {
+      return finalizar({ conectado: false, detalhe: "Falha de rede ao contatar o Gemini.", codigo: "PROVEDOR_INDISPONIVEL", tipoValidacao: "api_real" });
+    }
+  }
+
+  if (provedor === "web_push") {
+    const [subject, publicKey, privateKey] = await Promise.all([
+      obterCredencialParaValidacao(env, "web_push", "vapid_subject"),
+      obterCredencialParaValidacao(env, "web_push", "vapid_public_key"),
+      obterCredencialParaValidacao(env, "web_push", "vapid_private_key"),
+    ]);
+    if (!subject || !publicKey || !privateKey) return finalizar({ conectado: false, detalhe: "As três credenciais VAPID precisam estar configuradas.", codigo: "CREDENCIAL_AUSENTE", tipoValidacao: "criptografica" });
+    const v = await validarConfiguracaoVapid({ subject, publicKey, privateKey });
+    return finalizar(v.valido
+      ? { conectado: true, detalhe: "Par VAPID validado criptograficamente: pública e privada pertencem ao mesmo par P-256.", tipoValidacao: "criptografica" }
+      : { conectado: false, detalhe: v.detalhe, codigo: "CONFIGURACAO_INVALIDA", tipoValidacao: "criptografica" });
+  }
+
+  if (provedor === "rd_station") {
+    const access = (await obterCredencialParaValidacao(env, "rd_station", "access_token"))
+      || (await obterCredencialParaValidacao(env, "rd_station", "api_access_token"));
+    if (!access) return finalizar({ conectado: false, detalhe: "RD Station ainda não possui Access Token autorizado. Conclua o OAuth.", codigo: "OAUTH_NAO_AUTORIZADO", tipoValidacao: "api_real" });
+    try {
+      const response = await fetch("https://api.rd.services/crm/v2/users?page[number]=1&page[size]=1", { headers: { Authorization: `Bearer ${access}`, Accept: "application/json" } });
+      if (response.ok) return finalizar({ conectado: true, detalhe: "RD Station autenticou o token e respondeu à API CRM v2 em modo somente leitura.", tipoValidacao: "api_real" });
+      return finalizar({ conectado: false, detalhe: `RD Station rejeitou o token (HTTP ${response.status}). Refaça o OAuth se necessário.`, codigo: response.status === 401 || response.status === 403 ? "AUTENTICACAO_RECUSADA" : "PROVEDOR_RECUSOU", tipoValidacao: "api_real" });
+    } catch {
+      return finalizar({ conectado: false, detalhe: "Falha de rede ao contatar o RD Station.", codigo: "PROVEDOR_INDISPONIVEL", tipoValidacao: "api_real" });
+    }
+  }
+
+  if (provedor === "conta_azul") {
+    const credenciais = {
+      obter: (chave: string) => obterCredencialParaValidacao(env, "conta_azul", chave),
+      salvar: (chave: string, valor: string, ator: string) => salvarCredencialInterna(env, "conta_azul", chave, valor, ator),
+    };
+    try {
+      const r = await caRequest(depsPadrao(env, { credenciais }), "GET", "/v1/pessoas/conta-conectada") as Record<string, unknown>;
+      return finalizar({ conectado: true, detalhe: `Conta Azul autenticada na empresa ${String(r?.nome_fantasia || r?.razao_social || "conectada")}.`, tipoValidacao: "api_real" });
+    } catch (error) {
+      const detalhe = error instanceof ErroContaAzul ? error.message : "Falha ao contatar a Conta Azul.";
+      const codigo = error instanceof ErroContaAzul && [401, 403].includes(error.status) ? "AUTENTICACAO_RECUSADA" : error instanceof ErroContaAzul && error.retentavel ? "PROVEDOR_INDISPONIVEL" : "CONFIGURACAO_INVALIDA";
+      return finalizar({ conectado: false, detalhe, codigo, tipoValidacao: "api_real" });
+    }
+  }
+
+  return finalizar({ conectado: false, detalhe: "Este adaptador ainda não possui validação real implementada; por segurança, não pode ser ativado.", codigo: "VALIDACAO_REAL_INDISPONIVEL", tipoValidacao: "api_real" });
+}
+
+async function registrarTesteIntegracao(env: Env, usuario: string, provedor: string, resultado: ResultadoTesteIntegracao) {
+  const db = createServiceSupabaseClient(env);
+  await db.from("logs_alteracoes").insert({
+    usuario,
+    acao: "testou_conexao_integracao",
+    entidade: "integracoes",
+    entidade_id: provedor,
+    detalhes: resultado,
+  });
+}
+
 async function testarConexao(request: Request, env: Env) {
   const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
   if (authorization instanceof Response) return authorization;
-  const { adminId: admin, colaboradorId } = authorization;
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await request.json().catch(() => ({})) as { provedor?: string };
   const provedor = String(body.provedor || "");
+  const resultado = await testarProvedorReal(env, provedor);
+  await registrarTesteIntegracao(env, authorization.colaboradorId, provedor, resultado);
+  requestLogger(request).info("Teste real de integração concluído", { eventCode: "INTEGRATION_REAL_TEST_COMPLETED", provider: provedor, connected: resultado.conectado, latencyMs: resultado.latenciaMs, code: resultado.codigo });
+  return json(resultado, resultado.conectado ? 200 : 422);
+}
+
+async function alterarEstadoIntegracao(request: Request, env: Env) {
+  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
+  if (authorization instanceof Response) return authorization;
+  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const body = await request.json().catch(() => ({})) as { provedor?: string; ativo?: boolean };
+  const provedor = String(body.provedor || "");
+  if (typeof body.ativo !== "boolean" || !provedor) return json({ erro: "Informe provedor e estado ativo." }, 400);
+
   const db = createServiceSupabaseClient(env);
-  const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "integration.connection.test", provider: provedor });
+  if (!body.ativo) {
+    const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
+    if (error) return json({ erro: "Não foi possível desativar a integração." }, 409);
+    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "desativou_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: { validacaoReal: true } });
+    return json({ ok: true, provedor, ativo: false });
+  }
 
-  let resultado: { conectado: boolean; detalhe: string };
-  if (provedor === "mercado_pago") {
-    const accessToken = await obterCredencial(env, "mercado_pago", "access_token");
-    if (!accessToken) resultado = { conectado: false, detalhe: "Nenhum access token configurado." };
-    else {
-      try {
-        const response = await fetch("https://api.mercadopago.com/v1/payment_methods", { headers: { Authorization: `Bearer ${accessToken}` } });
-        resultado = response.ok ? { conectado: true, detalhe: "Token válido — API respondeu com sucesso." } : { conectado: false, detalhe: `Provedor rejeitou o token (HTTP ${response.status}).` };
-      } catch {
-        resultado = { conectado: false, detalhe: "Falha de rede ao contatar o provedor." };
-      }
-    }
-  } else if (provedor === "gemini") {
-    resultado = await testarGemini(env);
-  } else if (provedor === "conta_azul") {
-    try {
-      const r = await caRequest(depsPadrao(env), "GET", "/v1/pessoas/conta-conectada") as Record<string, unknown>;
-      resultado = { conectado: true, detalhe: `Conectado à empresa ${String(r?.nome_fantasia || r?.razao_social || "da conta")}.` };
-    } catch (error) {
-      resultado = { conectado: false, detalhe: error instanceof ErroContaAzul ? error.message : "Falha ao contatar a Conta Azul." };
-    }
-  } else return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
+  const resultado = await testarProvedorReal(env, provedor);
+  await registrarTesteIntegracao(env, authorization.colaboradorId, provedor, resultado);
+  if (!resultado.conectado) {
+    await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
+    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "falhou_ativacao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
+    return json({ erro: resultado.detalhe, codigo: resultado.codigo || "VALIDACAO_FALHOU", resultado, ativo: false }, 422);
+  }
 
-  const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: colaboradorId, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
-  if (auditError) log.warn("Teste de integração concluído, mas auditoria não foi persistida", { eventCode: "INTEGRATION_TEST_AUDIT_FAILED", error: auditError });
-  log.info("Teste de integração concluído", { eventCode: "INTEGRATION_TEST_COMPLETED", connected: resultado.conectado });
-  return json(resultado);
+  const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: true, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
+  if (error) return json({ erro: "A validação passou, mas não foi possível persistir a ativação." }, 409);
+  await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "ativou_integracao_validada", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
+  return json({ ok: true, provedor, ativo: true, resultado });
 }
 
 /**
@@ -294,6 +394,7 @@ export async function integrationsApi(request: Request, env: Env): Promise<Respo
   if (path === "/api/admin/integrations/catalogo" && request.method === "GET") return catalogoApi(request, env);
   if (path === "/api/admin/integrations/config" && request.method === "POST") return salvarConfigApi(request, env);
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
+  if (path === "/api/admin/integrations/estado" && request.method === "POST") return alterarEstadoIntegracao(request, env);
   if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env);
   const contaAzul = await contaAzulApi(request, env);
   if (contaAzul) return contaAzul;
