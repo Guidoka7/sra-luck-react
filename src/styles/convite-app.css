@@ -1,0 +1,108 @@
+/* Convites do app (instalar na tela inicial / ativar notificações): alerta modal com visual de iPhone. */
+.sl-convite-fundo {
+  --cv-vidro: rgba(250, 245, 244, 0.86);
+  --cv-texto: #1F1718;
+  --cv-suave: rgba(60, 45, 46, 0.7);
+  --cv-linha: rgba(60, 45, 46, 0.16);
+  --cv-acao: #7A2632;
+  --cv-toque: rgba(60, 45, 46, 0.08);
+  --cv-caixa: rgba(118, 100, 104, 0.1);
+  --cv-ok: #3F7D5B;
+  --cv-alerta: #B3342E;
+  --cv-espera: #C98B3F;
+
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 12, 14, 0.38);
+  animation: sl-convite-fundo 200ms ease-out;
+}
+html[data-tema-cliente="escuro"] .sl-convite-fundo {
+  --cv-vidro: rgba(38, 35, 40, 0.86);
+  --cv-texto: #F4F0F2;
+  --cv-suave: rgba(235, 225, 230, 0.66);
+  --cv-linha: rgba(255, 255, 255, 0.12);
+  --cv-acao: #F0B8C5;
+  --cv-toque: rgba(255, 255, 255, 0.06);
+  --cv-caixa: rgba(118, 118, 128, 0.22);
+  --cv-ok: #8FD1A9;
+  --cv-alerta: #F0A3A3;
+  --cv-espera: #D8B26A;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.sl-convite {
+  width: 100%;
+  max-width: 290px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--cv-vidro);
+  color: var(--cv-texto);
+  box-shadow: 0 20px 50px rgba(20, 10, 12, 0.3);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  text-align: center;
+  animation: sl-convite-surge 260ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+/* Ícone no estilo app do iPhone (mesma família dos ícones da central de notificações). */
+.sl-convite-icone {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 20px auto 0;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #B0526A 0%, #7A2632 100%);
+  color: #FFFFFF;
+  box-shadow: 0 6px 14px rgba(122, 38, 50, 0.28), inset 0 0 0 0.5px rgba(255, 255, 255, 0.25);
+}
+.sl-convite-titulo {
+  margin: 12px 16px 0;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.sl-convite-texto { margin: 4px 16px 0; color: var(--cv-texto); font-size: 13px; line-height: 1.38; opacity: 0.86; }
+
+.sl-convite-status { margin: 12px 16px 0; padding: 8px 10px; border-radius: 10px; background: var(--cv-caixa); text-align: left; }
+.sl-convite-status-linha { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 500; line-height: 1.35; }
+.sl-convite-ponto { flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--cv-espera); }
+.sl-convite-ponto--ok { background: var(--cv-ok); }
+.sl-convite-ponto--alerta { background: var(--cv-alerta); }
+.sl-convite-status p { margin: 5px 0 0; color: var(--cv-suave); font-size: 11px; line-height: 1.4; }
+
+/* Botões empilhados, separados por linha fina, como nos alertas do iOS. */
+.sl-convite-acoes { display: flex; flex-direction: column; margin-top: 18px; }
+.sl-convite-principal,
+.sl-convite-secundario {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 16px;
+  border: 0;
+  border-top: 0.5px solid var(--cv-linha);
+  background: transparent;
+  color: var(--cv-acao);
+  font-size: 16px;
+}
+.sl-convite-principal { font-weight: 600; }
+.sl-convite-secundario { font-weight: 400; }
+.sl-convite-principal:active:not(:disabled),
+.sl-convite-secundario:active { background: var(--cv-toque); }
+.sl-convite-principal:disabled { opacity: 0.55; }
+
+@keyframes sl-convite-fundo { from { opacity: 0; } }
+@keyframes sl-convite-surge { from { transform: scale(1.12); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sl-convite-fundo, .sl-convite { animation: none; }
+}

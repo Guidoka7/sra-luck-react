@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, Smartphone, X } from "lucide-react";
+import { Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
   PWA_DISMISS_KEY,
@@ -10,6 +10,7 @@ import {
   isStandalonePwa,
   marcarPwaInstalada,
 } from "@/lib/pwaInstall";
+import "@/styles/convite-app.css";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -225,75 +226,47 @@ export function PwaInstallPrompt() {
 
   if (!visivel || isKnownInstalled()) return null;
 
+  const ponto = ios || evento ? "sl-convite-ponto--ok" : semPromptDisponivel ? "sl-convite-ponto--alerta" : "";
+
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/45 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6 backdrop-blur-[2px] sm:items-center sm:py-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pwa-install-title"
-    >
-      <div className="w-full max-w-[360px] overflow-hidden rounded-[22px] border border-white/70 bg-[#FFFDFC] shadow-[0_20px_56px_rgba(38,25,23,.26)]">
-        <div className="relative px-4 pb-3.5 pt-4.5 sm:px-5 sm:pb-4">
-          <button
-            type="button"
-            aria-label="Fechar convite de instalação"
-            onClick={dispensar}
-            className="absolute right-3.5 top-3.5 flex h-8 w-8 items-center justify-center rounded-full bg-[#F6EFED] text-[#8A7772] transition-colors hover:bg-[#EFE3E0]"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+    <div className="sl-convite-fundo" onClick={(e) => { if (e.target === e.currentTarget && !instalando) dispensar(); }}>
+      <div className="sl-convite" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title">
+        <div className="sl-convite-icone" aria-hidden><Smartphone className="h-7 w-7" /></div>
+        <h2 id="pwa-install-title" className="sl-convite-titulo">Instale na tela inicial</h2>
+        <p className="sl-convite-texto">
+          {ios
+            ? "No iPhone, a instalação é feita pelo Safari: Compartilhar → Adicionar à Tela de Início."
+            : "Instale para acessar mais rápido e receber avisos importantes."}
+        </p>
 
-          <div className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#F7E9E8] text-[#6B1F2E]">
-            <Smartphone className="h-5 w-5" />
+        <div className="sl-convite-status">
+          <div className="sl-convite-status-linha">
+            <span className={`sl-convite-ponto ${ponto}`} />
+            <span>
+              {ios
+                ? "Use o menu Compartilhar do Safari para concluir."
+                : evento
+                  ? "O Chrome está pronto para instalar o aplicativo."
+                  : semPromptDisponivel
+                    ? "O Chrome ainda não liberou o instalador nesta visita."
+                    : "O Chrome está preparando o instalador."}
+            </span>
           </div>
+          {!ios && semPromptDisponivel && (
+            <p>
+              Toque no menu <b>⋮</b> do Chrome (canto superior direito) e escolha <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>. Depois, abra o ícone Sra. Luck pela tela inicial para ativar as notificações.
+            </p>
+          )}
+        </div>
 
-          <p className="mt-3.5 text-[8.5px] font-semibold uppercase tracking-[0.16em] text-[#B86575]">Seu aplicativo Sra. Luck</p>
-          <h2 id="pwa-install-title" className="mt-0.5 font-heading text-[22px] font-semibold leading-[1.08] text-[#2E2422]">
-            Instale na tela inicial
-          </h2>
-          <p className="mt-2 text-[10.5px] font-light leading-[1.5] text-[#756561]">
-            {ios
-              ? "No iPhone, a instalação é feita pelo Safari: Compartilhar → Adicionar à Tela de Início."
-              : "Instale para acessar mais rápido e receber avisos importantes."}
-          </p>
-
-          <div className="mt-3.5 rounded-[13px] border border-[#EFE3E0] bg-[#FBF7F5] px-3 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <span className={`h-2 w-2 rounded-full ${evento ? "bg-[#3F7D5B]" : semPromptDisponivel ? "bg-[#B3342E]" : "bg-[#D19A54]"}`} />
-              <span className="text-[9.5px] font-medium leading-[1.35] text-[#5E4D49]">
-                {ios
-                  ? "Use o menu Compartilhar do Safari para concluir."
-                  : evento
-                    ? "O Chrome está pronto para instalar o aplicativo."
-                    : semPromptDisponivel
-                      ? "O Chrome ainda não liberou o instalador nesta visita."
-                      : "O Chrome está preparando o instalador."}
-              </span>
-            </div>
-            {!ios && semPromptDisponivel && (
-              <p className="mt-1.5 text-[9.5px] font-light leading-[1.4] text-[#8A7772]">
-                Toque no menu <b>⋮</b> do Chrome (canto superior direito) e escolha <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>. Depois, abra o ícone Sra. Luck pela tela inicial para ativar as notificações.
-              </p>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={instalar}
-            disabled={instalando}
-            className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#6B1F2E] px-4 py-[11px] text-[11px] font-semibold text-white shadow-[0_7px_18px_rgba(107,31,46,.16)] disabled:opacity-60"
-          >
-            {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {instalando ? "Preparando..." : ios ? "Como instalar no iPhone" : "Instalar aplicativo"}
-          </button>
-
-          <button
-            type="button"
-            onClick={dispensar}
-            className="mt-1.5 w-full rounded-[11px] px-4 py-2 text-[10px] font-medium text-[#8A7772]"
-          >
-            Agora não
-          </button>
+        <div className="sl-convite-acoes">
+        <button type="button" className="sl-convite-principal" onClick={instalar} disabled={instalando}>
+          {instalando ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {instalando ? "Preparando..." : ios ? "Como instalar no iPhone" : "Instalar aplicativo"}
+        </button>
+        <button type="button" className="sl-convite-secundario" onClick={dispensar}>
+          Agora não
+        </button>
         </div>
       </div>
     </div>

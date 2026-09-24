@@ -70,9 +70,10 @@ export function PwaRegister() {
   if (!areaCliente) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[30rem] px-4 pt-3 empty:hidden">
+    <>
+      {/* Os dois convites abrem como folha modal (convite-app.css): nunca empurram a tela. */}
       <PwaInstallPrompt />
       <AtivarNotificacoesPush />
-    </div>
+    </>
   );
 }
