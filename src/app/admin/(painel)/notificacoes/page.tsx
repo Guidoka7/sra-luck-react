@@ -4,34 +4,73 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zipChip } from "@/components/admin-zip/zipUi";
 
 /**
- * Aba NOTIFICAÇÕES — reprodução de Admin Configuracoes.dc.html (canal
- * atual, régua automática, tabela de eventos, tabela de templates).
- * A automação real (D-2/D-1/D0 + atraso), envio manual e histórico não
- * existem como seções explícitas no ZIP, mas são funcionalidades reais
- * que precisavam continuar acessíveis — foram adicionadas abaixo, no
- * mesmo padrão visual de card/tabela.
+ * Aba NOTIFICAÇÕES (Configurações). Tudo numa tela compacta:
+ *   - barra de números + automação (liga/desliga, intervalos) + execução manual;
+ *   - régua de parcelas: D-2, D-1, D0, um texto por dia de 1 a 30 e o texto
+ *     único 31+ (worker/notificacao-templates-padrao.ts), com editor ao lado,
+ *     versão "2 ou mais parcelas" e pré-visualização;
+ *   - histórico e envio manual em abas.
+ * O envio é sempre unificado: uma notificação por cliente por rodada.
  */
 
-type Template = { id: string; tipo: string; dias_referencia: number | null; titulo: string; corpo: string; emoji: string | null; is_active: boolean; updated_at?: string };
+type Template = { id: string; tipo: string; dias_referencia: number | null; titulo: string; corpo: string; titulo_multiplas?: string | null; corpo_multiplas?: string | null; emoji: string | null; is_active: boolean; updated_at?: string };
+type Padrao = { tipo: string; dias: number; emoji: string; titulo: string; corpo: string; titulo_multiplas: string; corpo_multiplas: string };
+type Variavel = { chave: string; descricao: string };
 type Log = { id: string; cliente_id: string; tipo: string; titulo?: string; corpo?: string; status: string; erro_mensagem?: string; created_at: string; clientes?: { nome_completo?: string } };
 type Cliente = { id: string; nome_completo: string; telefone?: string | null; ativo?: boolean };
-type Config = { atraso_habilitado: boolean; frequencia_atraso_horas: number; max_tentativas: number };
+type Config = { atraso_habilitado: boolean; frequencia_atraso_horas: number; max_tentativas: number; atraso_recorrente_intervalo_dias: number };
+type Edicao = { titulo: string; corpo: string; titulo_multiplas: string; corpo_multiplas: string; emoji: string };
 
-const emptyConfig: Config = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3 };
-const fieldInput: React.CSSProperties = { height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", padding: "0 9px", fontSize: 11 };
+const emptyConfig: Config = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3, atraso_recorrente_intervalo_dias: 1 };
+const fieldInput: React.CSSProperties = { height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", padding: "0 9px", fontSize: 11, fontWeight: 400 };
+const rotulo: React.CSSProperties = { fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" };
+const cartao: React.CSSProperties = { border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14 };
+const botao: React.CSSProperties = { height: 30, padding: "0 12px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" };
+const botaoPrincipal: React.CSSProperties = { ...botao, border: "1px solid var(--bg)", background: "var(--bg)", color: "var(--on-accent)" };
 
-function rotuloEvento(t: Template) {
-  if (t.tipo === "parcela_vencer") return t.dias_referencia === 0 ? "Vence hoje (D0)" : `D-${t.dias_referencia}`;
-  return `${t.dias_referencia}º dia de atraso`;
+/** Faixas da régua: agrupam os templates na lista da esquerda. */
+const FAIXAS: { id: string; titulo: string; descricao: string; tipo: string; de: number; ate: number }[] = [
+  { id: "antes", titulo: "Antes do vencimento", descricao: "D-2, D-1 e no dia", tipo: "parcela_vencer", de: 0, ate: 2 },
+  { id: "a1", titulo: "1 a 7 dias", descricao: "Lembrete leve e acolhedor", tipo: "parcela_atrasada", de: 1, ate: 7 },
+  { id: "a2", titulo: "8 a 14 dias", descricao: "Firme, com apoio da equipe", tipo: "parcela_atrasada", de: 8, ate: 14 },
+  { id: "a3", titulo: "15 a 21 dias", descricao: "Importância do plano em dia", tipo: "parcela_atrasada", de: 15, ate: 21 },
+  { id: "a4", titulo: "22 a 30 dias", descricao: "Atenção necessária, com respeito", tipo: "parcela_atrasada", de: 22, ate: 30 },
+  { id: "rec", titulo: "31 dias ou mais", descricao: "Mensagem única; só a quantidade muda", tipo: "parcela_atrasada", de: 31, ate: 31 },
+];
+
+// Exemplo usado só na pré-visualização do painel (nunca é enviado).
+const EXEMPLO: Record<string, string> = { nome: "Maria", cliente: "Maria Silva", parcela: "3", total: "12", valor: "R$ 520,00", vencimento: "10/09/2026", dias_atraso: "5", quantidade: "2", valor_total: "R$ 1.040,00" };
+
+function renderizar(texto: string, dias: number | null, tipo: string) {
+  const vars: Record<string, string> = { ...EXEMPLO, dias_atraso: String(tipo === "parcela_atrasada" ? Math.max(1, dias ?? 1) : 0) };
+  return texto.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k: string) => vars[k] ?? m);
+}
+
+function rotuloEvento(t: { tipo: string; dias_referencia: number | null }) {
+  if (t.tipo === "parcela_vencer") return t.dias_referencia === 0 ? "No dia" : `D-${t.dias_referencia}`;
+  return (t.dias_referencia ?? 0) >= 31 ? "31+ dias" : `${t.dias_referencia}º dia`;
+}
+
+function corDia(t: { tipo: string; dias_referencia: number | null }) {
+  if (t.tipo === "parcela_vencer") return "blue" as const;
+  const d = t.dias_referencia ?? 0;
+  return d <= 7 ? "warn" as const : d <= 21 ? "rose" as const : "bad" as const;
+}
+
+function edicaoDe(t: Template): Edicao {
+  return { titulo: t.titulo, corpo: t.corpo, titulo_multiplas: t.titulo_multiplas ?? "", corpo_multiplas: t.corpo_multiplas ?? "", emoji: t.emoji || "💬" };
 }
 
 export default function AdminNotificacoes() {
   const [config, setConfig] = useState<Config>(emptyConfig);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [padroes, setPadroes] = useState<Padrao[]>([]);
+  const [variaveis, setVariaveis] = useState<Variavel[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [atrasadas, setAtrasadas] = useState(0);
   const [aVencer, setAVencer] = useState(0);
+  const [dispositivos, setDispositivos] = useState(0);
   const [webPushConfigurado, setWebPushConfigurado] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,29 +83,35 @@ export default function AdminNotificacoes() {
   const [titulo, setTitulo] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [enviando, setEnviando] = useState(false);
-  const [qTemplate, setQTemplate] = useState('');
-  const [drawer, setDrawer] = useState<Template | null>(null);
-  const [edit, setEdit] = useState<{ titulo: string; corpo: string; emoji: string }>({ titulo: '', corpo: '', emoji: '' });
+  const [busca, setBusca] = useState('');
+  const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
+  const [versao, setVersao] = useState<'uma' | 'varias'>('uma');
+  const [edit, setEdit] = useState<Edicao>({ titulo: '', corpo: '', titulo_multiplas: '', corpo_multiplas: '', emoji: '' });
+  const [salvandoTemplate, setSalvandoTemplate] = useState(false);
+  const [aba, setAba] = useState<'manual' | 'historico'>('historico');
+
+  function aplicarDados(data: any) {
+    setConfig({ ...emptyConfig, ...(data?.config ?? {}) });
+    setTemplates(Array.isArray(data?.templates) ? data.templates : []);
+    setPadroes(Array.isArray(data?.padroes) ? data.padroes : []);
+    setVariaveis(Array.isArray(data?.variaveis) ? data.variaveis : []);
+    setLogs(Array.isArray(data?.logs) ? data.logs : []);
+    setClientes(Array.isArray(data?.clientes) ? data.clientes : []);
+    setAtrasadas(Number(data?.atrasadas ?? 0));
+    setAVencer(Number(data?.aVencer ?? 0));
+    setDispositivos(Number(data?.pushSubscriptions ?? 0));
+  }
 
   const carregar = useCallback(async (force = false) => {
     const url = '/api/admin/notificacoes/automacao';
     const cached = !force ? getInstantCache<any>(url) : null;
-    if (cached) {
-      setConfig({ ...emptyConfig, ...cached.config }); setTemplates(cached.templates ?? []); setLogs(cached.logs ?? []);
-      setClientes(cached.clientes ?? []); setAtrasadas(cached.atrasadas ?? 0); setAVencer(cached.aVencer ?? 0);
-      setLoading(false);
-    } else setLoading(true);
+    if (cached) { aplicarDados(cached); setLoading(false); } else setLoading(true);
     try {
       const [data, statusResp] = await Promise.all([
         force ? refreshInstant<any>(url, { cache: 'no-store' }) : fetchInstant<any>(url),
         fetch("/api/admin/integrations/status", { cache: "no-store" }).then((r) => r.json()).catch(() => null),
       ]);
-      setConfig({ ...emptyConfig, ...(data?.config ?? {}) });
-      setTemplates(Array.isArray(data?.templates) ? data.templates : []);
-      setLogs(Array.isArray(data?.logs) ? data.logs : []);
-      setClientes(Array.isArray(data?.clientes) ? data.clientes : []);
-      setAtrasadas(Number(data?.atrasadas ?? 0));
-      setAVencer(Number(data?.aVencer ?? 0));
+      aplicarDados(data);
       const webPush = statusResp?.integracoes?.find((i: any) => i.id === "web_push");
       setWebPushConfigurado(Boolean(webPush?.credenciaisConfiguradas));
     } catch (e: any) {
@@ -76,9 +121,20 @@ export default function AdminNotificacoes() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  const eventosOrdenados = useMemo(() => [...templates].sort((a, b) => (a.tipo === b.tipo ? (a.dias_referencia ?? 0) - (b.dias_referencia ?? 0) : a.tipo === "parcela_vencer" ? -1 : 1)), [templates]);
-  const templatesFiltrados = useMemo(() => { const q = qTemplate.trim().toLowerCase(); return eventosOrdenados.filter((t) => !q || [rotuloEvento(t), t.titulo, t.corpo].join(" ").toLowerCase().includes(q)); }, [eventosOrdenados, qTemplate]);
+  const ordenados = useMemo(() => [...templates].sort((a, b) => (a.tipo === b.tipo ? (a.tipo === "parcela_vencer" ? (b.dias_referencia ?? 0) - (a.dias_referencia ?? 0) : (a.dias_referencia ?? 0) - (b.dias_referencia ?? 0)) : a.tipo === "parcela_vencer" ? -1 : 1)), [templates]);
+  const filtrados = useMemo(() => { const q = busca.trim().toLowerCase(); return ordenados.filter((t) => !q || [rotuloEvento(t), t.titulo, t.corpo, t.titulo_multiplas, t.corpo_multiplas].join(" ").toLowerCase().includes(q)); }, [ordenados, busca]);
+  const selecionado = templates.find((t) => t.id === selecionadoId) ?? null;
+  const padraoDoSelecionado = selecionado ? padroes.find((p) => p.tipo === selecionado.tipo && p.dias === selecionado.dias_referencia) : undefined;
+  const ativos = templates.filter((t) => t.is_active).length;
   const enviadas = logs.filter((l) => l.status === 'enviada').length;
+  const alterado = selecionado ? JSON.stringify(edicaoDe(selecionado)) !== JSON.stringify(edit) : false;
+
+  useEffect(() => { if (!selecionadoId && ordenados.length) selecionar(ordenados[0]); }, [ordenados, selecionadoId]);
+
+  function selecionar(t: Template) {
+    if (alterado && !window.confirm("Descartar as alterações deste template?")) return;
+    setSelecionadoId(t.id); setEdit(edicaoDe(t)); setVersao('uma');
+  }
 
   async function salvarConfig() {
     setSaving(true); setFeedback(null);
@@ -121,15 +177,33 @@ export default function AdminNotificacoes() {
       await carregar();
     } catch (e: any) { setFeedback({ type: 'error', text: e.message }); } finally { setSendingAll(false); }
   }
-  function abrirDrawer(t: Template) { setDrawer(t); setEdit({ titulo: t.titulo, corpo: t.corpo, emoji: t.emoji || '💬' }); }
-  async function salvarTemplate(t: Template, patch: Partial<{ titulo: string; corpo: string; emoji: string; is_active: boolean }>) {
-    try {
-      const res = await fetch('/api/admin/notificacoes/templates', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id, titulo: edit.titulo, corpo: edit.corpo, emoji: edit.emoji, is_active: t.is_active, ...patch }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.erro || 'Falha ao salvar template.');
-      setTemplates((old) => old.map((item) => item.id === t.id ? data.template : item));
-      setFeedback({ type: 'ok', text: 'Template atualizado.' });
-    } catch (e: any) { setFeedback({ type: 'error', text: e.message }); }
+  async function salvarTemplate(t: Template, patch: Record<string, unknown>, aviso = 'Template atualizado.') {
+    const res = await fetch('/api/admin/notificacoes/templates', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id, ...patch }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.erro || 'Falha ao salvar template.');
+    setTemplates((old) => old.map((item) => item.id === t.id ? data.template : item));
+    setFeedback({ type: 'ok', text: aviso });
+    return data.template as Template;
+  }
+  async function alternar(t: Template) {
+    try { await salvarTemplate(t, { is_active: !t.is_active }, t.is_active ? `${rotuloEvento(t)} desligado: nesse dia a cliente não recebe aviso.` : `${rotuloEvento(t)} ligado.`); }
+    catch (e: any) { setFeedback({ type: 'error', text: e.message }); }
+  }
+  async function salvarTexto() {
+    if (!selecionado) return;
+    setSalvandoTemplate(true); setFeedback(null);
+    try { const novo = await salvarTemplate(selecionado, edit, `Texto de ${rotuloEvento(selecionado)} salvo.`); setEdit(edicaoDe(novo)); }
+    catch (e: any) { setFeedback({ type: 'error', text: e.message }); }
+    finally { setSalvandoTemplate(false); }
+  }
+  function restaurarPadrao() {
+    if (!padraoDoSelecionado) return;
+    setEdit({ titulo: padraoDoSelecionado.titulo, corpo: padraoDoSelecionado.corpo, titulo_multiplas: padraoDoSelecionado.titulo_multiplas, corpo_multiplas: padraoDoSelecionado.corpo_multiplas, emoji: padraoDoSelecionado.emoji });
+    setFeedback({ type: 'ok', text: 'Texto padrão carregado. Salve para aplicar.' });
+  }
+  function inserirVariavel(chave: string) {
+    const campo = versao === 'uma' ? 'corpo' : 'corpo_multiplas';
+    setEdit((e) => ({ ...e, [campo]: `${e[campo]}${e[campo].endsWith(' ') || !e[campo] ? '' : ' '}{{${chave}}}` }));
   }
   async function enviarManual(e: React.FormEvent) {
     e.preventDefault(); setEnviando(true); setFeedback(null);
@@ -145,107 +219,148 @@ export default function AdminNotificacoes() {
 
   if (loading) return <div style={{ padding: 40, textAlign: "center", fontSize: 12, color: "var(--soft)" }}>Carregando painel...</div>;
 
+  const campoTitulo = versao === 'uma' ? 'titulo' : 'titulo_multiplas';
+  const campoCorpo = versao === 'uma' ? 'corpo' : 'corpo_multiplas';
+  const previaTitulo = selecionado ? renderizar(edit[campoTitulo] || edit.titulo, selecionado.dias_referencia, selecionado.tipo) : '';
+  const previaCorpo = selecionado ? renderizar(edit[campoCorpo] || edit.corpo, selecionado.dias_referencia, selecionado.tipo) : '';
+
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }} className="zip-animate-fade-in">
-    {feedback && <div style={{ borderRadius: 9, border: `1px solid ${feedback.type === "ok" ? "var(--okbg)" : "var(--badbg)"}`, background: feedback.type === "ok" ? "var(--okbg)" : "var(--badbg)", color: feedback.type === "ok" ? "var(--ok)" : "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{feedback.text}</div>}
+    {feedback && <div role="status" style={{ borderRadius: 9, border: `1px solid ${feedback.type === "ok" ? "var(--okbg)" : "var(--badbg)"}`, background: feedback.type === "ok" ? "var(--okbg)" : "var(--badbg)", color: feedback.type === "ok" ? "var(--ok)" : "var(--bad)", padding: "8px 12px", fontSize: 11 }}>{feedback.text}</div>}
 
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--robg)", color: "var(--bg)", display: "grid", placeItems: "center", fontSize: 15 }}>↗</div><div><div style={{ fontSize: 13, fontWeight: 700 }}>Canal atual: Web Push / PWA</div><div style={{ marginTop: 2, fontSize: 10.5, color: "var(--soft)" }}>Único canal ativo nesta primeira versão.</div></div></div>
-      <span style={zipChip(webPushConfigurado ? "ok" : "neutral")}>{webPushConfigurado ? "Configurado" : "Não configurado"}</span>
+    {/* Barra de controle: canal, números do dia, automação e execução */}
+    <div style={{ ...cartao, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
+      {[
+        ["Canal Web Push", webPushConfigurado ? "Configurado" : "Não configurado", webPushConfigurado ? "var(--ok)" : "var(--gold)", `${dispositivos} dispositivo(s)`],
+        ["Vencendo em 2 dias", String(aVencer), "var(--ink)", "parcelas D-2 a D0"],
+        ["Em atraso", String(atrasadas), atrasadas ? "var(--bad)" : "var(--ok)", "parcelas não pagas"],
+        ["Régua", `${ativos}/${templates.length}`, "var(--ink)", "dias com aviso ligado"],
+      ].map(([r, v, cor, sub], i) => <div key={r} style={{ padding: "11px 14px", borderLeft: i ? "1px solid var(--line2)" : "none" }}>
+        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--soft)" }}>{r}</div>
+        <div style={{ marginTop: 3, fontSize: 18, fontWeight: 700, color: cor }}>{v}</div>
+        <div style={{ fontSize: 10, color: "var(--soft)" }}>{sub}</div>
+      </div>)}
     </div>
 
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><div><h2 style={{ fontSize: 15 }}>Régua automática de parcelas</h2><div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)" }}>Os lembretes param quando a parcela é confirmada como paga.</div></div><span style={zipChip(config.atraso_habilitado ? "ok" : "neutral")}>{config.atraso_habilitado ? "Ativa" : "Inativa"}</span></div>
-      <div style={{ padding: "14px 15px", display: "grid", gridTemplateColumns: "repeat(4,minmax(150px,1fr))", gap: 9, overflow: "auto" }}>
-        {[["D-2", "Faltam 2 dias", "Lembrete leve com acesso ao boleto.", "blue"], ["D-1", "Vence amanhã", "Reforço amigável um dia antes.", "warn"], ["D0", "Vence hoje", "Aviso objetivo no dia do vencimento.", "rose"], ["D+1", "Parcela em atraso", "Inicia o template humanizado de atraso.", "bad"]].map(([when, t, desc, kind]) => <div key={when as string} style={{ minWidth: 150, border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 11, padding: 11 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}><span style={zipChip(kind as any)}>{when}</span><span style={{ color: "var(--ok)", fontSize: 11 }}>✓</span></div>
-          <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700 }}>{t}</div><div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)", lineHeight: 1.45 }}>{desc}</div>
-        </div>)}
-      </div>
+    <div style={{ ...cartao, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+        <input type="checkbox" checked={config.atraso_habilitado} onChange={(e) => setConfig({ ...config, atraso_habilitado: e.target.checked })} />
+        Atraso automático
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "var(--soft)" }} title="Tempo mínimo entre dois avisos para a mesma cliente">Intervalo
+        <select style={{ ...fieldInput, height: 28 }} value={config.frequencia_atraso_horas} onChange={(e) => setConfig({ ...config, frequencia_atraso_horas: Number(e.target.value) })}>{[6, 12, 24, 48, 72].map((h) => <option key={h} value={h}>{h} horas</option>)}</select>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "var(--soft)" }}>31+ dias a cada
+        <select style={{ ...fieldInput, height: 28 }} value={config.atraso_recorrente_intervalo_dias} onChange={(e) => setConfig({ ...config, atraso_recorrente_intervalo_dias: Number(e.target.value) })}>{[1, 2, 3, 5, 7, 10, 15, 30].map((d) => <option key={d} value={d}>{d === 1 ? "1 dia" : `${d} dias`}</option>)}</select>
+      </label>
+      <button onClick={salvarConfig} disabled={saving} style={botao}>{saving ? "Salvando..." : "Salvar"}</button>
+      <div style={{ flex: 1 }} />
+      <button onClick={executarVencer} disabled={running || sendingAll || runningVencer} style={botao}>{runningVencer ? "Verificando..." : "Rodar D-2 a D0"}</button>
+      <button onClick={executarAgora} disabled={running || sendingAll || runningVencer} style={botao}>{running ? "Verificando..." : "Rodar atrasos"}</button>
+      <button onClick={enviarAgoraTodas} disabled={running || sendingAll || atrasadas === 0} title="Envia agora o aviso de atraso para todas as clientes com parcela vencida" style={botaoPrincipal}>{sendingAll ? "Enviando..." : "Enviar agora"}</button>
     </div>
 
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line)" }}><h2 style={{ fontSize: 15 }}>Eventos de notificação</h2><div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)" }}>Defina quais eventos geram Web Push.</div></div>
-      <div style={{ overflow: "auto", maxHeight: 310 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(190px,1.2fr) minmax(210px,1.3fr) 130px 90px 34px", gap: 10, minWidth: 760, padding: "9px 14px", background: "var(--s1)", borderBottom: "1px solid var(--line)", position: "sticky", top: 0 }}>{["Evento", "Template associado", "Status", "Ativo", ""].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}</div>
-        {eventosOrdenados.map((t) => <div key={t.id} onClick={() => abrirDrawer(t)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(190px,1.2fr) minmax(210px,1.3fr) 130px 90px 34px", gap: 10, minWidth: 760, alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
-          <div><div style={{ fontSize: 12, fontWeight: 700 }}>{rotuloEvento(t)}</div></div>
-          <div style={{ fontSize: 11, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.titulo}</div>
-          <span style={zipChip(t.is_active ? "ok" : "neutral")}>{t.is_active ? "Ativo" : "Inativo"}</span>
-          <button onClick={(e) => { e.stopPropagation(); void salvarTemplate(t, { is_active: !t.is_active }); }} style={{ height: 24, width: 42, borderRadius: 999, border: `1px solid ${t.is_active ? "var(--bg)" : "var(--line)"}`, background: t.is_active ? "var(--bg)" : "var(--s2)", padding: 2, display: "flex", justifyContent: t.is_active ? "flex-end" : "flex-start" }}><span style={{ width: 18, height: 18, borderRadius: 999, background: "var(--on-accent)", boxShadow: "0 3px 8px rgba(0,0,0,.14)" }} /></button>
-          <span style={{ fontSize: 14, color: "var(--soft)" }}>›</span>
-        </div>)}
-      </div>
-    </div>
-
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><div><h2 style={{ fontSize: 15 }}>Templates Web Push</h2><div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)" }}>Textos humanizados, editáveis por régua.</div></div></div>
-      <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--line)", display: "flex", gap: 8, alignItems: "center" }}><div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, height: 32, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", padding: "0 10px" }}><span style={{ color: "var(--soft)", fontSize: 11 }}>⌕</span><input value={qTemplate} onChange={(e) => setQTemplate(e.target.value)} placeholder="Buscar template..." style={{ width: "100%", border: 0, outline: "none", background: "transparent", color: "var(--ink)", fontSize: 11.5 }} /></div></div>
-      <div style={{ overflow: "auto", maxHeight: 330 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px,1.3fr) minmax(170px,1fr) 100px 130px 34px", gap: 10, minWidth: 730, padding: "9px 14px", background: "var(--s1)", borderBottom: "1px solid var(--line)" }}>{["Template", "Evento", "Status", "Última edição", ""].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}</div>
-        {templatesFiltrados.map((t) => <div key={t.id} onClick={() => abrirDrawer(t)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(200px,1.3fr) minmax(170px,1fr) 100px 130px 34px", gap: 10, minWidth: 730, alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
-          <div><div style={{ fontSize: 12, fontWeight: 700 }}>{t.titulo}</div><div style={{ marginTop: 2, fontSize: 10, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.corpo.replace(/\{\{cliente_nome\}\}/g, "Maria").slice(0, 60)}…</div></div>
-          <div style={{ fontSize: 11, color: "var(--soft)" }}>{rotuloEvento(t)}</div>
-          <span style={zipChip(t.is_active ? "ok" : "neutral")}>{t.is_active ? "Ativo" : "Inativo"}</span>
-          <div style={{ fontSize: 10.5, color: "var(--soft)" }} className="zip-mono">{t.updated_at ? new Date(t.updated_at).toLocaleString("pt-BR") : "—"}</div>
-          <span style={{ fontSize: 14, color: "var(--soft)" }}>›</span>
-        </div>)}
-      </div>
-    </div>
-
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "14px 15px", display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 16 }}>
-      <div>
-        <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Automação de cobrança</div>
-        <label style={{ display: "flex", cursor: "pointer", alignItems: "center", justifyContent: "space-between", borderRadius: 9, border: "1px solid var(--line)", background: "var(--s1)", padding: 10 }}><span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600 }}>Ativar automação de atraso</span><span style={{ fontSize: 10, color: "var(--soft)" }}>Somente parcelas vencidas e não pagas.</span></span><input type="checkbox" checked={config.atraso_habilitado} onChange={(e) => setConfig({ ...config, atraso_habilitado: e.target.checked })} /></label>
-        <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
-          <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Reenviar a cada<select style={{ ...fieldInput, width: "100%", marginTop: 4 }} value={config.frequencia_atraso_horas} onChange={(e) => setConfig({ ...config, frequencia_atraso_horas: Number(e.target.value) })}>{[6, 12, 24, 48, 72].map((h) => <option key={h} value={h}>{h} horas</option>)}</select></label>
-          <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Máx. tentativas<input type="number" min={1} max={10} style={{ ...fieldInput, width: "100%", marginTop: 4 }} value={config.max_tentativas} onChange={(e) => setConfig({ ...config, max_tentativas: Number(e.target.value) })} /></label>
+    {/* Régua: lista compacta + editor com pré-visualização */}
+    <div style={{ ...cartao, overflow: "hidden", display: "grid", gridTemplateColumns: "minmax(280px,.9fr) minmax(360px,1.1fr)" }}>
+      <div style={{ borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--line)" }}>
+          <h2 style={{ fontSize: 15 }}>Régua de parcelas</h2>
+          <div style={{ marginTop: 3, fontSize: 10.5, color: "var(--soft)", lineHeight: 1.45 }}>Uma notificação por cliente, com todas as parcelas em aberto. Para quando a parcela é paga.</div>
+          <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 7, height: 30, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", padding: "0 10px" }}><span style={{ color: "var(--soft)", fontSize: 11 }}>⌕</span><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por dia ou texto..." style={{ flex: 1, border: 0, outline: 0, background: "transparent", color: "var(--ink)", fontSize: 11 }} /></div>
         </div>
-        <button onClick={salvarConfig} disabled={saving} style={{ marginTop: 10, height: 33, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 11, fontWeight: 700 }}>{saving ? "Salvando..." : "Salvar configuração"}</button>
-      </div>
-      <div>
-        <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Execução ({aVencer} a vencer · {atrasadas} atrasadas)</div>
-        <div style={{ display: "grid", gap: 7 }}>
-          <button onClick={executarVencer} disabled={running || sendingAll || runningVencer} style={{ height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 10.5, fontWeight: 700 }}>{runningVencer ? "Verificando..." : "Verificar régua D-2/D-1/D0"}</button>
-          <button onClick={executarAgora} disabled={running || sendingAll || runningVencer} style={{ height: 33, border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--ink)", fontSize: 10.5, fontWeight: 700 }}>{running ? "Verificando..." : "Verificar atrasos agora"}</button>
-          <button onClick={enviarAgoraTodas} disabled={running || sendingAll || atrasadas === 0} style={{ height: 33, border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{sendingAll ? "Enviando..." : "Enviar agora para todas atrasadas"}</button>
+        <div style={{ overflowY: "auto", maxHeight: 560 }}>
+          {templates.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhum template cadastrado. Aplique a migration_092 para carregar a régua padrão.</div>}
+          {FAIXAS.map((f) => {
+            const itens = filtrados.filter((t) => t.tipo === f.tipo && (t.dias_referencia ?? -1) >= f.de && (t.dias_referencia ?? -1) <= f.ate);
+            if (!itens.length) return null;
+            return <div key={f.id}>
+              <div style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 14px 6px", background: "var(--s1)", borderBottom: "1px solid var(--line2)" }}>
+                <span style={rotulo}>{f.titulo}</span><span style={{ fontSize: 9.5, color: "var(--soft)" }}>{f.descricao}</span>
+              </div>
+              {itens.map((t) => {
+                const ativo = t.id === selecionadoId;
+                return <div key={t.id} onClick={() => selecionar(t)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "58px 1fr 36px", gap: 8, alignItems: "center", padding: "7px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: ativo ? "var(--robg)" : undefined, opacity: t.is_active ? 1 : .55 }}>
+                  <span style={{ ...zipChip(corDia(t)), justifySelf: "start" }}>{rotuloEvento(t)}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.emoji} {t.titulo}</div>
+                    <div style={{ fontSize: 10, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{renderizar(t.corpo, t.dias_referencia, t.tipo)}</div>
+                  </div>
+                  <button aria-label={t.is_active ? `Desligar ${rotuloEvento(t)}` : `Ligar ${rotuloEvento(t)}`} onClick={(e) => { e.stopPropagation(); void alternar(t); }} style={{ height: 20, width: 34, borderRadius: 999, border: `1px solid ${t.is_active ? "var(--bg)" : "var(--line)"}`, background: t.is_active ? "var(--bg)" : "var(--s2)", padding: 2, display: "flex", justifyContent: t.is_active ? "flex-end" : "flex-start" }}><span style={{ width: 14, height: 14, borderRadius: 999, background: "var(--s0)" }} /></button>
+                </div>;
+              })}
+            </div>;
+          })}
         </div>
       </div>
-    </div>
 
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, padding: "14px 15px", display: "grid", gridTemplateColumns: ".75fr 1.25fr", gap: 16 }}>
-      <div><div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Envio manual</div><select style={{ ...fieldInput, width: "100%" }} value={clienteId} onChange={(e) => setClienteId(e.target.value)}><option value="">Selecione uma cliente...</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome_completo}</option>)}</select></div>
-      <form onSubmit={enviarManual}><div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 9 }}>Mensagem</div><input style={{ ...fieldInput, width: "100%", marginBottom: 8 }} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título" /><textarea style={{ ...fieldInput, width: "100%", height: 60, padding: 8 }} value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Mensagem..." /><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button disabled={enviando} style={{ height: 32, padding: "0 14px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{enviando ? "Enviando..." : "Enviar agora"}</button></div></form>
-    </div>
-
-    <div style={{ border: "1px solid var(--line)", background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between" }}><h2 style={{ fontSize: 15 }}>Histórico de envios</h2><span style={{ fontSize: 10.5, color: "var(--soft)" }}>{logs.length} registros · {enviadas} enviados</span></div>
-      <div style={{ maxHeight: 260, overflowY: "auto" }}>{logs.length === 0 ? <div style={{ padding: 24, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhum envio registrado.</div> : logs.slice(0, 30).map((log) => <div key={log.id} style={{ display: "grid", gridTemplateColumns: "1fr 130px 90px", gap: 8, padding: "9px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center" }}>
-        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{log.clientes?.nome_completo || log.cliente_id.slice(0, 8)} <span style={{ color: "var(--soft)", fontWeight: 400 }}>· {log.tipo}</span></div></div>
-        <div style={{ fontSize: 10, color: "var(--soft)" }} className="zip-mono">{new Date(log.created_at).toLocaleString("pt-BR")}</div>
-        <span style={zipChip(log.status === "enviada" ? "ok" : log.status === "erro" || log.status === "falha" ? "bad" : "warn")}>{log.status}</span>
-      </div>)}</div>
-    </div>
-
-    {drawer && <>
-      <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
-      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
-        <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
-          <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Template Web Push</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{rotuloEvento(drawer)}</h2></div>
-          <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
-        </div>
-        <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 9 }}>
-            <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--soft)", marginBottom: 4 }}>Título do Web Push</label><input style={{ ...fieldInput, width: "100%" }} value={edit.titulo} onChange={(e) => setEdit({ ...edit, titulo: e.target.value })} /></div>
-            <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--soft)", marginBottom: 4 }}>Emoji</label><input style={{ ...fieldInput, width: "100%" }} value={edit.emoji} onChange={(e) => setEdit({ ...edit, emoji: e.target.value })} /></div>
+      <div style={{ padding: "12px 16px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {!selecionado ? <div style={{ padding: 30, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Selecione um dia da régua para editar.</div> : <>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+            <div><div style={rotulo}>{selecionado.tipo === "parcela_vencer" ? "Antes do vencimento" : "Parcela em atraso"}</div><h2 style={{ fontSize: 16, marginTop: 3 }}>{rotuloEvento(selecionado)}{(selecionado.dias_referencia ?? 0) >= 31 && selecionado.tipo === "parcela_atrasada" ? " · mensagem única" : ""}</h2></div>
+            <span style={zipChip(selecionado.is_active ? "ok" : "neutral")}>{selecionado.is_active ? "Ligado" : "Desligado"}</span>
           </div>
-          <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "var(--soft)", marginBottom: 4 }}>Mensagem</label><textarea rows={6} style={{ ...fieldInput, width: "100%", height: "auto", padding: 9 }} value={edit.corpo} onChange={(e) => setEdit({ ...edit, corpo: e.target.value })} /></div>
-          <div style={{ border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 10, padding: 10 }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>Variáveis disponíveis</div><div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 5 }}>{["{{cliente_nome}}", "{{data_vencimento}}", "{{valor_parcela}}", "{{numero_parcela}}", "{{dias_atraso}}"].map((v) => <code key={v} style={{ fontSize: 9.5, padding: "4px 6px", borderRadius: 6, background: "var(--s2)", color: "var(--bg)" }}>{v}</code>)}</div></div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}>
-            <button onClick={() => setDrawer(null)} style={{ height: 32, padding: "0 11px", border: "1px solid var(--line)", borderRadius: 9, background: "var(--s0)", color: "var(--soft)", fontSize: 10.5, fontWeight: 700 }}>Cancelar</button>
-            <button onClick={() => { void salvarTemplate(drawer, {}); setDrawer(null); }} style={{ height: 32, padding: "0 12px", border: "1px solid var(--bg)", borderRadius: 9, background: "var(--bg)", color: "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>Salvar alterações</button>
+
+          <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, background: "var(--s2)", alignSelf: "flex-start" }}>
+            {([['uma', '1 parcela'], ['varias', '2 ou mais parcelas']] as const).map(([v, r]) => <button key={v} onClick={() => setVersao(v)} style={{ height: 26, padding: "0 12px", border: 0, borderRadius: 7, background: versao === v ? "var(--s0)" : "transparent", color: versao === v ? "var(--ink)" : "var(--soft)", fontSize: 10.5, fontWeight: 700, boxShadow: versao === v ? "0 1px 3px rgba(0,0,0,.1)" : "none" }}>{r}</button>)}
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 64px", gap: 8 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Título <span style={{ fontWeight: 500 }}>({edit[campoTitulo].length}/80)</span>
+              <input maxLength={80} style={{ ...fieldInput, width: "100%", marginTop: 4 }} value={edit[campoTitulo]} placeholder={versao === 'varias' ? edit.titulo : ''} onChange={(e) => setEdit({ ...edit, [campoTitulo]: e.target.value })} /></label>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Ícone
+              <input maxLength={4} style={{ ...fieldInput, width: "100%", marginTop: 4, textAlign: "center" }} value={edit.emoji} onChange={(e) => setEdit({ ...edit, emoji: e.target.value })} /></label>
+          </div>
+          <label style={{ fontSize: 10, fontWeight: 700, color: "var(--soft)" }}>Mensagem <span style={{ fontWeight: 500 }}>({edit[campoCorpo].length}/300)</span>
+            <textarea maxLength={300} rows={4} style={{ ...fieldInput, width: "100%", height: "auto", padding: 9, marginTop: 4, lineHeight: 1.45, resize: "vertical" }} value={edit[campoCorpo]} placeholder={versao === 'varias' ? 'Vazio: usa o texto de 1 parcela.' : ''} onChange={(e) => setEdit({ ...edit, [campoCorpo]: e.target.value })} /></label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {variaveis.map((v) => <button key={v.chave} type="button" title={v.descricao} onClick={() => inserirVariavel(v.chave)} style={{ fontFamily: "var(--mono, monospace)", fontSize: 9.5, padding: "3px 7px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--s1)", color: "var(--bg)" }}>{`{{${v.chave}}}`}</button>)}
+          </div>
+
+          <div>
+            <div style={{ ...rotulo, marginBottom: 6 }}>Como a cliente vê</div>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 16, background: "var(--s1)", border: "1px solid var(--line)" }}>
+              <div style={{ width: 34, height: 34, flex: "none", borderRadius: 9, display: "grid", placeItems: "center", background: "linear-gradient(145deg,#B0526A,#7A2632)", color: "#fff", fontSize: 16 }}>{edit.emoji || "🔔"}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 9.5, color: "var(--soft)" }}><span style={{ fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>Sra. Luck</span><span>agora</span></div>
+                <div style={{ marginTop: 2, fontSize: 12, fontWeight: 700 }}>{previaTitulo}</div>
+                <div style={{ marginTop: 1, fontSize: 11.5, lineHeight: 1.4 }}>{previaCorpo}</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 5, fontSize: 9.5, color: "var(--soft)" }}>Exemplo com dados fictícios: Maria, parcela 3/12 de R$ 520,00{versao === 'varias' ? ", 2 parcelas somando R$ 1.040,00" : ""}.</div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 7, marginTop: 2 }}>
+            <button onClick={restaurarPadrao} disabled={!padraoDoSelecionado} style={{ ...botao, color: "var(--soft)" }}>Restaurar texto padrão</button>
+            <div style={{ display: "flex", gap: 7 }}>
+              <button onClick={() => setEdit(edicaoDe(selecionado))} disabled={!alterado} style={{ ...botao, color: "var(--soft)" }}>Descartar</button>
+              <button onClick={() => void salvarTexto()} disabled={!alterado || salvandoTemplate} style={{ ...botaoPrincipal, opacity: !alterado ? .55 : 1 }}>{salvandoTemplate ? "Salvando..." : "Salvar texto"}</button>
+            </div>
+          </div>
+        </>}
+      </div>
+    </div>
+
+    {/* Histórico e envio manual */}
+    <div style={{ ...cartao, overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, background: "var(--s2)" }}>
+          {([['historico', `Histórico (${logs.length})`], ['manual', 'Envio manual']] as const).map(([v, r]) => <button key={v} onClick={() => setAba(v)} style={{ height: 26, padding: "0 12px", border: 0, borderRadius: 7, background: aba === v ? "var(--s0)" : "transparent", color: aba === v ? "var(--ink)" : "var(--soft)", fontSize: 10.5, fontWeight: 700 }}>{r}</button>)}
         </div>
-      </aside>
-    </>}
+        {aba === 'historico' && <span style={{ fontSize: 10.5, color: "var(--soft)" }}>{enviadas} enviados · últimos 30 exibidos</span>}
+      </div>
+      {aba === 'historico'
+        ? <div style={{ maxHeight: 260, overflowY: "auto" }}>{logs.length === 0 ? <div style={{ padding: 24, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhum envio registrado.</div> : logs.slice(0, 30).map((log) => <div key={log.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 130px 90px", gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--line2)", alignItems: "center" }}>
+            <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{log.clientes?.nome_completo || log.cliente_id.slice(0, 8)} <span style={{ color: "var(--soft)", fontWeight: 400 }}>· {log.titulo || log.tipo}</span></div></div>
+            <div style={{ fontSize: 10, color: "var(--soft)" }} className="zip-mono">{new Date(log.created_at).toLocaleString("pt-BR")}</div>
+            <span style={zipChip(log.status === "enviada" ? "ok" : log.status === "erro" || log.status === "falha" ? "bad" : "warn")}>{log.status}</span>
+          </div>)}</div>
+        : <form onSubmit={enviarManual} style={{ padding: "12px 14px", display: "grid", gridTemplateColumns: "minmax(200px,.7fr) 1.3fr", gap: 10 }}>
+            <select style={{ ...fieldInput, width: "100%" }} value={clienteId} onChange={(e) => setClienteId(e.target.value)}><option value="">Selecione uma cliente...</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome_completo}</option>)}</select>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input style={{ ...fieldInput, width: "100%" }} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título" />
+              <textarea style={{ ...fieldInput, width: "100%", height: 60, padding: 8 }} value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Mensagem..." />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}><button disabled={enviando} style={botaoPrincipal}>{enviando ? "Enviando..." : "Enviar agora"}</button></div>
+            </div>
+          </form>}
+    </div>
   </div>;
 }

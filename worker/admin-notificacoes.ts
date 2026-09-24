@@ -6,12 +6,13 @@ import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-send
 import { adicionarDiasCivil, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
 import { DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID } from "./dev-console-auth";
 import { rotinaAutorizada } from "./frase-do-dia";
+import { DIA_RECORRENTE, TEMPLATES_PADRAO, VARIAVEIS_TEMPLATE } from "./notificacao-templates-padrao";
 import {
   aprovarLote, cancelarLote, carregarConfigCentral, conversarSobreLote, detalharLote, editarItem, explicarLote, gerarMensagens,
   listarLotes, prepararLote, reprocessarFalhas, rotinaFinanceira, SEGMENTOS, validarAlteracaoConfig, type Contexto,
 } from "./notificacoes-lotes";
 
-const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3 };
+const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3, atraso_recorrente_intervalo_dias: 1 };
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 type AcaoAutomacao = "verificar_atrasos" | "verificar_momentos_especiais" | "enviar_agora_todas" | "central_rotina";
@@ -106,10 +107,54 @@ export function agruparBoletosNotificaveis(boletos: any[]) {
   }));
 }
 
-function escolherTemplateAtraso(templates: any[], diasAtraso: number) {
-  const referencias = [...new Set(templates.map((t) => Number(t.dias_referencia)).filter((d) => Number.isFinite(d) && d <= diasAtraso))].sort((a, b) => b - a);
-  const alvo = referencias[0];
-  return alvo === undefined ? null : templates.find((t) => Number(t.dias_referencia) === alvo) ?? null;
+/**
+ * Régua de atraso: de 1 a 30 dias vale o texto do dia exato (dia sem texto
+ * ativo = sem envio naquele dia); de 31 em diante vale o texto único 31+.
+ */
+export function escolherTemplateAtraso<T extends { dias_referencia: number | null }>(templates: T[], diasAtraso: number): T | null {
+  if (diasAtraso < 1) return null;
+  const alvo = diasAtraso >= DIA_RECORRENTE ? DIA_RECORRENTE : diasAtraso;
+  return templates.find((t) => Number(t.dias_referencia) === alvo) ?? null;
+}
+
+export function primeiroNomeCliente(nomeCompleto: unknown) {
+  const nome = String(nomeCompleto ?? "").trim().split(/\s+/)[0] ?? "";
+  return nome ? nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase() : "cliente";
+}
+
+type TemplateTexto = { titulo: string; corpo: string; titulo_multiplas?: string | null; corpo_multiplas?: string | null };
+
+/** Uma notificação por cliente: versão "múltiplas" quando a mensagem cobre 2+ parcelas. */
+export function montarMensagemUnificada(template: TemplateTexto, itens: any[], hoje: string, nomeCompleto: unknown) {
+  const principal = itens[0];
+  const diff = diferencaDias(String(principal.data_vencimento), hoje);
+  const vars = {
+    nome: primeiroNomeCliente(nomeCompleto),
+    cliente: String(nomeCompleto ?? "cliente"),
+    parcela: principal.numero_parcela ?? "—",
+    total: principal.total_parcelas ?? "—",
+    vencimento: formatarData(String(principal.data_vencimento)),
+    valor: formatarMoeda(principal.valor),
+    dias_atraso: diff == null ? 0 : Math.max(0, -diff),
+    quantidade: itens.length,
+    valor_total: formatarMoeda(itens.reduce((soma, b) => soma + Number(b.valor ?? 0), 0)),
+  };
+  const multiplas = itens.length > 1;
+  const titulo = multiplas && template.titulo_multiplas?.trim() ? template.titulo_multiplas : template.titulo;
+  const corpo = multiplas && template.corpo_multiplas?.trim() ? template.corpo_multiplas : template.corpo;
+  return { titulo: renderTemplate(String(titulo), vars), mensagem: renderTemplate(String(corpo), vars) };
+}
+
+const VARIAVEIS_VALIDAS = new Set(VARIAVEIS_TEMPLATE.map((v) => v.chave));
+
+/** Recusa texto vazio, longo demais ou com variável que o envio não conhece. */
+export function validarTextoTemplate(campo: string, texto: unknown, limite: number, obrigatorio: boolean) {
+  const valor = String(texto ?? "").trim();
+  if (!valor) return obrigatorio ? `${campo} é obrigatório.` : null;
+  if (valor.length > limite) return `${campo} deve ter até ${limite} caracteres.`;
+  const desconhecidas = [...valor.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1]).filter((v) => !VARIAVEIS_VALIDAS.has(v));
+  if (desconhecidas.length) return `${campo}: variável {{${desconhecidas[0]}}} não existe.`;
+  return null;
 }
 
 function listarParcelas(itens: any[], hoje: string, atraso: boolean) {
@@ -123,21 +168,6 @@ function listarParcelas(itens: any[], hoje: string, atraso: boolean) {
   });
   if (itens.length > 4) exibidas.push(`+ ${itens.length - 4} outra(s)`);
   return exibidas.join(", ");
-}
-
-function mensagemAgrupadaVencimento(nome: string, itens: any[], hoje: string) {
-  const total = itens.reduce((s, b) => s + Number(b.valor ?? 0), 0);
-  return `Olá, ${nome}! Você tem ${itens.length} parcelas com vencimento próximo: ${listarParcelas(itens, hoje, false)}. Valor base total: ${formatarMoeda(total)}. Programe-se para manter seu contrato em dia. 💛`;
-}
-
-function mensagemAgrupadaAtraso(nome: string, itens: any[], hoje: string) {
-  const total = itens.reduce((s, b) => s + Number(b.valor ?? 0), 0);
-  const atrasos = itens.map((b) => {
-    const diff = diferencaDias(String(b.data_vencimento), hoje);
-    return diff == null ? 0 : Math.max(0, -diff);
-  });
-  const maior = Math.max(0, ...atrasos);
-  return `Olá, ${nome}. Identificamos ${itens.length} parcelas em atraso: ${listarParcelas(itens, hoje, true)}. A mais antiga está há ${maior} dias em atraso. Valor base total: ${formatarMoeda(total)}. Se já regularizou alguma delas, desconsidere o item correspondente. Estamos à disposição para ajudar.`;
 }
 
 export function classificarStatusPush(push: WebPushResultado) {
@@ -261,7 +291,7 @@ async function executarVencimentos(env: Env, db: Db) {
   const { inicio: inicioHoje, fimExclusivo: fimHoje } = intervaloDiaOperacionalUtc(hoje);
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
     db.from("notificacao_templates")
-      .select("id,dias_referencia,titulo,corpo,emoji,updated_at")
+      .select("id,dias_referencia,titulo,corpo,titulo_multiplas,corpo_multiplas,emoji,updated_at")
       .eq("tipo", "parcela_vencer").eq("is_active", true)
       .order("dias_referencia", { ascending: true }).order("updated_at", { ascending: false }),
     db.from("boletos")
@@ -271,11 +301,21 @@ async function executarVencimentos(env: Env, db: Db) {
   if (templatesError) throw new Error(templatesError.message);
   if (boletosError) throw new Error(boletosError.message);
 
-  let enviadas = 0, ignoradas = 0, falhas = 0, parcelasIncluidas = 0;
+  // Unificação: quem já tem parcela vencida recebe só o aviso de atraso (que é um só).
+  const config = await carregarConfig(db);
+  const comAtraso = new Set<string>();
+  if (config.atraso_habilitado) {
+    const { data: vencidas, error: vencidasError } = await db.from("boletos").select("cliente_id").lt("data_vencimento", hoje).eq("status", "nao_pago");
+    if (vencidasError) throw new Error(vencidasError.message);
+    for (const v of vencidas ?? []) comAtraso.add(String((v as any).cliente_id));
+  }
+
+  let enviadas = 0, ignoradas = 0, falhas = 0, parcelasIncluidas = 0, unificadasNoAtraso = 0;
   const porDiasParaVencer: Record<string, number> = {};
   const push = novoResumoPush();
 
   for (const grupo of agruparBoletosNotificaveis((boletos ?? []) as any[])) {
+    if (comAtraso.has(grupo.clienteId)) { unificadasNoAtraso++; continue; }
     const principal = grupo.boletos[0];
     const diasParaVencer = diferencaDias(String(principal.data_vencimento), hoje);
     if (diasParaVencer == null) continue;
@@ -288,18 +328,7 @@ async function executarVencimentos(env: Env, db: Db) {
     if (recentError) throw new Error(recentError.message);
     if (recent?.length) { ignoradas++; continue; }
 
-    const nome = grupo.cliente?.nome_completo ?? "cliente";
-    const vars = {
-      cliente: nome,
-      parcela: principal.numero_parcela ?? "—",
-      total: principal.total_parcelas ?? "—",
-      vencimento: formatarData(String(principal.data_vencimento)),
-      valor: formatarMoeda(principal.valor),
-    };
-    const titulo = renderTemplate(String(template.titulo), vars);
-    const mensagem = grupo.boletos.length > 1
-      ? mensagemAgrupadaVencimento(nome, grupo.boletos, hoje)
-      : renderTemplate(String(template.corpo), vars);
+    const { titulo, mensagem } = montarMensagemUnificada(template, grupo.boletos, hoje, grupo.cliente?.nome_completo);
     try {
       const unica = grupo.boletos.length === 1;
       const resultado = await registrarNotificacao(env, db, {
@@ -323,7 +352,7 @@ async function executarVencimentos(env: Env, db: Db) {
       console.error("Falha ao registrar lembrete de vencimento:", error);
     }
   }
-  return { executado: true, enviadas, clientesNotificadas: enviadas, parcelasIncluidas, ignoradas, falhas, porDiasParaVencer, push, data: hoje };
+  return { executado: true, enviadas, clientesNotificadas: enviadas, parcelasIncluidas, ignoradas, unificadasNoAtraso, falhas, porDiasParaVencer, push, data: hoje };
 }
 
 async function executarAtrasos(env: Env, db: Db, forcar = false) {
@@ -334,10 +363,11 @@ async function executarAtrasos(env: Env, db: Db, forcar = false) {
 
   const frequenciaHoras = Math.max(1, Number(config.frequencia_atraso_horas || 24));
   const cutoff = new Date(Date.now() - frequenciaHoras * 60 * 60 * 1000).toISOString();
+  const intervaloRecorrenteDias = Math.min(30, Math.max(1, Math.round(Number(config.atraso_recorrente_intervalo_dias) || 1)));
   const hoje = hojeSaoPaulo();
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
     db.from("notificacao_templates")
-      .select("id,dias_referencia,titulo,corpo,emoji,updated_at")
+      .select("id,dias_referencia,titulo,corpo,titulo_multiplas,corpo_multiplas,emoji,updated_at")
       .eq("tipo", "parcela_atrasada").eq("is_active", true)
       .order("dias_referencia", { ascending: true }).order("updated_at", { ascending: false }),
     db.from("boletos")
@@ -359,26 +389,18 @@ async function executarAtrasos(env: Env, db: Db, forcar = false) {
     if (!template) continue;
 
     if (!forcar) {
+      // 31+ dias: o texto é único e o intervalo entre avisos é configurável.
+      const corte = diasAtraso >= DIA_RECORRENTE
+        ? new Date(Date.now() - Math.max(frequenciaHoras, intervaloRecorrenteDias * 24 - 1) * 60 * 60 * 1000).toISOString()
+        : cutoff;
       const { data: recent, error: recentError } = await db.from("notificacao_logs").select("id")
         .eq("cliente_id", grupo.clienteId).eq("tipo", "parcela_atrasada")
-        .gte("created_at", cutoff).limit(1);
+        .gte("created_at", corte).limit(1);
       if (recentError) throw new Error(recentError.message);
       if (recent?.length) { ignoradas++; continue; }
     }
 
-    const nome = grupo.cliente?.nome_completo ?? "cliente";
-    const vars = {
-      cliente: nome,
-      parcela: principal.numero_parcela ?? "—",
-      total: principal.total_parcelas ?? "—",
-      vencimento: formatarData(String(principal.data_vencimento)),
-      valor: formatarMoeda(principal.valor),
-      dias_atraso: diasAtraso,
-    };
-    const titulo = renderTemplate(String(template.titulo), vars);
-    const mensagem = grupo.boletos.length > 1
-      ? mensagemAgrupadaAtraso(nome, grupo.boletos, hoje)
-      : renderTemplate(String(template.corpo), vars);
+    const { titulo, mensagem } = montarMensagemUnificada(template, grupo.boletos, hoje, grupo.cliente?.nome_completo);
     try {
       const unica = grupo.boletos.length === 1;
       const resultado = await registrarNotificacao(env, db, {
@@ -482,7 +504,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     if (request.method === "GET") {
       const [cfg, templates, logs, clientes, atrasadas, aVencer, subscriptions] = await Promise.all([
         db.from("notificacoes_config").select("chave,valor,tipo"),
-        db.from("notificacao_templates").select("id,tipo,dias_referencia,titulo,corpo,emoji,is_active,updated_at").order("tipo").order("dias_referencia"),
+        db.from("notificacao_templates").select("*").in("tipo", ["parcela_vencer", "parcela_atrasada"]).order("tipo").order("dias_referencia"),
         db.from("notificacao_logs").select("id,cliente_id,tipo,titulo,corpo,status,erro_mensagem,push_enviadas,push_falhas,push_status,created_at,clientes(nome_completo)").order("created_at", { ascending: false }).limit(200),
         db.from("clientes").select("id,nome_completo,telefone,ativo").eq("ativo", true).order("nome_completo"),
         db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", hojeSaoPaulo()).eq("status", "nao_pago"),
@@ -492,8 +514,8 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
       if (cfg.error || templates.error || logs.error || clientes.error || atrasadas.error || aVencer.error || subscriptions.error) return json({ erro: "Não foi possível carregar o painel de notificações." }, 500);
       const raw = Object.fromEntries((cfg.data ?? []).map((x: any) => [x.chave, x.valor]));
       return json({
-        config: { atraso_habilitado: raw.atraso_habilitado !== "false", frequencia_atraso_horas: Number(raw.frequencia_atraso_horas ?? 24), max_tentativas: Number(raw.max_tentativas ?? 3) },
-        templates: templates.data ?? [], logs: logs.data ?? [], clientes: clientes.data ?? [], atrasadas: atrasadas.count ?? 0, aVencer: aVencer.count ?? 0,
+        config: { atraso_habilitado: raw.atraso_habilitado !== "false", frequencia_atraso_horas: Number(raw.frequencia_atraso_horas ?? 24), max_tentativas: Number(raw.max_tentativas ?? 3), atraso_recorrente_intervalo_dias: Number(raw.atraso_recorrente_intervalo_dias ?? 1) },
+        templates: templates.data ?? [], padroes: TEMPLATES_PADRAO, variaveis: VARIAVEIS_TEMPLATE, diaRecorrente: DIA_RECORRENTE, logs: logs.data ?? [], clientes: clientes.data ?? [], atrasadas: atrasadas.count ?? 0, aVencer: aVencer.count ?? 0,
         pushSubscriptions: subscriptions.count ?? 0,
       });
     }
@@ -504,6 +526,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         atraso_habilitado: b.atraso_habilitado !== undefined ? Boolean(b.atraso_habilitado) : undefined,
         frequencia_atraso_horas: b.frequencia_atraso_horas !== undefined ? Math.max(1, Number(b.frequencia_atraso_horas) || 24) : undefined,
         max_tentativas: b.max_tentativas !== undefined ? Math.max(1, Number(b.max_tentativas) || 3) : undefined,
+        atraso_recorrente_intervalo_dias: b.atraso_recorrente_intervalo_dias !== undefined ? Math.min(30, Math.max(1, Math.round(Number(b.atraso_recorrente_intervalo_dias) || 1))) : undefined,
       };
       let alterou = false;
       for (const [chave, valor] of Object.entries(values)) {
@@ -527,9 +550,19 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
 
   if (path === "/api/admin/notificacoes/templates" && request.method === "PATCH") {
     const b = await parse(request); if (!b.id) return json({ erro: "Template não informado." }, 400);
-    const patch: Record<string, unknown> = {}; for (const k of ["titulo", "corpo", "emoji", "is_active"]) if (b[k] !== undefined) patch[k] = b[k];
+    const erroTexto = [
+      b.titulo !== undefined ? validarTextoTemplate("Título", b.titulo, 80, true) : null,
+      b.corpo !== undefined ? validarTextoTemplate("Mensagem", b.corpo, 300, true) : null,
+      b.titulo_multiplas !== undefined ? validarTextoTemplate("Título (várias parcelas)", b.titulo_multiplas, 80, false) : null,
+      b.corpo_multiplas !== undefined ? validarTextoTemplate("Mensagem (várias parcelas)", b.corpo_multiplas, 300, false) : null,
+    ].find(Boolean);
+    if (erroTexto) return json({ erro: erroTexto }, 400);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const k of ["titulo", "corpo", "titulo_multiplas", "corpo_multiplas", "emoji"]) if (b[k] !== undefined) patch[k] = typeof b[k] === "string" ? b[k].trim() || null : b[k];
+    if (b.is_active !== undefined) patch.is_active = Boolean(b.is_active);
     const { data, error } = await db.from("notificacao_templates").update(patch).eq("id", b.id).select("*").single();
     if (error) return json({ erro: publicError(error) }, 400);
+    await db.from("logs_alteracoes").insert({ usuario: atorNotificacoes ?? `admin:${admin}`, acao: "editou_template_notificacao", entidade: "notificacao_templates", entidade_id: String(b.id), detalhes: { campos: Object.keys(patch).filter((k) => k !== "updated_at") } });
     return json({ template: data, mensagem: "Template atualizado." });
   }
 
