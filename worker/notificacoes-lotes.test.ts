@@ -71,8 +71,12 @@ const CLIENTES = [
   { id: "c-cris", nome_completo: "Cristina Alves", cpf: "111.222.333-44", ativo: true },
 ];
 
-const bol = (id: string, cliente: string, venc: string, valor: number, status = "pendente"): BoletoFonte =>
-  ({ id, cliente_id: cliente, data_vencimento: venc, valor, status, numero_parcela: 1, total_parcelas: 10 });
+const CONTRATO: Record<string, { status_contrato: string; ativo: boolean }> = {
+  "c-ana": { status_contrato: "ativo", ativo: true }, "c-bia": { status_contrato: "ativo", ativo: true }, "c-cris": { status_contrato: "ativo", ativo: true },
+};
+/** Linha de boleto como a consulta real devolve (status "nao_pago" + cliente embutida). */
+const bol = (id: string, cliente: string, venc: string, valor: number, status = "nao_pago", extra: Record<string, unknown> = {}): BoletoFonte =>
+  ({ id, cliente_id: cliente, data_vencimento: venc, valor, status, numero_parcela: 1, total_parcelas: 10, suspensa: false, clientes: CONTRATO[cliente] ?? { status_contrato: "ativo", ativo: true }, ...extra } as BoletoFonte);
 
 /** Gemini falso: responde uma mensagem válida por item, usando só os dados recebidos. */
 function geminiFalso(opcoes: { falhar?: number; corpo?: (itens: any[]) => unknown } = {}) {
@@ -278,6 +282,21 @@ describe("lote financeiro", () => {
     await aprovarLote(c.ctx, id);
     expect(await aprovarLote(c.ctx, id)).toMatchObject({ ok: false, codigo: "lote_nao_aguarda_aprovacao" });
     expect(c.envio.enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it("mesma elegibilidade da rotina automática: parcela suspensa, contrato cancelado e cliente inativa ficam de fora, com motivo", async () => {
+    const c = cenario([
+      bol("b1", "c-ana", "2026-09-15", 150, "nao_pago", { suspensa: true }),
+      bol("b2", "c-bia", "2026-09-15", 320, "nao_pago", { clientes: { status_contrato: "cancelado", ativo: true } }),
+      bol("b3", "c-cris", "2026-09-15", 90, "nao_pago", { clientes: { status_contrato: "ativo", ativo: false } }),
+    ]);
+    await prepararLote(c.ctx);
+    const motivos = Object.fromEntries(c.tabelas.notificacao_lote_itens.map((i) => [i.cliente_id, [i.status, i.motivo]]));
+    expect(motivos).toEqual({
+      "c-ana": ["SKIPPED_RULE", "parcela_suspensa"],
+      "c-bia": ["SKIPPED_RULE", "contrato_cancelado_ou_suspenso"],
+      "c-cris": ["SKIPPED_RULE", "cliente_inativa"],
+    });
   });
 
   it("cliente deduplicada (lembrete nas últimas 24h) não recebe de novo", async () => {

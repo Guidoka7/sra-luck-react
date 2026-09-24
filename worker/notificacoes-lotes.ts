@@ -21,6 +21,8 @@
  * Nenhum dado financeiro é alterado aqui.
  */
 import { publicError } from "./http-security";
+import { boletoPodeReceberCobrancaAutomatica } from "./admin-notificacoes";
+import { adicionarDiasCivil, hojeSaoPaulo } from "../src/lib/dataCivil";
 import { configuracaoGemini, ErroGemini, gerarComGemini } from "./frase-do-dia";
 import type { createServiceSupabaseClient, Env } from "./supabase";
 
@@ -72,20 +74,15 @@ export function tituloPara(segmento: Segmento, quantidade: number) {
 // Datas (sempre no fuso de Brasília)
 // ---------------------------------------------------------------------------
 
+/** Mesma data civil de Brasília usada pelo restante do backend (src/lib/dataCivil). */
 export function dataBrasilia(agora: Date) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(agora).map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}`;
+  return hojeSaoPaulo(agora);
 }
 
 export function horaBrasilia(agora: Date) {
   return new Intl.DateTimeFormat("en-GB", { timeZone: FUSO, hour: "2-digit", minute: "2-digit", hour12: false }).format(agora);
 }
 
-function somarDias(dataISO: string, dias: number) {
-  const d = new Date(`${dataISO}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + dias);
-  return d.toISOString().slice(0, 10);
-}
 
 /** Dias de `de` até `ate` (positivo quando `ate` é depois). */
 export function diasEntre(de: string, ate: string) {
@@ -111,6 +108,16 @@ export type BoletoFonte = {
   numero_parcela?: number | null;
   total_parcelas?: number | null;
 };
+
+type BoletoComCliente = BoletoFonte & { suspensa?: boolean | null; clientes?: { status_contrato?: string | null; ativo?: boolean | null } | { status_contrato?: string | null; ativo?: boolean | null }[] | null };
+
+function motivoInelegivel(b: BoletoComCliente) {
+  const cliente = Array.isArray(b.clientes) ? b.clientes[0] : b.clientes;
+  if (!cliente || cliente.ativo === false) return "cliente_inativa";
+  if (["cancelado", "suspenso"].includes(String(cliente.status_contrato ?? ""))) return "contrato_cancelado_ou_suspenso";
+  if (b.suspensa === true) return "parcela_suspensa";
+  return "fora_da_regra_de_cobranca";
+}
 
 export type ParcelaAgrupada = { boletoId: string; vencimento: string; valor: number; diasAtraso: number; numero: number | null; total: number | null };
 
@@ -417,15 +424,20 @@ export async function prepararLote(ctx: Contexto, origem: "manual" | "rotina" = 
   if ((aberto ?? []).length) return { ok: true, loteId: (aberto as { id: string }[])[0].id, existente: true };
 
   const config = await carregarConfigCentral(ctx.db);
+  // Mesma regra de elegibilidade da rotina automática (boletoPodeReceberCobrancaAutomatica):
+  // só parcela "nao_pago", não suspensa, de cliente ativa com contrato válido.
   const { data: boletos, error: erroBoletos } = await ctx.db.from("boletos")
-    .select("id,cliente_id,valor,data_vencimento,status,numero_parcela,total_parcelas")
-    .lte("data_vencimento", somarDias(hoje, 1)).neq("status", "pago");
+    .select("id,cliente_id,valor,data_vencimento,status,suspensa,numero_parcela,total_parcelas,clientes(status_contrato,ativo)")
+    .lte("data_vencimento", adicionarDiasCivil(hoje, 1)).eq("status", "nao_pago");
   if (erroBoletos) return falha(502, "parcelas_indisponiveis", "Não foi possível ler as parcelas agora.");
-  const candidatos = agruparCandidatos((boletos ?? []) as BoletoFonte[], hoje);
+  const todos = (boletos ?? []) as BoletoComCliente[];
+  const candidatos = agruparCandidatos(todos.filter(boletoPodeReceberCobrancaAutomatica), hoje);
   const ids = candidatos.map((c) => c.clienteId);
-
-  const { data: clientes } = ids.length ? await ctx.db.from("clientes").select("id,ativo").in("id", ids) : { data: [] };
-  const ativas = new Set(((clientes ?? []) as { id: string; ativo: boolean | null }[]).filter((c) => c.ativo !== false).map((c) => c.id));
+  // Quem tem parcela em aberto mas nenhuma elegível aparece como "fora da regra", com o motivo.
+  const comElegivel = new Set(ids);
+  const motivoFora = new Map<string, string>();
+  for (const b of todos) if (!comElegivel.has(b.cliente_id) && !boletoPodeReceberCobrancaAutomatica(b)) motivoFora.set(b.cliente_id, motivoInelegivel(b));
+  const excluidos = agruparCandidatos(todos.filter((b) => motivoFora.has(b.cliente_id)), hoje);
   const recentes = await clientesRecentes(ctx.db, ids, config.janelaDedupHoras, agora);
 
   const { data: lote, error: erroLote } = await ctx.db.from("notificacao_lotes").insert({
@@ -434,12 +446,12 @@ export async function prepararLote(ctx: Contexto, origem: "manual" | "rotina" = 
   }).select("id").single();
   if (erroLote || !lote) return falha(409, "migration_088", "A estrutura de lotes ainda não foi aplicada neste ambiente (migration_088).");
 
-  const itens = candidatos.map((c) => {
+  const itens = [...candidatos, ...excluidos].map((c) => {
     let status = "PREPARED";
     let motivo: string | null = null;
-    if (!c.segmento) { status = "SKIPPED_RULE"; motivo = "atraso_acima_de_30_dias"; }
+    if (motivoFora.has(c.clienteId)) { status = "SKIPPED_RULE"; motivo = motivoFora.get(c.clienteId)!; }
+    else if (!c.segmento) { status = "SKIPPED_RULE"; motivo = "atraso_acima_de_30_dias"; }
     else if (!config.segmentos.includes(c.segmento)) { status = "SKIPPED_RULE"; motivo = "faixa_desligada"; }
-    else if (!ativas.has(c.clienteId)) { status = "SKIPPED_RULE"; motivo = "cliente_inativa"; }
     else if (recentes.has(c.clienteId)) { status = "SKIPPED_DEDUPLICATION"; motivo = `lembrete_nas_ultimas_${config.janelaDedupHoras}h`; }
     return {
       lote_id: (lote as { id: string }).id, cliente_id: c.clienteId, segmento: c.segmento ?? "fora_da_regua", parcelas: c.parcelas,
@@ -545,8 +557,8 @@ async function enviarItem(ctx: Contexto, item: ItemLinha, config: ConfigCentral,
   const marcar = (patch: Record<string, unknown>) => ctx.db.from("notificacao_lote_itens").update({ ...patch, processado_em: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id);
 
   // Parcelas mudaram desde a preparação (paga ou comprovante enviado): a mensagem já não é verdadeira.
-  const { data: atuais } = await ctx.db.from("boletos").select("id,status").in("id", item.parcelas.map((p) => p.boletoId));
-  const abertas = ((atuais ?? []) as { id: string; status: string | null }[]).filter((b) => !STATUS_FORA.has(String(b.status ?? "").toLowerCase()));
+  const { data: atuais } = await ctx.db.from("boletos").select("id,cliente_id,status,suspensa,clientes(status_contrato,ativo)").in("id", item.parcelas.map((p) => p.boletoId));
+  const abertas = ((atuais ?? []) as BoletoComCliente[]).filter(boletoPodeReceberCobrancaAutomatica);
   if (abertas.length !== item.parcelas.length) { await marcar({ status: "SKIPPED_RULE", motivo: "parcelas_mudaram_antes_do_envio" }); return "ignoradas"; }
 
   if (!reprocesso && (await clientesRecentes(ctx.db, [item.cliente_id], config.janelaDedupHoras, agora)).has(item.cliente_id)) {
