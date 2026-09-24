@@ -1,4 +1,4 @@
-import type { ClienteFinanceiro, DetalheRecebivel, FunilFinanceiro, ListaRecebiveis, PeriodoFinanceiro, ResumoFinanceiro } from "./types";
+import type { ClienteFinanceiro, DetalheRecebivel, FunilFinanceiro, ListaRecebidosFinanceiro, ListaRecebiveis, PeriodoFinanceiro, RecebidosSubfunil, ResumoFinanceiro } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -25,6 +25,8 @@ export const financeiroApi = {
   recebiveis: (params: PeriodoFinanceiro & { busca?: string; status?: string; pagina?: number; limite?: number }) =>
     request<ListaRecebiveis>(`/api/admin/financeiro/recebiveis?${query(params)}`),
   validacoes: () => request<ListaRecebiveis>("/api/admin/financeiro/validacoes"),
+  recebidos: (params: { data: string; tipo: RecebidosSubfunil; busca?: string }) =>
+    request<ListaRecebidosFinanceiro>(`/api/admin/financeiro/recebidos?${query(params)}`),
   detalhe: (id: string) => request<DetalheRecebivel>(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}`),
   baixa: (id: string, payload: Record<string, unknown>) => request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/baixa`, {
     method: "POST", body: JSON.stringify({ ...payload, idempotencyKey: payload.idempotencyKey ?? crypto.randomUUID() }),
