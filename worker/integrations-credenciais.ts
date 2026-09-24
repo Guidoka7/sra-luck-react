@@ -168,10 +168,9 @@ export async function integracaoDesativada(env: Env, provedor: string) {
   return (await estadosIntegracoes(env)).get(provedor)?.ativo === false;
 }
 
-export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
+async function obterCredencialEfetiva(env: Env, provedor: string, chave: string, respeitarEstado: boolean): Promise<string | null> {
   const campo = campoDoProvedor(provedor, chave);
-  // Integração desligada no painel: nenhuma credencial é entregue (nem a da variável de ambiente).
-  if (campo && env.SUPABASE_URL && await integracaoDesativada(env, provedor)) return null;
+  if (respeitarEstado && campo && env.SUPABASE_URL && await integracaoDesativada(env, provedor)) return null;
   const doAmbiente = campo ? (env[campo.envVar] as string | undefined) || null : null;
 
   if (!env.CLIENTE_SESSION_SECRET) return doAmbiente;
@@ -190,6 +189,29 @@ export async function obterCredencial(env: Env, provedor: string, chave: string)
   } catch {
     return doAmbiente;
   }
+}
+
+export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
+  return obterCredencialEfetiva(env, provedor, chave, true);
+}
+
+/** Usa a credencial real mesmo com a integração desligada, exclusivamente para validação/ativação. */
+export async function obterCredencialParaValidacao(env: Env, provedor: string, chave: string): Promise<string | null> {
+  return obterCredencialEfetiva(env, provedor, chave, false);
+}
+
+async function invalidarAtivacao(db: ReturnType<typeof createServiceSupabaseClient>, provedor: string, ator: string, motivo: string) {
+  const { error } = await db.from("integracoes_estado").upsert({
+    provedor, ativo: false, atualizado_por: ator, atualizado_em: new Date().toISOString(),
+  }, { onConflict: "provedor" });
+  if (!error) estadoCache = null;
+  await db.from("logs_alteracoes").insert({
+    usuario: ator,
+    acao: "invalidou_integracao_para_revalidacao",
+    entidade: "integracoes",
+    entidade_id: provedor,
+    detalhes: { motivo },
+  });
 }
 
 /**
@@ -246,7 +268,8 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
       id,
       nome: config.nome,
       grupo: config.grupo,
-      ativo: estados.get(id)?.ativo !== false,
+      ativo: estados.get(id)?.ativo === true,
+      ativacaoConfigurada: estados.has(id),
       estadoAtualizadoEm: estados.get(id)?.atualizado_em ?? null,
       campos: config.campos.map((campo: CampoCredencial) => {
         const salvo = salvos.get(`${id}:${campo.chave}`);
@@ -274,22 +297,27 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     const provedor = String(body.provedor || "");
     const chave = String(body.chave || "");
 
-    // Liga/desliga a integração inteira: { provedor, ativo: true|false } (sem "chave").
+    // Desativar é imediato. Ativar exige teste real e passa por /api/admin/integrations/estado.
     if (!chave && typeof body.ativo === "boolean") {
       if (!CATALOGO_PROVEDORES[provedor]) return json({ erro: "Provedor desconhecido." }, 400);
-      const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: body.ativo, atualizado_por: colaborador.id, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
+      if (body.ativo) return json({
+        erro: "A ativação exige validação real do provedor. Use a ação Validar e ativar.",
+        codigo: "ATIVACAO_REQUER_VALIDACAO",
+      }, 409);
+      const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: colaborador.id, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
       if (error) return json({ erro: "A estrutura de liga/desliga ainda não foi aplicada neste ambiente (migration_087)." }, 409);
       estadoCache = null;
-      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: body.ativo ? "ativou_integracao" : "desativou_integracao", entidade: "integracoes_credenciais", detalhes: { provedor } });
-      return json({ ok: true, provedor, ativo: body.ativo });
+      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "desativou_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: { validacaoReal: true } });
+      return json({ ok: true, provedor, ativo: false });
     }
     const campo = campoDoProvedor(provedor, chave);
     if (!campo) return json({ erro: "Provedor ou campo de credencial desconhecido." }, 400);
 
     if (body.remover) {
       await db.from("integracoes_credenciais").delete().eq("provedor", provedor).eq("chave", chave);
-      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
-      return json({ ok: true });
+      await invalidarAtivacao(db, provedor, colaborador.id, `credencial_removida:${chave}`);
+      await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave, requerRevalidacao: true } });
+      return json({ ok: true, ativo: false, requerRevalidacao: true });
     }
 
     const valor = String(body.valor || "").trim();
@@ -301,8 +329,9 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     } catch {
       return json({ erro: "Não foi possível salvar a credencial." }, 500);
     }
-    await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave } });
-    return json({ ok: true });
+    await invalidarAtivacao(db, provedor, colaborador.id, `credencial_alterada:${chave}`);
+    await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave, requerRevalidacao: true } });
+    return json({ ok: true, ativo: false, requerRevalidacao: true });
   }
 
   return json({ erro: "Método não suportado." }, 405);
