@@ -230,7 +230,7 @@ export type ResultadoRotina = {
   data: string;
   texto: string;
   tema: string;
-  origem: "ia" | "catalogo" | "ultima_valida";
+  origem: "ia" | "catalogo" | "ultima_valida" | "admin";
   reutilizada: boolean;
   chamouGemini: boolean;
   motivo?: string;
@@ -359,12 +359,118 @@ export async function testarGemini(env: Env) {
   }
 }
 
-async function adminAutorizado(request: Request, env: Env) {
-  if (!env.CLIENTE_SESSION_SECRET) return false;
+/** Colaborador com permissão de integrações, ou null. */
+async function adminDaRequisicao(request: Request, env: Env) {
+  if (!env.CLIENTE_SESSION_SECRET) return null;
   const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
-  if (!sessao?.adminId) return false;
+  if (!sessao?.adminId) return null;
   const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
-  return Boolean(colaborador && temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS));
+  return colaborador && temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS) ? colaborador : null;
+}
+
+async function adminAutorizado(request: Request, env: Env) {
+  return Boolean(await adminDaRequisicao(request, env));
+}
+
+// ---------------------------------------------------------------------------
+// Conversa com o Gemini no painel: ver as mensagens, pedir outra e escolher a
+// do dia. Nada aqui muda a rotina diária: ela continua gerando uma vez por dia
+// e nunca sobrescreve uma mensagem já pronta (inclusive a escolhida pela equipe).
+// ---------------------------------------------------------------------------
+
+export const LIMITE_PEDIDO = 200;
+
+/** Pedido livre da equipe ("mais curta", "fale de constância"): texto simples e curto. */
+export function limparPedido(bruto: unknown) {
+  return String(bruto ?? "").replace(/[\u0000-\u001f\u007f<>{}]/g, " ").replace(/\s+/g, " ").trim().slice(0, LIMITE_PEDIDO);
+}
+
+export type MensagemSalva = { data: string; status: string; texto: string | null; tema: string | null; origem: string | null; modelo: string | null; updated_at: string };
+
+export async function historicoMensagens(env: Env, limite = 14, deps: { db?: Db } = {}) {
+  const db = deps.db ?? createServiceSupabaseClient(env);
+  const { data, error } = await db.from("mensagens_do_dia").select("data,status,texto,tema,origem,modelo,updated_at")
+    .order("data", { ascending: false }).limit(Math.min(Math.max(limite, 1), 60));
+  if (error) throw new Error(`historico_falhou:${error.code ?? "?"}`);
+  return (data ?? []) as MensagemSalva[];
+}
+
+async function textosRecentes(db: Db, dataBase: string, incluirHoje: boolean) {
+  let consulta = db.from("mensagens_do_dia").select("texto").eq("status", "pronta");
+  consulta = incluirHoje ? consulta.lt("data", proximoDia(dataBase)) : consulta.lt("data", dataBase);
+  const { data } = await consulta.order("data", { ascending: false }).limit(14);
+  return (data ?? []).map((r: { texto: string | null }) => r.texto).filter((t): t is string => Boolean(t));
+}
+
+function proximoDia(data: string) {
+  const d = new Date(`${data}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+export type Sugestao =
+  | { ok: true; texto: string; aprovada: boolean; motivo?: string; modelo: string }
+  | { ok: false; codigo: string; erro: string };
+
+/** Gera uma candidata SEM salvar. O painel mostra e a equipe decide se usa. */
+export async function sugerirMensagem(env: Env, pedidoBruto: unknown, agora = new Date(), deps: { db?: Db; fetcher?: typeof fetch } = {}): Promise<Sugestao> {
+  const db = deps.db ?? createServiceSupabaseClient(env);
+  const config = await configuracaoGemini(env);
+  if (!config.chave) return { ok: false, codigo: "sem_chave", erro: "O Gemini não tem chave configurada (ou a integração está desligada)." };
+  const base = fraseDoDia(agora);
+  const recentes = await textosRecentes(db, base.data, true);
+  const pedido = limparPedido(pedidoBruto);
+  const { sistema, usuario } = montarPrompt(agora, base, recentes, config.instrucoes);
+  const usuarioFinal = pedido ? `${usuario}\nPedido da equipe (siga sem quebrar nenhuma regra): ${pedido}` : usuario;
+  try {
+    const gerada = await gerarComGemini(config.chave, config.modelo, sistema, usuarioFinal, deps.fetcher);
+    const validacao = validarFraseIa(gerada.texto, recentes);
+    return validacao.ok
+      ? { ok: true, texto: validacao.texto, aprovada: true, modelo: gerada.modelo }
+      : { ok: true, texto: String(gerada.texto || "").trim().slice(0, 300), aprovada: false, motivo: validacao.motivo, modelo: gerada.modelo };
+  } catch (erro) {
+    const motivo = erro instanceof ErroGemini ? erro.motivo : "erro";
+    const texto = /^http_(400|401|403)$/.test(motivo) ? "O Gemini recusou a chave."
+      : motivo === "http_429" ? "Cota gratuita do Gemini esgotada no momento. Tente mais tarde."
+        : /^http_5\d\d$|timeout/.test(motivo) ? "O Gemini está sobrecarregado agora (erro do Google)."
+          : `Falha ao contatar o Gemini (${motivo}).`;
+    return { ok: false, codigo: motivo, erro: texto };
+  }
+}
+
+export type Definicao = { ok: true; data: string; texto: string; tema: string; origem: "ia" | "admin" } | { ok: false; codigo: string; erro: string };
+
+const MOTIVOS: Record<string, string> = {
+  tamanho: "A frase precisa ter entre 20 e 170 caracteres.",
+  destaque: "Marque exatamente um trecho de destaque entre asteriscos, por exemplo: Disciplina hoje, *resultados sempre*.",
+  emoji: "Use no máximo 1 emoji.",
+  caractere: "Sem quebras de linha, links, # ou @.",
+  termo_proibido: "A frase usa um termo proibido pelo tom da marca (corpo, promessa, cobrança ou termos médicos).",
+  repetida: "Essa frase repete uma mensagem recente ou do catálogo.",
+};
+
+/**
+ * Define a mensagem de HOJE (vale para todas as clientes). Passa pelos mesmos
+ * filtros da IA. origem "ia" = candidata do Gemini; "admin" = escrita pela equipe.
+ */
+export async function definirMensagem(env: Env, textoBruto: unknown, opcoes: { origem?: unknown; modelo?: unknown } = {}, agora = new Date(), deps: { db?: Db } = {}): Promise<Definicao> {
+  const db = deps.db ?? createServiceSupabaseClient(env);
+  const base = fraseDoDia(agora);
+  const recentes = await textosRecentes(db, base.data, false);
+  const validacao = validarFraseIa(String(textoBruto ?? ""), recentes);
+  if (!validacao.ok) return { ok: false, codigo: validacao.motivo, erro: MOTIVOS[validacao.motivo] ?? "A frase não passou nos filtros." };
+  const origem = opcoes.origem === "ia" ? "ia" : "admin";
+  const modelo = origem === "ia" ? String(opcoes.modelo ?? "").replace(/[^a-z0-9.\-]/gi, "").slice(0, 80) || null : null;
+  const { error } = await db.from("mensagens_do_dia").upsert(
+    { data: base.data, status: "pronta", texto: validacao.texto, tema: base.tema, origem, modelo, updated_at: new Date().toISOString() },
+    { onConflict: "data" },
+  );
+  if (error) {
+    return error.code === "23514"
+      ? { ok: false, codigo: "migration_087", erro: "Aplique a migration_087 para permitir mensagens escritas pela equipe." }
+      : { ok: false, codigo: `salvar_falhou:${error.code ?? "?"}`, erro: "Não foi possível salvar a mensagem do dia." };
+  }
+  return { ok: true, data: base.data, texto: validacao.texto, tema: base.tema, origem };
 }
 
 export async function fraseDoDiaApi(request: Request, env: Env): Promise<Response | null> {
@@ -388,6 +494,42 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
     } catch (erro) {
       log.error("Falha na rotina da mensagem do dia", { eventCode: "DAILY_MESSAGE_ROUTINE_FAILED", error: erro });
       return json({ erro: "Falha ao preparar a mensagem do dia." }, 500);
+    }
+  }
+
+  // Conversa do painel com o Gemini (histórico, pedir outra, escolher a do dia).
+  const conversa = url.pathname.match(/^\/api\/admin\/integrations\/gemini\/(mensagens|sugerir|definir)$/)?.[1];
+  if (conversa) {
+    const log = requestLogger(request).child({ action: `daily_message.${conversa}` });
+    const esperado = conversa === "mensagens" ? "GET" : "POST";
+    if (request.method !== esperado) return json({ erro: "Método não suportado." }, 405);
+    if (esperado === "POST") {
+      const origem = request.headers.get("Origin");
+      if (origem && origem !== url.origin) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    }
+    const colaborador = await adminDaRequisicao(request, env);
+    if (!colaborador) return json({ erro: "Sem permissão." }, 403);
+    try {
+      if (conversa === "mensagens") {
+        const config = await configuracaoGemini(env);
+        const mensagens = await historicoMensagens(env, Number(url.searchParams.get("limite")) || 14);
+        return json({ hoje: fraseDoDia().data, configurado: Boolean(config.chave), modelo: config.modelo, mensagens });
+      }
+      const corpo = await request.json().catch(() => ({})) as { pedido?: unknown; texto?: unknown; origem?: unknown; modelo?: unknown };
+      if (conversa === "sugerir") {
+        const sugestao = await sugerirMensagem(env, corpo.pedido);
+        log.info("Sugestão de mensagem do dia", { eventCode: "DAILY_MESSAGE_SUGGESTED", ok: sugestao.ok, aprovada: sugestao.ok ? sugestao.aprovada : false });
+        return json(sugestao, sugestao.ok ? 200 : sugestao.codigo === "sem_chave" ? 409 : 502);
+      }
+      const definicao = await definirMensagem(env, corpo.texto, { origem: corpo.origem, modelo: corpo.modelo });
+      if (!definicao.ok) return json(definicao, definicao.codigo.startsWith("salvar_falhou") ? 500 : definicao.codigo === "migration_087" ? 409 : 400);
+      const { error: auditoria } = await createServiceSupabaseClient(env).from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "definiu_mensagem_do_dia", entidade: "integracoes", detalhes: { provedor: "gemini", data: definicao.data, origem: definicao.origem } });
+      if (auditoria) log.warn("Mensagem do dia definida, mas auditoria não foi persistida", { eventCode: "DAILY_MESSAGE_AUDIT_FAILED" });
+      log.info("Mensagem do dia definida pela equipe", { eventCode: "DAILY_MESSAGE_SET", origem: definicao.origem });
+      return json(definicao);
+    } catch (erro) {
+      log.error("Falha na conversa da mensagem do dia", { eventCode: "DAILY_MESSAGE_ADMIN_FAILED", error: erro });
+      return json({ erro: "Falha ao processar a mensagem do dia." }, 500);
     }
   }
 

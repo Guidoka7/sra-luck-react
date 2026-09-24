@@ -18,6 +18,7 @@ import { MaisTab, type MaisSubTelaInicial } from "@/pages/client/MaisTab";
 import { AgendaTab } from "@/pages/client/AgendaTab";
 import { lerCacheCliente, limparCacheCliente, salvarCacheCliente, type AgendaData, type BoletosData, type StatusCusteio } from "@/lib/clienteAgenda";
 import { LOGO_SRC } from "@/assets/brand";
+import { registrarAcesso } from "@/lib/monitoramento";
 import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
 import { aplicarTemaCliente, useTemaCliente } from "@/lib/temaCliente";
 
@@ -29,6 +30,8 @@ export function AgendaPage() {
   const [boletos, setBoletos] = useState<BoletosData | null>(cacheInicial?.boletos ?? null);
   // O app sempre abre na Início (inclusive ao atualizar a página).
   const [aba, setAba] = useState<ClientTab>("inicio");
+  // Histórico de acesso da cliente: cada aba aberta vira uma linha no monitoramento.
+  useEffect(() => { registrarAcesso(`app:${aba}`); }, [aba]);
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const abaAntesDoMais = useRef<ClientTab>("inicio");
   const [maisSubTelaInicial, setMaisSubTelaInicial] = useState<MaisSubTelaInicial | null>(null);
