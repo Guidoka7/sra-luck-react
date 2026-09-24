@@ -22,7 +22,7 @@
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { isDevConsoleSyntheticAdminId } from "./dev-console-auth";
 import { configDaFuncao, type ConfigContaAzul } from "./integracoes-registro";
-import { obterCredencial, salvarCredencialInterna } from "./integrations-credenciais";
+import { obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
 import { criarState, validarState } from "./rd-station-readonly";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
@@ -828,14 +828,21 @@ async function oauthCallback(request: Request, env: Env) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code") || "";
   const adminId = await validarState(url.searchParams.get("state") || "", env.CLIENTE_SESSION_SECRET);
-  if (!code || !adminId || isDevConsoleSyntheticAdminId(adminId)) return json({ erro: "Retorno OAuth inválido ou expirado." }, 400);
-  const colaborador = await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
-  if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) return json({ erro: "Sem permissão para conectar a Conta Azul." }, 403);
-  const d = depsPadrao(env);
+  if (!code || !adminId) return json({ erro: "Retorno OAuth inválido ou expirado." }, 400);
+  const ehDev = isDevConsoleSyntheticAdminId(adminId);
+  const colaborador = ehDev ? null : await buscarColaboradorAdminAtivo(adminId, env).catch(() => null);
+  if (!ehDev && (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS))) return json({ erro: "Sem permissão para conectar a Conta Azul." }, 403);
+  const ator = ehDev ? adminId : colaborador!.id;
+  const credenciaisConfiguracao = {
+    obter: (chave: string) => obterCredencialParaValidacao(env, PROVEDOR, chave),
+    salvar: (chave: string, valor: string, actor: string) => salvarCredencialInterna(env, PROVEDOR, chave, valor, actor),
+  };
+  const d = depsPadrao(env, { credenciais: credenciaisConfiguracao });
   const redirect = await d.credenciais.obter("redirect_uri") || `${(env.PUBLIC_APP_URL || url.origin).replace(/\/$/, "")}/api/integrations/conta-azul/oauth/callback`;
   try {
-    await gravarTokens(d, await pedirToken(d, { grant_type: "authorization_code", code, redirect_uri: redirect }), colaborador.id);
-    await d.db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "autorizou_oauth_conta_azul", entidade: "integracoes", entidade_id: PROVEDOR, detalhes: {} });
+    await gravarTokens(d, await pedirToken(d, { grant_type: "authorization_code", code, redirect_uri: redirect }), ator);
+    await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "autorizou_oauth_conta_azul", entidade: "integracoes", entidade_id: PROVEDOR, detalhes: { origem: ehDev ? "dev_console" : "admin" } });
+    if (ehDev) return new Response("<!doctype html><meta charset='utf-8'><title>Conta Azul conectada</title><body style='font-family:system-ui;padding:32px'><h2>Conta Azul autorizada</h2><p>Os tokens OAuth foram salvos. Volte ao Dev Console e clique em Validar e ativar.</p><script>setTimeout(()=>window.close(),1800)</script></body>", { headers: { "Content-Type": "text/html; charset=utf-8" } });
     return Response.redirect(`${(env.PUBLIC_APP_URL || url.origin).replace(/\/$/, "")}/admin/integracoes?contaAzul=conectado`, 302);
   } catch (e) {
     return json({ erro: e instanceof ErroContaAzul ? e.message : "Não foi possível concluir a autorização da Conta Azul." }, 502);
@@ -867,10 +874,13 @@ export async function contaAzulApi(request: Request, env: Env): Promise<Response
     if (rota === "vinculos" || rota === "fila" || rota === "conflitos" || rota === "historico") return json({ itens: await listar(d, rota, url.searchParams.get("estado")) });
     if (rota === "opcoes") { try { return json(await opcoesContaAzul(d)); } catch (e) { return json({ erro: (e as Error).message }, 502); } }
     if (rota === "authorize-url") {
-      if (isDevConsoleSyntheticAdminId(auth.adminId)) return json({ erro: "A conexão da Conta Azul é feita no Admin do Sra Luck." }, 403);
       const cred = await exigir(request, env, [PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS]);
       if (cred instanceof Response) return cred;
-      try { return json(await urlDeAutorizacao(env, auth.adminId, d)); } catch (e) { return json({ erro: (e as Error).message }, 409); }
+      const dConfig = depsPadrao(env, { credenciais: {
+        obter: (chave: string) => obterCredencialParaValidacao(env, PROVEDOR, chave),
+        salvar: (chave: string, valor: string, ator: string) => salvarCredencialInterna(env, PROVEDOR, chave, valor, ator),
+      } });
+      try { return json(await urlDeAutorizacao(env, auth.adminId, dConfig)); } catch (e) { return json({ erro: (e as Error).message }, 409); }
     }
     return json({ erro: "Rota da Conta Azul não encontrada." }, 404);
   }
