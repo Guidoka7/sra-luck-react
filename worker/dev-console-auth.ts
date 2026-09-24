@@ -263,6 +263,27 @@ async function validateAllowedMutation(request: Request, pathname: string): Prom
     return null;
   }
 
+  // Integrações são área exclusiva do Dev (admin-rotas-dev.ts): chaves, ligar/desligar
+  // provedor, VAPID e sincronização do RD entram só por aqui, só owner/developer e
+  // só com os campos de cada rota. O valor da chave é gravado no cofre do Worker e
+  // nunca volta em texto puro (a leitura devolve só a máscara).
+  const camposDev: Record<string, readonly string[]> = {
+    "/api/admin/integrations/credenciais": ["provedor", "chave", "valor", "remover", "ativo"],
+    "/api/admin/integrations/web-push/vapid": ["acao", "subject", "publicKey", "privateKey", "confirmarRotacao"],
+    "/api/admin/integrations/rd-station/sync": [],
+  };
+  if (camposDev[pathname]) {
+    const permitidos = camposDev[pathname];
+    const texto = (v: unknown, max: number) => v === undefined || (typeof v === "string" && v.length <= max);
+    if (!["owner", "developer"].includes(papel)
+      || Object.keys(body).some((k) => !permitidos.includes(k))
+      || !texto(body.provedor, 40) || !texto(body.chave, 60) || !texto(body.valor, 3000) || !texto(body.acao, 20) || !texto(body.subject, 200)
+      || (body.remover !== undefined && typeof body.remover !== "boolean") || (body.ativo !== undefined && typeof body.ativo !== "boolean")) {
+      return json("Alteração de integração não autorizada para a integração técnica.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
   // Regras operacionais protegidas (prazo, teto, percentuais, requisitos do app):
   // só owner/developer e só os campos conhecidos. O Admin nunca altera.
   if (pathname === "/api/admin/regras-operacionais") {

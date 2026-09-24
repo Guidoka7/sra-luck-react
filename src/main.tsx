@@ -68,6 +68,7 @@ function AdminRoute({ path }: { path: string }) {
   else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
   else if (path.startsWith("/admin/clube")) conteudo = <ClubeAdminPage />;
   else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;
+  // Integrações e Monitoramento são área exclusiva do Dev: o endereço antigo cai em Configurações.
   else if (path.startsWith("/admin/integracoes")) conteudo = <AdminWorkspace />;
   else if (path.startsWith("/admin/notificacoes")) conteudo = <AdminWorkspace />;
   else if (path.startsWith("/admin/configuracoes")) conteudo = <AdminWorkspace />;

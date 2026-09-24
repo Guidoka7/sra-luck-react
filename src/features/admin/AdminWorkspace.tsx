@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Cable, CalendarDays, Gauge, LockKeyhole, Settings2, ShieldCheck, Users } from "lucide-react";
+import { Bell, CalendarDays, LockKeyhole, Settings2, ShieldCheck, Users } from "lucide-react";
 import { ADMIN_PERMISSIONS as P, FINANCE_PERMISSIONS, pode, type AdminAccessProfile } from "@/lib/adminAccess";
 import "@/styles/admin-zip.css";
 import styles from "./AdminWorkspace.module.css";
@@ -9,11 +9,9 @@ import { percentualDoPlano, useRegrasApp } from "@/lib/regrasOperacionais";
 import { AdminSettingsPanel } from "./AdminSettingsPanel";
 import { AdminSettingsOverview } from "./AdminSettingsOverview";
 import AdminNotificacoes from "@/app/admin/(painel)/notificacoes/page";
-import MonitoramentoPage from "@/app/admin/(painel)/configuracoes/monitoramento/page";
 import EquipeAdminPage from "@/app/admin/(painel)/equipe/page";
-import IntegracoesAdminPage from "@/app/admin/(painel)/integracoes/page";
 
-type AbaWorkspace = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes" | "integracoes" | "monitoramento";
+type AbaWorkspace = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes";
 const ABAS: Array<{ id:AbaWorkspace; label:string; icon:typeof Settings2; perms:string[] }> = [
   {id:"geral",label:"Gerais",icon:Settings2,perms:[P.CONFIGURACOES_GERENCIAR]},
   {id:"agenda",label:"Agenda",icon:CalendarDays,perms:[P.AGENDA_GERENCIAR,...FINANCE_PERMISSIONS]},
@@ -21,15 +19,14 @@ const ABAS: Array<{ id:AbaWorkspace; label:string; icon:typeof Settings2; perms:
   {id:"notificacoes",label:"Notificações",icon:Bell,perms:[P.NOTIFICACOES_GERENCIAR]},
   {id:"equipe",label:"Equipe e responsáveis",icon:Users,perms:[P.EQUIPE_GERENCIAR]},
   {id:"permissoes",label:"Permissões",icon:LockKeyhole,perms:[P.EQUIPE_GERENCIAR]},
-  {id:"integracoes",label:"Integrações",icon:Cable,perms:[P.INTEGRACOES_GERENCIAR_CREDENCIAIS]},
-  {id:"monitoramento",label:"Monitoramento",icon:Gauge,perms:[P.MONITORAMENTO_VISUALIZAR]},
 ];
+// Integrações (chaves, configuração, conexões) e Monitoramento são área exclusiva do Dev
+// (worker/admin-rotas-dev.ts): não aparecem no Admin. A operação do RD Station e da
+// Conta Azul continua para a equipe em Clientes (Vendas novas) e Financeiro.
 function abaDaUrl():AbaWorkspace{
   const path=window.location.pathname;
   if(path.startsWith("/admin/notificacoes"))return"notificacoes";
-  if(path==="/admin/configuracoes/monitoramento")return"monitoramento";
   if(path.startsWith("/admin/equipe"))return"equipe";
-  if(path.startsWith("/admin/integracoes"))return"integracoes";
   const aba=new URLSearchParams(window.location.search).get("aba");
   return ABAS.some(a=>a.id===aba)?aba as AbaWorkspace:"geral";
 }
@@ -55,7 +52,7 @@ export function AdminWorkspace(){
   const abasPermitidas=ABAS.filter(item=>pode(acesso,...item.perms));
   const abaPermitida=!acesso||abasPermitidas.some(item=>item.id===aba);
   return <div className={["zip-admin",styles.page].join(" ")}>
-    <header className={styles.hero}><div><div className={styles.eyebrow}>BEM-VINDA, ADMIN!</div><h1>Configurações</h1><p>Gerencie as regras, integrações e preferências do sistema.</p></div><div className={styles.quote}>Disciplina hoje,<br/>mais histórias amanhã.<span/></div></header>
+    <header className={styles.hero}><div><div className={styles.eyebrow}>BEM-VINDA, ADMIN!</div><h1>Configurações</h1><p>Gerencie as regras e preferências do sistema.</p></div><div className={styles.quote}>Disciplina hoje,<br/>mais histórias amanhã.<span/></div></header>
     <div className={styles.workspace}>
       <nav className={styles.sideNav} aria-label="Seções de Configurações">{abasPermitidas.map(item=><button key={item.id} type="button" data-active={aba===item.id} onClick={()=>navegar(item.id)}><item.icon size={17}/><span>{item.label}</span></button>)}</nav>
       <main className={styles.content}>
@@ -71,8 +68,6 @@ export function AdminWorkspace(){
         {abaPermitida&&aba==="elegibilidade"&&<EligibilityPanel/>}
         {abaPermitida&&aba==="notificacoes"&&<AdminNotificacoes/>}
         {abaPermitida&&(aba==="equipe"||aba==="permissoes")&&<EquipeAdminPage/>}
-        {abaPermitida&&aba==="integracoes"&&<IntegracoesAdminPage/>}
-        {abaPermitida&&aba==="monitoramento"&&<MonitoramentoPage/>}
       </main>
     </div>
   </div>;

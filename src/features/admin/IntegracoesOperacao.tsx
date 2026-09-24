@@ -149,7 +149,8 @@ function ItemImportacao({ it, onAcao }: { it: Json; onAcao?: (id: string, acao: 
   </div>;
 }
 
-export function CrmOperacao() {
+/** modo "equipe": só importar e revisar (a configuração da importação é do Dev). */
+export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe" } = {}) {
   const [imps, setImps] = useState<Json | null>(null);
   const [revisao, setRevisao] = useState<Json[]>([]);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -184,8 +185,8 @@ export function CrmOperacao() {
   }
 
   return <div>
-    <div style={titulo}>Importação configurável</div>
-    <FormularioFuncao provedor="rd_station" funcao="importacao" />
+    {modo === "completo" && <><div style={titulo}>Importação configurável</div>
+    <FormularioFuncao provedor="rd_station" funcao="importacao" /></>}
     <div style={titulo}>Importar e revisar</div>
     <div style={{ ...caixa, lineHeight: 1.5 }}>Toda cliente nova entra em <strong>Aguardando cadastro</strong>. A importação nunca cria cliente nem encaminha ao Financeiro; a venda só avança quando a cliente tem parcelas e acesso ao app liberado.</div>
     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button style={btnPrim} disabled={ocupado} onClick={() => void importar()}>{ocupado ? "Importando…" : "Importar agora"}</button></div>
@@ -228,7 +229,8 @@ const ACOES: Record<string, { rotulo: string; acoes: [string, string][] }> = {
   parcela_sumiu: { rotulo: "Excluída na Conta Azul", acoes: [["desvincular", "Desvincular"], ["manter", "Ciente"]] },
 };
 
-export function ContaAzulOperacao() {
+/** modo "equipe": conflitos, fila, vínculos, histórico e sincronização (conexão e configuração são do Dev). */
+export function ContaAzulOperacao({ modo = "completo" }: { modo?: "completo" | "equipe" } = {}) {
   const [painel, setPainel] = useState<Json | null>(null);
   const [aba, setAba] = useState<"conflitos" | "fila" | "vinculos" | "historico" | "enviar">("conflitos");
   const [lista, setLista] = useState<Json[]>([]);
@@ -264,13 +266,13 @@ export function ContaAzulOperacao() {
       <span>Última sincronização</span><span style={muted}>{painel?.ultimaSincronizacao ? `${dataHora(painel.ultimaSincronizacao.created_at)} · ${painel.ultimaSincronizacao.status}` : "Nunca"}</span>
     </div>
     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
-      <button style={btn} disabled={!con?.clientConfigurado} onClick={() => void conectar()}>{con?.autorizada ? "Reconectar" : "Conectar Conta Azul"}</button>
+      {modo === "completo" && <button style={btn} disabled={!con?.clientConfigurado} onClick={() => void conectar()}>{con?.autorizada ? "Reconectar" : "Conectar Conta Azul"}</button>}
       <button style={btnPrim} disabled={ocupado === "sync" || !(con?.autorizada || con?.tokenManual)} onClick={() => void acao("sync", () => api("/api/admin/integrations/conta-azul/sincronizar", { method: "POST" }), (r) => r.executada === false ? `Não executada: ${r.motivo}.` : r.status === "erro" ? `Falhou: ${r.erro}` : `Sincronizado: ${r.envio?.enfileiradas ?? 0} envio(s), ${r.leitura?.baixasAplicadas ?? 0} baixa(s) aplicada(s), ${r.leitura?.conflitos ?? 0} conflito(s), fila ${r.fila?.concluidas ?? 0}/${r.fila?.processadas ?? 0}.`)}>{ocupado === "sync" ? "Sincronizando…" : "Sincronizar agora"}</button>
     </div>
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
 
-    <div style={titulo}>Configuração</div>
-    <FormularioFuncao provedor="conta_azul" funcao="sincronizacao" />
+    {modo === "completo" && <><div style={titulo}>Configuração</div>
+    <FormularioFuncao provedor="conta_azul" funcao="sincronizacao" /></>}
 
     <div style={titulo}>Operação</div>
     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>

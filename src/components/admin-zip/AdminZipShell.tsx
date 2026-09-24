@@ -85,8 +85,6 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const configHref = !perfil || pode(perfil, P.CONFIGURACOES_GERENCIAR) ? "/admin/configuracoes"
     : pode(perfil, P.NOTIFICACOES_GERENCIAR) ? "/admin/notificacoes"
     : pode(perfil, P.EQUIPE_GERENCIAR) ? "/admin/equipe"
-    : pode(perfil, P.INTEGRACOES_GERENCIAR_CREDENCIAIS) ? "/admin/integracoes"
-    : pode(perfil, P.MONITORAMENTO_VISUALIZAR) ? "/admin/configuracoes/monitoramento"
     : null;
 
   return (
@@ -121,8 +119,8 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
               </Link>;
             })}
           </nav>
-          {configHref && <Link href={configHref} className={`zip-nav-item${pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes") ? " active" : ""}`} style={navItemStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes"))}>
-            <span style={iconBadgeStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") || pathname.startsWith("/admin/integracoes"))}>⚙</span>Configurações
+          {configHref && <Link href={configHref} className={`zip-nav-item${pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe") ? " active" : ""}`} style={navItemStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe"))}>
+            <span style={iconBadgeStyle(pathname.startsWith("/admin/configuracoes") || pathname.startsWith("/admin/notificacoes") || pathname.startsWith("/admin/equipe"))}>⚙</span>Configurações
           </Link>}
         </div>
 

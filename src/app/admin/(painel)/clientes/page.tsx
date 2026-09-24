@@ -9,6 +9,8 @@ import { formatarMoeda } from "@/lib/utils";
 import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
 import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
 import styles from "@/components/admin/lista/AdminLista.module.css";
+import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
+import { CrmOperacao } from "@/features/admin/IntegracoesOperacao";
 
 /**
  * Clientes — padrão visual aprovado (referência k338) sobre os dados reais da
@@ -202,7 +204,7 @@ export default function ClientesPage() {
         <p className={styles.pageSub}>Gerencie clientes recebidas pelo CRM e acompanhe o processo de cadastro.</p>
       </div>
       <div className={styles.pageHeadRight}>
-        <div className={styles.headButtons}><button className={styles.primaryBtn} type="button" onClick={() => abrir(null, "profile", null)}><Svg d={ICON.plus} />Nova cliente</button></div>
+        <div className={styles.headButtons}><PainelOperacaoIntegracao rotulo="Importações do RD" titulo="Importações do RD Station" descricao="Importar negociações e revisar possíveis duplicidades. Toda venda nova entra em Aguardando cadastro."><CrmOperacao modo="equipe" /></PainelOperacaoIntegracao><button className={styles.primaryBtn} type="button" onClick={() => abrir(null, "profile", null)}><Svg d={ICON.plus} />Nova cliente</button></div>
         <div className={styles.decorative}><span className={styles.decorativeLine} /><span className={styles.decorativeText}>Organização que<br />transforma.</span></div>
       </div>
     </section>

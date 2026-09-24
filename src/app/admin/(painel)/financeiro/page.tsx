@@ -11,6 +11,8 @@ import { FUNIL_CLIENTE_LABEL } from "@/features/financeiro/types";
 import type { ClienteFunilItem, FunilClienteBucket } from "@/features/financeiro/types";
 import type { Cliente } from "@/types/database";
 import styles from "@/components/admin/lista/AdminLista.module.css";
+import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
+import { ContaAzulOperacao } from "@/features/admin/IntegracoesOperacao";
 
 /**
  * Financeiro — padrão visual aprovado (referência k338) sobre o funil real
@@ -120,6 +122,7 @@ export default function FinanceiroPage() {
         <p className={styles.pageSub}>Conferência de comprovantes, controle de parcelas e operações financeiras em um único espaço.</p>
       </div>
       <div className={styles.pageHeadRight}>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}><PainelOperacaoIntegracao rotulo="Conta Azul" titulo="Conta Azul" descricao="Conflitos, fila de envio, vínculos e sincronização das parcelas com a Conta Azul."><ContaAzulOperacao modo="equipe" /></PainelOperacaoIntegracao></div>
         <div className={styles.decorative}><span className={styles.decorativeLine} /><span className={styles.decorativeText}>Disciplina hoje,<br />liberdade sempre.</span></div>
       </div>
     </section>

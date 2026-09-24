@@ -5,7 +5,7 @@ import { Bell, CalendarDays, Cable, Check, ChevronRight, LockKeyhole, RotateCcw,
 import styles from "./AdminWorkspace.module.css";
 import { useRegrasApp } from "@/lib/regrasOperacionais";
 
-type WorkspaceTab = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes" | "integracoes" | "monitoramento";
+type WorkspaceTab = "geral" | "agenda" | "elegibilidade" | "notificacoes" | "equipe" | "permissoes";
 type Config = { meta_orcamento_mensal?: number };
 type Colaborador = { id:string; nome:string; email:string; cargo:string; ativo:boolean; permissoes?:string[] };
 type Integracao = { id:string; nome:string; detalhes:string; conexaoLiveVerificada:boolean; estado:string };
@@ -128,9 +128,9 @@ export function AdminSettingsOverview({ onNavigate }: { onNavigate: (tab: Worksp
       </section>
 
       <section className={styles.summaryCard}>
-        <div className={styles.summaryHead}><div className={styles.cardTitle}><span><Cable size={20}/></span><div><h2>Integrações</h2><p>Conecte o sistema com serviços externos.</p></div></div><button type="button" onClick={()=>onNavigate("integracoes")}>Gerenciar <ChevronRight size={13}/></button></div>
+        <div className={styles.summaryHead}><div className={styles.cardTitle}><span><Cable size={20}/></span><div><h2>Integrações</h2><p>Status das conexões com serviços externos.</p></div></div><span className={styles.fixedValue} title="Chaves e configurações das integrações são gerenciadas pelo Dev.">Status <LockKeyhole size={11}/></span></div>
         <div className={styles.integrationList}>
-          {integracoesVisiveis.map(i=><button type="button" key={i.id} className={styles.integrationRow} onClick={()=>onNavigate("integracoes")}><span className={styles.integrationIcon}>{i.nome.slice(0,2).toUpperCase()}</span><span><strong>{i.nome}</strong><small>{i.detalhes}</small></span><em data-on={i.conexaoLiveVerificada}>{i.conexaoLiveVerificada?"Conectado":"Configurar"}</em><span>•••</span></button>)}
+          {integracoesVisiveis.map(i=><div key={i.id} className={styles.integrationRow}><span className={styles.integrationIcon}>{i.nome.slice(0,2).toUpperCase()}</span><span><strong>{i.nome}</strong><small>{i.detalhes}</small></span><em data-on={i.conexaoLiveVerificada}>{i.conexaoLiveVerificada?"Conectado":"Não conectado"}</em></div>)}
         </div>
       </section>
     </div>

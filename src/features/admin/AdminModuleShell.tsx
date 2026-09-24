@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  BarChart3, Bell, CalendarDays, CircleDollarSign, FileCheck2, LayoutDashboard, Link2, LogOut, Menu,
+  BarChart3, Bell, CalendarDays, CircleDollarSign, FileCheck2, LayoutDashboard, LogOut, Menu,
   Settings, UserCog, Users, WalletCards, X,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/ui/ThemeToggle";
@@ -14,7 +14,6 @@ const NAV = [
   ["/admin/liberacoes", "Liberações", FileCheck2],
   ["/admin/financeiro", "Financeiro", CircleDollarSign],
   ["/admin/parcelas", "Parcelas & Boletos", WalletCards],
-  ["/admin/integracoes", "Integrações", Link2],
   ["/admin/relatorios", "Relatórios", BarChart3],
   ["/admin/equipe", "Equipe", UserCog],
   ["/admin/notificacoes", "Notificações", Bell],

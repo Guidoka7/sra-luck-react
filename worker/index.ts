@@ -12,6 +12,8 @@ import { adminParcelas } from "./admin-parcelas";
 import { adminNotificacoes } from "./admin-notificacoes";
 import { agendarDespacho } from "./notificacoes-despacho";
 import { atualizarRegrasOperacionais, regrasOperacionaisApi } from "./regras-operacionais";
+import { rotaExclusivaDoDev } from "./admin-rotas-dev";
+import { DEV_CONSOLE_ADMIN_PREFIX } from "./dev-console-auth";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
 import { adminRelatorios } from "./admin-relatorios";
@@ -376,6 +378,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
     const denied = await exigirAdmin(request, env, ["GET", "HEAD"].includes(request.method) ? adminReadPermissions(url.pathname) : null);
     if (denied) return denied;
+    // Integrações (chaves, configuração, conexões) e Monitoramento: só o Dev.
+    if (rotaExclusivaDoDev(url.pathname, request.method)) {
+      const sessaoDev = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET!);
+      if (!sessaoDev?.adminId?.startsWith(DEV_CONSOLE_ADMIN_PREFIX)) return json({ erro: "Área exclusiva do Dev.", codigo: "AREA_EXCLUSIVA_DEV" }, 403, { "Cache-Control": "no-store" });
+    }
     // Regras operacionais (prazo, teto, percentuais) em cache de 1 min, só depois da autenticação.
     await atualizarRegrasOperacionais(env).catch(() => undefined);
   }
