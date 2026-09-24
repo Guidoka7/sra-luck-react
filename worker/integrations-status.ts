@@ -44,8 +44,8 @@ async function exigirAdminAtivo(request: Request, env: Env) {
   return { resposta: null, adminId: sessao.adminId };
 }
 
-async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string) {
-  const { error } = await db.from(tabela).select("id", { count: "exact", head: true });
+async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string, chave = "id") {
+  const { error } = await db.from(tabela).select(chave, { count: "exact", head: true });
   return !error;
 }
 
@@ -198,7 +198,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
 
   const [geminiChave, frasesTabela, { data: testeGemini }, { count: frasesIa }] = await Promise.all([
     obterCredencial(env, "gemini", "api_key"),
-    tabelaDisponivel(db, "mensagens_do_dia"),
+    tabelaDisponivel(db, "mensagens_do_dia", "data"),
     db.from("logs_alteracoes").select("created_at,detalhes").eq("acao", "testou_conexao_integracao").eq("entidade_id", "gemini").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("mensagens_do_dia").select("data", { count: "exact", head: true }).eq("origem", "ia"),
   ]);
@@ -207,7 +207,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     id: "gemini", nome: "Gemini (frase do dia)", grupo: "comunicacao", estado: estadoBase(frasesTabela, Boolean(geminiChave)),
     credenciaisConfiguradas: Boolean(geminiChave), persistenciaPronta: frasesTabela, conexaoLiveVerificada: geminiConectado,
     detalhes: geminiChave
-      ? "Rotina diária (00:05) gera 1 mensagem do dia, igual para todas as clientes, sem enviar dados pessoais. Se o Gemini falhar, salva a frase de reserva."
+      ? "Rotina diária (00:05) prepara 1 candidata global, sem dados pessoais. A equipe aprova antes de publicar; se o Gemini falhar, o app mostra a frase de reserva."
       : "Cole a API Key gratuita do Google AI Studio para ativar a mensagem do dia por IA. Enquanto isso, a rotina diária usa o catálogo de frases.",
     eventosRegistrados: frasesIa ?? 0,
     ultimaVerificacao: testeGemini?.created_at ?? null,
