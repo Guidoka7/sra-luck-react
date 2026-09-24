@@ -348,6 +348,25 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
     return json({ url: assinado.signedUrl });
   }
 
+  const resgateStatus = path.match(/^\/api\/admin\/credit-ops\/club\/resgates\/([^/]+)\/status$/);
+  if (resgateStatus && request.method === "POST") {
+    const b = await lerCorpo(request);
+    const status = String(b.status ?? "");
+    if (!["aprovado", "separacao", "entregue", "cancelado"].includes(status)) return json({ erro: "Status de resgate inválido." }, 400);
+    const { data, error } = await db.rpc("clube_atualizar_resgate", {
+      p_resgate_id: decodeURIComponent(resgateStatus[1]),
+      p_status: status,
+      p_usuario: usuario,
+    });
+    if (error) {
+      const mensagem = String(error.message ?? "");
+      if (/Resgate nao encontrado/.test(mensagem)) return json({ erro: "Resgate não encontrado." }, 404);
+      if (/Transicao de resgate invalida/.test(mensagem) || /Resgate ja finalizado/.test(mensagem)) return json({ erro: "Este resgate não permite essa alteração de status." }, 409);
+      return json({ erro: publicError(error) }, 500);
+    }
+    return json({ resgate: data });
+  }
+
   if (path === "/api/admin/credit-ops/club/config" && request.method === "POST") {
     const b = await lerCorpo(request);
     const valor = (campo: unknown) => {

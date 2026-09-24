@@ -166,7 +166,7 @@ export default function ClubeAdminPage() {
 
         {aba === "beneficios" && <PainelBeneficios recompensas={dados.recompensas} onAtualizado={carregar} />}
         {aba === "vouchers" && <PainelVouchers vouchers={dados.vouchers} onAtualizado={carregar} />}
-        {aba === "resgates" && <PainelResgates resgates={dados.resgates} />}
+        {aba === "resgates" && <PainelResgates resgates={dados.resgates} onAtualizado={carregar} />}
         {aba === "pontuacao" && <PainelPontuacao config={dados.config} onSalvo={carregar} />}
       </>}
     </div>
@@ -681,7 +681,8 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
   </div>;
 }
 
-function PainelResgates({ resgates }: { resgates: Resgate[] }) {
+function PainelResgates({ resgates, onAtualizado }: { resgates: Resgate[]; onAtualizado: () => Promise<void> }) {
+  const [ocupado, setOcupado] = useState<string | null>(null);
   const kind = (status: string): ZipKind => status === "entregue" ? "ok" : status === "cancelado" ? "bad" : status === "solicitado" ? "warn" : "rose";
   const rotulo = (status: string) => ({
     solicitado: "Solicitado",
@@ -690,18 +691,48 @@ function PainelResgates({ resgates }: { resgates: Resgate[] }) {
     entregue: "Entregue",
     cancelado: "Cancelado",
   } as Record<string, string>)[status] ?? status;
+  const proximos = (status: string): Array<{ status: string; label: string; danger?: boolean }> => {
+    if (status === "solicitado") return [{ status: "aprovado", label: "Aprovar" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    if (status === "aprovado") return [{ status: "separacao", label: "Em separação" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    if (status === "separacao") return [{ status: "entregue", label: "Entregue" }, { status: "cancelado", label: "Cancelar", danger: true }];
+    return [];
+  };
+
+  async function atualizar(r: Resgate, novoStatus: string) {
+    if (novoStatus === "cancelado" && !window.confirm(`Cancelar o resgate de “${r.recompensa?.titulo ?? "Benefício"}”? Os ${r.pontos.toLocaleString("pt-BR")} pontos serão devolvidos à cliente e o estoque será reposto.`)) return;
+    setOcupado(r.id);
+    try {
+      await api(`/api/admin/credit-ops/club/resgates/${encodeURIComponent(r.id)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: novoStatus }),
+      });
+      toast.success(novoStatus === "cancelado" ? "Resgate cancelado e pontos devolvidos." : `Resgate atualizado para “${rotulo(novoStatus)}”.`);
+      await onAtualizado();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível atualizar o resgate.");
+    } finally {
+      setOcupado(null);
+    }
+  }
 
   return <div style={cartao}>
-    <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", fontSize: 11.5, color: "var(--soft)" }}>Histórico recente de resgates feitos pelas clientes no catálogo de benefícios.</div>
+    <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", fontSize: 11.5, color: "var(--soft)" }}>Acompanhe e processe os resgates. Cancelamentos antes da entrega devolvem os pontos automaticamente e recompõem o estoque.</div>
     {resgates.length === 0 ? <div className={styles.empty}>Nenhum resgate registrado ainda.</div> : <div className={styles.redemptionTable}>
-      <div className={styles.redemptionHead}><span>Cliente</span><span>Benefício</span><span>Pontos</span><span>Data</span><span>Status</span></div>
-      {resgates.map((r) => <div key={r.id} className={styles.redemptionRow}>
-        <div><strong>{r.cliente?.nome_completo ?? "—"}</strong><div style={{ color: "var(--soft)", fontSize: 9, marginTop: 2 }}>{r.cliente?.cpf ?? ""}</div></div>
-        <div>{r.recompensa?.titulo ?? "Benefício"}</div>
-        <strong style={{ color: "var(--bg)" }}>{r.pontos.toLocaleString("pt-BR")}</strong>
-        <span style={{ color: "var(--soft)" }}>{data(r.created_at)}</span>
-        <span style={zipChip(kind(r.status))}>{rotulo(r.status)}</span>
-      </div>)}
+      <div className={styles.redemptionHead}><span>Cliente</span><span>Benefício</span><span>Pontos</span><span>Data</span><span>Status</span><span>Ações</span></div>
+      {resgates.map((r) => {
+        const acoes = proximos(r.status);
+        return <div key={r.id} className={styles.redemptionRow}>
+          <div><strong>{r.cliente?.nome_completo ?? "—"}</strong><div style={{ color: "var(--soft)", fontSize: 9, marginTop: 2 }}>{r.cliente?.cpf ?? ""}</div></div>
+          <div>{r.recompensa?.titulo ?? "Benefício"}</div>
+          <strong style={{ color: "var(--bg)" }}>{r.pontos.toLocaleString("pt-BR")}</strong>
+          <span style={{ color: "var(--soft)" }}>{data(r.created_at)}</span>
+          <span style={zipChip(kind(r.status))}>{rotulo(r.status)}</span>
+          <div className={styles.redemptionActions}>
+            {acoes.length === 0 ? <span className={styles.redemptionDone}>Concluído</span> : acoes.map((a) => <button type="button" key={a.status} disabled={ocupado === r.id} data-danger={Boolean(a.danger)} onClick={() => void atualizar(r, a.status)}>{ocupado === r.id ? "…" : a.label}</button>)}
+          </div>
+        </div>;
+      })}
     </div>}
   </div>;
 }
