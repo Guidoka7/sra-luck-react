@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { formatarMoeda } from "@/lib/utils";
+import { adicionarDiasCivil, hojeSaoPaulo } from "@/lib/dataCivil";
 import PrevisoesDetalhes from "./PrevisoesDetalhes";
 import styles from "./previsoes.module.css";
 
@@ -77,18 +78,6 @@ const STATUS_LABEL: Record<FiltroStatus, string> = {
 const DIAS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
-function isoLocal(data = new Date()) {
-  const y = data.getFullYear();
-  const m = String(data.getMonth() + 1).padStart(2, "0");
-  const d = String(data.getDate()).padStart(2, "0");
-  return y + "-" + m + "-" + d;
-}
-function adicionarDias(iso: string, dias: number) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const data = new Date(y, m - 1, d);
-  data.setDate(data.getDate() + dias);
-  return isoLocal(data);
-}
 function labelData(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const data = new Date(y, m - 1, d);
@@ -186,9 +175,9 @@ export default function PrevisoesPage() {
     return ids;
   }, [clientes, responsavel, procedimento, status, forecast, forecastPorId, agendaPorCliente]);
 
-  const hoje = isoLocal();
-  const fim = adicionarDias(hoje, periodo - 1);
-  const fimComparacao = adicionarDias(fim, periodo);
+  const hoje = hojeSaoPaulo();
+  const fim = adicionarDiasCivil(hoje, periodo - 1);
+  const fimComparacao = adicionarDiasCivil(fim, periodo);
 
   const boletosFiltrados = useMemo(() => boletos.filter((b) => clientePermitido.has(b.cliente_id)), [boletos, clientePermitido]);
   const forecastFiltrado = useMemo(() => forecast.filter((f) => clientePermitido.has(f.clienteId)), [forecast, clientePermitido]);
@@ -212,8 +201,8 @@ export default function PrevisoesPage() {
     const tamanho = periodo <= 30 ? 2 : periodo <= 60 ? 4 : 6;
     const lista: Array<{ inicio: string; fim: string; label: string; recebimentos: number; cirurgias: number; liberacoes: number }> = [];
     for (let i = 0; i < periodo; i += tamanho) {
-      const ini = adicionarDias(hoje, i);
-      const end = adicionarDias(hoje, Math.min(periodo - 1, i + tamanho - 1));
+      const ini = adicionarDiasCivil(hoje, i);
+      const end = adicionarDiasCivil(hoje, Math.min(periodo - 1, i + tamanho - 1));
       lista.push({
         inicio: ini,
         fim: end,
@@ -281,7 +270,7 @@ export default function PrevisoesPage() {
     const datas: string[] = [];
     let deslocamento = 0;
     while (datas.length < 5 && deslocamento < 10) {
-      const iso = adicionarDias(hoje, deslocamento++);
+      const iso = adicionarDiasCivil(hoje, deslocamento++);
       const [y, m, d] = iso.split("-").map(Number);
       const dow = new Date(y, m - 1, d).getDay();
       if (dow !== 0 && dow !== 6) datas.push(iso);
@@ -297,7 +286,7 @@ export default function PrevisoesPage() {
   }, [hoje, cirurgiasFiltradas, forecastFiltrado, boletosFiltrados]);
 
   const proximoPeriodo = useMemo(() => {
-    const ini = adicionarDias(fim, 1);
+    const ini = adicionarDiasCivil(fim, 1);
     return {
       inicio: ini,
       fim: fimComparacao,
@@ -325,7 +314,7 @@ export default function PrevisoesPage() {
   if (detalhes) {
     return <div className="zip-admin">
       <button type="button" className={styles.backButton} onClick={() => setDetalhes(false)}>← Voltar ao painel de previsões</button>
-      <PrevisoesDetalhes allowedClientIds={Array.from(clientePermitido)} />
+      <PrevisoesDetalhes allowedClientIds={Array.from(clientePermitido)} initialHorizonMonths={Math.max(1, Math.ceil(periodo / 30))} />
     </div>;
   }
 

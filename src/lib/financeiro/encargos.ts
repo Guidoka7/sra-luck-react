@@ -8,23 +8,10 @@
  * O cálculo usa data civil de Brasília/São Paulo para não depender do timezone
  * do navegador ou do runtime serverless.
  */
+import { hojeSaoPaulo, ordinalDataCivil } from "@/lib/dataCivil";
+
 export const JUROS_MORA_DIARIO = 0.002;
 export const MULTA_ATRASO = 0.02;
-
-export function hojeSaoPaulo(agora = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(agora);
-}
-
-function ordinalDataCivil(iso: string): number {
-  const match = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) throw new Error("DATA_CIVIL_INVALIDA");
-  return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000);
-}
 
 export function calcularEncargosAtraso(valor: number, vencimentoIso: string, hojeIso = hojeSaoPaulo()) {
   const nominal = Number(valor);
