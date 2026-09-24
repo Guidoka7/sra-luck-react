@@ -14,6 +14,7 @@ type Db = ReturnType<typeof createServiceSupabaseClient>;
 
 const BUCKET_VOUCHERS = "clube-vouchers";
 const PADRAO = { pontosPrimeiraParcela: 50, pontosParcelaEmDia: 10, pontosIndicacao: 200 };
+const CAMPANHA_TIPOS = new Set(["primeira_parcela", "parcela_em_dia", "indicacao", "resgate", "informativa"]);
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -68,7 +69,7 @@ export function montarMissoes(eventos: EventoPontos[], parcelas: ParcelaResumo[]
 
 export async function clubeClienteApi(path: string, request: Request, db: Db, clienteId: string): Promise<Response | null> {
   if (path === "/api/cliente/credit-ops/club" && request.method === "GET") {
-    const [saldoR, premiosR, extratoR, beneficiosR, indicacoesR, configR, parcelasR, resgatesR] = await Promise.all([
+    const [saldoR, premiosR, extratoR, beneficiosR, indicacoesR, configR, parcelasR, resgatesR, campanhasR] = await Promise.all([
       db.from("cliente_pontos").select("saldo").eq("cliente_id", clienteId).maybeSingle(),
       db.from("clube_recompensas").select("*").eq("ativo", true).is("excluido_em", null).order("ordem").order("pontos"),
       db.from("cliente_pontos_eventos").select("*").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(200),
@@ -77,8 +78,9 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
       db.from("clube_config").select("*").eq("id", 1).maybeSingle(),
       db.from("boletos").select("numero_parcela,status,data_vencimento").eq("cliente_id", clienteId),
       db.from("clube_resgates").select("id,pontos,status,created_at,clube_recompensas(titulo)").eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(30),
+      db.from("clube_campanhas").select("id,chave,tipo,titulo,descricao,recompensa_texto,ativo,ordem,created_at").eq("ativo", true).is("excluido_em", null).order("ordem").order("created_at"),
     ]);
-    const erro = saldoR.error ?? premiosR.error ?? extratoR.error ?? beneficiosR.error ?? indicacoesR.error ?? parcelasR.error;
+    const erro = saldoR.error ?? premiosR.error ?? extratoR.error ?? beneficiosR.error ?? indicacoesR.error ?? parcelasR.error ?? campanhasR.error;
     if (erro) {
       console.error("Falha ao carregar Clube de Vantagens da cliente:", erro);
       return json({ erro: "Não foi possível carregar o Clube de Vantagens agora." }, 500);
@@ -90,6 +92,7 @@ export async function clubeClienteApi(path: string, request: Request, db: Db, cl
       saldo: Number(saldoR.data?.saldo ?? 0),
       config,
       recompensas: premiosR.data ?? [],
+      campanhas: campanhasR.data ?? [],
       historico: extrato.slice(0, 50),
       missoes: montarMissoes(extrato as EventoPontos[], (parcelasR.data ?? []) as ParcelaResumo[], config),
       // O caminho do arquivo nunca vai para o navegador: só se há voucher anexado.
@@ -196,6 +199,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
       configR,
       recompensasR,
       resgatesR,
+      campanhasR,
       clientesClubeR,
       indicacoesAprovadasR,
       beneficiosResgatadosR,
@@ -207,6 +211,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
       db.from("clube_config").select("*").eq("id", 1).maybeSingle(),
       db.from("clube_recompensas").select("*").is("excluido_em", null).order("ordem").order("pontos"),
       db.from("clube_resgates").select("*").order("created_at", { ascending: false }).limit(300),
+      db.from("clube_campanhas").select("*").is("excluido_em", null).order("ordem").order("created_at"),
       db.from("cliente_pontos").select("cliente_id", { count: "exact", head: true }),
       db.from("indicacoes_clientes").select("id", { count: "exact", head: true }).eq("status", "venda"),
       db.from("clube_resgates").select("id", { count: "exact", head: true }).neq("status", "cancelado"),
@@ -219,7 +224,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
         .limit(5000),
     ]);
     const erro =
-      indicacoesR.error ?? vouchersR.error ?? recompensasR.error ?? resgatesR.error ??
+      indicacoesR.error ?? vouchersR.error ?? recompensasR.error ?? resgatesR.error ?? campanhasR.error ??
       clientesClubeR.error ?? indicacoesAprovadasR.error ?? beneficiosResgatadosR.error ??
       resgatesPendentesR.error ?? eventosMesR.error;
     if (erro) return json({ erro: publicError(erro) }, 500);
@@ -271,6 +276,7 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
       })),
       vouchers: vouchers.map(({ arquivo_path, ...v }) => ({ ...v, arquivo_disponivel: Boolean(arquivo_path), cliente: porId.get(String(v.cliente_id)) ?? null })),
       recompensas,
+      campanhas: campanhasR.data ?? [],
       resgates: resgates.map((r) => ({
         ...r,
         cliente: porId.get(String(r.cliente_id)) ?? null,
@@ -346,6 +352,59 @@ export async function clubeAdminApi(path: string, request: Request, db: Db, usua
     const { data: assinado, error } = await db.storage.from(BUCKET_VOUCHERS).createSignedUrl(data.arquivo_path, 300);
     if (error || !assinado?.signedUrl) return json({ erro: "Não foi possível abrir o arquivo agora." }, 500);
     return json({ url: assinado.signedUrl });
+  }
+
+  if (path === "/api/admin/credit-ops/club/campanhas" && request.method === "POST") {
+    const b = await lerCorpo(request);
+    const titulo = String(b.titulo ?? "").trim().replace(/\s+/g, " ");
+    const descricao = typeof b.descricao === "string" ? b.descricao.trim().slice(0, 500) || null : null;
+    const tipo = String(b.tipo ?? "");
+    const recompensaTexto = typeof b.recompensaTexto === "string" ? b.recompensaTexto.trim().slice(0, 120) || null : null;
+    const ordem = Number.isInteger(Number(b.ordem)) ? Math.max(-10000, Math.min(10000, Number(b.ordem))) : 0;
+    if (titulo.length < 2 || titulo.length > 120) return json({ erro: "Informe um nome de campanha entre 2 e 120 caracteres." }, 400);
+    if (!CAMPANHA_TIPOS.has(tipo)) return json({ erro: "Tipo de campanha inválido." }, 400);
+    const { data, error } = await db.from("clube_campanhas").insert({
+      titulo, descricao, tipo, recompensa_texto: tipo === "informativa" ? recompensaTexto : null,
+      ordem, ativo: b.ativo !== false,
+    }).select("*").single();
+    if (error) return json({ erro: publicError(error) }, 500);
+    await db.from("logs_alteracoes").insert({ usuario, acao: "criou_campanha_clube", entidade: "clube_campanhas", entidade_id: data.id, detalhes: { tipo, titulo } });
+    return json({ campanha: data }, 201);
+  }
+
+  const campanha = path.match(/^\/api\/admin\/credit-ops\/club\/campanhas\/([^/]+)$/);
+  if (campanha && request.method === "PATCH") {
+    const id = decodeURIComponent(campanha[1]);
+    const b = await lerCorpo(request);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if ("titulo" in b) {
+      const titulo = String(b.titulo ?? "").trim().replace(/\s+/g, " ");
+      if (titulo.length < 2 || titulo.length > 120) return json({ erro: "Informe um nome de campanha entre 2 e 120 caracteres." }, 400);
+      patch.titulo = titulo;
+    }
+    if ("descricao" in b) patch.descricao = typeof b.descricao === "string" ? b.descricao.trim().slice(0, 500) || null : null;
+    if ("tipo" in b) {
+      const tipo = String(b.tipo ?? "");
+      if (!CAMPANHA_TIPOS.has(tipo)) return json({ erro: "Tipo de campanha inválido." }, 400);
+      patch.tipo = tipo;
+      if (tipo !== "informativa") patch.recompensa_texto = null;
+    }
+    if ("recompensaTexto" in b && (patch.tipo === "informativa" || !("tipo" in b))) patch.recompensa_texto = typeof b.recompensaTexto === "string" ? b.recompensaTexto.trim().slice(0, 120) || null : null;
+    if ("ordem" in b) patch.ordem = Number.isInteger(Number(b.ordem)) ? Math.max(-10000, Math.min(10000, Number(b.ordem))) : 0;
+    if ("ativo" in b) patch.ativo = b.ativo === true;
+    const { data, error } = await db.from("clube_campanhas").update(patch).eq("id", id).is("excluido_em", null).select("*").maybeSingle();
+    if (error) return json({ erro: publicError(error) }, 500);
+    if (!data) return json({ erro: "Campanha não encontrada." }, 404);
+    await db.from("logs_alteracoes").insert({ usuario, acao: "alterou_campanha_clube", entidade: "clube_campanhas", entidade_id: id, detalhes: { campos: Object.keys(patch).filter((k) => k !== "updated_at") } });
+    return json({ campanha: data });
+  }
+  if (campanha && request.method === "DELETE") {
+    const id = decodeURIComponent(campanha[1]);
+    const { data, error } = await db.from("clube_campanhas").update({ ativo: false, excluido_em: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).is("excluido_em", null).select("id,titulo").maybeSingle();
+    if (error) return json({ erro: publicError(error) }, 500);
+    if (!data) return json({ erro: "Campanha não encontrada." }, 404);
+    await db.from("logs_alteracoes").insert({ usuario, acao: "excluiu_campanha_clube", entidade: "clube_campanhas", entidade_id: id, detalhes: { titulo: data.titulo } });
+    return json({ sucesso: true });
   }
 
   const resgateStatus = path.match(/^\/api\/admin\/credit-ops\/club\/resgates\/([^/]+)\/status$/);
