@@ -101,10 +101,10 @@ export default function PrevisoesDetalhes({ allowedClientIds }: { allowedClientI
   const proximosMeses = useMemo(() => meses.filter((m) => m.mes >= isoHoje).slice(0, horizonte), [meses, horizonte, isoHoje]);
   const barras = useMemo(() => {
     const valoresPorMes = new Map<string, number>();
-    for (const c of clientes) { if (!c.previsao) continue; const mes = c.previsao.slice(0, 7); valoresPorMes.set(mes, (valoresPorMes.get(mes) ?? 0) + Number(c.valorCarta ?? 0)); }
+    for (const c of classificados) { if (!c.previsao) continue; const mes = c.previsao.slice(0, 7); valoresPorMes.set(mes, (valoresPorMes.get(mes) ?? 0) + Number(c.valorCarta ?? 0)); }
     const maxValor = Math.max(...proximosMeses.map((m) => valoresPorMes.get(m.mes) ?? 0), metaOrcamento * 1.2, 1);
     return proximosMeses.map((m) => { const valor = valoresPorMes.get(m.mes) ?? 0; const [, mm] = m.mes.split("-"); return { mes: m.mes, label: MESES_PT[Number(mm) - 1], valor, acima: valor > metaOrcamento, altura: Math.max(4, Math.round((valor / maxValor) * 100)) }; });
-  }, [clientes, proximosMeses, metaOrcamento]);
+  }, [classificados, proximosMeses, metaOrcamento]);
   const refBottomPct = useMemo(() => { const maxValor = Math.max(...barras.map((b) => b.valor), metaOrcamento * 1.2, 1); return Math.round((metaOrcamento / maxValor) * 100); }, [barras, metaOrcamento]);
 
   const elegiveis = classificados.filter((c) => c.situacao === "elegivel").length;
