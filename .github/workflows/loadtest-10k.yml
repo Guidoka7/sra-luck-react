@@ -1,0 +1,247 @@
+name: Isolated 10k Load Test
+
+on:
+  push:
+    branches:
+      - load-test-10k-isolated
+    paths:
+      - ".github/workflows/loadtest-10k.yml"
+      - "loadtest/**"
+
+permissions:
+  contents: read
+
+env:
+  TARGET_BASE: "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app"
+  VERCEL_SHARE: "soSXnzSYuvgaO6wuumpiTtWoybuG2EmN"
+
+jobs:
+  preflight:
+    name: Preflight + full functional suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      start_epoch: ${{ steps.clock.outputs.start_epoch }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run complete automated tests
+        run: npm test
+
+      - name: TypeScript and Worker checks
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Pull k6
+        run: docker pull grafana/k6:latest
+
+      - name: Runtime smoke against isolated Preview
+        env:
+          SHARD: "0"
+          SMOKE: "1"
+        run: |
+          mkdir -p loadtest/results
+          chmod 777 loadtest/results
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            -e TARGET_BASE \
+            -e VERCEL_SHARE \
+            -e SHARD \
+            -e SMOKE \
+            grafana/k6:latest run /work/loadtest/k6-10k.js
+
+      - name: Synchronize shard start
+        id: clock
+        shell: bash
+        run: |
+          START_EPOCH=$(( $(date +%s) + 240 ))
+          echo "start_epoch=$START_EPOCH" >> "$GITHUB_OUTPUT"
+          echo "Load shards will target epoch $START_EPOCH"
+
+  load:
+    name: "Shard ${{ matrix.shard }} — 1000 VUs"
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+
+    env:
+      SHARD: "${{ matrix.shard }}"
+      START_EPOCH: "${{ needs.preflight.outputs.start_epoch }}"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull k6
+        run: docker pull grafana/k6:latest
+
+      - name: Wait for synchronized start
+        shell: bash
+        run: |
+          NOW=$(date +%s)
+          if [ "$NOW" -lt "$START_EPOCH" ]; then
+            WAIT=$((START_EPOCH - NOW))
+            echo "Waiting $WAIT seconds for synchronized start..."
+            sleep "$WAIT"
+          fi
+
+      - name: Run 1000 virtual users for 30-minute plateau
+        run: |
+          mkdir -p loadtest/results
+          chmod 777 loadtest/results
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            -e TARGET_BASE \
+            -e VERCEL_SHARE \
+            -e SHARD \
+            grafana/k6:latest run /work/loadtest/k6-10k.js
+
+      - name: Upload shard result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "loadtest-shard-${{ matrix.shard }}"
+          path: "loadtest/results/shard-${{ matrix.shard }}.json"
+          if-no-files-found: warn
+          retention-days: 3
+
+  aggregate:
+    name: Aggregate load report
+    needs: [preflight, load]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download shard artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: loadtest-shard-*
+          path: load-results
+          merge-multiple: true
+
+      - name: Aggregate JSON metrics
+        env:
+          LOAD_RESULT: "${{ needs.load.result }}"
+          PREFLIGHT_RESULT: "${{ needs.preflight.result }}"
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const dir = 'load-results';
+          const files = fs.existsSync(dir)
+            ? fs.readdirSync(dir).filter(f => /^shard-\d+\.json$/.test(f)).sort()
+            : [];
+
+          const shards = files.map(file => JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')));
+          const metric = (s, name) => s.metrics?.[name]?.values || {};
+          const sum = xs => xs.reduce((a,b) => a + (Number.isFinite(b) ? b : 0), 0);
+          const max = xs => xs.length ? Math.max(...xs.filter(Number.isFinite)) : null;
+
+          const requests = shards.map(s => Number(metric(s, 'http_reqs').count || 0));
+          const failedRates = shards.map(s => Number(metric(s, 'http_req_failed').rate || 0));
+          const failedApprox = shards.map((s,i) => requests[i] * failedRates[i]);
+          const server5xxTrue = shards.map(s => Number(metric(s, 'server_5xx').passes || 0));
+          const appRequests = shards.map(s => Number(metric(s, 'app_requests').count || 0));
+
+          const routeMap = {};
+          for (const s of shards) {
+            for (const [name, m] of Object.entries(s.metrics || {})) {
+              const match = name.match(/^route_fail\{route:(.+)\}$/);
+              if (!match) continue;
+              const route = match[1];
+              const values = m.values || {};
+              const failures = Number(values.passes || 0);
+              const successes = Number(values.fails || 0);
+              const total = failures + successes;
+              const row = routeMap[route] || { failures: 0, total: 0, maxRate: 0 };
+              row.failures += failures;
+              row.total += total;
+              row.maxRate = Math.max(row.maxRate, Number(values.rate || 0));
+              routeMap[route] = row;
+            }
+          }
+
+          const routes = Object.entries(routeMap)
+            .map(([route, r]) => ({
+              route,
+              failures: r.failures,
+              total: r.total,
+              failureRate: r.total ? r.failures / r.total : 0,
+              maxShardFailureRate: r.maxRate,
+            }))
+            .sort((a,b) => b.failureRate - a.failureRate || b.failures - a.failures);
+
+          const totalRequests = sum(requests);
+          const totalAppRequests = sum(appRequests);
+          const aggregate = {
+            generatedAt: new Date().toISOString(),
+            expectedShards: 10,
+            completedShards: shards.length,
+            preflightResult: process.env.PREFLIGHT_RESULT,
+            loadResult: process.env.LOAD_RESULT,
+            totalHttpRequests: totalRequests,
+            totalAppRequests,
+            approximateHttpFailures: sum(failedApprox),
+            approximateHttpFailureRate: totalRequests ? sum(failedApprox) / totalRequests : null,
+            totalServer5xx: sum(server5xxTrue),
+            server5xxRateOnAppRequests: totalAppRequests ? sum(server5xxTrue) / totalAppRequests : null,
+            maxShardP95Ms: max(shards.map(s => Number(metric(s, 'http_req_duration')['p(95)']))),
+            maxShardP99Ms: max(shards.map(s => Number(metric(s, 'http_req_duration')['p(99)']))),
+            maxObservedMs: max(shards.map(s => Number(metric(s, 'http_req_duration').max))),
+            routes,
+          };
+
+          fs.writeFileSync('aggregate.json', JSON.stringify(aggregate, null, 2));
+
+          const pct = v => v == null ? 'n/a' : (v * 100).toFixed(2) + '%';
+          const ms = v => v == null || !Number.isFinite(v) ? 'n/a' : Math.round(v) + ' ms';
+
+          const broken = routes.filter(r => r.failures > 0).slice(0, 20);
+          let md = '';
+          md += '# Sra. Luck — teste isolado de 10.000 acessos simultâneos\n\n';
+          md += `- Shards concluídos: ${aggregate.completedShards}/10\n`;
+          md += `- Requisições HTTP: ${aggregate.totalHttpRequests}\n`;
+          md += `- Falhas HTTP aproximadas: ${aggregate.approximateHttpFailures.toFixed(0)} (${pct(aggregate.approximateHttpFailureRate)})\n`;
+          md += `- Respostas 5xx: ${aggregate.totalServer5xx} (${pct(aggregate.server5xxRateOnAppRequests)})\n`;
+          md += `- Maior p95 entre shards: ${ms(aggregate.maxShardP95Ms)}\n`;
+          md += `- Maior p99 entre shards: ${ms(aggregate.maxShardP99Ms)}\n`;
+          md += `- Maior latência observada: ${ms(aggregate.maxObservedMs)}\n`;
+          md += `- Resultado do preflight: ${aggregate.preflightResult}\n`;
+          md += `- Resultado dos shards: ${aggregate.loadResult}\n\n`;
+          md += '## Rotas com falha\n\n';
+          if (!broken.length) md += 'Nenhuma falha registrada nas rotas instrumentadas.\n';
+          else for (const r of broken) md += `- ${r.route}: ${r.failures}/${r.total} (${pct(r.failureRate)})\n`;
+
+          fs.writeFileSync('summary.md', md);
+          console.log(md);
+          NODE
+
+      - name: Upload final report
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-final-report
+          path: |
+            aggregate.json
+            summary.md
+          if-no-files-found: warn
+          retention-days: 3
