@@ -179,7 +179,13 @@ function call(method, path, cookie, name, body = null) {
     headers,
     tags: { name },
     redirects: 5,
+    responseType: SMOKE ? "text" : "none",
   });
+
+  if (SMOKE) {
+    const snippet = res.status >= 400 ? String(res.body || "").replace(/\s+/g, " ").slice(0, 300) : "";
+    console.log(`[SMOKE] ${name} HTTP ${res.status}${snippet ? ` :: ${snippet}` : ""}`);
+  }
 
   const failed = !(res.status >= 200 && res.status < 400);
   routeFail.add(failed, { route: name });
