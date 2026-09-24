@@ -3,6 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-sender";
+import { adicionarDiasCivil, hojeSaoPaulo } from "../src/lib/dataCivil";
 
 const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3 };
 
@@ -184,8 +185,8 @@ async function registrarNotificacao(env: Env, db: Db, input: {
 }
 
 async function executarVencimentos(env: Env, db: Db) {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const limite = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  const hoje = hojeSaoPaulo();
+  const limite = adicionarDiasCivil(hojeSaoPaulo(), 2);
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
     db.from("notificacao_templates").select("id,dias_referencia,titulo,corpo,emoji").eq("tipo", "parcela_vencer").eq("is_active", true),
     db.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,clientes(nome_completo)").gte("data_vencimento", hoje).lte("data_vencimento", limite).neq("status", "pago"),
@@ -249,7 +250,7 @@ async function executarAtrasos(env: Env, db: Db, forcar = false) {
 
   const frequenciaHoras = Math.max(1, Number(config.frequencia_atraso_horas || 24));
   const cutoff = new Date(Date.now() - frequenciaHoras * 60 * 60 * 1000).toISOString();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeSaoPaulo();
   const [{ data: templates, error: templatesError }, { data: boletos, error: boletosError }] = await Promise.all([
     db.from("notificacao_templates").select("id,dias_referencia,titulo,corpo,emoji").eq("tipo", "parcela_atrasada").eq("is_active", true).order("dias_referencia", { ascending: true }),
     db.from("boletos").select("id,cliente_id,numero_parcela,total_parcelas,valor,data_vencimento,clientes(nome_completo)").lt("data_vencimento", hoje).neq("status", "pago"),
@@ -367,8 +368,8 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
         db.from("notificacao_templates").select("id,tipo,dias_referencia,titulo,corpo,emoji,is_active,updated_at").order("tipo").order("dias_referencia"),
         db.from("notificacao_logs").select("id,cliente_id,tipo,titulo,corpo,status,erro_mensagem,push_enviadas,push_falhas,push_status,created_at,clientes(nome_completo)").order("created_at", { ascending: false }).limit(200),
         db.from("clientes").select("id,nome_completo,telefone,ativo").eq("ativo", true).order("nome_completo"),
-        db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", new Date().toISOString().slice(0, 10)).neq("status", "pago"),
-        db.from("boletos").select("id", { count: "exact", head: true }).gte("data_vencimento", new Date().toISOString().slice(0, 10)).lte("data_vencimento", new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10)).neq("status", "pago"),
+        db.from("boletos").select("id", { count: "exact", head: true }).lt("data_vencimento", hojeSaoPaulo()).neq("status", "pago"),
+        db.from("boletos").select("id", { count: "exact", head: true }).gte("data_vencimento", hojeSaoPaulo()).lte("data_vencimento", adicionarDiasCivil(hojeSaoPaulo(), 2)).neq("status", "pago"),
         db.from("web_push_subscriptions").select("id", { count: "exact", head: true }),
       ]);
       if (cfg.error || templates.error || logs.error || clientes.error || atrasadas.error || aVencer.error || subscriptions.error) return json({ erro: "Não foi possível carregar o painel de notificações." }, 500);
