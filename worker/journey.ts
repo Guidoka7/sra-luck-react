@@ -122,8 +122,10 @@ async function financialProgress(db: ReturnType<typeof createServiceSupabaseClie
 
   const parcelas = (data ?? []) as unknown as InstallmentRow[];
   const parcelasPagas = parcelas.filter((parcela) => parcela.status === "pago");
+  // Regra: parcela paga em atraso conta só pelo valor da parcela. Juros e multa
+  // recebidos não entram no valor pago do contrato.
   const paid = parcelasPagas.reduce(
-    (sum, parcela) => sum + Number(parcela.valor_recebido ?? parcela.valor ?? 0),
+    (sum, parcela) => sum + Number(parcela.valor ?? 0),
     0,
   );
   const total = Number(contract.valor_contrato ?? 0);

@@ -166,3 +166,143 @@ button.sl-parc-linha:active { background: var(--parc-linha); }
 }
 .sl-parc-quitado strong { font-family: var(--font-heading, Georgia, serif); font-size: 20px; color: var(--parc-titulo); }
 .sl-parc-quitado span:last-child { color: var(--parc-suave); font-size: 12px; }
+
+/* Próxima parcela: destaque moderado (uma linha elevada com ação de pagar) */
+.sl-parc-proxima {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 20px 0;
+  padding: 10px 12px 10px 4px;
+  border: 1px solid var(--parc-destaque-borda);
+  border-radius: 20px;
+  background: var(--parc-cartao);
+  box-shadow: var(--parc-sombra);
+}
+.sl-parc-proxima-info { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; padding: 2px 0 2px 10px; border: 0; background: transparent; color: var(--parc-texto); text-align: left; }
+.sl-parc-proxima-rotulo { color: var(--parc-dourado); font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.sl-parc-proxima-info b { font-family: var(--font-heading, Georgia, serif); font-size: 21px; font-weight: 600; line-height: 1.15; color: var(--parc-titulo); font-variant-numeric: tabular-nums; }
+html[data-tema-cliente="escuro"] .sl-parc-proxima-info b { color: #FFF7F5; }
+.sl-parc-linha-texto small.sl-parc-aviso { color: var(--parc-dourado); font-weight: 700; }
+.sl-parc-proxima-pagar {
+  flex: none;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--parc-cta-fundo);
+  color: var(--parc-cta-texto);
+  font-size: 13px;
+  font-weight: 700;
+}
+.sl-parc-proxima-pagar:active { transform: scale(0.97); }
+
+/* Lista compacta das demais parcelas */
+.sl-parc-lista--compacta .sl-parc-linha { gap: 10px; padding: 9px 12px; }
+.sl-parc-lista--compacta .sl-parc-numero { width: 30px; height: 30px; border-radius: 10px; font-size: 14px; }
+.sl-parc-lista--compacta .sl-parc-linha-texto b { font-size: 13px; }
+.sl-parc-lista--compacta .sl-parc-linha-texto small { font-size: 11px; }
+.sl-parc-lista--compacta .sl-parc-seta { width: 16px; height: 16px; opacity: 0.7; }
+.sl-parc-linha-lado { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sl-parc-lista--compacta .sl-parc-linha-valor { font-size: 13px; }
+.sl-parc-status { font-size: 10.5px; font-weight: 500; color: var(--parc-suave); opacity: 0.85; }
+.sl-parc-status--alerta, .sl-parc-status--analise { font-weight: 700; opacity: 1; }
+.sl-parc-status--alerta { color: var(--parc-alerta); }
+.sl-parc-status--analise { color: var(--parc-analise); }
+.sl-parc-ano {
+  padding: 8px 14px 6px;
+  background: var(--parc-linha);
+  color: var(--parc-suave);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.sl-parc-ver-todas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 40px);
+  margin: 10px 20px 0;
+  padding: 11px 16px;
+  border: 1px solid var(--parc-borda);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--parc-titulo);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+/* Card da parcela vencida: mesma estrutura e tamanho do "Próxima parcela";
+   muda só a cor, o selo, o texto e o botão. */
+.sl-parc {
+  --parc-vencida-fundo: #FFF8F7;
+  --parc-vencida-borda: #EFCFCB;
+  --parc-vencida-botao: #8F2A25;
+}
+html[data-tema-cliente="escuro"] .sl-parc {
+  --parc-vencida-fundo: linear-gradient(150deg, rgba(214, 96, 96, 0.10), rgba(214, 96, 96, 0.03));
+  --parc-vencida-borda: rgba(240, 163, 163, 0.28);
+  --parc-vencida-botao: #C2566A;
+}
+.sl-parc-proxima-pagar { min-width: 108px; text-align: center; }
+.sl-parc-proxima--vencida { border-color: var(--parc-vencida-borda); background: var(--parc-vencida-fundo); }
+.sl-parc-proxima--vencida .sl-parc-proxima-pagar { background: var(--parc-vencida-botao); }
+.sl-parc-proxima--vencida + .sl-parc-proxima { margin-top: 10px; }
+.sl-parc-badge-vencida {
+  align-self: flex-start;
+  margin-bottom: 1px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--parc-alerta-fundo);
+  color: var(--parc-alerta);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Os dois cards principais: linha (número, rótulo/selo, valor, botão) + rodapé de uma linha. */
+.sl-parc-proxima { flex-direction: column; align-items: stretch; gap: 6px; padding: 12px 12px 12px 4px; }
+.sl-parc-proxima-linha { display: flex; align-items: center; gap: 10px; }
+.sl-parc-proxima-rodape { display: block; padding-left: 62px; color: var(--parc-suave); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-parc-proxima-rodape.sl-parc-aviso { color: var(--parc-dourado); font-weight: 700; }
+.sl-parc-proxima--vencida .sl-parc-proxima-rodape { color: var(--parc-alerta); font-weight: 600; }
+.sl-parc-badge-vencida { white-space: nowrap; }
+.sl-parc-proxima-rotulo { line-height: 1.6; }
+.sl-parc-proxima-pagar { width: 132px; min-width: 0; padding: 10px 12px; font-size: 12.5px; }
+
+/* Ordem de ação: 1) resolver a vencida, 2) depois pagar a próxima. */
+.sl-parc-etapa {
+  margin: 18px 22px -2px;
+  color: var(--parc-suave);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.sl-parc-etapa--alerta { color: var(--parc-alerta); }
+.sl-parc-etapa + .sl-parc-proxima { margin-top: 10px; }
+
+/* Vencida = ação principal */
+.sl-parc-proxima--vencida { box-shadow: 0 14px 30px rgba(143, 42, 37, 0.14); }
+html[data-tema-cliente="escuro"] .sl-parc-proxima--vencida { box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4); }
+.sl-parc-proxima--vencida .sl-parc-proxima-pagar { box-shadow: 0 8px 18px rgba(143, 42, 37, 0.25); }
+
+/* Próxima quando há vencida = secundária */
+.sl-parc-proxima--depois { box-shadow: none; background: transparent; }
+.sl-parc-proxima--depois .sl-parc-proxima-info b { font-size: 18px; }
+.sl-parc-proxima--depois .sl-parc-proxima-pagar {
+  border: 1px solid var(--parc-borda);
+  background: transparent;
+  color: var(--parc-titulo);
+}
+.sl-parc-proxima--depois .sl-parc-proxima-rotulo { color: var(--parc-suave); letter-spacing: 0.06em; text-transform: none; font-size: 11px; font-weight: 600; }
+
+/* Ajustes finos */
+html[data-tema-cliente="escuro"] .sl-parc-proxima-rodape { color: #CFC5CA; }
+html[data-tema-cliente="escuro"] .sl-parc-proxima--vencida .sl-parc-proxima-rodape { color: var(--parc-alerta); }
+.sl-parc-proxima--vencida + .sl-parc-etapa { margin-top: 12px; }
+/* Próxima parcela a até 2 dias do vencimento: contagem regressiva em destaque. */
+.sl-parc-proxima--breve { border-color: rgba(168, 119, 63, 0.45); }
+html[data-tema-cliente="escuro"] .sl-parc-proxima--breve { border-color: rgba(216, 178, 106, 0.4); }
+.sl-parc-proxima--breve .sl-parc-proxima-rodape { color: var(--parc-dourado); font-weight: 700; }
+html[data-tema-cliente="escuro"] .sl-parc-proxima--breve .sl-parc-proxima-rodape,
+html[data-tema-cliente="escuro"] .sl-parc-proxima-rodape.sl-parc-aviso { color: var(--parc-dourado); }
