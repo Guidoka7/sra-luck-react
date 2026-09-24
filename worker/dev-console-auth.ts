@@ -53,6 +53,7 @@ const ROTAS_LOTE: readonly { rota: RegExp; escopo: EscopoLote; chaves: readonly 
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/gerar$`), escopo: "PREPARE", chaves: ["instrucao", "segmento"] },
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/itens/${LOTE_ID}/editar$`), escopo: "PREPARE", chaves: ["mensagem"], obrigatorias: ["mensagem"] },
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/chat$`), escopo: "READ", chaves: ["mensagem", "historico"], obrigatorias: ["mensagem"] },
+  { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/explicar$`), escopo: "READ", chaves: [] },
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/aprovar$`), escopo: "APPROVE", chaves: [] },
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/reprocessar-falhas$`), escopo: "SEND", chaves: [] },
   { rota: new RegExp(`^/api/admin/notificacoes/lotes/${LOTE_ID}/cancelar$`), escopo: "CANCEL", chaves: [] },

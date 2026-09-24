@@ -7,7 +7,7 @@ import { adicionarDiasCivil, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "..
 import { DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID } from "./dev-console-auth";
 import { rotinaAutorizada } from "./frase-do-dia";
 import {
-  aprovarLote, cancelarLote, carregarConfigCentral, conversarSobreLote, detalharLote, editarItem, gerarMensagens,
+  aprovarLote, cancelarLote, carregarConfigCentral, conversarSobreLote, detalharLote, editarItem, explicarLote, gerarMensagens,
   listarLotes, prepararLote, reprocessarFalhas, rotinaFinanceira, SEGMENTOS, validarAlteracaoConfig, type Contexto,
 } from "./notificacoes-lotes";
 
@@ -567,7 +567,7 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
 }
 
 function respostaLote(resultado: { ok: boolean; status?: number | string } & Record<string, unknown>, sucesso = 200) {
-  if (!resultado.ok) return json({ erro: resultado.erro, codigo: resultado.codigo }, Number(resultado.status) || 400);
+  if (!resultado.ok) return json({ erro: resultado.erro, codigo: resultado.codigo, ...(resultado.fatos ? { fatos: resultado.fatos } : {}) }, Number(resultado.status) || 400);
   return json(resultado, sucesso);
 }
 
@@ -605,7 +605,7 @@ async function lotesApi(request: Request, env: Env, db: Db, path: string, ator: 
     return respostaLote(await prepararLote(ctx, "manual"), 201);
   }
 
-  const m = path.match(/^\/api\/admin\/notificacoes\/lotes\/([0-9a-f-]{36})(?:\/(gerar|aprovar|cancelar|reprocessar-falhas|chat|itens\/([0-9a-f-]{36})\/editar))?$/);
+  const m = path.match(/^\/api\/admin\/notificacoes\/lotes\/([0-9a-f-]{36})(?:\/(gerar|aprovar|cancelar|reprocessar-falhas|chat|explicar|itens\/([0-9a-f-]{36})\/editar))?$/);
   if (!m) return json({ erro: "Rota não encontrada." }, 404);
   const [, loteId, acao, itemId] = m;
   if (!acao) {
@@ -621,6 +621,7 @@ async function lotesApi(request: Request, env: Env, db: Db, path: string, ator: 
     if (acao === "cancelar") return respostaLote(await cancelarLote(ctx, loteId));
     if (acao === "reprocessar-falhas") return respostaLote(await reprocessarFalhas(ctx, loteId));
     if (acao === "chat") return respostaLote(await conversarSobreLote(ctx, loteId, body.mensagem, body.historico));
+    if (acao === "explicar") return respostaLote(await explicarLote(ctx, loteId));
     return respostaLote(await editarItem(ctx, loteId, itemId, body.mensagem));
   } catch (error) {
     return json({ erro: publicError(error, "Falha ao processar o lote.") }, 500);

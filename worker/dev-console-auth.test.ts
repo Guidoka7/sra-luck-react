@@ -175,6 +175,7 @@ describe("M2M da Central de Notificações (escopos explícitos)", () => {
       [`/api/admin/notificacoes/lotes/${LOTE}/gerar`, { instrucao: "mais acolhedora", segmento: "atraso_6_10" }],
       [`/api/admin/notificacoes/lotes/${LOTE}/itens/${ITEM}/editar`, { mensagem: "texto" }],
       [`/api/admin/notificacoes/lotes/${LOTE}/chat`, { mensagem: "quem vai receber?", historico: [] }],
+      [`/api/admin/notificacoes/lotes/${LOTE}/explicar`, {}],
       [`/api/admin/notificacoes/lotes/${LOTE}/aprovar`, {}],
       [`/api/admin/notificacoes/lotes/${LOTE}/reprocessar-falhas`, {}],
       [`/api/admin/notificacoes/lotes/${LOTE}/cancelar`, {}],

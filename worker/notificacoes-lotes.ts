@@ -796,3 +796,81 @@ export async function conversarSobreLote(ctx: Contexto, loteId: string, mensagem
     return falha(502, motivo, motivo === "http_429" ? "Limite do Gemini atingido agora. Tente de novo em alguns minutos." : `O Gemini não respondeu (${motivo}).`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// "Explicar este lote": o Gemini só resume FATOS já calculados a partir dos
+// dados persistidos. Qualquer número no texto que não esteja nos fatos
+// reprova o resumo (não há texto genérico de reserva).
+// ---------------------------------------------------------------------------
+
+export type FatosLote = {
+  status: string;
+  clientesAnalisadas: number;
+  elegiveis: number;
+  comMaisDeUmaParcela: number;
+  aceitasPeloProvedor: number;
+  somenteNoApp: number;
+  falhas: number;
+  deduplicadas: number;
+  foraDaRegra: number;
+  semMensagem: number;
+  motivos: Record<string, number>;
+};
+
+export function fatosDoLote(lote: { status: string }, itens: { status: string; segmento: string; quantidade_parcelas: number; motivo: string | null }[]): FatosLote {
+  const c = contarItens(itens);
+  const s = c.porStatus;
+  const motivos: Record<string, number> = {};
+  for (const i of itens) if (i.motivo) motivos[i.motivo] = (motivos[i.motivo] ?? 0) + 1;
+  return {
+    status: lote.status,
+    clientesAnalisadas: c.total,
+    elegiveis: c.elegiveis,
+    comMaisDeUmaParcela: c.multiplasParcelas,
+    aceitasPeloProvedor: s.PROVIDER_ACCEPTED ?? 0,
+    somenteNoApp: s.IN_APP_ONLY ?? 0,
+    falhas: s.FAILED ?? 0,
+    deduplicadas: s.SKIPPED_DEDUPLICATION ?? 0,
+    foraDaRegra: s.SKIPPED_RULE ?? 0,
+    semMensagem: s.PREPARED ?? 0,
+    motivos,
+  };
+}
+
+/** Todo número citado no resumo precisa existir nos fatos (contagens ou horas de deduplicação nos motivos). */
+export function validarResumoLote(texto: unknown, fatos: FatosLote): ValidacaoMensagem {
+  const t = String(texto ?? "").trim();
+  if (t.length < 20 || t.length > 1200) return { ok: false, motivo: "tamanho" };
+  const permitidos = new Set<number>([
+    fatos.clientesAnalisadas, fatos.elegiveis, fatos.comMaisDeUmaParcela, fatos.aceitasPeloProvedor, fatos.somenteNoApp,
+    fatos.falhas, fatos.deduplicadas, fatos.foraDaRegra, fatos.semMensagem, ...Object.values(fatos.motivos),
+    ...Object.keys(fatos.motivos).flatMap((m) => (m.match(/\d+/g) ?? []).map(Number)),
+    1,
+  ]);
+  for (const n of t.match(/\d+/g) ?? []) if (!permitidos.has(Number(n))) return { ok: false, motivo: "numero_inventado" };
+  return { ok: true, texto: t };
+}
+
+const SISTEMA_EXPLICAR = [
+  "Você resume um lote de lembretes financeiros para a equipe da Sra. Luck, em português do Brasil, informal e curto (3 a 6 frases).",
+  "Use SOMENTE os números e motivos do JSON recebido. Não calcule números novos, não arredonde, não invente causas.",
+  "Traduza os motivos técnicos para linguagem simples (ex.: lembrete_nas_ultimas_24h = já tinha recebido lembrete nas últimas 24 horas; cliente_sem_dispositivo_push = não tem celular com notificação ativa).",
+  "PROVIDER_ACCEPTED significa que o serviço de push aceitou a mensagem, não que a cliente viu. Diga isso se citar esse número.",
+].join("\n");
+
+export async function explicarLote(ctx: Contexto, loteId: string) {
+  const detalhe = await detalharLote(ctx.db, loteId);
+  if (!detalhe) return falha(404, "lote_nao_encontrado", "Lote não encontrado.");
+  const fatos = fatosDoLote(detalhe.lote as { status: string }, detalhe.itens);
+  const gemini = await configuracaoGemini(ctx.env);
+  if (!gemini.chave) return { ...falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada)."), fatos };
+  try {
+    const r = await gerarComGemini(gemini.chave, gemini.modelo, `${SISTEMA_EXPLICAR}\nResponda só com o JSON {"texto": "..."}.`, `Fatos do lote: ${JSON.stringify(fatos)}`, ctx.fetcher, { temperatura: 0.2, maxTokens: 1024 });
+    const validacao = validarResumoLote(r.texto, fatos);
+    if (!validacao.ok) return { ...falha(502, `resumo_reprovado:${validacao.motivo}`, "O resumo do Gemini citou um número que não está no lote e foi descartado. Veja os fatos abaixo."), fatos };
+    return { ok: true as const, texto: validacao.texto, modelo: r.modelo, fatos };
+  } catch (erro) {
+    const motivo = erro instanceof ErroGemini ? erro.motivo : "resposta_invalida";
+    return { ...falha(502, motivo, motivo === "http_429" ? "Limite do Gemini atingido agora. Tente de novo em alguns minutos." : `O Gemini não respondeu (${motivo}).`), fatos };
+  }
+}

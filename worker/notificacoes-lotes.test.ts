@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  agruparCandidatos, aprovarLote, cancelarLote, contextoMensagem, dataBrasilia, detalharLote, editarItem, emHorarioSilencioso,
+  agruparCandidatos, aprovarLote, cancelarLote, contextoMensagem, dataBrasilia, detalharLote, editarItem, emHorarioSilencioso, explicarLote, fatosDoLote, validarResumoLote,
   gerarMensagens, lerConfigCentral, prepararLote, processarFila, reprocessarFalhas, segmentoDe, validarAlteracaoConfig,
   validarMensagemFinanceira, type BoletoFonte, type Contexto, type EnviarNotificacao,
 } from "./notificacoes-lotes";
@@ -299,6 +299,12 @@ describe("lote financeiro", () => {
     });
   });
 
+  it("contrato suspenso também fica de fora (mesma regra da rotina automática)", async () => {
+    const c = cenario([bol("b1", "c-ana", "2026-09-15", 150, "nao_pago", { clientes: { status_contrato: "suspenso", ativo: true } })]);
+    await prepararLote(c.ctx);
+    expect(c.tabelas.notificacao_lote_itens[0]).toMatchObject({ status: "SKIPPED_RULE", motivo: "contrato_cancelado_ou_suspenso" });
+  });
+
   it("cliente deduplicada (lembrete nas últimas 24h) não recebe de novo", async () => {
     const c = cenario(boletos, { notificacao_logs: [{ cliente_id: "c-ana", tipo: "parcela_atrasada", created_at: new Date(AGORA.getTime() - 3_600_000).toISOString() }] });
     const id = await loteAprovavel(c);
@@ -375,5 +381,49 @@ describe("configuração da central", () => {
     expect(validarAlteracaoConfig({ janelaDedupHoras: 0 })).toMatchObject({ ok: false });
     expect(validarAlteracaoConfig({ segmentos: ["atraso_90"] })).toMatchObject({ ok: false });
     expect(validarAlteracaoConfig({ outra: 1 })).toMatchObject({ ok: false });
+  });
+});
+
+describe("Explicar este lote (Gemini resume só os dados persistidos)", () => {
+  const boletos = [
+    bol("b1", "c-ana", "2026-08-30", 150), bol("b2", "c-ana", "2026-09-10", 150),
+    bol("b4", "c-bia", "2026-09-24", 320),
+  ];
+  const resumoFalso = (texto: string) => (async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ texto }) }] } }] }), { status: 200 })) as unknown as typeof fetch;
+
+  it("fatos vêm só dos itens gravados", async () => {
+    const c = cenario(boletos, { notificacao_logs: [{ cliente_id: "c-bia", tipo: "parcela_vencer", created_at: new Date(AGORA.getTime() - 3_600_000).toISOString() }] });
+    const id = await loteAprovavel(c);
+    await aprovarLote(c.ctx, id);
+    const d = await detalharLote(c.db, id);
+    expect(fatosDoLote(d!.lote as { status: string }, d!.itens)).toMatchObject({ clientesAnalisadas: 2, elegiveis: 1, comMaisDeUmaParcela: 1, aceitasPeloProvedor: 1, deduplicadas: 1, motivos: { lembrete_nas_ultimas_24h: 1 } });
+  });
+
+  it("aceita resumo que só cita números do lote", async () => {
+    const c = cenario(boletos);
+    const id = await loteAprovavel(c);
+    await aprovarLote(c.ctx, id);
+    c.ctx.fetcher = resumoFalso("Foram analisadas 2 clientes. 1 tinha mais de uma parcela e recebeu uma mensagem só. As 2 foram aceitas pelo serviço de push.");
+    expect(await explicarLote(c.ctx, id)).toMatchObject({ ok: true, fatos: { clientesAnalisadas: 2 } });
+  });
+
+  it("descarta resumo com número inventado e devolve os fatos reais", async () => {
+    const c = cenario(boletos);
+    const id = await loteAprovavel(c);
+    c.ctx.fetcher = resumoFalso("Foram analisadas 15 clientes e 4 receberam mensagem consolidada.");
+    const r = await explicarLote(c.ctx, id);
+    expect(r).toMatchObject({ ok: false, codigo: "resumo_reprovado:numero_inventado", fatos: { clientesAnalisadas: 2 } });
+  });
+
+  it("sem chave do Gemini: não inventa resumo, devolve só os fatos", async () => {
+    const c = cenario(boletos);
+    const id = await loteAprovavel(c);
+    c.ctx.env = {} as Env;
+    expect(await explicarLote(c.ctx, id)).toMatchObject({ ok: false, codigo: "sem_chave", fatos: { elegiveis: 2 } });
+  });
+
+  it("validarResumoLote aceita horas citadas no motivo de deduplicação", () => {
+    const fatos = fatosDoLote({ status: "COMPLETED" }, [{ status: "SKIPPED_DEDUPLICATION", segmento: "atraso_1", quantidade_parcelas: 1, motivo: "lembrete_nas_ultimas_24h" }]);
+    expect(validarResumoLote("1 cliente já tinha recebido lembrete nas últimas 24 horas.", fatos).ok).toBe(true);
   });
 });
