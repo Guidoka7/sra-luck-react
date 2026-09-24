@@ -32,7 +32,7 @@ import { adminCarnes } from "./admin-carnes";
 import { adminCarneLeitor } from "./admin-carne-leitor";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
 import { protectRequest } from "./http-security";
-import { adminReadPermissions } from "./admin-route-permissions";
+import { adminReadPermissions, adminWritePermissions } from "./admin-route-permissions";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -376,7 +376,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const grande = bloquearJsonGrande(request, 262_144);
       if (grande) return grande;
     }
-    const denied = await exigirAdmin(request, env, ["GET", "HEAD"].includes(request.method) ? adminReadPermissions(url.pathname) : null);
+    // Leitura: "ver" ou qualquer ação da aba. Escrita: só as ações da aba (permissoesEquipe.ts).
+    const denied = await exigirAdmin(request, env, ["GET", "HEAD"].includes(request.method) ? adminReadPermissions(url.pathname) : adminWritePermissions(url.pathname));
     if (denied) return denied;
     // Integrações (chaves, configuração, conexões) e Monitoramento: só o Dev.
     if (rotaExclusivaDoDev(url.pathname, request.method)) {

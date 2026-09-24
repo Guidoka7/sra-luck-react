@@ -2,45 +2,34 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
+import { PermissoesColaborador } from "@/features/admin/PermissoesColaborador";
+import { ABAS_PERMISSOES } from "@/lib/permissoesEquipe";
 
 /**
- * Aba EQUIPE — reprodução de Admin Configuracoes.dc.html: chips de cargo,
- * tabela de membros e drawer com dados + permissões reais (RBAC).
+ * Aba EQUIPE — membros, cargo (rótulo) e permissões por aba/funcionalidade
+ * (src/lib/permissoesEquipe.ts). O acesso ao painel vem das permissões
+ * ligadas pelo Admin; o cargo Administrativo tem acesso total.
  */
 
 type Cargo = "vendedora" | "sdr" | "financeiro" | "gestao" | "administrativo";
 type Colaborador = { id: string; nome: string; email: string; cargo: Cargo; ativo: boolean; permissoes: string[]; created_at: string; updated_at: string; };
 
 const CARGOS: Array<{ value: Cargo; label: string; descricao: string; area: string }> = [
-  { value: "vendedora", label: "Vendedora", descricao: "Portal comercial e comissão da primeira parcela.", area: "Comercial" },
-  { value: "sdr", label: "SDR", descricao: "Agenda, comparecimentos e comissão por presença.", area: "Comercial" },
-  { value: "financeiro", label: "Financeiro", descricao: "Acesso ao painel administrativo, com permissões granulares.", area: "Operação" },
-  { value: "gestao", label: "Gestão", descricao: "Acesso ao painel administrativo, com permissões granulares.", area: "Gestão" },
-  { value: "administrativo", label: "Administrativo", descricao: "Acesso administrativo completo.", area: "Gestão" },
+  { value: "vendedora", label: "Vendedora", descricao: "Portal comercial; no painel, só o que for ligado.", area: "Comercial" },
+  { value: "sdr", label: "SDR", descricao: "Agenda e comparecimentos; no painel, só o que for ligado.", area: "Comercial" },
+  { value: "financeiro", label: "Financeiro", descricao: "No painel, só o que for ligado nas permissões.", area: "Operação" },
+  { value: "gestao", label: "Gestão", descricao: "No painel, só o que for ligado nas permissões.", area: "Gestão" },
+  { value: "administrativo", label: "Administrativo", descricao: "Acesso total ao painel.", area: "Gestão" },
 ];
 
-const PERMISSOES_DISPONIVEIS: Array<{ chave: string; label: string }> = [
-  { chave: "clientes.editar", label: "Editar dados de clientes" },
-  { chave: "clientes.alterar_status_contrato", label: "Alterar status de contrato" },
-  { chave: "clientes.liberar_acesso_app", label: "Liberar acesso ao app" },
-  { chave: "clientes.excluir", label: "Excluir perfil de cliente" },
-  { chave: "agenda.gerenciar", label: "Gerenciar agenda e jornada" },
-  { chave: "configuracoes.gerenciar", label: "Gerenciar configurações" },
-  { chave: "financeiro.revisao", label: "Executar revisão financeira" },
-  { chave: "financeiro.baixa_manual", label: "Registrar baixa manual" },
-  { chave: "financeiro.validar_comprovante", label: "Validar/rejeitar comprovante" },
-  { chave: "credito.gerenciar", label: "Gerenciar operação de crédito" },
-  { chave: "notificacoes.gerenciar", label: "Gerenciar notificações" },
-  { chave: "integracoes.gerenciar_credenciais", label: "Gerenciar credenciais de integrações" },
-  { chave: "integracoes.operar_financeiro", label: "Operar integrações financeiras" },
-  { chave: "relatorios.visualizar", label: "Visualizar relatórios" },
-  { chave: "relatorios.exportar", label: "Exportar relatórios" },
-  { chave: "monitoramento.visualizar", label: "Visualizar monitoramento" },
-  { chave: "equipe.gerenciar", label: "Gerenciar equipe e permissões" },
-];
+/** Resumo do que a pessoa acessa no painel (coluna "Acesso"). */
+function resumoAcesso(c: { cargo: string; permissoes: string[] }) {
+  if (c.cargo === "administrativo") return "Acesso total";
+  const abas = ABAS_PERMISSOES.filter((a) => a.permissoes.some((p) => c.permissoes?.includes(p.chave)));
+  return abas.length ? abas.map((a) => a.nome).join(", ") : "Sem acesso ao painel";
+}
 
 function iniciais(nome: string) { const p = nome.trim().split(/\s+/); return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase() || "—"; }
-function areaDe(cargo: Cargo) { return CARGOS.find((c) => c.value === cargo)?.area ?? "—"; }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store", credentials: "same-origin", headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) } });
@@ -64,6 +53,8 @@ export default function EquipeAdminPage() {
   const [senha, setSenha] = useState("");
   const [filtroCargo, setFiltroCargo] = useState<Cargo | "todos">("todos");
   const [drawer, setDrawer] = useState<Colaborador | null>(null);
+  const [souAdministrativo, setSouAdministrativo] = useState(false);
+  useEffect(() => { fetch("/api/admin/session", { cache: "no-store" }).then((r) => r.json()).then((d) => setSouAdministrativo(d?.cargo === "administrativo" || d?.acessoTotal === true)).catch(() => undefined); }, []);
 
   async function carregar() {
     setLoading(true);
@@ -86,7 +77,6 @@ export default function EquipeAdminPage() {
     catch (error) { setErro(error instanceof Error ? error.message : "Não foi possível atualizar o acesso."); await carregar(); }
     finally { setSalvando(null); }
   }
-  async function alternarPermissao(colaborador: Colaborador, chave: string) { const atual = colaborador.permissoes ?? []; const novo = atual.includes(chave) ? atual.filter((i) => i !== chave) : [...atual, chave]; await atualizar(colaborador.id, { permissoes: novo }); }
 
   const filtrados = useMemo(() => filtroCargo === "todos" ? colaboradores : colaboradores.filter((c) => c.cargo === filtroCargo), [colaboradores, filtroCargo]);
 
@@ -102,11 +92,11 @@ export default function EquipeAdminPage() {
         {(["todos", ...CARGOS.map((c) => c.value)] as const).map((v) => { const on = filtroCargo === v; const label = v === "todos" ? "Todos" : CARGOS.find((c) => c.value === v)?.label; return <button key={v} onClick={() => setFiltroCargo(v)} style={{ height: 26, padding: "0 10px", borderRadius: 999, border: `1px solid ${on ? "var(--bg)" : "var(--line)"}`, background: on ? "var(--robg)" : "var(--s0)", color: on ? "var(--bg)" : "var(--soft)", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</button>; })}
       </div>
       <div style={{ overflow: "auto", maxHeight: 620 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.2fr) 130px 130px 120px 150px", gap: 10, minWidth: 800, padding: "9px 14px", background: "var(--s1)", borderBottom: "1px solid var(--line)" }}>{["Usuário", "Cargo", "Área", "Status", "Atualizado"].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}</div>
-        {loading && colaboradores.length === 0 ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Carregando equipe...</div> : filtrados.length === 0 ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhum colaborador nesse filtro.</div> : filtrados.map((item) => <div key={item.id} onClick={() => setDrawer(item)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.2fr) 130px 130px 120px 150px", gap: 10, minWidth: 800, alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.2fr) 120px minmax(160px,1.3fr) 110px 140px", gap: 10, minWidth: 800, padding: "9px 14px", background: "var(--s1)", borderBottom: "1px solid var(--line)" }}>{["Usuário", "Cargo", "Acesso ao painel", "Status", "Atualizado"].map((h) => <div key={h} style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--rose)" }}>{h}</div>)}</div>
+        {loading && colaboradores.length === 0 ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Carregando equipe...</div> : filtrados.length === 0 ? <div style={{ padding: 32, textAlign: "center", fontSize: 11, color: "var(--soft)" }}>Nenhum colaborador nesse filtro.</div> : filtrados.map((item) => <div key={item.id} onClick={() => setDrawer(item)} className="zip-row-hover" style={{ display: "grid", gridTemplateColumns: "minmax(180px,1.2fr) 120px minmax(160px,1.3fr) 110px 140px", gap: 10, minWidth: 800, alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--line2)", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 28, height: 28, borderRadius: 999, background: "var(--s2)", color: "var(--bg)", display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700 }}>{iniciais(item.nome)}</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{item.nome}</div><div style={{ fontSize: 9.5, color: "var(--soft)" }}>{item.email}</div></div></div>
           <div style={{ fontSize: 11, color: "var(--soft)" }}>{CARGOS.find((c) => c.value === item.cargo)?.label}</div>
-          <div style={{ fontSize: 11, color: "var(--soft)" }}>{areaDe(item.cargo)}</div>
+          <div title={resumoAcesso(item)} style={{ fontSize: 11, color: "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{resumoAcesso(item)}</div>
           <span style={zipChip(item.ativo ? "ok" : "bad")}>{item.ativo ? "Ativo" : "Desativado"}</span>
           <div className="zip-mono" style={{ fontSize: 10.5, color: "var(--soft)" }}>{new Date(item.updated_at).toLocaleString("pt-BR")}</div>
         </div>)}
@@ -128,20 +118,19 @@ export default function EquipeAdminPage() {
 
     {drawer && <>
       <div className="zip-animate-fade-in" style={{ position: "fixed", inset: 0, background: "var(--overlay-bg)", zIndex: 60 }} onClick={() => setDrawer(null)} />
-      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(396px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
+      <aside className="zip-animate-slide-in" style={{ position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 61, width: "min(540px,100vw)", background: "var(--s0)", borderLeft: "1px solid var(--line)", boxShadow: "var(--sh)", overflowY: "auto" }}>
         <div style={{ padding: "14px 15px 12px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
           <div><div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--rose)" }}>Equipe</div><h2 style={{ fontSize: 16, marginTop: 4 }}>{drawer.nome}</h2></div>
           <button onClick={() => setDrawer(null)} style={{ height: 28, width: 28, borderRadius: 8, border: "1px solid var(--line)", background: "var(--s0)", color: "var(--soft)", fontSize: 13 }}>✕</button>
         </div>
         <div style={{ padding: "14px 15px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {[["E-mail", drawer.email], ["Cargo", CARGOS.find((c) => c.value === drawer.cargo)?.label ?? drawer.cargo], ["Área", areaDe(drawer.cargo)], ["Status", drawer.ativo ? "Ativo" : "Desativado"], ["Cadastro atualizado", new Date(drawer.updated_at).toLocaleString("pt-BR")]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span></div>)}
+          {[["E-mail", drawer.email], ["Cargo", CARGOS.find((c) => c.value === drawer.cargo)?.label ?? drawer.cargo], ["Acesso", resumoAcesso(drawer)], ["Status", drawer.ativo ? "Ativo" : "Desativado"], ["Cadastro atualizado", new Date(drawer.updated_at).toLocaleString("pt-BR")]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5 }}><span style={{ color: "var(--soft)" }}>{l}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span></div>)}
           <div><label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--soft)", margin: "8px 0 4px" }}>Cargo</label><select style={fieldInput} value={drawer.cargo} disabled={salvando === drawer.id} onChange={(e) => void atualizar(drawer.id, { cargo: e.target.value as Cargo })}>{CARGOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
         </div>
         <div style={{ margin: "0 15px", borderTop: "1px solid var(--line)" }} />
-        {(drawer.cargo === "financeiro" || drawer.cargo === "gestao") && <div style={{ padding: "13px 15px" }}>
-          <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--rose)", marginBottom: 8 }}>Permissões (RBAC)</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{PERMISSOES_DISPONIVEIS.map((p) => { const ativa = drawer.permissoes?.includes(p.chave); return <div key={p.chave} onClick={() => !salvando && void alternarPermissao(drawer, p.chave)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid var(--line)", background: "var(--s1)", borderRadius: 8, padding: "8px 9px", fontSize: 10.5, cursor: "pointer" }}><span>{p.label}</span><span style={{ color: ativa ? "var(--ok)" : "var(--soft)" }}>{ativa ? "✓" : "—"}</span></div>; })}</div>
-        </div>}
+        <div style={{ padding: "13px 15px" }}>
+          <PermissoesColaborador cargo={drawer.cargo} permissoes={drawer.permissoes ?? []} podeEditar={souAdministrativo} salvando={salvando === drawer.id} onSalvar={(permissoes) => void atualizar(drawer.id, { permissoes })} />
+        </div>
         <div style={{ padding: "0 15px 15px", display: "flex", justifyContent: "flex-end" }}>
           <button disabled={salvando === drawer.id} onClick={() => { const acao = drawer.ativo ? "desativar" : "ativar"; if (window.confirm(`Deseja ${acao} o acesso de ${drawer.nome}?`)) void atualizar(drawer.id, { ativo: !drawer.ativo }); }} style={{ height: 31, padding: "0 10px", border: `1px solid ${drawer.ativo ? "var(--bad)" : "var(--bg)"}`, borderRadius: 9, background: drawer.ativo ? "var(--badbg)" : "var(--bg)", color: drawer.ativo ? "var(--bad)" : "var(--on-accent)", fontSize: 10.5, fontWeight: 700 }}>{drawer.ativo ? "Desativar acesso" : "Ativar acesso"}</button>
         </div>

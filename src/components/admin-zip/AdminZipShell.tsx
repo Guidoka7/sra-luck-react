@@ -15,15 +15,15 @@ import "@/styles/admin-zip.css";
  */
 
 const NAV_OPERACAO = [
-  { href: "/admin/visao-geral", label: "Visão geral", icon: "◫", perms: [P.RELATORIOS_VISUALIZAR] },
-  { href: "/admin/agenda", label: "Agenda", icon: "◷", perms: [P.AGENDA_GERENCIAR, P.RELATORIOS_VISUALIZAR, ...FINANCE_PERMISSIONS] },
+  { href: "/admin/visao-geral", label: "Visão geral", icon: "◫", perms: [P.VISAO_GERAL_VER, P.RELATORIOS_VISUALIZAR] },
+  { href: "/admin/agenda", label: "Agenda", icon: "◷", perms: [P.AGENDA_VER, P.AGENDA_GERENCIAR] },
   { href: "/admin/clientes", label: "Clientes", icon: "☻", perms: [...CLIENT_PERMISSIONS] },
-  { href: "/admin/financeiro", label: "Financeiro", icon: "$", perms: [...FINANCE_PERMISSIONS] },
-  { href: "/admin/clube", label: "Clube", icon: "♡", perms: [P.CREDITO_GERENCIAR] },
+  { href: "/admin/financeiro", label: "Financeiro", icon: "$", perms: [P.FINANCEIRO_VER, ...FINANCE_PERMISSIONS, P.INTEGRACOES_OPERAR_FINANCEIRO] },
+  { href: "/admin/clube", label: "Clube", icon: "♡", perms: [P.CLUBE_VER, P.CREDITO_GERENCIAR] },
 ];
 
 const NAV_GESTAO = [
-  { href: "/admin/previsoes", label: "Previsões", icon: "↗", perms: [P.AGENDA_GERENCIAR, P.RELATORIOS_VISUALIZAR] },
+  { href: "/admin/previsoes", label: "Previsões", icon: "↗", perms: [P.PREVISOES_VER, P.AGENDA_GERENCIAR] },
   { href: "/admin/relatorios", label: "Relatórios", icon: "▥", perms: [P.RELATORIOS_VISUALIZAR] },
 ];
 
@@ -86,6 +86,14 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
     : pode(perfil, P.NOTIFICACOES_GERENCIAR) ? "/admin/notificacoes"
     : pode(perfil, P.EQUIPE_GERENCIAR) ? "/admin/equipe"
     : null;
+
+  // Quem abre uma aba sem permissão (ou o painel sem Visão geral) vai para a primeira aba liberada.
+  const permitidas = [...navOperacao, ...navGestao].map((item) => item.href).concat(configHref ? [configHref] : []);
+  useEffect(() => {
+    if (!perfil) return;
+    const naoLiberada = [...NAV_OPERACAO, ...NAV_GESTAO].some((item) => (pathname === item.href || pathname.startsWith(`${item.href}/`)) && !permitidas.includes(item.href));
+    if (naoLiberada && permitidas[0]) router.replace(permitidas[0]);
+  }, [perfil, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`zip-admin zip-shell${dark ? " dark" : ""}${menuAberto ? " zip-shell-menu-open" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>

@@ -101,7 +101,7 @@ describe("matriz executável de permissões de leitura", () => {
     ["/api/admin/staff", P.EQUIPE_GERENCIAR],
     ["/api/admin/credit-ops/contracts", P.CREDITO_GERENCIAR],
     ["/api/admin/previsao-liberacoes", P.AGENDA_GERENCIAR],
-    ["/api/admin/integrations/status", P.INTEGRACOES_GERENCIAR_CREDENCIAIS],
+    ["/api/admin/integrations/credenciais", P.INTEGRACOES_GERENCIAR_CREDENCIAIS],
     ["/api/admin/relatorios/historico", P.RELATORIOS_VISUALIZAR],
     ["/api/admin/monitoramento-erros", P.MONITORAMENTO_VISUALIZAR],
   ])("nega sem permissão e aceita a permissão de %s", (path, permission) => {

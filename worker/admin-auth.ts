@@ -1,6 +1,7 @@
 import { getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { temAcessoAoPainel } from "../src/lib/permissoesEquipe";
 import {
   DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,
   isDevConsoleSyntheticAdminId,
@@ -18,9 +19,13 @@ function jsonErro(erro: string, status: number) {
   });
 }
 
-/** Papéis que podem autenticar no painel administrativo (fora do app de colaboradores). */
-export type CargoAdmin = "administrativo" | "gestao" | "financeiro";
-const CARGOS_COM_ACESSO_ADMIN = new Set<string>(["administrativo", "gestao", "financeiro"]);
+/**
+ * O cargo é só um rótulo (vendedora, sdr, financeiro, gestao, administrativo).
+ * Entra no painel quem é "administrativo" (acesso total) ou tem ao menos uma
+ * permissão do catálogo (src/lib/permissoesEquipe.ts), ligada pelo Admin.
+ */
+export type CargoAdmin = "administrativo" | "gestao" | "financeiro" | "vendedora" | "sdr";
+const CARGOS_CONHECIDOS = new Set<string>(["administrativo", "gestao", "financeiro", "vendedora", "sdr"]);
 
 export interface ColaboradorAdmin {
   id: string;
@@ -38,6 +43,13 @@ export interface ColaboradorAdmin {
  * Esconder um botão no frontend nunca substitui esta checagem no Worker.
  */
 export const PERMISSOES_ADMIN = {
+  VISAO_GERAL_VER: "visao_geral.ver",
+  AGENDA_VER: "agenda.ver",
+  CLIENTES_VER: "clientes.ver",
+  CRM_IMPORTAR: "crm.importar",
+  FINANCEIRO_VER: "financeiro.ver",
+  CLUBE_VER: "clube.ver",
+  PREVISOES_VER: "previsoes.ver",
   CLIENTES_ALTERAR_STATUS_CONTRATO: "clientes.alterar_status_contrato",
   CLIENTES_EXCLUIR: "clientes.excluir",
   CLIENTES_EDITAR: "clientes.editar",
@@ -84,14 +96,16 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
     .maybeSingle();
 
   if (error) throw error;
-  if (!data || data.ativo !== true || !CARGOS_COM_ACESSO_ADMIN.has(String(data.cargo))) return null;
+  if (!data || data.ativo !== true || !CARGOS_CONHECIDOS.has(String(data.cargo))) return null;
+  const permissoes = Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string") : [];
+  if (!temAcessoAoPainel(String(data.cargo), permissoes)) return null;
 
   return {
     id: String(data.id),
     auth_user_id: String(data.auth_user_id),
     cargo: data.cargo as CargoAdmin,
     ativo: true,
-    permissoes: Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string") : [],
+    permissoes,
   };
 }
 

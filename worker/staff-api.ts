@@ -1,6 +1,7 @@
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
+import { PERMISSOES_VALIDAS } from "../src/lib/permissoesEquipe";
 import {
   clearStaffSessionCookie,
   criarTokenStaff,
@@ -23,7 +24,8 @@ type ColaboradorAtivo = {
 };
 
 const CARGOS = new Set<Cargo>(["vendedora", "sdr", "financeiro", "gestao", "administrativo"]);
-const PERMISSOES_CONHECIDAS = new Set<string>(Object.values(PERMISSOES_ADMIN));
+// Catálogo de permissões do painel (fonte única: src/lib/permissoesEquipe.ts).
+const PERMISSOES_CONHECIDAS = PERMISSOES_VALIDAS;
 const MAX_TENTATIVAS_LOGIN_EQUIPE_IP = 8;
 const MAX_TENTATIVAS_LOGIN_EQUIPE_EMAIL = 12;
 const JANELA_LOGIN_EQUIPE_SEGUNDOS = 15 * 60;

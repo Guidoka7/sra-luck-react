@@ -139,7 +139,7 @@ export async function monitoramentoAcessos(request: Request, env: Env): Promise<
     const desde = new Date(Date.now() - dias * DIA_MS).toISOString();
     const db = createServiceSupabaseClient(env);
     const [colaboradores, acessos, erros, alteracoes] = await Promise.all([
-      db.from("colaboradores").select("id,auth_user_id,nome,email,cargo,ativo").order("nome"),
+      db.from("colaboradores").select("id,auth_user_id,nome,email,cargo,ativo,permissoes").order("nome"),
       db.from("monitoramento_acessos").select("criado_em,actor_id,tela,rota,sessao_id,device_type,display_mode,user_agent").eq("actor_type", "admin").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(2000),
       db.from("monitoramento_erros").select("criado_em,actor_id,nivel,codigo,mensagem,rota,metodo,status_http,request_id").eq("actor_type", "admin").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(500),
       db.from("logs_alteracoes").select("created_at,usuario,acao,entidade,entidade_id").gte("created_at", desde).order("created_at", { ascending: false }).limit(1000),
@@ -156,6 +156,8 @@ export async function monitoramentoAcessos(request: Request, env: Env): Promise<
       const minhasAlteracoes = listaAlteracoes.filter((l: any) => usuarios.has(l.usuario));
       return {
         id: c.id, nome: c.nome, email: c.email, cargo: c.cargo, ativo: c.ativo,
+        // O Dev acompanha o que cada pessoa pode fazer ao lado do que ela fez.
+        permissoes: c.cargo === "administrativo" ? ["acesso_total"] : Array.isArray(c.permissoes) ? c.permissoes : [],
         ultimoAcesso: meusAcessos[0]?.criado_em ?? null,
         acessos: meusAcessos.length,
         telas: contarPor(meusAcessos, (a: any) => a.tela).slice(0, 8),

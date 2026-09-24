@@ -1,4 +1,11 @@
 export const ADMIN_PERMISSIONS = {
+  VISAO_GERAL_VER: "visao_geral.ver",
+  AGENDA_VER: "agenda.ver",
+  CLIENTES_VER: "clientes.ver",
+  CRM_IMPORTAR: "crm.importar",
+  FINANCEIRO_VER: "financeiro.ver",
+  CLUBE_VER: "clube.ver",
+  PREVISOES_VER: "previsoes.ver",
   CLIENTES_ALTERAR_STATUS_CONTRATO: "clientes.alterar_status_contrato",
   CLIENTES_EXCLUIR: "clientes.excluir",
   CLIENTES_EDITAR: "clientes.editar",
@@ -36,6 +43,8 @@ export const FINANCE_PERMISSIONS = [
 ] as const;
 
 export const CLIENT_PERMISSIONS = [
+  ADMIN_PERMISSIONS.CLIENTES_VER,
+  ADMIN_PERMISSIONS.CRM_IMPORTAR,
   ADMIN_PERMISSIONS.CLIENTES_EDITAR,
   ADMIN_PERMISSIONS.CLIENTES_ALTERAR_STATUS_CONTRATO,
   ADMIN_PERMISSIONS.CLIENTES_EXCLUIR,
