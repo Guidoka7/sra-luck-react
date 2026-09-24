@@ -68,4 +68,8 @@ describe("Central de Notificações (lotes) no módulo de notificações", () =>
     expect(source).toContain('path === "/api/cron/notificacoes-financeiras"');
     expect(source).toContain("rotinaAutorizada(request, env)");
   });
+  it("auditoria da central é só leitura e restrita às entidades da central", () => {
+    expect(source).toContain('path === "/api/admin/notificacoes/lotes/auditoria" && request.method === "GET"');
+    expect(source).toContain('.in("entidade", ["notificacao_lotes", "notificacoes_config"])');
+  });
 });

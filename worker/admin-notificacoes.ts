@@ -505,6 +505,12 @@ async function lotesApi(request: Request, env: Env, db: Db, path: string, ator: 
     await db.from("logs_alteracoes").insert({ usuario: ator, acao: "alterou_config_central_notificacoes", entidade: "notificacoes_config", detalhes: { antes, depois } });
     return json({ config: depois, mensagem: "Configuração salva." });
   }
+  if (path === "/api/admin/notificacoes/lotes/auditoria" && request.method === "GET") {
+    const { data, error } = await db.from("logs_alteracoes").select("usuario,acao,entidade,detalhes,created_at")
+      .in("entidade", ["notificacao_lotes", "notificacoes_config"]).order("created_at", { ascending: false }).limit(100);
+    if (error) return json({ erro: "Não foi possível ler a auditoria agora." }, 500);
+    return json({ eventos: data ?? [] });
+  }
   if (path === "/api/admin/notificacoes/lotes/preparar" && request.method === "POST") {
     return respostaLote(await prepararLote(ctx, "manual"), 201);
   }
