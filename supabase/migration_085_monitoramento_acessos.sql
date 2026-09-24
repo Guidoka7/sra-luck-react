@@ -1,5 +1,5 @@
 -- ============================================================================
--- MIGRATION 082: histórico de acessos do App da cliente e do Admin
+-- MIGRATION 085: histórico de acessos do App da cliente e do Admin
 --
 -- Cada tela aberta gera uma linha: quem (cliente ou colaborador), qual tela,
 -- aparelho, se veio do app instalado (PWA) ou do navegador. Alimenta o
