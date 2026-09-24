@@ -100,8 +100,8 @@ function addDiasIso(iso: string, dias: number) {
   return new Date(Date.UTC(ano, mes - 1, dia + dias)).toISOString().slice(0, 10);
 }
 
-function percent(value: number, total: number) {
-  if (value <= 0 || total <= 0) return 0;
+function percent(value: number | null, total: number) {
+  if (value === null || value <= 0 || total <= 0) return 0;
   return Math.max(2, Math.min(100, Math.round((value / total) * 100)));
 }
 
@@ -128,6 +128,7 @@ export default function AdminDashboardPage() {
   const now = new Date();
   const [dados, setDados] = useState<DashboardPayload | null>(null);
   const [central, setCentral] = useState<VisaoGeralResponse | null>(null);
+  const [centralIndisponivel, setCentralIndisponivel] = useState(false);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -145,7 +146,13 @@ export default function AdminDashboardPage() {
       const body = await dashResponse.json().catch(() => ({}));
       if (!dashResponse.ok) throw new Error(body.erro ?? "Não foi possível carregar a visão geral.");
       setDados(body as DashboardPayload);
-      if (centralResponse?.ok) setCentral(await centralResponse.json() as VisaoGeralResponse);
+      if (centralResponse?.ok) {
+        setCentral(await centralResponse.json() as VisaoGeralResponse);
+        setCentralIndisponivel(false);
+      } else {
+        setCentral(null);
+        setCentralIndisponivel(true);
+      }
       if (sessionResponse?.ok) {
         const session = await sessionResponse.json().catch(() => ({}));
         setPerfil({ nome: session.nome ?? null, cargo: session.cargo ?? null });
@@ -168,11 +175,11 @@ export default function AdminDashboardPage() {
     return [
       { key: "cadastro", label: "Cadastro", value: totalCadastro, icon: UsersRound, href: "/admin/clientes" },
       { key: "aguardando", label: "Aguardando cadastro", value: dados.kpis.aguardandoCadastro, icon: FileText, href: "/admin/clientes" },
-      { key: "preEligibility", label: stageMeta.preEligibility.label, value: filas?.preEligibility.length ?? 0, icon: FileCheck2, href: stageMeta.preEligibility.href },
-      { key: "financialReview", label: stageMeta.financialReview.label, value: filas?.financialReview.length ?? 0, icon: ReceiptText, href: stageMeta.financialReview.href },
-      { key: "termsConfirmed", label: stageMeta.termsConfirmed.label, value: filas?.termsConfirmed.length ?? 0, icon: CalendarDays, href: stageMeta.termsConfirmed.href },
-      { key: "financialRelease", label: stageMeta.financialRelease.label, value: filas?.financialRelease.length ?? 0, icon: ShieldCheck, href: stageMeta.financialRelease.href },
-      { key: "surgeryConfirmed", label: stageMeta.surgeryConfirmed.label, value: filas?.surgeryConfirmed.length ?? 0, icon: Check, href: stageMeta.surgeryConfirmed.href },
+      { key: "preEligibility", label: stageMeta.preEligibility.label, value: filas ? filas.preEligibility.length : null, icon: FileCheck2, href: stageMeta.preEligibility.href },
+      { key: "financialReview", label: stageMeta.financialReview.label, value: filas ? filas.financialReview.length : null, icon: ReceiptText, href: stageMeta.financialReview.href },
+      { key: "termsConfirmed", label: stageMeta.termsConfirmed.label, value: filas ? filas.termsConfirmed.length : null, icon: CalendarDays, href: stageMeta.termsConfirmed.href },
+      { key: "financialRelease", label: stageMeta.financialRelease.label, value: filas ? filas.financialRelease.length : null, icon: ShieldCheck, href: stageMeta.financialRelease.href },
+      { key: "surgeryConfirmed", label: stageMeta.surgeryConfirmed.label, value: filas ? filas.surgeryConfirmed.length : null, icon: Check, href: stageMeta.surgeryConfirmed.href },
     ];
   }, [dados, filas, totalCadastro]);
 
@@ -193,8 +200,8 @@ export default function AdminDashboardPage() {
   const proximosTermos = filas?.termsConfirmed.length ?? dados.agenda.proximos.filter((e) => e.tipo === "termos").length;
   const liberacoesFila = filas?.financialRelease ?? [];
   const fim7 = addDiasIso(dados.periodo.hoje, 7);
-  const proximasLiberacoes7 = liberacoesFila.filter((c) => c.prazoCirurgico && c.prazoCirurgico >= dados.periodo.hoje && c.prazoCirurgico < fim7 && !c.agendaCirurgicaLiberadaEm).length;
-  const liberacoesAtrasadas = liberacoesFila.filter((c) => c.prazoCirurgico && c.prazoCirurgico < dados.periodo.hoje && !c.agendaCirurgicaLiberadaEm).length;
+  const proximasLiberacoes7 = filas ? liberacoesFila.filter((c) => c.prazoCirurgico && c.prazoCirurgico >= dados.periodo.hoje && c.prazoCirurgico < fim7 && !c.agendaCirurgicaLiberadaEm).length : null;
+  const liberacoesAtrasadas = filas ? liberacoesFila.filter((c) => c.prazoCirurgico && c.prazoCirurgico < dados.periodo.hoje && !c.agendaCirurgicaLiberadaEm).length : null;
   const recebimentosSemana = dados.financeiro.valorRecebidoSemana ?? dados.financeiro.valorRecebidoMes;
   const inadimplentes = dados.financeiro.clientesInadimplentes ?? dados.financeiro.parcelasVencidas;
   const prontasApp = dados.financeiro.clientesProntasAcessoApp ?? 0;
@@ -202,7 +209,7 @@ export default function AdminDashboardPage() {
 
   const kpis = [
     { label: "Clientes ativas", value: String(dados.clientStats.ativas), sub: "contratos ativos na carteira", icon: UsersRound, href: "/admin/clientes" },
-    { label: "Próximas liberações", value: String(proximasLiberacoes7), sub: "prazos nos próximos 7 dias", icon: ShieldCheck, href: "/admin/agenda?aba=liberacao" },
+    { label: "Próximas liberações", value: proximasLiberacoes7 === null ? "—" : String(proximasLiberacoes7), sub: "prazos nos próximos 7 dias", icon: ShieldCheck, href: "/admin/agenda?aba=liberacao" },
     { label: "Cirurgias no mês", value: String(dados.agenda.resumo.cirurgiasMes), sub: "cirurgias com data no período", icon: CalendarDays, href: "/admin/agenda?aba=cirurgia" },
     { label: "Recebimentos da semana", value: formatarMoeda(recebimentosSemana), sub: `${dados.financeiro.recebidasSemana ?? dados.financeiro.recebidasNoMes} pagamento(s) confirmado(s)`, icon: CircleDollarSign, href: "/admin/financeiro" },
   ];
@@ -211,12 +218,12 @@ export default function AdminDashboardPage() {
     { id: "comprovantes", title: "Analisar comprovantes pendentes", sub: "Financeiro · aguardando conferência", count: dados.financeiro.aguardandoConferencia, tone: "bad" as Tone, href: "/admin/financeiro", icon: FileText },
     { id: "app", title: "Liberar acessos prontos no app", sub: "Cadastro com requisitos mínimos completos", count: prontasApp, tone: prontasApp > 0 ? "warn" as Tone : "ok" as Tone, href: "/admin/clientes", icon: UserRoundCheck },
     { id: "termos", title: "Acompanhar termos de hoje", sub: "Assinaturas e confirmações da agenda", count: dados.kpis.termosHoje, tone: dados.kpis.termosHoje > 0 ? "warn" as Tone : "ok" as Tone, href: "/admin/agenda?aba=termos", icon: CalendarDays },
-    { id: "liberacoes", title: liberacoesAtrasadas > 0 ? "Tratar liberações com prazo vencido" : "Acompanhar próximas liberações", sub: liberacoesAtrasadas > 0 ? "Prazo V46 já alcançado" : "Prazos V46 dos próximos 7 dias", count: liberacoesAtrasadas > 0 ? liberacoesAtrasadas : proximasLiberacoes7, tone: liberacoesAtrasadas > 0 ? "bad" as Tone : "warn" as Tone, href: "/admin/agenda?aba=liberacao", icon: ShieldCheck },
+    { id: "liberacoes", title: liberacoesAtrasadas === null ? "Central V46 indisponível" : liberacoesAtrasadas > 0 ? "Tratar liberações com prazo vencido" : "Acompanhar próximas liberações", sub: liberacoesAtrasadas === null ? "Sem permissão ou falha ao carregar a Central" : liberacoesAtrasadas > 0 ? "Prazo V46 já alcançado" : "Prazos V46 dos próximos 7 dias", count: liberacoesAtrasadas === null ? "—" : liberacoesAtrasadas > 0 ? liberacoesAtrasadas : proximasLiberacoes7 ?? 0, tone: liberacoesAtrasadas === null ? "warn" as Tone : liberacoesAtrasadas > 0 ? "bad" as Tone : "warn" as Tone, href: "/admin/agenda?aba=liberacao", icon: ShieldCheck },
   ];
 
   const alertas = [
     { icon: AlertTriangle, tone: inadimplentes > 0 ? "bad" as Tone : "ok" as Tone, title: `${inadimplentes} cliente(s) inadimplente(s)`, sub: `${dados.financeiro.parcelasVencidas} parcela(s) vencida(s) · ${formatarMoeda(dados.financeiro.valorVencido)}`, href: "/admin/financeiro" },
-    { icon: ShieldCheck, tone: liberacoesAtrasadas > 0 ? "bad" as Tone : "ok" as Tone, title: `${liberacoesAtrasadas} liberação(ões) fora do prazo`, sub: liberacoesAtrasadas > 0 ? "Exigem conferência operacional" : "Nenhuma liberação vencida", href: "/admin/agenda?aba=liberacao" },
+    { icon: ShieldCheck, tone: liberacoesAtrasadas === null ? "warn" as Tone : liberacoesAtrasadas > 0 ? "bad" as Tone : "ok" as Tone, title: liberacoesAtrasadas === null ? "Central V46 indisponível" : `${liberacoesAtrasadas} liberação(ões) fora do prazo`, sub: liberacoesAtrasadas === null ? "Não foi possível validar os prazos agora" : liberacoesAtrasadas > 0 ? "Exigem conferência operacional" : "Nenhuma liberação vencida", href: "/admin/agenda?aba=liberacao" },
     { icon: UsersRound, tone: dados.monitoramento.semAcessoRecente > 0 ? "warn" as Tone : "ok" as Tone, title: `${dados.monitoramento.semAcessoRecente} dispositivo(s) sem acesso recente`, sub: "Sem atividade registrada há mais de 7 dias", href: "/admin/configuracoes?aba=monitoramento" },
     { icon: Bell, tone: dados.monitoramento.webPushConfigurado ? "ok" as Tone : "warn" as Tone, title: dados.monitoramento.webPushConfigurado ? "Web Push configurado" : "Web Push requer configuração", sub: `${dados.monitoramento.notificacoesHoje} envio(s) registrado(s) hoje`, href: "/admin/notificacoes" },
   ];
@@ -263,6 +270,7 @@ export default function AdminDashboardPage() {
     </header>
 
     {erro && <div className="ov-card" style={{ marginBottom: 12, padding: "9px 12px", color: "var(--ov-bad)", fontSize: 9 }}>{erro}</div>}
+    {centralIndisponivel && <div className="ov-card" style={{ marginBottom: 12, padding: "9px 12px", color: "var(--ov-warn)", fontSize: 9 }}>A Central V46 não pôde ser carregada para este acesso. Etapas e prazos dependentes dela aparecem como indisponíveis, não como zero.</div>}
 
     <section className="ov-kpis">
       {kpis.map(({ icon: Icon, ...item }) => <a key={item.label} href={item.href} className="ov-card ov-kpi ov-kpi-link">
@@ -290,10 +298,10 @@ export default function AdminDashboardPage() {
             const pct = percent(stage.value, baseFunnel);
             return <a key={stage.key} href={stage.href} className="ov-stage" style={{ textDecoration: "none", color: "inherit" }}>
               <div className="ov-stage-label">{stage.label}</div>
-              <div className="ov-stage-count">{stage.value}</div>
+              <div className="ov-stage-count">{stage.value ?? "—"}</div>
               <div className="ov-stage-circle"><Icon size={18} /></div>
               <div className="ov-progress"><span style={{ width: `${pct}%` }} /></div>
-              <div className="ov-stage-pct">{pct}%</div>
+              <div className="ov-stage-pct">{stage.value === null ? "indisponível" : `${pct}%`}</div>
             </a>;
           })}
         </div>
