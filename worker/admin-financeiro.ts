@@ -229,24 +229,23 @@ async function listarRecebidos(db: Db, url: URL) {
 
   if (tipo === "recebidos") {
     const { inicio, fimExclusivo } = intervaloDiaOperacionalUtc(data);
-    itens = (recebimentos as any[])
-      .filter((recebimento) =>
-        recebimento.status_validacao === "validado"
-        && recebimento.validado_em
-        && recebimento.validado_em >= inicio
-        && recebimento.validado_em < fimExclusivo
-      )
-      .map((recebimento) => {
-        const boleto = boletosPorId.get(recebimento.boleto_id);
-        if (!boleto) return null;
-        return {
-          ...apresentarRecebivel(boleto, recebimento),
-          recebimentoId: recebimento.id,
-          confirmadoEm: recebimento.validado_em,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => String(b.confirmadoEm ?? "").localeCompare(String(a.confirmadoEm ?? "")));
+    const recebidosDoDia: any[] = [];
+    for (const recebimento of recebimentos as any[]) {
+      if (
+        recebimento.status_validacao !== "validado"
+        || !recebimento.validado_em
+        || recebimento.validado_em < inicio
+        || recebimento.validado_em >= fimExclusivo
+      ) continue;
+      const boleto = boletosPorId.get(recebimento.boleto_id);
+      if (!boleto) continue;
+      recebidosDoDia.push({
+        ...apresentarRecebivel(boleto, recebimento),
+        recebimentoId: recebimento.id,
+        confirmadoEm: recebimento.validado_em,
+      });
+    }
+    itens = recebidosDoDia.sort((a, b) => String(b.confirmadoEm ?? "").localeCompare(String(a.confirmadoEm ?? "")));
   } else {
     const porBoleto = indiceRecebimentos(recebimentos as any[]);
     itens = (boletos as any[])
