@@ -276,14 +276,31 @@ describe("chamada ao Gemini", () => {
     expect(r.tentativas).toEqual(["gemini-3.5-flash-lite:404", "gemini-3.1-flash-lite:404", "gemini-2.5-flash-lite:404", "gemini-2.0-flash-lite:404", "gemini-2.5-flash:200"]);
   });
 
-  it("falhas lentas continuam limitadas a 3 chamadas", async () => {
+  it("503 com backoff alcança outro modelo disponível sem salvar mensagem", async () => {
+    const { db, linhas } = bancoFalso();
+    const chamadas: string[] = [];
+    const fetcher = (async (url: string) => {
+      if (url.includes("/models?")) return new Response(JSON.stringify({ models: ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"].map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 });
+      const modelo = url.split("/models/")[1].split(":")[0];
+      chamadas.push(modelo);
+      if (modelo === "gemini-2.5-flash-lite") return new Response("{}", { status: 404 });
+      if (modelo !== "gemini-2.5-flash") return new Response("{}", { status: 503 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: "Cada passo conta: *siga no seu ritmo* hoje." }) }] } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+    expect(r).toMatchObject({ ok: true, modelo: "gemini-2.5-flash" });
+    expect(chamadas).toEqual(["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"]);
+    expect(linhas.size).toBe(0);
+  }, 10_000);
+
+  it("falhas não recuperáveis rapidamente continuam limitadas a 3 chamadas", async () => {
     let chamadas = 0;
     const fetcher = (async (url: string) => {
       if (url.includes("/models?")) return new Response(JSON.stringify({ models: ["a-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.9-flash"].map((n) => ({ name: `models/${n}`, supportedGenerationMethods: ["generateContent"] })) }), { status: 200 });
-      chamadas += 1; return new Response("{}", { status: 503 });
+      chamadas += 1; return new Response("{}", { status: 502 });
     }) as unknown as typeof fetch;
     const erro = await gerarComGemini("k", "gemini-3.5-flash-lite", "s", "u", fetcher).catch((e: unknown) => e) as ErroGemini;
-    expect(erro.motivo).toBe("http_503");
+    expect(erro.motivo).toBe("http_502");
     expect(chamadas).toBe(3);
   });
 
@@ -459,3 +476,4 @@ describe("conversa do painel com o Gemini (pedir outra e escolher a do dia)", ()
     expect(limparPedido(null)).toBe("");
   });
 });
+
