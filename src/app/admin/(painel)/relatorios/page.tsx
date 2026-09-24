@@ -76,6 +76,7 @@ export default function RelatoriosPage() {
   const [catalogo,setCatalogo]=useState(false);
   const [dados,setDados]=useState<DashboardData|null>(null);
   const [carregando,setCarregando]=useState(true);
+  const [erroCarga,setErroCarga]=useState<string|null>(null);
   const [periodo,setPeriodo]=useState(periodoAtual);
   const [responsavel,setResponsavel]=useState("todos");
   const [procedimento,setProcedimento]=useState("todos");
@@ -84,11 +85,12 @@ export default function RelatoriosPage() {
   useEffect(()=>{
     const controller=new AbortController();
     setCarregando(true);
+    setErroCarga(null);
     const qs=new URLSearchParams({periodo,responsavel,procedimento,status});
     fetch("/api/admin/relatorios/dashboard?"+qs.toString(),{cache:"no-store",signal:controller.signal})
       .then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d?.erro||"Falha ao carregar relatórios.");return d as DashboardData;})
       .then(setDados)
-      .catch(e=>{if(e?.name!=="AbortError")setDados(null);})
+      .catch(e=>{if(e?.name!=="AbortError"){setDados(null);setErroCarga(e instanceof Error?e.message:"Falha ao carregar relatórios.");}})
       .finally(()=>{if(!controller.signal.aborted)setCarregando(false);});
     return ()=>controller.abort();
   },[periodo,responsavel,procedimento,status]);
@@ -142,7 +144,7 @@ export default function RelatoriosPage() {
       <div className={styles.exports}><button type="button" className={styles.exportPrimary} onClick={()=>window.print()}><FileText size={16}/>Exportar PDF</button><button type="button" onClick={exportarPlanilha}><FileSpreadsheet size={16}/>Exportar planilha</button></div>
     </section>
 
-    {carregando||!dados?<div className={styles.loading}>Consolidando dados reais do período…</div>:<>
+    {carregando?<div className={styles.loading}>Consolidando dados reais do período…</div>:!dados?<div className={styles.loading} role="alert"><strong>Não foi possível carregar os relatórios.</strong><br/>{erroCarga||"Tente novamente em instantes."}</div>:<>
       <section className={styles.kpis}>{kpis.map(k=><article className={styles.kpi} key={k.label}><div className={styles.kpiTop}><span>{k.icon}</span>{k.label}</div><strong>{k.value}</strong><div className={styles.kpiFoot}><em data-tone={k.trend.tone}>{k.trend.text}</em><small>{k.note}</small></div></article>)}</section>
 
       <section className={styles.middleGrid}>
@@ -177,7 +179,7 @@ export default function RelatoriosPage() {
         <article className={styles.panel}>
           <div className={styles.panelHead}><h2><Lightbulb size={17}/>Insights do período</h2></div>
           <div className={styles.insights}>
-            <div><span className={styles.insightGood}>↑</span><p><strong>{dados.insights.recebimentosVariacao==null?"Primeiro período comparável":(dados.insights.recebimentosVariacao>=0?"Aumento de ":"Queda de ")+Math.abs(dados.insights.recebimentosVariacao).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%"}</strong><small>nos recebimentos em relação ao mês anterior.</small></p></div>
+            <div><span className={dados.insights.recebimentosVariacao!=null&&dados.insights.recebimentosVariacao<0?styles.insightRose:styles.insightGood}>{dados.insights.recebimentosVariacao==null?"•":dados.insights.recebimentosVariacao<0?"↓":"↑"}</span><p><strong>{dados.insights.recebimentosVariacao==null?"Primeiro período comparável":(dados.insights.recebimentosVariacao>=0?"Aumento de ":"Queda de ")+Math.abs(dados.insights.recebimentosVariacao).toLocaleString("pt-BR",{maximumFractionDigits:1})+"%"}</strong><small>nos recebimentos em relação ao mês anterior.</small></p></div>
             <div><span className={styles.insightRose}><Users size={14}/></span><p><strong>{dados.insights.reativacoes} reativações</strong><small>registradas por mudança real de status no período.</small></p></div>
             <div><span className={styles.insightRose}><CircleDollarSign size={14}/></span><p><strong>Inadimplência em {dados.insights.taxaInadimplencia.toLocaleString("pt-BR",{maximumFractionDigits:1})}%</strong><small>do valor das parcelas com vencimento no período.</small></p></div>
             <div><span className={styles.insightRose}>★</span><p><strong>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.nome:"Sem destaque no período"}</strong><small>{dados.insights.melhorResponsavel?dados.insights.melhorResponsavel.total+" cirurgias confirmadas no recorte.":"Não houve cirurgias suficientes para comparar."}</small></p></div>
