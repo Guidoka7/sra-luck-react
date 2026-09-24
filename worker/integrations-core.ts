@@ -7,6 +7,7 @@ import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
+import { calcularEncargosAtraso } from "../src/lib/financeiro/encargos";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -62,16 +63,6 @@ function sameOrigin(request: Request) {
   try { return origin === new URL(request.url).origin; } catch { return false; }
 }
 
-function encargosPorAtraso(valor: number, dataVencimento: string) {
-  const vencimento = new Date(`${dataVencimento}T00:00:00`);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const diasEmAtraso = Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / 86_400_000));
-  const juros = valor * diasEmAtraso * 0.002;
-  const multa = valor * Math.ceil(diasEmAtraso / 30) * 0.02;
-  return { diasEmAtraso, encargos: diasEmAtraso > 0 ? juros + multa : 0 };
-}
-
 async function createMercadoPagoPreference(request: Request, env: Env) {
   const client = await requireClient(request, env);
   if (!client) return json({ erro: "Sessão expirada." }, 401);
@@ -98,7 +89,7 @@ async function createMercadoPagoPreference(request: Request, env: Env) {
   if (boleto.suspensa) return json({ erro: "Essa parcela está suspensa e não pode ser paga agora." }, 409);
 
   const valorNominal = Number(boleto.valor);
-  const { encargos } = encargosPorAtraso(valorNominal, boleto.data_vencimento);
+  const { encargos } = calcularEncargosAtraso(valorNominal, boleto.data_vencimento);
   const cliente = Array.isArray(boleto.clientes) ? boleto.clientes[0] : boleto.clientes;
   const taxaCartao = Number(cliente?.financeiro_taxa_cartao ?? 5.4);
   const valorComTaxa = Math.round((valorNominal + encargos) * (1 + taxaCartao / 100) * 100) / 100;

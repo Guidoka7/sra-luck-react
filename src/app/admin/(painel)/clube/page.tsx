@@ -96,12 +96,20 @@ export default function ClubeAdminPage() {
   const [aba, setAba] = useState<AbaClube>("painel");
   const [dados, setDados] = useState<ClubeOverview | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<"abertas" | "fecharam" | "premiadas" | "todas">("abertas");
   const [editando, setEditando] = useState<Indicacao | null>(null);
 
   const carregar = useCallback(async () => {
+    setCarregando(true);
+    setErroCarga(null);
     try { setDados(await api("/api/admin/credit-ops/club/overview")); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao carregar o Clube."); }
+    catch (e) {
+      const mensagem = e instanceof Error ? e.message : "Falha ao carregar o Clube.";
+      setDados(null);
+      setErroCarga(mensagem);
+      toast.error(mensagem);
+    }
     finally { setCarregando(false); }
   }, []);
   useEffect(() => { void carregar(); }, [carregar]);
@@ -123,7 +131,7 @@ export default function ClubeAdminPage() {
   ];
 
   if (aba === "painel") {
-    return <ClubeDashboard dados={dados} carregando={carregando} onOpen={setAba} />;
+    return <ClubeDashboard dados={dados} carregando={carregando} erro={erroCarga} onRetry={carregar} onOpen={setAba} />;
   }
 
   return <div className={["zip-admin", styles.page].join(" ")} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -433,9 +441,12 @@ function PainelPontuacao({ config, onSalvo }: { config: Config; onSalvo: () => P
   </div>;
 }
 
-function ClubeDashboard({ dados, carregando, onOpen }: { dados: ClubeOverview | null; carregando: boolean; onOpen: (aba: AbaClube) => void }) {
+function ClubeDashboard({ dados, carregando, erro, onRetry, onOpen }: { dados: ClubeOverview | null; carregando: boolean; erro: string | null; onRetry: () => Promise<void>; onOpen: (aba: AbaClube) => void }) {
   if (carregando || !dados) {
-    return <div className={["zip-admin", styles.page].join(" ")}><div className={styles.loading}>{carregando ? "Carregando Clube…" : "Não foi possível carregar o Clube."}</div></div>;
+    return <div className={["zip-admin", styles.page].join(" ")}><div className={styles.loading}>
+      <div>{carregando ? "Carregando Clube…" : erro || "Não foi possível carregar o Clube."}</div>
+      {!carregando && <button type="button" style={{ ...botao(), marginTop: 10 }} onClick={() => void onRetry()}>Tentar novamente</button>}
+    </div></div>;
   }
 
   const abertas = dados.indicacoes.filter((i) => i.status === "enviada" || i.status === "qualificada").length;

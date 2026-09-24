@@ -16,6 +16,18 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function dataSaoPaulo(value: unknown) {
+  if (!value) return "";
+  const data = new Date(String(value));
+  if (Number.isNaN(data.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(data);
+}
+
 /**
  * Motor de relatórios (Fase 10). Todo relatório do catálogo é lido de tabelas
  * reais do Supabase — nada aqui gera números fictícios. Um relatório sem base
@@ -674,7 +686,7 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
       const agora = new Date();
       const periodo = /^\d{4}-\d{2}$/.test(url.searchParams.get("periodo") ?? "")
         ? String(url.searchParams.get("periodo"))
-        : agora.toISOString().slice(0, 7);
+        : agoraSaoPaulo().data.slice(0, 7);
       const [ano, mes] = periodo.split("-").map(Number);
       const inicio = periodo + "-01";
       const proximo = new Date(Date.UTC(ano, mes, 1)).toISOString().slice(0, 10);
@@ -710,7 +722,7 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
         .reduce((soma: number, r: any) => soma + Number(r.valor_recebido ?? 0), 0);
       const contaReativacoes = (ini: string, fim: string) => logs.filter((l: any) => {
         if (l.acao !== "alterou_status_contrato") return false;
-        const data = String(l.created_at ?? "").slice(0, 10);
+        const data = dataSaoPaulo(l.created_at);
         const detalhes = (l.detalhes ?? {}) as Record<string, unknown>;
         return data >= ini && data < fim
           && detalhes.para === "ativo"
@@ -718,15 +730,14 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
       }).length;
       const contaCancelamentos = (ini: string, fim: string) => logs.filter((l: any) => {
         if (l.acao !== "alterou_status_contrato") return false;
-        const data = String(l.created_at ?? "").slice(0, 10);
+        const data = dataSaoPaulo(l.created_at);
         const detalhes = (l.detalhes ?? {}) as Record<string, unknown>;
         return data >= ini && data < fim && detalhes.para === "cancelado";
       }).length;
-      const contaLiberacoes = (ini: string, fim: string) => agendamentos.filter((a: any) =>
-        a.agenda_cirurgica_liberada_em
-        && String(a.agenda_cirurgica_liberada_em).slice(0, 10) >= ini
-        && String(a.agenda_cirurgica_liberada_em).slice(0, 10) < fim
-      ).length;
+      const contaLiberacoes = (ini: string, fim: string) => agendamentos.filter((a: any) => {
+        const data = dataSaoPaulo(a.agenda_cirurgica_liberada_em);
+        return Boolean(data) && data >= ini && data < fim;
+      }).length;
 
       const valorRecebido = somaRecebimentos(inicio, proximo);
       const valorRecebidoAnterior = somaRecebimentos(inicioAnterior, fimAnterior);

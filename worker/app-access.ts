@@ -1,3 +1,4 @@
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 export type AppAccessRequirementKey = "nome" | "cpf" | "data_nascimento" | "financeiro";
 
 export interface AppAccessRequirementsInput {
@@ -44,7 +45,7 @@ function dataIsoReal(valor: string): boolean {
 }
 
 /** Data de nascimento persistida em ISO (AAAA-MM-DD), existente e nunca futura. */
-export function dataNascimentoValida(valorBruto: string | null | undefined, hojeIso = new Date().toISOString().slice(0, 10)): boolean {
+export function dataNascimentoValida(valorBruto: string | null | undefined, hojeIso = hojeSaoPaulo()): boolean {
   const valor = String(valorBruto ?? "").trim();
   if (!dataIsoReal(valor) || !dataIsoReal(hojeIso)) return false;
   return valor <= hojeIso;

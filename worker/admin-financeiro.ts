@@ -4,6 +4,7 @@ import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { detectarTipoArquivo as detectarTipoComprovante } from "./arquivos";
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -22,7 +23,7 @@ async function lerBody(request: Request): Promise<Json> {
   try { return await request.json(); } catch { return {}; }
 }
 
-function hojeIso() { return new Date().toISOString().slice(0, 10); }
+function hojeIso() { return hojeSaoPaulo(); }
 function dataValida(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value); }
 function dinheiro(value: unknown) { const number = Number(value ?? 0); return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0; }
 function relacao<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }

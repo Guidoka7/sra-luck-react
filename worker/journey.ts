@@ -2,6 +2,7 @@ import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 
 type CreditStage =
   | "nova_venda"
@@ -170,7 +171,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     if (path === "/api/admin/journey/windows" && request.method === "GET") {
       const tipo = url.searchParams.get("tipo");
-      let query = db.from("agenda_janelas").select("*").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
+      let query = db.from("agenda_janelas").select("*").gte("data", hojeSaoPaulo()).order("data").order("horario_inicio");
       if (tipo === "termos" || tipo === "cirurgia") query = query.eq("tipo", tipo);
       const { data, error } = await query;
       if (error) return json({ erro: publicError(error) }, 500);
@@ -268,7 +269,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
 
     if (path === "/api/admin/journey/refresh-releases" && request.method === "POST") {
       if (!pode(PERMISSOES_ADMIN.AGENDA_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para atualizar liberações." }, 403);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = hojeSaoPaulo();
       const { data, error } = await db.from("contratos_credito").update({ etapa: "agenda_cirurgica_liberada", updated_at: new Date().toISOString() })
         .eq("etapa", "quitado").lte("agenda_cirurgica_liberar_em", today).select("id,cliente_id,agenda_cirurgica_liberar_em");
       if (error) return json({ erro: publicError(error) }, 500);
@@ -292,7 +293,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
     if (!contract) return json({ contrato: null }, 404);
 
     if (path === "/api/cliente/journey" && request.method === "GET") {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = hojeSaoPaulo();
       if (contract.etapa === "quitado" && contract.agenda_cirurgica_liberar_em && contract.agenda_cirurgica_liberar_em <= today) {
         const { data: refreshed } = await db.from("contratos_credito").update({ etapa: "agenda_cirurgica_liberada", updated_at: new Date().toISOString() }).eq("id", contract.id).select("*").single();
         if (refreshed) contract = refreshed as unknown as ContractRow;
@@ -331,7 +332,7 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
           totalParcelas: progress.totalInstallments,
         }, 409);
       }
-      const today = new Date().toISOString().slice(0, 10);
+      const today = hojeSaoPaulo();
       const { data: deadlineData, error: deadlineError } = await db.rpc("adicionar_dias_uteis", { p_data: today, p_dias: 5 });
       if (deadlineError) return json({ erro: "Não foi possível calcular o prazo do levantamento financeiro." }, 500);
       const { data, error } = await db.from("contratos_credito").update({
@@ -368,12 +369,12 @@ export async function journeyApi(request: Request, env: Env): Promise<Response |
       const tipo = url.searchParams.get("tipo") === "cirurgia" ? "cirurgia" : "termos";
       if (tipo === "termos" && !["forma_pagamento_liberada", "termos_agendados"].includes(contract.etapa)) return json({ janelas: [], bloqueado: true });
       if (tipo === "cirurgia") {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = hojeSaoPaulo();
         if (!["agenda_cirurgica_liberada", "cirurgia_agendada"].includes(contract.etapa) || !contract.agenda_cirurgica_liberar_em || contract.agenda_cirurgica_liberar_em > today) {
           return json({ janelas: [], bloqueado: true, liberarEm: contract.agenda_cirurgica_liberar_em ?? null });
         }
       }
-      const { data: windowsData, error } = await db.from("agenda_janelas").select("*").eq("tipo", tipo).eq("status", "disponivel").gte("data", new Date().toISOString().slice(0, 10)).order("data").order("horario_inicio");
+      const { data: windowsData, error } = await db.from("agenda_janelas").select("*").eq("tipo", tipo).eq("status", "disponivel").gte("data", hojeSaoPaulo()).order("data").order("horario_inicio");
       if (error) {
         console.error("Falha ao carregar janelas da agenda da cliente:", error);
         return json({ erro: "Não foi possível carregar a agenda agora." }, 500);

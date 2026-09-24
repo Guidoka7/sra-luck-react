@@ -4,6 +4,7 @@ import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from
 import { getCookie, verificarTokenAdmin } from "./session";
 import { calcularLiberacaoCirurgica } from "./surgery-release";
 import { calcularPrevisaoElegibilidade, REGRAS_ELEGIBILIDADE_V46 } from "./eligibility-forecast";
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -89,7 +90,7 @@ async function fetchOptionalRows(
 }
 
 export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeSaoPaulo();
 
   const [clientes, boletos] = await Promise.all([
     fetchAllRows(
