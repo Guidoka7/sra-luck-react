@@ -253,3 +253,52 @@
 .dark .overview-v2 .ov-checkbox {
   border-color: rgba(236,204,214,.22);
 }
+
+/* Visão Geral aprovada — composição operacional em 4 KPIs + prioridades/funil + alertas/cirurgias/atalhos. */
+.overview-v2 .ov-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.overview-v2 .ov-head-side{display:flex;align-items:flex-end;gap:22px}
+.overview-v2 .ov-motto{font-family:Georgia,serif;font-size:10px;line-height:1.25;text-align:right;color:var(--ov-muted)}
+.overview-v2 .ov-motto strong{color:var(--ov-wine);font-weight:700}
+.overview-v2 .ov-main-grid{display:grid;grid-template-columns:minmax(280px,.78fr) minmax(620px,1.72fr);gap:10px;margin-bottom:12px}
+.overview-v2 .ov-main-grid .ov-funnel{margin-bottom:0}
+.overview-v2 .ov-main-grid .ov-funnel-body{padding:15px 11px 12px;gap:4px}
+.overview-v2 .ov-main-grid .ov-stage-label{font-size:7.8px}
+.overview-v2 .ov-main-grid .ov-stage-count{font-size:10.5px}
+.overview-v2 .ov-main-grid .ov-stage-circle{width:38px;height:38px}
+.overview-v2 .ov-priority-count{min-width:29px;height:23px;padding:0 7px;border-radius:999px;display:grid;place-items:center;font-size:8px;font-weight:850}
+.overview-v2 .ov-priority-count.bad{background:var(--ov-bad-bg);color:var(--ov-bad)}
+.overview-v2 .ov-priority-count.warn{background:var(--ov-warn-bg);color:var(--ov-warn)}
+.overview-v2 .ov-priority-count.ok{background:var(--ov-ok-bg);color:var(--ov-ok)}
+.overview-v2 .ov-lower-grid{display:grid;grid-template-columns:minmax(270px,.9fr) minmax(360px,1.15fr) minmax(220px,.72fr);gap:10px}
+.overview-v2 .ov-surgery-chart{padding:12px 14px 14px}
+.overview-v2 .ov-surgery-total{display:flex;align-items:baseline;gap:7px;margin-bottom:10px}
+.overview-v2 .ov-surgery-total strong{font-size:18px;color:var(--ov-wine)}
+.overview-v2 .ov-surgery-total span{font-size:8.5px;color:var(--ov-muted)}
+.overview-v2 .ov-surgery-bars{height:145px;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:end}
+.overview-v2 .ov-surgery-week{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px}
+.overview-v2 .ov-surgery-value{font-size:8px;font-weight:800;color:var(--ov-ink)}
+.overview-v2 .ov-surgery-track{width:100%;max-width:42px;height:105px;border-radius:8px 8px 4px 4px;background:var(--ov-soft);display:flex;align-items:flex-end;overflow:hidden;border:1px solid var(--ov-line-2)}
+.overview-v2 .ov-surgery-track span{display:block;width:100%;min-height:5px;border-radius:7px 7px 3px 3px;background:linear-gradient(180deg,var(--ov-wine-2),var(--ov-wine))}
+.overview-v2 .ov-surgery-label{font-size:7.8px;color:var(--ov-muted);white-space:nowrap}
+.overview-v2 .ov-action-list{display:grid;gap:7px;padding:10px 12px 12px}
+.overview-v2 .ov-action-wide{min-height:48px}
+.overview-v2 .ov-action-wide>span:nth-child(2){display:grid;gap:2px}
+.overview-v2 .ov-action-wide strong{font-size:8.8px}
+.overview-v2 .ov-action-wide small{font-size:7.5px;color:var(--ov-muted);font-weight:500}
+.dark .overview-v2 .ov-surgery-track{background:rgba(255,255,255,.025)}
+@media(max-width:1180px){
+  .overview-v2 .ov-kpis{grid-template-columns:repeat(2,1fr)}
+  .overview-v2 .ov-main-grid{grid-template-columns:1fr}
+  .overview-v2 .ov-lower-grid{grid-template-columns:1fr 1fr}
+  .overview-v2 .ov-lower-grid>.ov-card:last-child{grid-column:1/-1}
+}
+@media(max-width:760px){
+  .overview-v2 .ov-head-side{width:100%;align-items:flex-start;justify-content:space-between}
+  .overview-v2 .ov-motto{text-align:left}
+  .overview-v2 .ov-lower-grid{grid-template-columns:1fr}
+  .overview-v2 .ov-lower-grid>.ov-card:last-child{grid-column:auto}
+}
+@media(max-width:560px){
+  .overview-v2 .ov-kpis{grid-template-columns:1fr}
+  .overview-v2 .ov-head-side{flex-direction:column;gap:7px}
+}
