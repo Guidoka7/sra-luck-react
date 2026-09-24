@@ -8,8 +8,8 @@ import { PERMISSOES_ADMIN as P, temPermissaoAdmin, type ColaboradorAdmin } from 
  * (ex.: excluir cliente, baixa manual); esta camada fecha a aba inteira.
  */
 const FINANCE = [P.FINANCEIRO_REVISAO, P.FINANCEIRO_BAIXA_MANUAL, P.FINANCEIRO_VALIDAR_COMPROVANTE];
-const FINANCE_VER = [P.FINANCEIRO_VER, ...FINANCE, P.INTEGRACOES_OPERAR_FINANCEIRO];
-const CLIENTS_ACOES = [P.CLIENTES_EDITAR, P.CLIENTES_ALTERAR_STATUS_CONTRATO, P.CLIENTES_EXCLUIR, P.CLIENTES_LIBERAR_ACESSO_APP, P.CRM_IMPORTAR];
+const FINANCE_VER = [P.FINANCEIRO_VER, ...FINANCE];
+const CLIENTS_ACOES = [P.CLIENTES_EDITAR, P.CLIENTES_ALTERAR_STATUS_CONTRATO, P.CLIENTES_EXCLUIR, P.CLIENTES_LIBERAR_ACESSO_APP];
 // O drawer da cliente mostra financeiro e jornada: quem opera essas abas também lê a cliente.
 const CLIENTS = [P.CLIENTES_VER, ...CLIENTS_ACOES, ...FINANCE, P.AGENDA_GERENCIAR];
 const AGENDA_VER = [P.AGENDA_VER, P.AGENDA_GERENCIAR];
@@ -22,6 +22,7 @@ export function adminReadPermissions(path: string): readonly string[] | null {
   if (/^\/api\/admin\/(monitoramento-app|monitoramento-erros|monitoramento-storage|monitoramento-admin|monitoramento-cliente\/[^/]+|diagnostico)$/.test(path)) return [P.MONITORAMENTO_VISUALIZAR];
   // Status das conexões: leitura de qualquer pessoa do painel (Notificações, Gerais).
   if (path === "/api/admin/integrations/status") return null;
+  // Operação das integrações: só Administrativo (as chaves abaixo não são concedíveis).
   if (/^\/api\/admin\/integrations\/rd-station\/importacoes(?:\/|$)/.test(path)) return [P.CRM_IMPORTAR];
   if (/^\/api\/admin\/integrations\/conta-azul\/(painel|conflitos|fila|vinculos|historico)$/.test(path)) return [P.INTEGRACOES_OPERAR_FINANCEIRO];
   if (/^\/api\/admin\/integrations(?:\/|$)/.test(path)) return [P.INTEGRACOES_GERENCIAR_CREDENCIAIS];

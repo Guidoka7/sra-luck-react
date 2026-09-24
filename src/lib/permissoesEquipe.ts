@@ -10,8 +10,10 @@
  * ação da mesma aba (quem pode editar clientes, vê clientes). Ações nunca
  * vêm junto com "ver": ligar só "ver" dá acesso somente leitura.
  *
- * Integrações (chaves/configuração) e Monitoramento são do Dev e não
- * aparecem aqui.
+ * Integrações: chaves e configuração são só do Dev; a operação (importações
+ * do RD Station, conflitos e sincronização da Conta Azul) é só do cargo
+ * Administrativo. Nenhuma das duas pode ser concedida a outros cargos, por
+ * isso não aparecem aqui. Monitoramento também é só do Dev.
  */
 
 export type PermissaoEquipe = { chave: string; nome: string; descricao: string; tipo: "ver" | "acao" };
@@ -40,7 +42,6 @@ export const ABAS_PERMISSOES: AbaPermissoes[] = [
       acao("clientes.liberar_acesso_app", "Liberar acesso ao app", "Botão de liberar o aplicativo no Perfil da cliente."),
       acao("clientes.alterar_status_contrato", "Alterar status do contrato", "Ativo, suspenso, negativado ou cancelado."),
       acao("clientes.excluir", "Excluir cliente", "Excluir o perfil (quando não há histórico financeiro)."),
-      acao("crm.importar", "Importações do RD Station", "Importar negociações e revisar duplicidades."),
     ],
   },
   {
@@ -50,7 +51,6 @@ export const ABAS_PERMISSOES: AbaPermissoes[] = [
       acao("financeiro.validar_comprovante", "Validar comprovantes", "Aprovar ou recusar comprovantes enviados pelas clientes."),
       acao("financeiro.baixa_manual", "Registrar baixa manual", "Dar baixa em parcela paga fora do app."),
       acao("financeiro.revisao", "Revisão e liberação financeira", "Revisão financeira, parcelas, carnês e liberação financeira."),
-      acao("integracoes.operar_financeiro", "Operar a Conta Azul", "Conflitos, fila, vínculos e sincronização com a Conta Azul."),
     ],
   },
   {
@@ -98,13 +98,13 @@ export function leituraDaAba(id: string): string[] {
 export const MODELOS_CARGO: Record<string, { nome: string; descricao: string; permissoes: string[] }> = {
   financeiro: {
     nome: "Financeiro",
-    descricao: "Parcelas, comprovantes, baixas e Conta Azul; vê clientes e agenda.",
-    permissoes: ["visao_geral.ver", "clientes.ver", "agenda.ver", "financeiro.ver", "financeiro.validar_comprovante", "financeiro.baixa_manual", "financeiro.revisao", "integracoes.operar_financeiro", "relatorios.visualizar"],
+    descricao: "Parcelas, comprovantes e baixas; vê clientes e agenda.",
+    permissoes: ["visao_geral.ver", "clientes.ver", "agenda.ver", "financeiro.ver", "financeiro.validar_comprovante", "financeiro.baixa_manual", "financeiro.revisao", "relatorios.visualizar"],
   },
   vendedora: {
     nome: "Vendedora",
-    descricao: "Vê e cadastra clientes e acompanha o CRM; sem acesso ao financeiro.",
-    permissoes: ["clientes.ver", "clientes.editar", "crm.importar", "clube.ver"],
+    descricao: "Vê e cadastra clientes; sem acesso ao financeiro.",
+    permissoes: ["clientes.ver", "clientes.editar", "clube.ver"],
   },
   sdr: {
     nome: "SDR",
@@ -114,7 +114,7 @@ export const MODELOS_CARGO: Record<string, { nome: string; descricao: string; pe
   gestao: {
     nome: "Gestão",
     descricao: "Visão completa da operação, relatórios e previsões; sem equipe e sem configurações.",
-    permissoes: ["visao_geral.ver", "agenda.ver", "agenda.gerenciar", "clientes.ver", "clientes.editar", "clientes.liberar_acesso_app", "clientes.alterar_status_contrato", "crm.importar", "financeiro.ver", "financeiro.revisao", "clube.ver", "credito.gerenciar", "previsoes.ver", "relatorios.visualizar", "relatorios.exportar", "notificacoes.gerenciar"],
+    permissoes: ["visao_geral.ver", "agenda.ver", "agenda.gerenciar", "clientes.ver", "clientes.editar", "clientes.liberar_acesso_app", "clientes.alterar_status_contrato", "financeiro.ver", "financeiro.revisao", "clube.ver", "credito.gerenciar", "previsoes.ver", "relatorios.visualizar", "relatorios.exportar", "notificacoes.gerenciar"],
   },
   administrativo: { nome: "Administrativo", descricao: "Acesso total ao painel.", permissoes: [...TODAS_PERMISSOES] },
 };

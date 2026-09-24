@@ -1,7 +1,7 @@
 import { getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { pseudonymizeActorId, requestLogger } from "./logger";
-import { temAcessoAoPainel } from "../src/lib/permissoesEquipe";
+import { PERMISSOES_VALIDAS, temAcessoAoPainel } from "../src/lib/permissoesEquipe";
 import {
   DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,
   isDevConsoleSyntheticAdminId,
@@ -97,7 +97,9 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
 
   if (error) throw error;
   if (!data || data.ativo !== true || !CARGOS_CONHECIDOS.has(String(data.cargo))) return null;
-  const permissoes = Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string") : [];
+  // Só vale o que está no catálogo concedível: chaves antigas ou de área exclusiva
+  // (integrações, monitoramento) gravadas no banco nunca liberam nada.
+  const permissoes = Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string" && PERMISSOES_VALIDAS.has(item)) : [];
   if (!temAcessoAoPainel(String(data.cargo), permissoes)) return null;
 
   return {

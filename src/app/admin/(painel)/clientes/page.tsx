@@ -11,6 +11,7 @@ import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database
 import styles from "@/components/admin/lista/AdminLista.module.css";
 import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
 import { CrmOperacao } from "@/features/admin/IntegracoesOperacao";
+import { useAcessoTotalAdmin } from "@/lib/adminAccess";
 
 /**
  * Clientes — padrão visual aprovado (referência k338) sobre os dados reais da
@@ -91,6 +92,8 @@ export function clienteComCadastroCompleto(cliente: Pick<Cliente, "ativo" | "sta
 }
 
 export default function ClientesPage() {
+  // Operação de integração (RD / Conta Azul): somente o cargo Administrativo.
+  const acessoTotal = useAcessoTotalAdmin();
   const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
@@ -204,7 +207,7 @@ export default function ClientesPage() {
         <p className={styles.pageSub}>Gerencie clientes recebidas pelo CRM e acompanhe o processo de cadastro.</p>
       </div>
       <div className={styles.pageHeadRight}>
-        <div className={styles.headButtons}><PainelOperacaoIntegracao rotulo="Importações do RD" titulo="Importações do RD Station" descricao="Importar negociações e revisar possíveis duplicidades. Toda venda nova entra em Aguardando cadastro."><CrmOperacao modo="equipe" /></PainelOperacaoIntegracao><button className={styles.primaryBtn} type="button" onClick={() => abrir(null, "profile", null)}><Svg d={ICON.plus} />Nova cliente</button></div>
+        <div className={styles.headButtons}>{acessoTotal && <PainelOperacaoIntegracao rotulo="Importações do RD" titulo="Importações do RD Station" descricao="Importar negociações e revisar possíveis duplicidades. Toda venda nova entra em Aguardando cadastro."><CrmOperacao modo="equipe" /></PainelOperacaoIntegracao>}<button className={styles.primaryBtn} type="button" onClick={() => abrir(null, "profile", null)}><Svg d={ICON.plus} />Nova cliente</button></div>
         <div className={styles.decorative}><span className={styles.decorativeLine} /><span className={styles.decorativeText}>Organização que<br />transforma.</span></div>
       </div>
     </section>

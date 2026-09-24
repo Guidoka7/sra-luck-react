@@ -13,6 +13,7 @@ import type { Cliente } from "@/types/database";
 import styles from "@/components/admin/lista/AdminLista.module.css";
 import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
 import { ContaAzulOperacao } from "@/features/admin/IntegracoesOperacao";
+import { useAcessoTotalAdmin } from "@/lib/adminAccess";
 
 /**
  * Financeiro — padrão visual aprovado (referência k338) sobre o funil real
@@ -62,6 +63,8 @@ function bucketClass(b: FunilClienteBucket) {
 }
 
 export default function FinanceiroPage() {
+  // Operação de integração (RD / Conta Azul): somente o cargo Administrativo.
+  const acessoTotal = useAcessoTotalAdmin();
   const { theme } = useTheme();
   const [itens, setItens] = useState<ClienteFunilItem[]>([]);
   const [clientesCompletos, setClientesCompletos] = useState<Cliente[]>([]);
@@ -122,7 +125,7 @@ export default function FinanceiroPage() {
         <p className={styles.pageSub}>Conferência de comprovantes, controle de parcelas e operações financeiras em um único espaço.</p>
       </div>
       <div className={styles.pageHeadRight}>
-        <div style={{ display: "flex", justifyContent: "flex-end" }}><PainelOperacaoIntegracao rotulo="Conta Azul" titulo="Conta Azul" descricao="Conflitos, fila de envio, vínculos e sincronização das parcelas com a Conta Azul."><ContaAzulOperacao modo="equipe" /></PainelOperacaoIntegracao></div>
+        {acessoTotal && <div style={{ display: "flex", justifyContent: "flex-end" }}><PainelOperacaoIntegracao rotulo="Conta Azul" titulo="Conta Azul" descricao="Conflitos, fila de envio, vínculos e sincronização das parcelas com a Conta Azul."><ContaAzulOperacao modo="equipe" /></PainelOperacaoIntegracao></div>}
         <div className={styles.decorative}><span className={styles.decorativeLine} /><span className={styles.decorativeText}>Disciplina hoje,<br />liberdade sempre.</span></div>
       </div>
     </section>

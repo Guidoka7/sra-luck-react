@@ -37,13 +37,23 @@ describe("leitura e escrita por aba", () => {
     const vendedora = pessoa("vendedora", MODELOS_CARGO.vendedora.permissoes);
     expect(canReadAdminRoute(vendedora, "/api/admin/financeiro/clientes")).toBe(false);
     expect(canWriteAdminRoute(vendedora, "/api/admin/boletos/x/baixa")).toBe(false);
-    expect(canReadAdminRoute(vendedora, "/api/admin/integrations/rd-station/importacoes")).toBe(true);
+    expect(canReadAdminRoute(vendedora, "/api/admin/integrations/rd-station/importacoes")).toBe(false);
     expect(canReadAdminRoute(vendedora, "/api/admin/visao-geral")).toBe(false);
   });
 
-  it("financeiro opera a Conta Azul e as parcelas, mas não a equipe nem as configurações", () => {
+  it("operação das integrações é só do Administrativo, mesmo com chave antiga gravada", () => {
+    for (const cargo of ["financeiro", "gestao", "vendedora"] as const) {
+      const p = pessoa(cargo, MODELOS_CARGO.gestao.permissoes);
+      expect(canWriteAdminRoute(p, "/api/admin/integrations/conta-azul/sincronizar")).toBe(false);
+      expect(canReadAdminRoute(p, "/api/admin/integrations/rd-station/importacoes")).toBe(false);
+    }
+    expect(canWriteAdminRoute(pessoa("administrativo", []), "/api/admin/integrations/conta-azul/sincronizar")).toBe(true);
+    expect(TODAS_PERMISSOES).not.toContain("crm.importar");
+    expect(TODAS_PERMISSOES).not.toContain("integracoes.operar_financeiro");
+  });
+
+  it("financeiro opera as parcelas, mas não a equipe nem as configurações", () => {
     const fin = pessoa("financeiro", MODELOS_CARGO.financeiro.permissoes);
-    expect(canWriteAdminRoute(fin, "/api/admin/integrations/conta-azul/sincronizar")).toBe(true);
     expect(canWriteAdminRoute(fin, "/api/admin/financeiro/clientes/x/parcelas")).toBe(true);
     expect(canReadAdminRoute(fin, "/api/admin/staff")).toBe(false);
     expect(canWriteAdminRoute(fin, "/api/admin/configuracoes")).toBe(false);

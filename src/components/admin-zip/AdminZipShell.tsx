@@ -18,7 +18,7 @@ const NAV_OPERACAO = [
   { href: "/admin/visao-geral", label: "Visão geral", icon: "◫", perms: [P.VISAO_GERAL_VER, P.RELATORIOS_VISUALIZAR] },
   { href: "/admin/agenda", label: "Agenda", icon: "◷", perms: [P.AGENDA_VER, P.AGENDA_GERENCIAR] },
   { href: "/admin/clientes", label: "Clientes", icon: "☻", perms: [...CLIENT_PERMISSIONS] },
-  { href: "/admin/financeiro", label: "Financeiro", icon: "$", perms: [P.FINANCEIRO_VER, ...FINANCE_PERMISSIONS, P.INTEGRACOES_OPERAR_FINANCEIRO] },
+  { href: "/admin/financeiro", label: "Financeiro", icon: "$", perms: [P.FINANCEIRO_VER, ...FINANCE_PERMISSIONS] },
   { href: "/admin/clube", label: "Clube", icon: "♡", perms: [P.CLUBE_VER, P.CREDITO_GERENCIAR] },
 ];
 
