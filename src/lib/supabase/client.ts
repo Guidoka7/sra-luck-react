@@ -1,19 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Compatibilidade para componentes migrados do Next.js.
- * O portal Vite usa o cliente oficial do Supabase diretamente; não depende
- * de @supabase/ssr no navegador.
+ * Cliente exclusivo da branch de teste de carga.
+ * Nunca aponta para o Supabase de produção.
  */
 export function createClientSupabaseClient() {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (!url || !key) {
-    throw new Error("Supabase não configurado: defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.");
-  }
-
-  return createClient(url, key, {
+  return createClient("https://xqlxzdmleekbrietejoq.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk", {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
