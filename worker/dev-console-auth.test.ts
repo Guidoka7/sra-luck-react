@@ -191,6 +191,36 @@ describe("M2M da mensagem diária do Gemini", () => {
   });
 });
 
+describe("M2M da configuração de funções de integração", () => {
+  const comPapel = (body: Record<string, unknown>, papel: string) => request("/api/admin/integrations/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-dev-console-token": env.DEV_CONSOLE_SERVICE_TOKEN!, "x-dev-actor-id": "dev:1", "x-dev-actor-role": papel },
+    body: JSON.stringify(body),
+  });
+
+  it("owner/developer podem configurar funções conhecidas", async () => {
+    for (const papel of ["owner", "developer"]) {
+      const result = await authorizeDevConsoleRequest(comPapel({ provedor: "gemini", funcao: "notificacoes", config: { ativo: false, limiteDiario: 20 }, versao: 1 }, papel), env);
+      expect(result, papel).toBeInstanceOf(Request);
+    }
+  });
+
+  it("bloqueia operador, função desconhecida, segredo e campos extras", async () => {
+    const casos: [Record<string, unknown>, string][] = [
+      [{ provedor: "gemini", funcao: "notificacoes", config: { ativo: false } }, "operator"],
+      [{ provedor: "conta_azul", funcao: "criar_conta_receber", config: {} }, "owner"],
+      [{ provedor: "gemini", funcao: "mensagem_diaria", config: { api_key: "segredo" } }, "owner"],
+      [{ provedor: "gemini", funcao: "mensagem_diaria", config: {}, extra: 1 }, "owner"],
+      [{ provedor: "gemini", funcao: "mensagem_diaria", config: [] }, "owner"],
+    ];
+    for (const [body, papel] of casos) {
+      const result = await authorizeDevConsoleRequest(comPapel(body, papel), env);
+      expect(result, JSON.stringify(body)).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(403);
+    }
+  });
+});
+
 describe("M2M da Central de Notificações (escopos explícitos)", () => {
   const LOTE = "0b7c2a1e-1111-4222-8333-444455556666";
   const ITEM = "1c8d3b2f-2222-4333-8444-555566667777";

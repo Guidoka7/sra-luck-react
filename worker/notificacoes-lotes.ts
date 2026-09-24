@@ -23,7 +23,7 @@
 import { publicError } from "./http-security";
 import { boletoPodeReceberCobrancaAutomatica } from "./admin-notificacoes";
 import { adicionarDiasCivil, hojeSaoPaulo } from "../src/lib/dataCivil";
-import { configuracaoGemini, ErroGemini, gerarComGemini } from "./frase-do-dia";
+import { configuracaoGemini, ErroGemini, gerarComGemini, opcoesDaFuncao, reservarChamadaGemini, type ConfiguracaoGemini } from "./frase-do-dia";
 import type { createServiceSupabaseClient, Env } from "./supabase";
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -481,6 +481,19 @@ async function recalcularStatusLote(db: Db, loteId: string, extra: Record<string
 }
 
 /** Gera (ou regenera) as mensagens com o Gemini. Sem chave ou com falha: nada de texto genérico. */
+/** Orientação de tom configurada para a função Notificações; as regras de segurança do prompt não mudam. */
+function comTomDaEquipe(sistema: string, gemini: ConfiguracaoGemini) {
+  return gemini.instrucoesExtras ? `${sistema}\nOrientação de tom da equipe (não muda nenhuma regra acima): ${gemini.instrucoesExtras}` : sistema;
+}
+function semGemini(gemini: ConfiguracaoGemini) {
+  return gemini.indisponivel === "funcao_desativada"
+    ? falha(409, "funcao_desativada", "A função Notificações do Gemini está desligada nas Integrações.")
+    : falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada).");
+}
+function limiteAtingido(gemini: ConfiguracaoGemini) {
+  return falha(429, "limite_diario", `Limite diário da função Notificações do Gemini atingido (${gemini.limiteDiario} chamadas). Ajuste nas Integrações ou tente amanhã.`);
+}
+
 export async function gerarMensagens(ctx: Contexto, loteId: string, opcoes: { instrucao?: unknown; segmento?: unknown } = {}): Promise<Resultado<{ status: string; geradas: number; reprovadas: number; falhas: number; modelo: string | null }>> {
   const lote = await buscarLote(ctx.db, loteId);
   if (!lote) return falha(404, "lote_nao_encontrado", "Lote não encontrado.");
@@ -490,10 +503,13 @@ export async function gerarMensagens(ctx: Contexto, loteId: string, opcoes: { in
   const alvo = (await itensDoLote(ctx.db, loteId)).filter((i) => ["PREPARED", "AWAITING_APPROVAL"].includes(i.status) && (!segmento || i.segmento === segmento));
   if (!alvo.length) return falha(409, "sem_itens", "Não há clientes elegíveis para gerar mensagem neste lote.");
 
-  const gemini = await configuracaoGemini(ctx.env);
+  const gemini = await configuracaoGemini(ctx.env, "notificacoes", { db: ctx.db });
   if (!gemini.chave) {
-    await ctx.db.from("notificacao_lotes").update({ status: "AI_GENERATION_FAILED", erro: "Gemini sem chave configurada (ou integração desligada).", updated_at: new Date().toISOString() }).eq("id", loteId).in("status", EDITAVEL);
-    return falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada). Nenhuma mensagem foi gerada.");
+    const desligada = gemini.indisponivel === "funcao_desativada";
+    await ctx.db.from("notificacao_lotes").update({ status: "AI_GENERATION_FAILED", erro: desligada ? "Função Notificações do Gemini desligada nas Integrações." : "Gemini sem chave configurada (ou integração desligada).", updated_at: new Date().toISOString() }).eq("id", loteId).in("status", EDITAVEL);
+    return desligada
+      ? falha(409, "funcao_desativada", "A função Notificações do Gemini está desligada nas Integrações. Nenhuma mensagem foi gerada.")
+      : falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada). Nenhuma mensagem foi gerada.");
   }
 
   const { data: clientes } = await ctx.db.from("clientes").select("id,nome_completo").in("id", alvo.map((i) => i.cliente_id));
@@ -507,7 +523,8 @@ export async function gerarMensagens(ctx: Contexto, loteId: string, opcoes: { in
     const { sistema, usuario } = montarPromptLote(bloco.map(({ i, ctx: c }) => ({ i, ctx: c })), instrucao);
     let textos = new Map<number, string>();
     try {
-      const r = await gerarComGemini(gemini.chave, gemini.modelo, sistema, usuario, ctx.fetcher, { schema: SCHEMA_LOTE, temperatura: 0.9, maxTokens: 4096 });
+      if (!(await reservarChamadaGemini(ctx.env, gemini, { db: ctx.db }))) throw new ErroGemini("limite_diario", []);
+      const r = await gerarComGemini(gemini.chave, gemini.modelo, comTomDaEquipe(sistema, gemini), usuario, ctx.fetcher, opcoesDaFuncao(gemini, { schema: SCHEMA_LOTE, temperatura: 0.9, maxTokens: 4096 }));
       modelo = r.modelo;
       const corpo = JSON.parse(r.bruto) as { mensagens?: { i?: number; texto?: string }[] };
       textos = new Map((corpo.mensagens ?? []).filter((m) => Number.isInteger(m.i)).map((m) => [m.i as number, String(m.texto ?? "")]));
@@ -766,8 +783,8 @@ export async function conversarSobreLote(ctx: Contexto, loteId: string, mensagem
   if (!pergunta) return falha(400, "mensagem_vazia", "Escreva uma mensagem.");
   const detalhe = await detalharLote(ctx.db, loteId);
   if (!detalhe) return falha(404, "lote_nao_encontrado", "Lote não encontrado.");
-  const gemini = await configuracaoGemini(ctx.env);
-  if (!gemini.chave) return falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada).");
+  const gemini = await configuracaoGemini(ctx.env, "notificacoes", { db: ctx.db });
+  if (!gemini.chave) return semGemini(gemini);
   const historico = (Array.isArray(historicoBruto) ? historicoBruto : []).slice(-8)
     .map((h) => ({ autor: (h as { autor?: string })?.autor === "gemini" ? "gemini" : "equipe", texto: limparInstrucao((h as { texto?: unknown })?.texto) }))
     .filter((h) => h.texto);
@@ -786,6 +803,7 @@ export async function conversarSobreLote(ctx: Contexto, loteId: string, mensagem
     `Pergunta da equipe: ${pergunta}`,
   ].filter(Boolean).join("\n");
   try {
+    if (!(await reservarChamadaGemini(ctx.env, gemini, { db: ctx.db }))) return limiteAtingido(gemini);
     const r = await gerarComGemini(gemini.chave, gemini.modelo, `${SISTEMA_CHAT}\nResponda só com o JSON pedido.`, usuario, ctx.fetcher, { schema: SCHEMA_CHAT, temperatura: 0.4, maxTokens: 1024 });
     const corpo = JSON.parse(r.bruto) as { resposta?: string; acao?: { tipo?: string; segmento?: string; instrucao?: string } };
     const tipo = ACOES_CHAT.includes(corpo.acao?.tipo as typeof ACOES_CHAT[number]) ? corpo.acao!.tipo! : "nenhuma";
@@ -862,8 +880,9 @@ export async function explicarLote(ctx: Contexto, loteId: string) {
   const detalhe = await detalharLote(ctx.db, loteId);
   if (!detalhe) return falha(404, "lote_nao_encontrado", "Lote não encontrado.");
   const fatos = fatosDoLote(detalhe.lote as { status: string }, detalhe.itens);
-  const gemini = await configuracaoGemini(ctx.env);
-  if (!gemini.chave) return { ...falha(409, "sem_chave", "O Gemini não tem chave configurada (ou a integração está desligada)."), fatos };
+  const gemini = await configuracaoGemini(ctx.env, "notificacoes", { db: ctx.db });
+  if (!gemini.chave) return { ...semGemini(gemini), fatos };
+  if (!(await reservarChamadaGemini(ctx.env, gemini, { db: ctx.db }))) return { ...limiteAtingido(gemini), fatos };
   try {
     const r = await gerarComGemini(gemini.chave, gemini.modelo, `${SISTEMA_EXPLICAR}\nResponda só com o JSON {"texto": "..."}.`, `Fatos do lote: ${JSON.stringify(fatos)}`, ctx.fetcher, { temperatura: 0.2, maxTokens: 1024 });
     const validacao = validarResumoLote(r.texto, fatos);

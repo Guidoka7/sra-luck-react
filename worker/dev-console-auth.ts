@@ -237,6 +237,25 @@ async function validateAllowedMutation(request: Request, pathname: string): Prom
     return null;
   }
 
+  // Configuração (não secreta) de funções de integração: só owner/developer, só funções
+  // com esquema conhecido e só os campos desse esquema. Segredos não passam por aqui.
+  if (pathname === "/api/admin/integrations/config") {
+    const funcoesConfig: Record<string, readonly string[]> = { gemini: ["mensagem_diaria", "notificacoes"] };
+    const camposGemini = ["ativo", "modelo", "prompt", "temperatura", "maxTokens", "limiteDiario"];
+    const config = body.config;
+    const provedor = typeof body.provedor === "string" ? body.provedor : "";
+    const funcao = typeof body.funcao === "string" ? body.funcao : "";
+    if (!["owner", "developer"].includes(papel)
+      || Object.keys(body).some((k) => !["provedor", "funcao", "config", "versao"].includes(k))
+      || !(funcoesConfig[provedor] ?? []).includes(funcao)
+      || !config || typeof config !== "object" || Array.isArray(config)
+      || Object.keys(config as Record<string, unknown>).some((k) => !camposGemini.includes(k))
+      || (body.versao !== undefined && !Number.isInteger(body.versao))) {
+      return json("Configuração de integração não autorizada para a integração técnica.", "DEV_CONSOLE_M2M_PAYLOAD_NOT_ALLOWED", 403);
+    }
+    return null;
+  }
+
   const lote = ROTAS_LOTE.find((r) => r.rota.test(pathname));
   if (lote) {
     const papel = String(request.headers.get(ROLE_HEADER) || "").trim().toLowerCase();

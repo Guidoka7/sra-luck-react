@@ -7,6 +7,7 @@ import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
+import { catalogo, salvarConfig } from "./integracoes-registro";
 import { calcularEncargosAtraso } from "../src/lib/financeiro/encargos";
 
 function json(data: unknown, status = 200) {
@@ -314,6 +315,29 @@ async function testarConexao(request: Request, env: Env) {
   return json(resultado);
 }
 
+/** Padrão de integrações: registro + configuração por função + uso de hoje (sem segredos). */
+async function catalogoApi(request: Request, env: Env) {
+  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
+  if (authorization instanceof Response) return authorization;
+  try {
+    return json(await catalogo(env));
+  } catch {
+    return json({ erro: "Não foi possível montar o catálogo de integrações agora." }, 503);
+  }
+}
+
+/** Grava a configuração (não secreta) de uma função, com versão e auditoria. */
+async function salvarConfigApi(request: Request, env: Env) {
+  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
+  if (authorization instanceof Response) return authorization;
+  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const body = await request.json().catch(() => ({})) as { provedor?: unknown; funcao?: unknown; config?: unknown; versao?: unknown };
+  const r = await salvarConfig(env, body, authorization.colaboradorId);
+  if (!r.ok) return json({ erro: r.erro, codigo: r.codigo }, r.status);
+  requestLogger(request).info("Configuração de função de integração salva", { eventCode: "INTEGRATION_FUNCTION_CONFIGURED", provider: r.provedor, funcao: r.funcao, versao: r.versao });
+  return json(r);
+}
+
 export async function integrationsApi(request: Request, env: Env): Promise<Response | null> {
   const webPush = await webPushConfigApi(request, env);
   if (webPush) return webPush;
@@ -323,6 +347,8 @@ export async function integrationsApi(request: Request, env: Env): Promise<Respo
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
   if (path === "/api/cliente/payments/mercado-pago/preference" && request.method === "POST") return createMercadoPagoPreference(request, env);
   if (path === "/api/admin/integrations/credenciais") return credenciaisApi(request, env);
+  if (path === "/api/admin/integrations/catalogo" && request.method === "GET") return catalogoApi(request, env);
+  if (path === "/api/admin/integrations/config" && request.method === "POST") return salvarConfigApi(request, env);
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
   if (path.startsWith("/api/admin/integrations/conta-azul/")) return handleContaAzulAdmin(request, env);
   return null;

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { limparCacheConfig } from "./integracoes-registro";
 import { ErroGemini, definirMensagem, descobrirModelos, explicarFalhaGemini, gerarComGemini, normalizarModelo, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, prepararMensagemDoDia, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 import type { Env } from "./supabase";
@@ -362,6 +363,51 @@ describe("conversa do painel com o Gemini (pedir outra e escolher a do dia)", ()
     expect(explicarFalhaGemini("http_403", "m", [])).toMatch(/recusou a chave/);
     expect(explicarFalhaGemini("http_429", "m", ["m:429"])).toBe("Cota gratuita do Gemini esgotada no momento. Tente mais tarde. Tentativas: m:429.");
     expect(explicarFalhaGemini("timeout", "m", [])).toMatch(/sobrecarregado/);
+  });
+
+  describe("configuração da função Mensagem diária", () => {
+    beforeEach(() => limparCacheConfig());
+    // Banco falso de mensagens + a configuração da função e o contador de uso.
+    const comConfig = (config: Record<string, unknown>, usoRetorno = 1) => {
+      const base = bancoFalso();
+      const rpcs: unknown[] = [];
+      const linhasConfig = [{ provedor: "gemini", funcao: "mensagem_diaria", config, versao: 1 }];
+      const cfgQuery = { select: () => cfgQuery, then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: linhasConfig, error: null }).then(ok) };
+      const db = { ...(base.db as object), from: (t: string) => (t === "integracoes_config" ? cfgQuery : (base.db as { from: (t: string) => unknown }).from(t)), rpc: async (_n: string, a: unknown) => { rpcs.push(a); return { data: usoRetorno, error: null }; } };
+      return { db: db as never, linhas: base.linhas, rpcs };
+    };
+
+    it("função desligada: não chama o Gemini e explica", async () => {
+      const { db } = comConfig({ ativo: false });
+      const { fetcher, chamadas } = geminiFalso([]);
+      const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+      expect(r).toMatchObject({ ok: false, codigo: "funcao_desativada" });
+      expect(chamadas).toHaveLength(0);
+    });
+
+    it("limite diário atingido: não chama o Gemini", async () => {
+      const { db, rpcs } = comConfig({ limiteDiario: 3 }, -1);
+      const { fetcher, chamadas } = geminiFalso([]);
+      const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+      expect(r).toMatchObject({ ok: false, codigo: "limite_diario" });
+      expect(chamadas).toHaveLength(0);
+      expect(rpcs[0]).toMatchObject({ p_funcao: "mensagem_diaria", p_limite: 3 });
+    });
+
+    it("usa o modelo, o prompt e a temperatura da função", async () => {
+      const { db } = comConfig({ modelo: "gemini-2.5-flash", prompt: "Tom da função: acolhedor.", temperatura: 0.3, maxTokens: 512 });
+      const urls: string[] = [], corpos: string[] = [];
+      const fetcher = (async (url: string, init?: RequestInit) => {
+        urls.push(url); corpos.push(String(init?.body ?? ""));
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ texto: "Cada passo conta: *siga no seu ritmo* hoje." }) }] } }] }), { status: 200 });
+      }) as unknown as typeof fetch;
+      const r = await sugerirMensagem(env(), "", HOJE, { db, fetcher });
+      expect(r).toMatchObject({ ok: true, modelo: "gemini-2.5-flash" });
+      expect(urls[0]).toContain("/v1beta/models/gemini-2.5-flash:generateContent");
+      const corpo = JSON.parse(corpos[0]);
+      expect(corpo.generationConfig).toMatchObject({ temperature: 0.3, maxOutputTokens: 512 });
+      expect(corpo.systemInstruction.parts[0].text).toContain("Tom da função: acolhedor.");
+    });
   });
 
   it("sem chave: sugerir não chama o Gemini", async () => {
