@@ -157,9 +157,17 @@ function ensurePreviewAccess() {
 }
 
 function call(method, path, cookie, name, body = null) {
+  if (cookie) {
+    const eq = cookie.indexOf("=");
+    if (eq > 0) {
+      const name = cookie.slice(0, eq);
+      const value = cookie.slice(eq + 1);
+      http.cookieJar().set(BASE, name, value);
+    }
+  }
+
   const headers = {
     Accept: "application/json",
-    Cookie: cookie,
     "Cache-Control": "no-cache",
   };
   if (method !== "GET" && method !== "HEAD") {
