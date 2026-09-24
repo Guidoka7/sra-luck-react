@@ -99,6 +99,8 @@ export interface Recebivel {
   suspensa: boolean;
   createdAt: string;
   updatedAt: string;
+  recebimentoId?: string | null;
+  confirmadoEm?: string | null;
 }
 
 export interface Recebimento {
@@ -142,6 +144,13 @@ export interface ListaRecebiveis {
   pagina: number;
   limite: number;
   truncado: boolean;
+}
+
+export type RecebidosSubfunil = "recebidos" | "vencidos";
+
+export interface ListaRecebidosFinanceiro extends ListaRecebiveis {
+  data: string;
+  tipo: RecebidosSubfunil;
 }
 
 export interface ClienteFinanceiro {
