@@ -229,13 +229,16 @@ async function listarRecebidos(db: Db, url: URL) {
 
   if (tipo === "recebidos") {
     const { inicio, fimExclusivo } = intervaloDiaOperacionalUtc(data);
+    const inicioMs = Date.parse(inicio);
+    const fimExclusivoMs = Date.parse(fimExclusivo);
     const recebidosDoDia: any[] = [];
     for (const recebimento of recebimentos as any[]) {
+      const confirmadoEmMs = recebimento.validado_em ? Date.parse(recebimento.validado_em) : Number.NaN;
       if (
         recebimento.status_validacao !== "validado"
-        || !recebimento.validado_em
-        || recebimento.validado_em < inicio
-        || recebimento.validado_em >= fimExclusivo
+        || !Number.isFinite(confirmadoEmMs)
+        || confirmadoEmMs < inicioMs
+        || confirmadoEmMs >= fimExclusivoMs
       ) continue;
       const boleto = boletosPorId.get(recebimento.boleto_id);
       if (!boleto) continue;
