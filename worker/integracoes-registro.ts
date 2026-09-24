@@ -80,62 +80,80 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
     documentacao: "https://developers.rdstation.com/reference",
     autenticacao: "OAuth2 (authorize + refresh com rotação), tokens cifrados no cofre.",
     funcoes: [
-      { id: "importar_ganhas", nome: "Importar negociações ganhas", descricao: "Lê negociações com status won e grava/atualiza a conferência de novas vendas.", direcao: "entrada", origem: "RD Station: deals (status:won), contacts, users, campaigns, sources", destino: "novas_vendas (conferência humana)", situacao: "disponivel" },
-      { id: "webhook_negociacoes", nome: "Receber eventos de negociação", descricao: "Recebe o webhook do RD com segredo e idempotência por transaction_uuid.", direcao: "entrada", origem: "RD Station: evento de negociação", destino: "crm_vendas_entrada / novas_vendas", situacao: "disponivel" },
-      { id: "escolher_funil_etapa", nome: "Escolher funil e etapa", descricao: "Importar só um funil e as etapas escolhidas.", direcao: "entrada", origem: "RD Station: GET /pipelines e /pipelines/{id}/stages", destino: "Filtro RDQL da importação", situacao: "api_permite", motivo: "A API tem os endpoints; a escolha ainda não foi implementada." },
-      { id: "campos_personalizados", nome: "Campos personalizados", descricao: "Escolher e mapear campos personalizados do RD.", direcao: "entrada", origem: "RD Station: GET /custom_fields", destino: "Campos locais de novas_vendas", situacao: "api_permite", motivo: "A API tem o endpoint; o mapeamento configurável ainda não foi implementado." },
-      { id: "sincronizacao_agendada", nome: "Sincronização agendada", descricao: "Buscar negociações alteradas desde a última execução.", direcao: "entrada", origem: "RD Station: deals com filtro por data de alteração (RDQL)", destino: "novas_vendas", situacao: "api_permite", motivo: "Hoje a sincronização é manual." },
+      { id: "importacao", nome: "Importar vendas do CRM", descricao: "Lê as negociações do funil e das etapas escolhidos e grava cada cliente nova em Aguardando cadastro. Nunca cria cliente nem encaminha ao Financeiro.", direcao: "entrada", origem: "RD Station: GET /crm/v2/deals (RDQL por funil, etapa e status), contacts, users, campaigns, sources", destino: "novas_vendas (status aguardando_cadastro) + histórico da importação", situacao: "disponivel", configuravel: true },
+      { id: "escolher_funil_etapa", nome: "Escolher funil e etapas", descricao: "Funil e etapas lidos do RD na hora de configurar.", direcao: "entrada", origem: "RD Station: GET /crm/v2/pipelines e /pipelines/{id}/stages", destino: "Filtro RDQL pipeline_id / stage_id", situacao: "disponivel" },
+      { id: "campos_personalizados", nome: "Escolher e mapear campos", descricao: "Cada campo do Sra Luck vem da leitura automática, de um campo personalizado da negociação ou do contato, ou é ignorado.", direcao: "entrada", origem: "RD Station: GET /crm/v2/custom_fields (slug)", destino: "Campos de novas_vendas", situacao: "disponivel" },
+      { id: "deduplicacao", nome: "Deduplicação por CPF, telefone e e-mail", descricao: "Negociação cujo CPF, telefone ou e-mail já pertence a uma cliente ou a outra venda pendente não vira venda nova: fica no histórico para revisão humana.", direcao: "interna", origem: "Dados normalizados do contato", destino: "Histórico (duplicada / cliente existente)", situacao: "disponivel" },
+      { id: "avanco_da_venda", nome: "Avanço da venda", descricao: "A venda só passa a Financeiro concluído quando a cliente tem parcelas cadastradas E acesso ao app liberado.", direcao: "interna", origem: "clientes.acesso_app_liberado + boletos", destino: "novas_vendas.status", situacao: "disponivel" },
+      { id: "webhook_negociacoes", nome: "Receber eventos de negociação", descricao: "Recebe o webhook do RD com segredo e idempotência por transaction_uuid, com os mesmos filtros e a mesma deduplicação.", direcao: "entrada", origem: "RD Station: evento de negociação", destino: "crm_vendas_entrada / novas_vendas", situacao: "disponivel" },
       { id: "escrever_no_rd", nome: "Escrever no RD", descricao: "Criar ou alterar negociações/contatos no RD.", direcao: "saida", origem: "Sra Luck", destino: "RD Station", situacao: "api_nao_permite", motivo: "A API permite, mas a regra do projeto proíbe: RD é somente leitura (docs/AUDIT-RD-INTEGRACOES-2026-09-14.md §5)." },
     ],
     webhooks: [
       { direcao: "entrada", descricao: "Eventos de negociação do RD", caminho: "/api/integrations/rd-station/webhook", eventos: ["crm_deal_created", "crm_deal_updated", "crm_deal_deleted"], autenticacao: "Segredo no header (x-sra-luck-rd-key)", situacao: "disponivel" },
     ],
     sincronizacao: [
-      { modo: "manual", descricao: "Sincronizar agora (GET paginado, somente leitura).", situacao: "disponivel" },
+      { modo: "manual", descricao: "Importar agora (GET paginado, somente leitura).", situacao: "disponivel" },
+      { modo: "agendada", descricao: "Na frequência configurada (15 min a 24 h), pelo agendador a cada 15 min.", situacao: "disponivel" },
       { modo: "webhook", descricao: "Evento do RD a cada negociação criada/alterada.", situacao: "disponivel" },
-      { modo: "agendada", descricao: "Busca incremental por data de alteração.", situacao: "api_permite", motivo: "Ainda não implementada." },
     ],
     mapeamento: [
-      { origem: "deal.id", destino: "novas_vendas.rd_station_id", observacao: "Chave única: evita duplicidade." },
-      { origem: "contato (nome, CPF, telefone, e-mail)", destino: "novas_vendas.nome_completo/cpf/telefone/email", observacao: "Só na primeira entrada; depois o RD atualiza só o snapshot rd_*." },
+      { origem: "deal.id", destino: "novas_vendas.rd_station_id", observacao: "Chave única: a mesma negociação nunca entra duas vezes." },
+      { origem: "contato: nome", destino: "novas_vendas.nome_completo", observacao: "Sempre importado." },
+      { origem: "CPF, telefone, e-mail, valor, parcelas, valor da parcela, taxa, tipo de venda, procedimento, banco", destino: "novas_vendas (cópia local)", observacao: "Fonte configurável por campo: automática, campo personalizado (negociação ou contato) ou ignorar." },
       { origem: "campanha, fonte, dono", destino: "novas_vendas.campanha_local/origem_venda/vendedora_responsavel" },
-      { origem: "valor, parcelas", destino: "novas_vendas (valores originais)" },
+      { origem: "alterações posteriores no RD", destino: "somente o snapshot rd_*", observacao: "A cópia local editada no Admin não é sobrescrita." },
     ],
-    limites: ["Paginação de 100 itens, até 100 páginas por sincronização."],
-    regras: ["Somente leitura dos dados comerciais do RD.", "Exclusão no RD marca o snapshot como excluído; não apaga cliente/venda local."],
+    limites: ["Paginação de 100 itens, até 100 páginas por importação.", "Filtro RDQL: pipeline_id, stage_id:(…), status."],
+    regras: [
+      "Somente leitura dos dados comerciais do RD.",
+      "Toda cliente nova entra em Aguardando cadastro; a importação nunca cria cliente nem encaminha ao Financeiro.",
+      "Duplicidade (CPF, telefone ou e-mail) nunca sobrescreve nada: vai para revisão.",
+      "Exclusão no RD marca o snapshot como excluído; não apaga cliente/venda local.",
+    ],
   },
   {
     id: "conta_azul",
     nome: "Conta Azul",
     grupo: "financeiro",
     documentacao: "https://developers.contaazul.com",
-    autenticacao: "OAuth2 authorization code. Hoje o Sra Luck usa CONTA_AZUL_ACCESS_TOKEN (variável de ambiente), sem renovação automática.",
+    autenticacao: "OAuth2 authorization code (login.contaazul.com) com renovação automática: access token de 1 h, refresh token trocado a cada renovação e guardado cifrado no cofre.",
     funcoes: [
-      { id: "criar_conta_receber", nome: "Criar conta a receber", descricao: "Cria o evento de contas a receber de uma parcela (vencimento, valor bruto, multa, juros, desconto).", direcao: "saida", origem: "Parcela (boletos) do Sra Luck", destino: "Conta Azul: POST /v1/financeiro/eventos-financeiros/contas-a-receber", situacao: "disponivel", motivo: "Manual pelo Admin; sem garantia contra duplicidade (auditoria P1.4)." },
-      { id: "alterar_parcela", nome: "Alterar parcela", descricao: "Altera vencimento, composição de valor, nota ou método com controle de versão.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul: PATCH /v1/financeiro/eventos-financeiros/parcelas/{id}", situacao: "disponivel", motivo: "Manual pelo Admin." },
-      { id: "baixa_sra_para_ca", nome: "Baixa no Sra Luck → Conta Azul", descricao: "Registrar a baixa (data, valor, juros, multa, desconto, conta, método) na parcela da Conta Azul.", direcao: "saida", origem: "Baixa da parcela no Sra Luck", destino: "Conta Azul: POST .../parcelas/{id}/baixa", situacao: "api_permite", motivo: "Endpoint existe; falta o vínculo exato de IDs e a fila." },
-      { id: "estorno_baixa", nome: "Estorno de baixa", descricao: "Desfazer uma baixa registrada.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul: DELETE .../parcelas/baixa/{id}", situacao: "api_permite", motivo: "Endpoint existe; ainda não implementado." },
-      { id: "ler_situacao", nome: "Ler situação da parcela", descricao: "Status (PENDENTE, QUITADO, CANCELADO, RENEGOCIADO, RECEBIDO_PARCIAL, ATRASADO, PERDIDO), valor pago e baixas.", direcao: "entrada", origem: "Conta Azul: GET .../parcelas/{id} e /alteracoes", destino: "Sra Luck", situacao: "api_permite", motivo: "Endpoints existem; ainda não implementado." },
-      { id: "webhook_baixa", nome: "Baixa na Conta Azul → webhook", descricao: "Ser avisado na hora de uma baixa feita na Conta Azul.", direcao: "entrada", origem: "Conta Azul", destino: "Sra Luck", situacao: "api_nao_permite", motivo: "A Conta Azul não tem webhooks (\"ainda não está disponível nativamente\"). Alternativa: polling em /alteracoes." },
-      { id: "cancelar_renegociar", nome: "Cancelar ou renegociar na Conta Azul", descricao: "Cancelar evento/parcela ou renegociar pela API.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "Não há endpoint de cancelamento/exclusão de evento; renegociação é só leitura. Vira pendência manual." },
+      { id: "sincronizacao", nome: "Sincronização de parcelas", descricao: "A cada 15 min e sob demanda: envia alterações do Sra Luck, lê as alterações da Conta Azul, processa a fila e abre conflitos.", direcao: "bidirecional", origem: "Sra Luck (boletos) e Conta Azul (/alteracoes)", destino: "Conta Azul e Sra Luck", situacao: "disponivel", configuravel: true },
+      { id: "criar_conta_receber", nome: "Criar conta a receber vinculada", descricao: "Cria o lançamento da parcela com um marcador único; como a API devolve só protocolo, o vínculo é confirmado lendo a Conta Azul (busca pelo marcador).", direcao: "saida", origem: "Parcela (boletos) do Sra Luck", destino: "Conta Azul: POST /v1/financeiro/eventos-financeiros/contas-a-receber", situacao: "disponivel" },
+      { id: "vinculo", nome: "Vínculo permanente", descricao: "Cada parcela guarda o ID do evento e da parcela na Conta Azul. Também é possível vincular um lançamento já existente (só se valor e vencimento baterem).", direcao: "interna", origem: "Sra Luck", destino: "conta_azul_vinculos", situacao: "disponivel" },
+      { id: "alterar_parcela", nome: "Valor, vencimento e encargos", descricao: "O Sra Luck é a fonte: mudança de valor ou vencimento no Sra Luck atualiza a Conta Azul com controle de versão. Mudança feita na Conta Azul vira conflito.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul: PATCH .../parcelas/{id} (versao)", situacao: "disponivel" },
+      { id: "baixa_sra_para_ca", nome: "Baixa no Sra Luck → Conta Azul", descricao: "Parcela paga no Sra Luck registra a baixa na Conta Azul com juros e multa calculados pelo Sra Luck, sem duplicar.", direcao: "saida", origem: "Baixa da parcela no Sra Luck", destino: "Conta Azul: POST .../parcelas/{id}/baixa", situacao: "disponivel" },
+      { id: "baixa_ca_para_sra", nome: "Baixa na Conta Azul → Sra Luck e app", descricao: "Parcela quitada na Conta Azul dá baixa no Sra Luck (e aparece no app) quando o vínculo é seguro; caso contrário, vai para revisão.", direcao: "entrada", origem: "Conta Azul: GET /alteracoes + GET /{evento}/parcelas", destino: "boletos.status = pago", situacao: "disponivel" },
+      { id: "estorno_baixa", nome: "Estorno de baixa", descricao: "Baixa desfeita no Sra Luck apaga a baixa que o Sra Luck criou na Conta Azul. Baixa removida na Conta Azul vira conflito (nunca estorna sozinho no Sra Luck).", direcao: "bidirecional", origem: "Sra Luck / Conta Azul", destino: "Conta Azul: DELETE .../parcelas/baixa/{id}", situacao: "disponivel" },
+      { id: "webhook_baixa", nome: "Aviso imediato da Conta Azul", descricao: "Ser avisado na hora de uma baixa feita na Conta Azul.", direcao: "entrada", origem: "Conta Azul", destino: "Sra Luck", situacao: "api_nao_permite", motivo: "A Conta Azul não tem webhooks (\"ainda não está disponível nativamente\"). O Sra Luck lê /alteracoes a cada 15 min." },
+      { id: "cancelar_renegociar", nome: "Cancelar ou renegociar na Conta Azul", descricao: "Cancelar evento/parcela ou renegociar pela API.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "Não há endpoint de cancelamento/exclusão de evento; renegociação é só leitura. Cancelado/renegociado/perdido na Conta Azul vira conflito para revisão." },
+      { id: "id_externo", nome: "ID externo na Conta Azul", descricao: "Gravar o ID do Sra Luck num campo próprio da Conta Azul.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "A API não tem campo de ID externo. O Sra Luck usa um marcador na descrição/nota e guarda os IDs da Conta Azul no vínculo." },
     ],
     webhooks: [
-      { direcao: "entrada", descricao: "Eventos da Conta Azul", eventos: [], autenticacao: "—", situacao: "api_nao_permite", motivo: "A API não oferece webhooks; usar polling." },
+      { direcao: "entrada", descricao: "Eventos da Conta Azul", eventos: [], autenticacao: "—", situacao: "api_nao_permite", motivo: "A API não oferece webhooks; o Sra Luck faz polling em /alteracoes." },
     ],
     sincronizacao: [
-      { modo: "manual", descricao: "Criar recebível / alterar parcela pelo Admin.", situacao: "disponivel" },
-      { modo: "polling", descricao: "Ler /v1/financeiro/eventos-financeiros/alteracoes por período e atualizar as parcelas vinculadas.", situacao: "api_permite", motivo: "Ainda não implementado." },
+      { modo: "polling", descricao: "A cada 15 min: /v1/financeiro/eventos-financeiros/alteracoes desde a última leitura + verificação dos vínculos mais antigos.", situacao: "disponivel" },
+      { modo: "manual", descricao: "Sincronizar agora, enviar as parcelas de uma cliente, vincular lançamento existente, reprocessar a fila.", situacao: "disponivel" },
       { modo: "webhook", descricao: "Aviso imediato da Conta Azul.", situacao: "api_nao_permite", motivo: "Sem webhooks na API." },
     ],
     mapeamento: [
-      { origem: "boletos.data_vencimento", destino: "parcelas[].data_vencimento" },
-      { origem: "boletos.valor", destino: "parcelas[].detalhe_valor.valor_bruto" },
-      { origem: "encargos (multa, juros) e desconto", destino: "detalhe_valor.multa / juros / desconto" },
-      { origem: "cliente", destino: "contato (UUID da pessoa na Conta Azul)", observacao: "Obrigatório; exige pessoa criada/encontrada na Conta Azul." },
-      { origem: "id da parcela no Sra Luck", destino: "nota da parcela (marcador)", observacao: "A API não tem campo de ID externo; a criação devolve só protocolo." },
+      { origem: "boletos.data_vencimento", destino: "parcela.data_vencimento / vencimento", observacao: "Fonte: Sra Luck." },
+      { origem: "boletos.valor", destino: "detalhe_valor.valor_bruto / composicao_valor.valor_bruto", observacao: "Fonte: Sra Luck." },
+      { origem: "juros e multa do atraso (calcularEncargosAtraso na data do pagamento)", destino: "composicao_valor.juros / multa da baixa", observacao: "Fonte: Sra Luck." },
+      { origem: "boletos.data_pagamento", destino: "baixa.data_pagamento" },
+      { origem: "cliente (CPF)", destino: "contato: GET /v1/pessoas?documentos=CPF", observacao: "A pessoa precisa existir na Conta Azul." },
+      { origem: "marcador SLK-… (id da parcela)", destino: "descrição e nota da parcela", observacao: "Usado para localizar o lançamento criado (a API devolve só protocolo)." },
+      { origem: "IDs da Conta Azul (evento, parcela, versão, baixa)", destino: "conta_azul_vinculos" },
     ],
-    limites: ["600 chamadas/min e 10/s por conta conectada.", "Criação assíncrona (202 + protocolo)."],
-    regras: ["Baixas idempotentes e vinculadas à parcela correta (BUSINESS-RULES §9).", "Cancelamento/renegociação no Sra Luck não replicam pela API."],
+    limites: ["600 chamadas/min e 10/s por conta conectada.", "Criação assíncrona (202 + protocolo, sem ID).", "Consulta de alterações por período (data/hora de Brasília)."],
+    regras: [
+      "Sra Luck é a fonte de valor, vencimento e encargos.",
+      "Baixa da Conta Azul só é aplicada sozinha com vínculo seguro: vínculo confirmado, parcela quitada por inteiro, mesmo valor bruto, parcela do Sra Luck em aberto ou aguardando confirmação.",
+      "Qualquer divergência vai para a fila de revisão; nada é sobrescrito em silêncio.",
+      "Baixas idempotentes: o Sra Luck confere as baixas existentes antes de criar e só apaga baixa que ele mesmo criou.",
+      "Parcela vinculada não pode ser excluída no Sra Luck.",
+    ],
   },
   {
     id: "mercado_pago",
@@ -223,11 +241,197 @@ function validarConfigGemini(bruto: unknown): Validacao<ConfigGemini> {
   return { ok: true, config: out };
 }
 
+// ------------------------------------------------------------------ CRM (RD Station) → importação
+
+export const CAMPOS_CRM = ["cpf", "telefone", "email", "valor_contrato", "quantidade_parcelas", "valor_parcela", "taxa_administrativa", "tipo_venda", "procedimento", "banco"] as const;
+export type CampoCrm = typeof CAMPOS_CRM[number];
+/** auto = leitura automática atual; ignorar = não importa; deal:<slug> / contact:<slug> = campo personalizado. */
+export type FonteCampoCrm = string;
+export const FREQUENCIAS_CRM = [15, 30, 60, 180, 360, 720, 1440] as const;
+
+export type ConfigCrm = {
+  /** Importação agendada ligada (a manual e o webhook funcionam sempre). */
+  ativo: boolean;
+  frequenciaMinutos: number;
+  /** null = todos os funis. */
+  pipelineId: string | null;
+  /** Vazio = todas as etapas do funil. */
+  etapas: string[];
+  status: "won" | "ongoing" | "qualquer";
+  mapeamento: Record<CampoCrm, FonteCampoCrm>;
+  deduplicarPor: { cpf: boolean; telefone: boolean; email: boolean };
+};
+
+export const PADRAO_CRM: ConfigCrm = {
+  ativo: false,
+  frequenciaMinutos: 60,
+  pipelineId: null,
+  etapas: [],
+  status: "won",
+  mapeamento: Object.fromEntries(CAMPOS_CRM.map((c) => [c, "auto"])) as Record<CampoCrm, FonteCampoCrm>,
+  deduplicarPor: { cpf: true, telefone: true, email: true },
+};
+
+const ID_RD = /^[0-9a-f]{24}$/;
+const FONTE_CRM = /^(auto|ignorar|(deal|contact):[a-z0-9_]{1,60})$/;
+
+function objeto(bruto: unknown): Record<string, unknown> | null {
+  return bruto && typeof bruto === "object" && !Array.isArray(bruto) ? bruto as Record<string, unknown> : null;
+}
+
+export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
+  const c = objeto(bruto);
+  if (!c) return { ok: false, erro: "Configuração inválida." };
+  const extra = Object.keys(c).find((k) => !(k in PADRAO_CRM));
+  if (extra) return { ok: false, erro: `Campo não permitido: ${extra}.` };
+  const out: ConfigCrm = { ...PADRAO_CRM, mapeamento: { ...PADRAO_CRM.mapeamento }, deduplicarPor: { ...PADRAO_CRM.deduplicarPor }, etapas: [] };
+  if (c.ativo !== undefined) { if (typeof c.ativo !== "boolean") return { ok: false, erro: "ativo deve ser verdadeiro ou falso." }; out.ativo = c.ativo; }
+  if (c.frequenciaMinutos !== undefined && c.frequenciaMinutos !== null) {
+    const f = Number(c.frequenciaMinutos);
+    if (!(FREQUENCIAS_CRM as readonly number[]).includes(f)) return { ok: false, erro: `Frequência deve ser uma de: ${FREQUENCIAS_CRM.join(", ")} minutos.` };
+    out.frequenciaMinutos = f;
+  }
+  if (c.pipelineId !== undefined && c.pipelineId !== null && c.pipelineId !== "") {
+    if (typeof c.pipelineId !== "string" || !ID_RD.test(c.pipelineId)) return { ok: false, erro: "Funil inválido." };
+    out.pipelineId = c.pipelineId;
+  }
+  if (c.etapas !== undefined && c.etapas !== null) {
+    if (!Array.isArray(c.etapas) || c.etapas.length > 30 || c.etapas.some((e) => typeof e !== "string" || !ID_RD.test(e))) return { ok: false, erro: "Etapas inválidas." };
+    out.etapas = [...new Set(c.etapas as string[])];
+  }
+  if (out.etapas.length && !out.pipelineId) return { ok: false, erro: "Escolha o funil antes das etapas." };
+  if (c.status !== undefined && c.status !== null) {
+    if (!["won", "ongoing", "qualquer"].includes(String(c.status))) return { ok: false, erro: "Status inválido." };
+    out.status = c.status as ConfigCrm["status"];
+  }
+  if (c.mapeamento !== undefined && c.mapeamento !== null) {
+    const m = objeto(c.mapeamento);
+    if (!m) return { ok: false, erro: "Mapeamento inválido." };
+    for (const [campo, fonte] of Object.entries(m)) {
+      if (!(CAMPOS_CRM as readonly string[]).includes(campo)) return { ok: false, erro: `Campo do Sra Luck desconhecido: ${campo}.` };
+      if (typeof fonte !== "string" || !FONTE_CRM.test(fonte)) return { ok: false, erro: `Fonte inválida para ${campo}.` };
+      out.mapeamento[campo as CampoCrm] = fonte;
+    }
+  }
+  if (c.deduplicarPor !== undefined && c.deduplicarPor !== null) {
+    const d = objeto(c.deduplicarPor);
+    if (!d || Object.keys(d).some((k) => !["cpf", "telefone", "email"].includes(k)) || Object.values(d).some((v) => typeof v !== "boolean")) return { ok: false, erro: "Deduplicação inválida." };
+    Object.assign(out.deduplicarPor, d);
+  }
+  return { ok: true, config: out };
+}
+
+// ------------------------------------------------------------------ Conta Azul → sincronização
+
+export const METODOS_CONTA_AZUL = ["BOLETO_BANCARIO", "PIX_PAGAMENTO_INSTANTANEO", "TRANSFERENCIA_BANCARIA", "CARTAO_CREDITO", "CARTAO_DEBITO", "DINHEIRO", "DEPOSITO_BANCARIO", "OUTRO"] as const;
+
+export type ConfigContaAzul = {
+  /** Sincronização automática a cada 15 min (a manual funciona sempre). */
+  ativo: boolean;
+  contaFinanceiraId: string | null;
+  categoriaId: string | null;
+  metodoPagamento: typeof METODOS_CONTA_AZUL[number];
+  /** Sra Luck → Conta Azul: valor e vencimento. */
+  enviarAlteracoes: boolean;
+  /** Sra Luck → Conta Azul: baixas e estornos. */
+  enviarBaixas: boolean;
+  /** Conta Azul → Sra Luck: baixa automática quando o vínculo é seguro. */
+  baixaAutomatica: boolean;
+};
+
+export const PADRAO_CONTA_AZUL: ConfigContaAzul = {
+  ativo: false, contaFinanceiraId: null, categoriaId: null, metodoPagamento: "BOLETO_BANCARIO",
+  enviarAlteracoes: true, enviarBaixas: true, baixaAutomatica: true,
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validarConfigContaAzul(bruto: unknown): Validacao<ConfigContaAzul> {
+  const c = objeto(bruto);
+  if (!c) return { ok: false, erro: "Configuração inválida." };
+  const extra = Object.keys(c).find((k) => !(k in PADRAO_CONTA_AZUL));
+  if (extra) return { ok: false, erro: `Campo não permitido: ${extra}.` };
+  const out: ConfigContaAzul = { ...PADRAO_CONTA_AZUL };
+  for (const k of ["ativo", "enviarAlteracoes", "enviarBaixas", "baixaAutomatica"] as const) {
+    if (c[k] !== undefined) { if (typeof c[k] !== "boolean") return { ok: false, erro: `${k} deve ser verdadeiro ou falso.` }; out[k] = c[k] as boolean; }
+  }
+  for (const k of ["contaFinanceiraId", "categoriaId"] as const) {
+    const v = c[k];
+    if (v !== undefined && v !== null && v !== "") {
+      if (typeof v !== "string" || !UUID.test(v)) return { ok: false, erro: `${k === "contaFinanceiraId" ? "Conta financeira" : "Categoria"} inválida.` };
+      out[k] = v.toLowerCase();
+    }
+  }
+  if (c.metodoPagamento !== undefined && c.metodoPagamento !== null) {
+    if (!(METODOS_CONTA_AZUL as readonly string[]).includes(String(c.metodoPagamento))) return { ok: false, erro: "Método de pagamento inválido." };
+    out.metodoPagamento = c.metodoPagamento as ConfigContaAzul["metodoPagamento"];
+  }
+  if (out.ativo && !out.contaFinanceiraId) return { ok: false, erro: "Escolha a conta financeira antes de ligar a sincronização." };
+  return { ok: true, config: out };
+}
+
+// ------------------------------------------------------------------ descrição dos formulários (telas genéricas)
+
+/** Como as telas desenham o formulário de cada função. opcoesDe = lista lida na hora do provedor. */
+export type CampoFormulario = {
+  chave: string;
+  rotulo: string;
+  tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano";
+  ajuda?: string;
+  placeholder?: string;
+  min?: number; max?: number; passo?: number; maxLength?: number;
+  opcoes?: { valor: string; rotulo: string }[];
+  opcoesDe?: "rd_funis" | "rd_etapas" | "rd_campos" | "ca_contas" | "ca_categorias";
+  itens?: { chave: string; rotulo: string }[];
+};
+
+const CAMPOS_GEMINI: CampoFormulario[] = [
+  { chave: "ativo", rotulo: "Função ligada", tipo: "booleano" },
+  { chave: "modelo", rotulo: "Modelo", tipo: "texto", placeholder: "em branco = modelo geral", maxLength: 80 },
+  { chave: "temperatura", rotulo: "Temperatura", tipo: "numero", min: 0, max: 2, passo: 0.1, placeholder: "padrão" },
+  { chave: "maxTokens", rotulo: "Máx. tokens", tipo: "numero", min: 64, max: 8192, passo: 1, placeholder: "padrão" },
+  { chave: "limiteDiario", rotulo: "Limite diário", tipo: "numero", min: 1, max: 1000, passo: 1, placeholder: "sem limite" },
+  { chave: "prompt", rotulo: "Prompt / base", tipo: "texto_longo", maxLength: 1500 },
+];
+
+const ROTULO_CAMPO_CRM: Record<CampoCrm, string> = {
+  cpf: "CPF", telefone: "Telefone", email: "E-mail", valor_contrato: "Valor do contrato", quantidade_parcelas: "Quantidade de parcelas",
+  valor_parcela: "Valor da parcela", taxa_administrativa: "Taxa administrativa", tipo_venda: "Tipo de venda", procedimento: "Procedimento", banco: "Banco",
+};
+
+const CAMPOS_CRM_FORM: CampoFormulario[] = [
+  { chave: "ativo", rotulo: "Importação automática ligada", tipo: "booleano", ajuda: "A importação manual e o webhook funcionam mesmo desligada." },
+  { chave: "frequenciaMinutos", rotulo: "Frequência", tipo: "selecao", opcoes: FREQUENCIAS_CRM.map((m) => ({ valor: String(m), rotulo: m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "1 vez por dia" })) },
+  { chave: "pipelineId", rotulo: "Funil", tipo: "selecao", opcoesDe: "rd_funis", ajuda: "Em branco = todos os funis." },
+  { chave: "etapas", rotulo: "Etapas", tipo: "multi_selecao", opcoesDe: "rd_etapas", ajuda: "Nenhuma marcada = todas as etapas do funil." },
+  { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
+  { chave: "mapeamento", rotulo: "Campos importados", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "O nome sempre é importado. Automático = leitura atual (contato e campos com nome parecido)." },
+  { chave: "deduplicarPor", rotulo: "Deduplicar por", tipo: "grupo_booleano", itens: [{ chave: "cpf", rotulo: "CPF" }, { chave: "telefone", rotulo: "Telefone" }, { chave: "email", rotulo: "E-mail" }] },
+];
+
+const CAMPOS_CONTA_AZUL_FORM: CampoFormulario[] = [
+  { chave: "ativo", rotulo: "Sincronização automática (a cada 15 min)", tipo: "booleano" },
+  { chave: "contaFinanceiraId", rotulo: "Conta financeira", tipo: "selecao", opcoesDe: "ca_contas", ajuda: "Usada na criação dos lançamentos e nas baixas enviadas." },
+  { chave: "categoriaId", rotulo: "Categoria de receita", tipo: "selecao", opcoesDe: "ca_categorias", ajuda: "Opcional." },
+  { chave: "metodoPagamento", rotulo: "Método de pagamento", tipo: "selecao", opcoes: METODOS_CONTA_AZUL.map((m) => ({ valor: m, rotulo: m.replace(/_/g, " ").toLowerCase() })) },
+  { chave: "enviarAlteracoes", rotulo: "Enviar valor e vencimento do Sra Luck", tipo: "booleano" },
+  { chave: "enviarBaixas", rotulo: "Enviar baixas e estornos do Sra Luck", tipo: "booleano" },
+  { chave: "baixaAutomatica", rotulo: "Aplicar baixas da Conta Azul quando o vínculo for seguro", tipo: "booleano", ajuda: "Desligado, toda baixa vinda da Conta Azul vai para revisão." },
+];
+
+type Esquema = { padrao: unknown; validar: (bruto: unknown) => Validacao<unknown>; campos: CampoFormulario[]; permissao?: "financeiro" };
+
 /** Esquemas de configuração por provedor/função. Só estas combinações podem ser gravadas. */
-export const ESQUEMAS_CONFIG: Record<string, Record<string, { padrao: unknown; validar: (bruto: unknown) => Validacao<unknown> }>> = {
+export const ESQUEMAS_CONFIG: Record<string, Record<string, Esquema>> = {
   gemini: {
-    mensagem_diaria: { padrao: PADRAO_GEMINI, validar: validarConfigGemini },
-    notificacoes: { padrao: PADRAO_GEMINI, validar: validarConfigGemini },
+    mensagem_diaria: { padrao: PADRAO_GEMINI, validar: validarConfigGemini, campos: CAMPOS_GEMINI },
+    notificacoes: { padrao: PADRAO_GEMINI, validar: validarConfigGemini, campos: CAMPOS_GEMINI },
+  },
+  rd_station: {
+    importacao: { padrao: PADRAO_CRM, validar: validarConfigCrm, campos: CAMPOS_CRM_FORM },
+  },
+  conta_azul: {
+    sincronizacao: { padrao: PADRAO_CONTA_AZUL, validar: validarConfigContaAzul, campos: CAMPOS_CONTA_AZUL_FORM, permissao: "financeiro" },
   },
 };
 
@@ -322,6 +526,7 @@ export async function catalogo(env: Env, deps: { db?: Db } = {}) {
         return {
           ...f,
           config: esquema ? (validado?.ok ? validado.config : esquema.padrao) : undefined,
+          campos: esquema?.campos,
           versao: linha?.versao ?? 0,
           atualizadoEm: linha?.atualizado_em ?? null,
           atualizadoPor: linha?.atualizado_por ?? null,

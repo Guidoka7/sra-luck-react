@@ -205,10 +205,41 @@ describe("M2M da configuração de funções de integração", () => {
     }
   });
 
+  it("owner/developer configuram a importação do CRM; Conta Azul só no Admin", async () => {
+    for (const papel of ["owner", "developer"]) {
+      const result = await authorizeDevConsoleRequest(comPapel({ provedor: "rd_station", funcao: "importacao", config: { ativo: true, frequenciaMinutos: 60, etapas: [], mapeamento: { cpf: "contact:cpf" } }, versao: 2 }, papel), env);
+      expect(result, papel).toBeInstanceOf(Request);
+    }
+  });
+
+  it("importação manual do CRM: owner/developer, corpo vazio; rotas da Conta Azul bloqueadas", async () => {
+    const post = (path: string, body: Record<string, unknown>, papel: string) => request(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-dev-console-token": env.DEV_CONSOLE_SERVICE_TOKEN!, "x-dev-actor-id": "dev:1", "x-dev-actor-role": papel },
+      body: JSON.stringify(body),
+    });
+    expect(await authorizeDevConsoleRequest(post("/api/admin/integrations/rd-station/importar", {}, "developer"), env)).toBeInstanceOf(Request);
+    for (const [path, body, papel] of [
+      ["/api/admin/integrations/rd-station/importar", {}, "operator"],
+      ["/api/admin/integrations/rd-station/importar", { tudo: true }, "owner"],
+      ["/api/admin/integrations/conta-azul/sincronizar", {}, "owner"],
+      ["/api/admin/integrations/conta-azul/enviar-cliente", { clienteId: "x" }, "owner"],
+      ["/api/admin/integrations/conta-azul/conflitos/0b7c2a1e-1111-4222-8333-444455556666/resolver", { acao: "manter" }, "owner"],
+      ["/api/admin/integrations/rd-station/importacoes/itens/0b7c2a1e-1111-4222-8333-444455556666/importar", {}, "owner"],
+    ] as [string, Record<string, unknown>, string][]) {
+      const result = await authorizeDevConsoleRequest(post(path, body, papel), env);
+      expect(result, path).toBeInstanceOf(Response);
+      expect((result as Response).status, path).toBe(403);
+    }
+  });
+
   it("bloqueia operador, função desconhecida, segredo e campos extras", async () => {
     const casos: [Record<string, unknown>, string][] = [
       [{ provedor: "gemini", funcao: "notificacoes", config: { ativo: false } }, "operator"],
       [{ provedor: "conta_azul", funcao: "criar_conta_receber", config: {} }, "owner"],
+      [{ provedor: "conta_azul", funcao: "sincronizacao", config: { ativo: true } }, "owner"],
+      [{ provedor: "rd_station", funcao: "importacao", config: { ativo: true } }, "operator"],
+      [{ provedor: "rd_station", funcao: "importacao", config: { client_secret: "x" } }, "owner"],
       [{ provedor: "gemini", funcao: "mensagem_diaria", config: { api_key: "segredo" } }, "owner"],
       [{ provedor: "gemini", funcao: "mensagem_diaria", config: {}, extra: 1 }, "owner"],
       [{ provedor: "gemini", funcao: "mensagem_diaria", config: [] }, "owner"],

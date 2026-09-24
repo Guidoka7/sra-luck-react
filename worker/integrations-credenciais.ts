@@ -38,8 +38,10 @@ export const CATALOGO_PROVEDORES: Record<string, { nome: string; grupo: string; 
     campos: [
       { chave: "client_id", label: "Client ID", obrigatorio: true, envVar: "CONTA_AZUL_CLIENT_ID" },
       { chave: "client_secret", label: "Client Secret", obrigatorio: true, envVar: "CONTA_AZUL_CLIENT_SECRET" },
-      { chave: "access_token", label: "Access Token", obrigatorio: true, envVar: "CONTA_AZUL_ACCESS_TOKEN" },
-      { chave: "refresh_token", label: "Refresh Token", obrigatorio: true, envVar: "CONTA_AZUL_REFRESH_TOKEN" },
+      { chave: "redirect_uri", label: "OAuth Redirect URI", obrigatorio: false, envVar: "CONTA_AZUL_REDIRECT_URI" },
+      { chave: "access_token", label: "Access Token (preenchido pelo OAuth)", obrigatorio: false, envVar: "CONTA_AZUL_ACCESS_TOKEN" },
+      { chave: "refresh_token", label: "Refresh Token (preenchido pelo OAuth)", obrigatorio: false, envVar: "CONTA_AZUL_REFRESH_TOKEN" },
+      { chave: "token_expires_at", label: "Token expira em", obrigatorio: false, envVar: "CONTA_AZUL_TOKEN_EXPIRES_AT" },
     ],
   },
   rd_station: {

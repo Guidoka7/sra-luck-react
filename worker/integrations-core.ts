@@ -6,8 +6,10 @@ import { credenciaisApi, integracaoDesativada, obterCredencial } from "./integra
 import { rdStationReadonlyApi } from "./rd-station-readonly";
 import { webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
-import { testarGemini } from "./frase-do-dia";
-import { catalogo, salvarConfig } from "./integracoes-registro";
+import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
+import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
+import { importacaoAgendadaSeDevida } from "./crm-importacao";
+import { catalogo, ESQUEMAS_CONFIG, salvarConfig } from "./integracoes-registro";
 import { calcularEncargosAtraso } from "../src/lib/financeiro/encargos";
 
 function json(data: unknown, status = 200) {
@@ -202,87 +204,6 @@ async function handleMercadoPagoWebhook(request: Request, env: Env) {
   return json({ ok: true, statusProvedor, aguardandoConferencia: statusProvedor === "approved", baixaAutomatica: false }, 200);
 }
 
-async function contaAzulRequest(env: Env, path: string, init: RequestInit = {}) {
-  if (!env.CONTA_AZUL_ACCESS_TOKEN) throw new Error("Conta Azul não configurado.");
-  if (await integracaoDesativada(env, "conta_azul")) throw new Error("Conta Azul desativado no painel.");
-  const response = await fetch(`https://api-v2.contaazul.com${path}`, { ...init, headers: { Authorization: `Bearer ${env.CONTA_AZUL_ACCESS_TOKEN}`, "Content-Type": "application/json", ...(init.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Conta Azul HTTP ${response.status}`);
-  return data;
-}
-
-async function handleContaAzulAdmin(request: Request, env: Env) {
-  const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO);
-  if (authorization instanceof Response) return authorization;
-  const { adminId: admin, colaboradorId } = authorization;
-  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(admin, env), action: "conta_azul.admin", provider: "conta_azul" });
-  const url = new URL(request.url);
-  const path = url.pathname;
-  const db = createServiceSupabaseClient(env);
-  const body = await request.json().catch(() => ({})) as any;
-
-  if (path === "/api/admin/integrations/conta-azul/create-receivable" && request.method === "POST") {
-    const boletoId = String(body.boletoId || "");
-    const contaFinanceira = String(body.contaFinanceiraId || "");
-    const contato = String(body.contatoId || "");
-    if (!boletoId || !contaFinanceira || !contato) return json({ erro: "Parcela, contato e conta financeira são obrigatórios." }, 400);
-    const { data: boleto, error } = await db.from("boletos").select("*, clientes(nome_completo), contratos_credito(codigo)").eq("id", boletoId).maybeSingle();
-    if (error || !boleto) return json({ erro: "Parcela não encontrada." }, 404);
-    const payload = {
-      data_competencia: boleto.data_vencimento,
-      valor: Number(boleto.valor),
-      observacao: `Sra. Luck · ${boleto.contratos_credito?.codigo || boleto.id}`,
-      descricao: `Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""} · ${boleto.clientes?.nome_completo || "Cliente"}`,
-      contato,
-      conta_financeira: contaFinanceira,
-      rateio: Array.isArray(body.rateio) ? body.rateio : [],
-      condicao_pagamento: { parcelas: [{ descricao: `Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""}`, data_vencimento: boleto.data_vencimento, nota: "Gerada pelo Sra. Luck", conta_financeira: contaFinanceira, detalhe_valor: { multa: 0, juros: 0, valor_bruto: Number(boleto.valor), valor_liquido: Number(boleto.valor), desconto: 0, taxa: 0 }, metodo_pagamento: "BOLETO_BANCARIO" }] },
-    };
-    const { data: op } = await db.from("conta_azul_operacoes").insert({ boleto_id: boletoId, contrato_credito_id: boleto.contrato_credito_id, tipo: "criar_receber", status: "enviado", request_payload: payload }).select("id").single();
-    try {
-      const result: any = await contaAzulRequest(env, "/v1/financeiro/eventos-financeiros/contas-a-receber", { method: "POST", body: JSON.stringify(payload) });
-      await db.from("conta_azul_operacoes").update({ protocolo: result?.protocolo || null, status: result?.status === "ERROR" ? "erro" : "sucesso", response_payload: result, updated_at: new Date().toISOString() }).eq("id", op?.id);
-      await db.from("logs_alteracoes").insert({
-        usuario: colaboradorId,
-        acao: "criou_recebivel_conta_azul",
-        entidade: "boletos",
-        entidade_id: boletoId,
-        detalhes: { operacao_id: op?.id ?? null, protocolo: result?.protocolo ?? null },
-      });
-      return json({ ok: true, resultado: { protocolo: result?.protocolo ?? null, status: result?.status ?? null } });
-    } catch (error) {
-      await db.from("conta_azul_operacoes").update({ status: "erro", erro: publicError(error, "Erro Conta Azul"), updated_at: new Date().toISOString() }).eq("id", op?.id);
-      log.error("Falha ao sincronizar conta a receber com Conta Azul", { entityType: "boleto", entityId: boletoId, eventCode: "CONTA_AZUL_RECEIVABLE_FAILED", statusCode: 502, error });
-      return json({ erro: "Falha ao sincronizar com Conta Azul." }, 502);
-    }
-  }
-
-  if (path === "/api/admin/integrations/conta-azul/update-installment" && request.method === "POST") {
-    const externalId = String(body.contaAzulParcelaId || "");
-    const version = Number(body.versao);
-    if (!externalId || !Number.isFinite(version)) return json({ erro: "ID e versão da parcela no Conta Azul são obrigatórios." }, 400);
-    const patch = { nota: body.nota, descricao: body.descricao, vencimento: body.vencimento, composicao_valor: body.composicaoValor, versao: version, data_pagamento_esperado: body.dataPagamentoEsperado, metodo_pagamento: body.metodoPagamento, id_conta_financeira: body.contaFinanceiraId };
-    Object.keys(patch).forEach((key) => (patch as any)[key] === undefined && delete (patch as any)[key]);
-    try {
-      const result: any = await contaAzulRequest(env, `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(externalId)}`, { method: "PATCH", body: JSON.stringify(patch) });
-      await db.from("logs_alteracoes").insert({
-        usuario: colaboradorId,
-        acao: "atualizou_parcela_conta_azul",
-        entidade: "integracoes",
-        entidade_id: externalId,
-        detalhes: { campos: Object.keys(patch) },
-      });
-      return json({ ok: true, resultado: { protocolo: result?.protocolo ?? null, status: result?.status ?? null } });
-    } catch (error) {
-      log.error("Falha ao atualizar parcela no Conta Azul", { eventCode: "CONTA_AZUL_INSTALLMENT_UPDATE_FAILED", statusCode: 502, error });
-      return json({ erro: "Falha ao atualizar a parcela no Conta Azul." }, 502);
-    }
-  }
-
-  return null;
-}
-
 async function testarConexao(request: Request, env: Env) {
   const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
   if (authorization instanceof Response) return authorization;
@@ -307,11 +228,30 @@ async function testarConexao(request: Request, env: Env) {
     }
   } else if (provedor === "gemini") {
     resultado = await testarGemini(env);
+  } else if (provedor === "conta_azul") {
+    try {
+      const r = await caRequest(depsPadrao(env), "GET", "/v1/pessoas/conta-conectada") as Record<string, unknown>;
+      resultado = { conectado: true, detalhe: `Conectado à empresa ${String(r?.nome_fantasia || r?.razao_social || "da conta")}.` };
+    } catch (error) {
+      resultado = { conectado: false, detalhe: error instanceof ErroContaAzul ? error.message : "Falha ao contatar a Conta Azul." };
+    }
   } else return json({ erro: "Teste de conexão ainda não implementado para este provedor." }, 501);
 
   const { error: auditError } = await db.from("logs_alteracoes").insert({ usuario: colaboradorId, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
   if (auditError) log.warn("Teste de integração concluído, mas auditoria não foi persistida", { eventCode: "INTEGRATION_TEST_AUDIT_FAILED", error: auditError });
   log.info("Teste de integração concluído", { eventCode: "INTEGRATION_TEST_COMPLETED", connected: resultado.conectado });
+  return json(resultado);
+}
+
+/**
+ * Agendador (pg_cron a cada 15 min, ou Vercel Cron): importação do CRM na frequência
+ * configurada e sincronização da Conta Azul, cada uma só se estiver ligada.
+ */
+async function cronIntegracoes(request: Request, env: Env) {
+  if (!rotinaAutorizada(request, env)) return json({ erro: "Não autorizado." }, 401);
+  const resultado: Record<string, unknown> = {};
+  try { resultado.crm = await importacaoAgendadaSeDevida(env); } catch { resultado.crm = { erro: "Falha na importação agendada do CRM." }; }
+  try { resultado.contaAzul = await sincronizarContaAzul(env, { origem: "agendada", ator: "sistema:agendador" }); } catch { resultado.contaAzul = { erro: "Falha na sincronização da Conta Azul." }; }
   return json(resultado);
 }
 
@@ -332,6 +272,10 @@ async function salvarConfigApi(request: Request, env: Env) {
   if (authorization instanceof Response) return authorization;
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
   const body = await request.json().catch(() => ({})) as { provedor?: unknown; funcao?: unknown; config?: unknown; versao?: unknown };
+  if (ESQUEMAS_CONFIG[String(body.provedor)]?.[String(body.funcao)]?.permissao === "financeiro") {
+    const financeiro = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO);
+    if (financeiro instanceof Response) return financeiro;
+  }
   const r = await salvarConfig(env, body, authorization.colaboradorId);
   if (!r.ok) return json({ erro: r.erro, codigo: r.codigo }, r.status);
   requestLogger(request).info("Configuração de função de integração salva", { eventCode: "INTEGRATION_FUNCTION_CONFIGURED", provider: r.provedor, funcao: r.funcao, versao: r.versao });
@@ -350,6 +294,8 @@ export async function integrationsApi(request: Request, env: Env): Promise<Respo
   if (path === "/api/admin/integrations/catalogo" && request.method === "GET") return catalogoApi(request, env);
   if (path === "/api/admin/integrations/config" && request.method === "POST") return salvarConfigApi(request, env);
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
-  if (path.startsWith("/api/admin/integrations/conta-azul/")) return handleContaAzulAdmin(request, env);
+  if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env);
+  const contaAzul = await contaAzulApi(request, env);
+  if (contaAzul) return contaAzul;
   return null;
 }
