@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErroGemini, definirMensagem, descobrirModelos, gerarComGemini, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
+import { ErroGemini, definirMensagem, descobrirModelos, gerarComGemini, gerarMensagemDoDia, historicoMensagens, limparPedido, montarPrompt, ordenarModelos, prepararMensagemDoDia, rotinaAutorizada, sugerirMensagem, validarFraseIa } from "./frase-do-dia";
 import { fraseDoDia } from "../src/lib/fraseDoDia";
 import type { Env } from "./supabase";
 
@@ -125,6 +125,83 @@ describe("mensagem do dia (uma por data, igual para todas as clientes)", () => {
     const r = await gerarMensagemDoDia(env(), HOJE, { db, fetcher });
     expect(r.origem).toBe("catalogo");
     expect(r.motivo).toBe("reprovada:repetida");
+  });
+});
+
+describe("preparação diária com aprovação humana", () => {
+  it("cron gera candidata e deixa aguardando aprovação, sem publicar", async () => {
+    const { db, linhas } = bancoFalso();
+    const { fetcher, chamadas } = geminiFalso(["Planejar com calma é *cuidar de você* todos os dias. ✨"]);
+    const r = await prepararMensagemDoDia(env(), HOJE, { db, fetcher });
+    expect(r).toMatchObject({
+      data: DATA,
+      status: "aguardando_aprovacao",
+      aguardandoAprovacao: true,
+      origem: "ia",
+      chamouGemini: true,
+    });
+    expect(chamadas).toHaveLength(1);
+    expect(linhas.get(DATA)).toMatchObject({
+      status: "aguardando_aprovacao",
+      texto: "Planejar com calma é *cuidar de você* todos os dias. ✨",
+      origem: "ia",
+    });
+  });
+
+  it("segunda execução reutiliza a candidata pendente e não chama o Gemini novamente", async () => {
+    const { db } = bancoFalso([{
+      data: DATA,
+      status: "aguardando_aprovacao",
+      texto: "Uma candidata *aguardando sua revisão* hoje.",
+      tema: "Quarta de foco",
+      origem: "ia",
+      modelo: "gemini-x",
+      updated_at: HOJE.toISOString(),
+    }]);
+    const { fetcher, chamadas } = geminiFalso(["Outra *mensagem nova* aqui."]);
+    const r = await prepararMensagemDoDia(env(), HOJE, { db, fetcher });
+    expect(r).toMatchObject({
+      status: "aguardando_aprovacao",
+      aguardandoAprovacao: true,
+      reutilizada: true,
+      texto: "Uma candidata *aguardando sua revisão* hoje.",
+    });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("falha do Gemini não publica fallback automaticamente", async () => {
+    const { db, linhas } = bancoFalso();
+    const { fetcher } = geminiFalso([503, 503, 503]);
+    const r = await prepararMensagemDoDia(env(), HOJE, { db, fetcher });
+    expect(r.status).toBe("falha_geracao");
+    expect(r.aguardandoAprovacao).toBe(false);
+    expect(linhas.get(DATA)).toMatchObject({ status: "falha_geracao", texto: null });
+    expect(linhas.get(DATA)?.status).not.toBe("pronta");
+  });
+
+  it("sem chave registra falha de geração e não publica catálogo", async () => {
+    const { db, linhas } = bancoFalso();
+    const { fetcher, chamadas } = geminiFalso([]);
+    const r = await prepararMensagemDoDia({} as Env, HOJE, { db, fetcher });
+    expect(r).toMatchObject({ status: "falha_geracao", motivo: "sem_chave", chamouGemini: false });
+    expect(chamadas).toHaveLength(0);
+    expect(linhas.get(DATA)).toMatchObject({ status: "falha_geracao", texto: null });
+  });
+
+  it("publicação humana transforma a candidata em pronta e a rotina passa a reutilizar", async () => {
+    const { db, linhas } = bancoFalso();
+    const { fetcher } = geminiFalso(["Seu caminho *segue firme* todos os dias."]);
+    const preparada = await prepararMensagemDoDia(env(), HOJE, { db, fetcher });
+    expect(preparada.status).toBe("aguardando_aprovacao");
+
+    const publicada = await definirMensagem(env(), preparada.texto, { origem: "ia", modelo: "gemini-x" }, HOJE, { db });
+    expect(publicada).toMatchObject({ ok: true, origem: "ia" });
+    expect(linhas.get(DATA)).toMatchObject({ status: "pronta", origem: "ia" });
+
+    const { fetcher: outroFetcher, chamadas } = geminiFalso(["Não deveria *ser chamada* agora."]);
+    const r = await prepararMensagemDoDia(env(), HOJE, { db, fetcher: outroFetcher });
+    expect(r).toMatchObject({ status: "pronta", aguardandoAprovacao: false, reutilizada: true });
+    expect(chamadas).toHaveLength(0);
   });
 });
 

@@ -162,6 +162,35 @@ describe("autenticação M2M do Dev Console", () => {
   });
 });
 
+describe("M2M da mensagem diária do Gemini", () => {
+  it("libera preparar, sugerir e publicar com payload fechado", async () => {
+    const casos: [string, Record<string, unknown>][] = [
+      ["/api/admin/integrations/gemini/mensagem-do-dia", {}],
+      ["/api/admin/integrations/gemini/sugerir", { pedido: "mais curta e acolhedora" }],
+      ["/api/admin/integrations/gemini/definir", { texto: "Seu caminho *segue firme* hoje.", origem: "ia", modelo: "gemini-x" }],
+    ];
+    for (const [path, body] of casos) {
+      const result = await authorizeDevConsoleRequest(jsonPost(path, body), env);
+      expect(result, path).toBeInstanceOf(Request);
+    }
+  });
+
+  it("bloqueia campos extras, origem inválida e texto excessivo", async () => {
+    const casos: [string, Record<string, unknown>][] = [
+      ["/api/admin/integrations/gemini/mensagem-do-dia", { forcar: true }],
+      ["/api/admin/integrations/gemini/sugerir", { pedido: "x".repeat(201) }],
+      ["/api/admin/integrations/gemini/definir", { texto: "ok", origem: "cron" }],
+      ["/api/admin/integrations/gemini/definir", { texto: "x".repeat(301), origem: "admin" }],
+    ];
+    for (const [path, body] of casos) {
+      const result = await authorizeDevConsoleRequest(jsonPost(path, body), env);
+      expect(result, path).toBeInstanceOf(Response);
+      expect((result as Response).status, path).toBe(403);
+      expect(await (result as Response).json()).toMatchObject({ codigo: "DEV_CONSOLE_M2M_GEMINI_NOT_ALLOWED" });
+    }
+  });
+});
+
 describe("M2M da Central de Notificações (escopos explícitos)", () => {
   const LOTE = "0b7c2a1e-1111-4222-8333-444455556666";
   const ITEM = "1c8d3b2f-2222-4333-8444-555566667777";
