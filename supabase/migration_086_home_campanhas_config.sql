@@ -1,5 +1,5 @@
 -- ============================================================================
--- MIGRATION 083: carrossel da Home configurável
+-- MIGRATION 086: carrossel da Home configurável
 --
 -- Guarda só os AJUSTES do Admin/Dev Console sobre HOME_CAMPAIGN_SLIDES
 -- (ligar/desligar, ordem, textos, tema, destino) e cartões novos que copiam o
