@@ -1,4 +1,4 @@
--- 084 — Liga/desliga por integração e mensagem do dia escolhida pela equipe.
+-- 087 — Liga/desliga por integração e mensagem do dia escolhida pela equipe.
 --
 -- 1) integracoes_estado: uma linha por provedor (mesmos ids do catálogo de
 --    credenciais). Sem linha = integração ativa (comportamento anterior).

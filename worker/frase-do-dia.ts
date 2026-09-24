@@ -463,7 +463,7 @@ export async function definirMensagem(env: Env, textoBruto: unknown, opcoes: { o
   );
   if (error) {
     return error.code === "23514"
-      ? { ok: false, codigo: "migration_084", erro: "Aplique a migration_084 para permitir mensagens escritas pela equipe." }
+      ? { ok: false, codigo: "migration_087", erro: "Aplique a migration_087 para permitir mensagens escritas pela equipe." }
       : { ok: false, codigo: `salvar_falhou:${error.code ?? "?"}`, erro: "Não foi possível salvar a mensagem do dia." };
   }
   return { ok: true, data: base.data, texto: validacao.texto, tema: base.tema, origem };
@@ -518,7 +518,7 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
         return json(sugestao, sugestao.ok ? 200 : sugestao.codigo === "sem_chave" ? 409 : 502);
       }
       const definicao = await definirMensagem(env, corpo.texto, { origem: corpo.origem, modelo: corpo.modelo });
-      if (!definicao.ok) return json(definicao, definicao.codigo.startsWith("salvar_falhou") ? 500 : definicao.codigo === "migration_084" ? 409 : 400);
+      if (!definicao.ok) return json(definicao, definicao.codigo.startsWith("salvar_falhou") ? 500 : definicao.codigo === "migration_087" ? 409 : 400);
       const { error: auditoria } = await createServiceSupabaseClient(env).from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "definiu_mensagem_do_dia", entidade: "integracoes", detalhes: { provedor: "gemini", data: definicao.data, origem: definicao.origem } });
       if (auditoria) log.warn("Mensagem do dia definida, mas auditoria não foi persistida", { eventCode: "DAILY_MESSAGE_AUDIT_FAILED" });
       log.info("Mensagem do dia definida pela equipe", { eventCode: "DAILY_MESSAGE_SET", origem: definicao.origem });

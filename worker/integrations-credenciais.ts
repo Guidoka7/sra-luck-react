@@ -147,7 +147,7 @@ const ESTADO_CACHE_MS = 30_000;
 let estadoCache: { em: number; mapa: Map<string, EstadoProvedor> } | null = null;
 
 /**
- * Liga/desliga por integração (tabela integracoes_estado, migration_084).
+ * Liga/desliga por integração (tabela integracoes_estado, migration_087).
  * Sem linha, ou sem a tabela, a integração segue ativa — exatamente o
  * comportamento anterior. Cache curto por isolate para não multiplicar consultas.
  */
@@ -276,7 +276,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     if (!chave && typeof body.ativo === "boolean") {
       if (!CATALOGO_PROVEDORES[provedor]) return json({ erro: "Provedor desconhecido." }, 400);
       const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: body.ativo, atualizado_por: colaborador.id, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
-      if (error) return json({ erro: "A estrutura de liga/desliga ainda não foi aplicada neste ambiente (migration_084)." }, 409);
+      if (error) return json({ erro: "A estrutura de liga/desliga ainda não foi aplicada neste ambiente (migration_087)." }, 409);
       estadoCache = null;
       await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: body.ativo ? "ativou_integracao" : "desativou_integracao", entidade: "integracoes_credenciais", detalhes: { provedor } });
       return json({ ok: true, provedor, ativo: body.ativo });

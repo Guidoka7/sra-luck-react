@@ -38,7 +38,7 @@ describe("liga/desliga por integração", () => {
     expect(await integracaoDesativada(env, "mercado_pago")).toBe(false);
   });
 
-  it("sem a tabela (migration_084 não aplicada): tudo segue ativo como antes", async () => {
+  it("sem a tabela (migration_087 não aplicada): tudo segue ativo como antes", async () => {
     tabelaExiste = false;
     await estadosIntegracoes(env, true);
     expect(await obterCredencial(env, "gemini", "api_key")).toBe("chave-env");
