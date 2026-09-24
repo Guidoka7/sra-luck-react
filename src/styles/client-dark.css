@@ -85,6 +85,100 @@ html[data-tema-cliente="escuro"] .bg-burgundy { background-color: #B0526A; }
 html[data-tema-cliente="escuro"] .hover\:bg-burgundy-light:hover { background-color: #BE5F77; }
 
 
+/* Jornada: os cards usam estilos inline no modo claro; estas classes semânticas
+ * garantem que concluído, atual e próximos respeitem o tema escuro. */
+html[data-tema-cliente="escuro"] .client-app .sl-journey-card {
+  background: #1C1B1E !important;
+  border-color: #353237 !important;
+  box-shadow: none !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-card {
+  background: #211A1E !important;
+  border-color: #67434D !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .28) !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-card {
+  background: #19201C !important;
+  border-color: #304039 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-card {
+  background: #1A191C !important;
+  border-color: #302E32 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-description {
+  color: #B3ABA9 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-kicker,
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-title {
+  color: #EAA7B7 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-kicker {
+  color: #8FB79D !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-title {
+  color: #C4DDCC !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-kicker {
+  color: #9D969A !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-title {
+  color: #E0DCDF !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-badge {
+  background: #B0526A !important;
+  border-color: #CF6E84 !important;
+  color: #FFFFFF !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-badge {
+  background: #223029 !important;
+  border-color: #3C5948 !important;
+  color: #A9D0B7 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-badge {
+  background: #232226 !important;
+  border-color: #444046 !important;
+  color: #A7A3A8 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-connector {
+  background: #35493D !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-connector,
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-connector {
+  background: #3A363B !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--current .sl-journey-tag {
+  background: #35242A !important;
+  border-color: #6C4651 !important;
+  color: #F0B6C3 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--done .sl-journey-tag {
+  background: #202B24 !important;
+  border-color: #365043 !important;
+  color: #A9CFB6 !important;
+}
+
+html[data-tema-cliente="escuro"] .client-app .sl-journey-row--next .sl-journey-tag {
+  background: #242326 !important;
+  border-color: #3B383D !important;
+  color: #A7A3A8 !important;
+}
+
 /* Agenda cirúrgica: mantém a leitura de disponibilidade no modo escuro. */
 html[data-tema-cliente="escuro"] .client-app .sl-cirurgia-dia--disponivel {
   background: rgba(70, 156, 105, .14) !important;
