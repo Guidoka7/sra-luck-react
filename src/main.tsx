@@ -24,6 +24,7 @@ import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
 import "./styles/staff-real.css";
 import { MARK_SRC } from "@/assets/brand";
+import { instalarRecargaDeVersao } from "./lib/recargaVersao";
 
 const AgendaPage = lazy(() => import("./pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
 const StaffPwa = lazy(() => import("./features/staff/StaffPwa").then((m) => ({ default: m.StaffPwa })));
@@ -131,6 +132,7 @@ function App() {
 }
 
 limparFlagsPwaAntigas();
+instalarRecargaDeVersao();
 const cleanupMonitoramento = instalarMonitoramentoGlobal();
 
 createRoot(document.getElementById("root")!).render(

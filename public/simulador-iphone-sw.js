@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'sra-luck-pwa-';
-const CACHE = 'sra-luck-pwa-v19';
+const CACHE = 'sra-luck-pwa-v20';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
@@ -27,8 +27,25 @@ function guardar(request, response) {
   return response;
 }
 
+// Arquivo de build só entra no cache se for mesmo o arquivo: depois de um deploy,
+// um hash antigo pode voltar como página HTML (ou 404) e isso não pode ser guardado.
+function arquivoDeBuildValido(response) {
+  if (!response || !response.ok) return false;
+  const tipo = response.headers.get('content-type') || '';
+  return !tipo.includes('text/html');
+}
+
 function cacheFirst(request) {
-  return caches.match(request).then((salvo) => salvo || fetch(request).then((res) => guardar(request, res)));
+  return caches.match(request).then((salvo) => {
+    if (salvo && arquivoDeBuildValido(salvo)) return salvo;
+    return fetch(request).then((res) => {
+      if (arquivoDeBuildValido(res)) {
+        const copia = res.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copia)).catch(() => {});
+      }
+      return res;
+    });
+  });
 }
 
 function staleWhileRevalidate(event, request) {
