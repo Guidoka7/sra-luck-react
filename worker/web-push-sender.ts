@@ -130,7 +130,7 @@ export async function enviarWebPushParaCliente(
         },
         chaves,
       );
-      const response = await fetch(subscription.endpoint, { ...requestInit, redirect: "error" });
+      const response = await fetch(subscription.endpoint, { ...requestInit, redirect: "manual" });
       if (response.ok) {
         resultado.enviadas += 1;
         continue;
