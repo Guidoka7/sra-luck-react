@@ -4,7 +4,7 @@ import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { detectarTipoArquivo as detectarTipoComprovante } from "./arquivos";
-import { hojeSaoPaulo } from "../src/lib/dataCivil";
+import { hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -219,6 +219,64 @@ async function listarRecebiveis(db: Db, url: URL) {
   return { itens: filtrados.slice(inicio, inicio + limite), total: filtrados.length, pagina, limite, truncado };
 }
 
+async function listarRecebidos(db: Db, url: URL) {
+  const data = dataValida(url.searchParams.get("data")) ? url.searchParams.get("data")! : hojeIso();
+  const tipo = texto(url.searchParams.get("tipo")) === "vencidos" ? "vencidos" : "recebidos";
+  const busca = texto(url.searchParams.get("busca")).toLocaleLowerCase("pt-BR");
+  const { boletos, recebimentos, truncado } = await carregarBase(db);
+  const boletosPorId = new Map((boletos as any[]).map((boleto) => [boleto.id, boleto]));
+  let itens: any[];
+
+  if (tipo === "recebidos") {
+    const { inicio, fimExclusivo } = intervaloDiaOperacionalUtc(data);
+    itens = (recebimentos as any[])
+      .filter((recebimento) =>
+        recebimento.status_validacao === "validado"
+        && recebimento.validado_em
+        && recebimento.validado_em >= inicio
+        && recebimento.validado_em < fimExclusivo
+      )
+      .map((recebimento) => {
+        const boleto = boletosPorId.get(recebimento.boleto_id);
+        if (!boleto) return null;
+        return {
+          ...apresentarRecebivel(boleto, recebimento),
+          recebimentoId: recebimento.id,
+          confirmadoEm: recebimento.validado_em,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(b.confirmadoEm ?? "").localeCompare(String(a.confirmadoEm ?? "")));
+  } else {
+    const porBoleto = indiceRecebimentos(recebimentos as any[]);
+    itens = (boletos as any[])
+      .filter((boleto) => statusCalculado(boleto) === "vencido")
+      .map((boleto) => {
+        const recebimento = porBoleto.get(boleto.id);
+        return {
+          ...apresentarRecebivel(boleto, recebimento),
+          recebimentoId: recebimento?.id ?? null,
+          confirmadoEm: recebimento?.validado_em ?? null,
+        };
+      })
+      .sort((a, b) => String(a.vencimento ?? "9999-12-31").localeCompare(String(b.vencimento ?? "9999-12-31")));
+  }
+
+  const filtrados = busca
+    ? itens.filter((item) => `${item.cliente} ${item.cpf ?? ""} ${item.numeroParcela}/${item.totalParcelas} ${item.origem ?? ""} ${item.formaPagamento ?? ""}`.toLocaleLowerCase("pt-BR").includes(busca))
+    : itens;
+
+  return {
+    itens: filtrados,
+    total: filtrados.length,
+    pagina: 1,
+    limite: filtrados.length,
+    truncado,
+    data,
+    tipo,
+  };
+}
+
 async function detalheRecebivel(db: Db, id: string) {
   const { data: boleto, error } = await db.from("boletos").select(BOLETO_SELECT).eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
@@ -362,6 +420,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
   try {
     if (path === "/api/admin/financeiro/resumo" && request.method === "GET") return json(await resumo(db, url));
     if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db));
+    if (path === "/api/admin/financeiro/recebidos" && request.method === "GET") return json(await listarRecebidos(db, url));
     if (path === "/api/admin/financeiro/recebiveis" && request.method === "GET") return json(await listarRecebiveis(db, url));
 
     if (path === "/api/admin/financeiro/validacoes" && request.method === "GET") {
