@@ -1,0 +1,1 @@
+Trigger do teste isolado de carga 10k em 24/09/2026.
