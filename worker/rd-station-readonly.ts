@@ -548,7 +548,7 @@ async function processarWebhookRd(payload: Json, env: Env) {
 async function handleWebhook(request: Request, env: Env, ctx?: BackgroundContext) {
   const secret = await rdCredential(env, "webhook_secret");
   if (!secret) return json({ erro: "Webhook RD Station não configurado." }, 503);
-  const supplied = request.headers.get(RD_WEBHOOK_HEADER) || request.headers.get("x-rd-webhook-key") || "";
+  const supplied = request.headers.get("x-sra-luck-rd-key") || request.headers.get("x-rd-webhook-key") || "";
   if (!supplied || supplied.length !== secret.length) return json({ erro: "Webhook não autorizado." }, 401);
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 1_000_000) return json({ erro: "Evento muito grande." }, 413);
