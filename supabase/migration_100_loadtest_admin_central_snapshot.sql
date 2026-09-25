@@ -42,6 +42,11 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
   pagina AS MATERIALIZED (
     SELECT * FROM ranqueados WHERE posicao<=greatest(1,least(coalesce(p_limite,20),50))
   ),
+  cursores AS (
+    SELECT coalesce(jsonb_object_agg(estagio,jsonb_build_object('nome',nome_completo,'id',id)),'{}'::jsonb) AS por_estagio
+    FROM (SELECT DISTINCT ON (estagio) estagio,nome_completo,id
+      FROM pagina ORDER BY estagio,nome_completo DESC,id DESC) finais
+  ),
   cartoes AS (
     SELECT p.estagio,p.nome_completo,p.id,
       jsonb_build_object('cliente',to_jsonb(c),'agendamento',to_jsonb(a),
@@ -83,8 +88,9 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
     FROM (SELECT estagio,jsonb_agg(dados ORDER BY nome_completo,id) AS itens
       FROM cartoes GROUP BY estagio) f
   )
-  SELECT jsonb_build_object('filas',filas.por_estagio,'totais',totais.por_estagio)
-  FROM filas,totais;
+  SELECT jsonb_build_object('filas',filas.por_estagio,'totais',totais.por_estagio,
+    'cursores',cursores.por_estagio)
+  FROM filas,totais,cursores;
 $$;
 REVOKE ALL ON FUNCTION public.loadtest_admin_central_snapshot(date,integer,text,text,uuid)
   FROM PUBLIC,anon,authenticated;

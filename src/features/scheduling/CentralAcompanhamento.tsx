@@ -51,11 +51,11 @@ export function CentralAcompanhamento() {
   const aoMudar = useCallback(async () => { setRecarregarKey((k) => k + 1); await carregar(); }, [carregar]);
   const carregarMais = useCallback(async (estagio: EstagioCentral) => {
     const atual = dados?.filas[estagio] ?? [];
-    const ultimo = atual.at(-1);
-    if (!ultimo || carregandoMais || atual.length >= (dados?.totais?.[estagio] ?? atual.length)) return;
+    const cursor = dados?.cursores?.[estagio];
+    if (!cursor || carregandoMais || atual.length >= (dados?.totais?.[estagio] ?? atual.length)) return;
     setCarregandoMais(estagio);
     try {
-      const proxima = await centralApi.visaoGeral({ estagio, aposNome: ultimo.nome, aposId: ultimo.id });
+      const proxima = await centralApi.visaoGeral({ estagio, aposNome: cursor.nome, aposId: cursor.id });
       setDados((anterior) => anterior ? {
         ...anterior,
         filas: { ...anterior.filas, [estagio]: [
@@ -63,6 +63,7 @@ export function CentralAcompanhamento() {
           ...proxima.filas[estagio].filter((c) => !anterior.filas[estagio].some((a) => a.id === c.id)),
         ] },
         totais: proxima.totais,
+        cursores: { ...anterior.cursores, [estagio]: proxima.cursores?.[estagio] },
       } : anterior);
       setErro(null);
     } catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível carregar mais clientes."); }

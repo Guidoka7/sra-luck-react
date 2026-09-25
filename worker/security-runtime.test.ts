@@ -146,11 +146,12 @@ describe("HTTP ingress and real router", () => {
     state.rpc.mockResolvedValue({ data: { filas: { preEligibility: [{
       cliente: { id: "client-a", nome_completo: "Cliente de teste", cpf: "80000000001", quantidade_parcelas: 12, ativo: true },
       agendamento: null, parcelas: { total: 12, pagas: 1, proxima: "2026-10-01" }, solicitacao: null,
-    }] }, totais: { preEligibility: 8000 } }, error: null });
+    }] }, totais: { preEligibility: 8000 }, cursores: { preEligibility: { nome: "Cliente de teste", id: "client-a" } } }, error: null });
     const response = await worker.fetch(req("/api/admin/central/visao-geral", "GET", undefined, await adminCookie()), env);
     expect(response.status).toBe(200);
     const result = await response.json() as any;
     expect(result.totais.preEligibility).toBe(8000);
+    expect(result.cursores.preEligibility.nome).toBe("Cliente de teste");
     expect(result.filas.preEligibility).toHaveLength(1);
     expect(state.rpc.mock.calls.map(c => c[0])).toEqual(["loadtest_admin_central_snapshot"]);
     expect(state.queries.map(q => q.table)).toEqual(["colaboradores"]);

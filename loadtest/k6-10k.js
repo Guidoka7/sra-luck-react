@@ -392,6 +392,11 @@ function smoke(data) {
     () => call("GET", `/api/admin/clientes/${client.id}/boletos`, cookies.admin, "admin_cliente_boletos"),
     () => call("GET", `/api/admin/central/cliente/${client.id}`, cookies.admin, "admin_central_cliente"),
   ];
+  const covered = new Set(["admin_session", "admin_notificacoes", "admin_visao_geral", "admin_clientes_pagina",
+    "admin_financeiro_resumo", "admin_financeiro_clientes", "admin_financeiro_recebiveis"]);
+  for (const [path, name] of ADMIN_READS) {
+    if (!covered.has(name)) calls.push(() => call("GET", path, cookies.admin, name));
+  }
   for (const fn of calls) fn();
 }
 

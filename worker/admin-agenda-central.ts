@@ -253,7 +253,7 @@ async function visaoGeral(request: Request, env: Env) {
   filas.financialRelease.sort((a, b) => `${a.dataTermos ?? "9999"} ${a.horarioTermos ?? ""}`.localeCompare(`${b.dataTermos ?? "9999"} ${b.horarioTermos ?? ""}`));
   filas.surgeryConfirmed.sort((a, b) => `${a.dataCirurgia ?? "9999"}`.localeCompare(`${b.dataCirurgia ?? "9999"}`));
 
-  return json({ hoje, filas, totais: dados.totais ?? {} });
+  return json({ hoje, filas, totais: dados.totais ?? {}, cursores: dados.cursores ?? {} });
 }
 
 async function clienteCentral(request: Request, env: Env, clienteId: string) {
