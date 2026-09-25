@@ -1,5 +1,7 @@
 "use client";
 
+// Deploy guard: mantém o funil CRM alinhado ao HEAD atual da main.
+
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/ui/ThemeProvider";
