@@ -174,7 +174,6 @@ function call(method, path, cookie, name, body = null) {
   const headers = {
     Accept: "application/json",
     "Cache-Control": "no-cache",
-    "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
   };
   if (method !== "GET" && method !== "HEAD") {
     headers.Origin = BASE;

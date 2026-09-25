@@ -47,20 +47,10 @@ jobs:
       - name: Pull k6
         run: docker pull grafana/k6:latest
 
-      - name: Mint GitHub OIDC token
-        uses: actions/github-script@v7
-        id: oidc
-        with:
-          script: |
-            const token = await core.getIDToken();
-            core.setSecret(token);
-            core.setOutput('token', token);
-
       - name: Runtime smoke against isolated Preview
         env:
           SHARD: "0"
           SMOKE: "1"
-          VERCEL_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           mkdir -p loadtest/results
           chmod 777 loadtest/results
@@ -113,18 +103,7 @@ jobs:
             sleep "$WAIT"
           fi
 
-      - name: Mint GitHub OIDC token
-        uses: actions/github-script@v7
-        id: oidc
-        with:
-          script: |
-            const token = await core.getIDToken();
-            core.setSecret(token);
-            core.setOutput('token', token);
-
       - name: Run 1000 virtual users for 30-minute plateau
-        env:
-          VERCEL_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           mkdir -p loadtest/results
           chmod 777 loadtest/results
