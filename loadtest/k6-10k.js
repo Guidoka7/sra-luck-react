@@ -11,7 +11,7 @@ const PROFILE = __ENV.PROFILE || (__ENV.SMOKE === "1" ? "smoke" : "full");
 const SMOKE = PROFILE === "smoke";
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
 // Deployment imutável da branch; o cookie de share é vinculado a esta URL.
-const ISOLATED_PREVIEW = "https://sra-luck-react-9a0xy2dn1-guidoka7.vercel.app";
+const ISOLATED_PREVIEW = "https://sra-luck-react-msb237v3l-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
@@ -76,6 +76,9 @@ const minutes = Array.from({ length: 35 }, (_, minute) => ({
   witnessedVus: new Counter(`minute_${minute}_witnessedVus`),
 }));
 const routeDurations = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_duration_${route}`, true)]));
+const routeDbCalls = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_db_calls_${route}`)]));
+const routeDbTime = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_db_time_${route}`, true)]));
+const routePayloadBytes = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_payload_bytes_${route}`)]));
 
 const routeThresholds = {};
 for (const route of ROUTE_NAMES) {
@@ -242,6 +245,15 @@ function call(method, path, cookie, name, body = null) {
   appRequests.add(1, metricTags);
   minute.requests.add(1);
   routeDurations[name].add(res.timings.duration);
+  const dbCalls = res.headers["X-Loadtest-Db-Calls"] ?? res.headers["X-Loadtest-DB-Calls"];
+  if (dbCalls !== undefined && Number.isFinite(Number(dbCalls))) routeDbCalls[name].add(Number(dbCalls));
+  const timings = res.headers["Server-Timing"] || "";
+  const dbTime = timings.match(/(?:^|,)\s*db;dur=([\d.]+)/);
+  if (dbTime) routeDbTime[name].add(Number(dbTime[1]));
+  if (SMOKE && typeof res.body === "string") {
+    const encoded = encoding.b64encode(res.body);
+    routePayloadBytes[name].add(encoded.length * 3 / 4 - (encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0));
+  }
   if (failed) minute.failures.add(1);
   if (res.status >= 500) minute.server5xx.add(1);
   if (res.status >= 400 && res.status < 500) client4xx.add(1, metricTags);
@@ -261,7 +273,7 @@ function cookiesFor(clientId) {
     cachedClientCookie = `cliente_session=${signedToken({ clienteId: clientId, iat: Date.now() })}`;
   }
   if (!cachedAdminCookie) {
-    cachedAdminCookie = `admin_session=${signedToken({ adminId: `dev-console:loadtest-${SHARD}`, iat: Date.now() })}`;
+    cachedAdminCookie = `admin_session=${signedToken({ adminId: "00000000-0000-4000-8000-000000000001", iat: Date.now() })}`;
   }
   return { client: cachedClientCookie, admin: cachedAdminCookie };
 }
