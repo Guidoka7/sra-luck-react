@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import type { Cliente, StatusContratoCliente } from "@/types/database";
+import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
 import { centralApi, type FormaCusteio } from "@/features/scheduling/api";
 import type { CartaoCliente, EstagioCentral, EstagioDrawer } from "@/features/scheduling/types";
 import { ProcessoTab, ordemEstagio, eventosDoProcesso, type ModalDrawer, type FormLevantamento } from "@/features/scheduling/ProcessoTab";
@@ -28,6 +28,8 @@ export interface ClienteDrawerProps {
   clienteId: string | null;
   /** Cadastro já carregado pela lista (evita uma ida extra à API). */
   cliente?: Cliente | null;
+  /** Venda do RD ainda em pré-cadastro; preenche o drawer sem criar cliente antes da confirmação. */
+  preCadastro?: NovaVenda | null;
   abaInicial?: AbaDrawer;
   /** Etapa do quadro que originou a abertura (Central); nunca passa da etapa real. */
   estagioOrigem?: EstagioCentral | null;
@@ -108,7 +110,7 @@ export function ClienteDrawer(props: ClienteDrawerProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [requestClose]);
 
-  const titulo = criando ? "Nova cliente" : cadastro?.nome_completo || central?.cartao.nome || "Cliente";
+  const titulo = criando ? props.preCadastro?.nome_completo || "Nova cliente" : cadastro?.nome_completo || central?.cartao.nome || "Cliente";
   const carregando = !criando && !cadastro;
 
   return createPortal(<div className={styles.root}>
@@ -189,6 +191,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   const cad = useClienteCadastro(cadastro, {
     onSalvo: (c) => { if (criando) void onChanged?.(); else void recarregar(c); },
     onClose: requestClose,
+    preCadastro: props.preCadastro ?? null,
   });
 
   const c = central?.cartao ?? null;
@@ -298,7 +301,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
 
   function botoesRodape(): Botao[] {
     const fechar: Botao = { rotulo: "Fechar", onClick: requestClose, tipo: "secondary" };
-    if (aba === "profile") return [fechar, { rotulo: cad.salvandoPerfil ? "Salvando…" : criando ? "Cadastrar cliente" : "Salvar alterações", onClick: () => undefined, submit: formId, tipo: "primary", disabled: cad.salvandoPerfil || cad.salvandoStatus }];
+    if (aba === "profile") return [fechar, { rotulo: cad.salvandoPerfil ? "Salvando…" : criando ? (props.preCadastro ? "Concluir cadastro" : "Cadastrar cliente") : "Salvar alterações", onClick: () => undefined, submit: formId, tipo: "primary", disabled: cad.salvandoPerfil || cad.salvandoStatus }];
     if (aba === "journey") return [fechar];
     if (aba === "finance") {
       // Na etapa operacional, o atalho do processo continua disponível no Financeiro.
@@ -319,8 +322,8 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   return <>
     <header className={styles.header}>
       <div className={styles.clientHead}>
-        <h2 className={styles.title} id="client-drawer-title">{criando ? "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
-        {!criando && <div className={styles.subtitle}>
+        <h2 className={styles.title} id="client-drawer-title">{criando ? cad.nome || "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
+        {props.preCadastro ? <div className={styles.subtitle}><span className={styles.chip}>Pré-cadastro · RD Station</span></div> : !criando && <div className={styles.subtitle}>
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
