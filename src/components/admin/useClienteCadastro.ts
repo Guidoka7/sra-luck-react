@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { formatarCpf } from "@/lib/cpf";
 import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/lib/utils";
-import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
+import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, NovaVenda, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { dataNascimentoValida } from "../../../worker/app-access";
@@ -15,17 +15,17 @@ const moedaNumero = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDi
  * Perfil e Financeiro compartilham estado (ex.: salvar o perfil também envia
  * carta de crédito/taxa), por isso ficam no mesmo hook.
  */
-export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }: { onSalvo: (cliente?: Cliente) => void; onClose: () => void }) {
+export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, preCadastro = null }: { onSalvo: (cliente?: Cliente) => void; onClose: () => void; preCadastro?: NovaVenda | null }) {
   const editando = Boolean(cliente);
 
-  const [nome, setNome] = useState(cliente?.nome_completo ?? "");
-  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : "");
+  const [nome, setNome] = useState(cliente?.nome_completo ?? preCadastro?.nome_completo ?? "");
+  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : preCadastro?.cpf ? formatarCpf(preCadastro.cpf) : "");
   const [nascimento, setNascimento] = useState(cliente?.data_nascimento ?? "");
-  const [telefone, setTelefone] = useState(cliente?.telefone ?? "");
-  const [email, setEmail] = useState(cliente?.email ?? "");
+  const [telefone, setTelefone] = useState(cliente?.telefone ?? preCadastro?.telefone ?? "");
+  const [email, setEmail] = useState(cliente?.email ?? preCadastro?.email ?? "");
   const [procedimento, setProcedimento] = useState(cliente?.procedimento ?? "");
   const [observacoes, setObservacoes] = useState(cliente?.observacoes_internas ?? "");
-  const [consultora, setConsultora] = useState(cliente?.consultora ?? "");
+  const [consultora, setConsultora] = useState(cliente?.consultora ?? preCadastro?.vendedora_responsavel ?? "");
   const [acessoLiberado, setAcessoLiberado] = useState(Boolean(cliente?.acesso_app_liberado));
   const [acessoLiberadoEm, setAcessoLiberadoEm] = useState<string | null>(cliente?.acesso_app_liberado_em ?? null);
   const [liberandoAcesso, setLiberandoAcesso] = useState(false);
@@ -52,11 +52,14 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const [historico, setHistorico] = useState<LogAlteracao[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
 
-  const [carta, setCarta] = useState(cliente ? moedaNumero(cliente.valor_contrato) : "");
-  const [quantidade, setQuantidade] = useState<QuantidadeParcelas>((cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas);
-  const [taxa, setTaxa] = useState(cliente?.taxa_administrativa_percentual != null ? String(cliente.taxa_administrativa_percentual).replace(".", ",") : String(TAXA_ADMINISTRATIVA_PADRAO[(cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas]).replace(".", ","));
-  const [total, setTotal] = useState(() => (cliente ? moedaNumero(cliente.valor_contrato * (1 + Number(cliente.taxa_administrativa_percentual ?? 0) / 100)) : ""));
-  const [parcela, setParcela] = useState("");
+  const quantidadeInicial = (cliente?.quantidade_parcelas ?? preCadastro?.quantidade_parcelas ?? 12) as QuantidadeParcelas;
+  const taxaInicial = cliente?.taxa_administrativa_percentual ?? preCadastro?.taxa_administrativa ?? TAXA_ADMINISTRATIVA_PADRAO[quantidadeInicial] ?? 0;
+  const valorInicial = Number(cliente?.valor_contrato ?? preCadastro?.valor_contrato ?? 0);
+  const [carta, setCarta] = useState(valorInicial > 0 ? moedaNumero(valorInicial) : "");
+  const [quantidade, setQuantidade] = useState<QuantidadeParcelas>(quantidadeInicial);
+  const [taxa, setTaxa] = useState(String(taxaInicial).replace(".", ","));
+  const [total, setTotal] = useState(() => valorInicial > 0 ? moedaNumero(valorInicial * (1 + Number(taxaInicial) / 100)) : "");
+  const [parcela, setParcela] = useState(preCadastro?.valor_parcela ? moedaNumero(Number(preCadastro.valor_parcela)) : "");
   const [parcelaManual, setParcelaManual] = useState(false);
   const [vencimento, setVencimento] = useState("");
   const [boletos, setBoletos] = useState<Boleto[]>([]);
@@ -108,16 +111,36 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
     e.preventDefault();
     if (!nome || !nascimento) return toast.error("Preencha nome e data de nascimento.");
     if (!dataNascimentoValida(nascimento)) return toast.error("Informe uma data de nascimento válida.");
+    const cpfLimpo = cpf.replace(/\D/g, "");
+    if (!editando && cpfLimpo.length !== 11) return toast.error("Informe um CPF válido para concluir o cadastro.");
     setSalvandoPerfil(true);
     try {
-      const r = await fetch(editando ? `/api/admin/clientes/${cliente!.id}` : "/api/admin/clientes", {
+      const origemCrm = Boolean(preCadastro && !editando);
+      const url = editando
+        ? `/api/admin/clientes/${cliente!.id}`
+        : origemCrm
+          ? `/api/admin/novas-vendas/${encodeURIComponent(preCadastro!.id)}/cadastrar`
+          : "/api/admin/clientes";
+      const r = await fetch(url, {
         method: editando ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nomeCompleto: nome, cpf, dataNascimento: nascimento, telefone, email, procedimento, consultora: consultora.trim() || null, observacoes, valorContrato: cartaNumero || undefined, taxaAdministrativaPercentual: taxaNumero || undefined }),
+        body: JSON.stringify({
+          nomeCompleto: nome,
+          cpf,
+          dataNascimento: nascimento,
+          telefone,
+          email,
+          procedimento,
+          consultora: consultora.trim() || null,
+          observacoes,
+          valorContrato: cartaNumero || undefined,
+          taxaAdministrativaPercentual: taxaNumero || undefined,
+          quantidadeParcelas: quantidade || undefined,
+        }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar.");
-      toast.success(editando ? "Perfil atualizado." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
+      toast.success(editando ? "Perfil atualizado." : origemCrm ? "Pré-cadastro concluído. Cliente vinculada ao CRM." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
       onSalvo(d.cliente ?? undefined);
       if (!editando) onClose();
     } catch (e) {
@@ -358,7 +381,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const statusKind = statusContrato === "ativo" ? "ok" as const : statusContrato === "suspenso" ? "warn" as const : "bad" as const;
 
   return {
-    cliente, editando,
+    cliente, preCadastro, editando,
     consultora, setConsultora, acessoLiberado, acessoLiberadoEm, liberandoAcesso, liberarAcessoApp,
     alterandoParcela, alterarParcela, anexarComprovante, comprovanteHref, carregarPerfilExtra,
     nome, setNome, cpf, setCpf, nascimento, setNascimento, telefone, setTelefone, email, setEmail, procedimento, setProcedimento, observacoes, setObservacoes,
