@@ -1,0 +1,25 @@
+name: Load Test Host Probe
+on:
+  push:
+    branches: [load-test-10k-isolated]
+    paths:
+      - ".github/workflows/loadtest-probe.yml"
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe isolated hosts
+        shell: bash
+        run: |
+          set +e
+          for base in             "https://31bfe3f0.sra-luck-react.pages.dev"             "https://load-test-10k-isolated.sra-luck-react.pages.dev"; do
+            echo "=== $base ==="
+            for path in "/" "/api/health" "/api/ready"; do
+              code=$(curl -L -sS -o /tmp/body -w "%{http_code}" --max-time 20 "$base$path")
+              ctype=$(curl -L -sSI --max-time 20 "$base$path" | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tail -1 | tr -d '\r')
+              echo "$path -> HTTP $code | $ctype"
+              head -c 300 /tmp/body | tr '\n' ' '; echo
+            done
+          done
