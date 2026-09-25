@@ -12,7 +12,7 @@ const SMOKE = PROFILE === "smoke";
 const STAIR_TARGET = /^stair_(1500|2000|3000|5000|7500|10000)$/.test(PROFILE) ? Number(PROFILE.slice(6)) / 10 : 0;
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
 // Deployment imutável da branch; o cookie de share é vinculado a esta URL.
-const ISOLATED_PREVIEW = "https://sra-luck-react-i7oqjvrj7-guidoka7.vercel.app";
+const ISOLATED_PREVIEW = "https://sra-luck-react-db8wtidyx-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
