@@ -298,7 +298,6 @@ function smoke(data) {
     () => call("GET", "/api/cliente/boletos", cookies.client, "client_boletos"),
     () => call("GET", "/api/admin/session", cookies.admin, "admin_session"),
     () => call("GET", "/api/admin/visao-geral", cookies.admin, "admin_visao_geral"),
-    () => call("GET", "/api/admin/central/visao-geral", cookies.admin, "admin_central_visao_geral"),
     () => call("GET", `/api/admin/clientes/${client.id}/boletos`, cookies.admin, "admin_cliente_boletos"),
     () => call("GET", `/api/admin/central/cliente/${client.id}`, cookies.admin, "admin_central_cliente"),
   ];
