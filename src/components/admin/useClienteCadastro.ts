@@ -72,6 +72,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
   const [novoCarneBanco, setNovoCarneBanco] = useState("");
   const [novoCarneIdentificador, setNovoCarneIdentificador] = useState("");
   const [novoCarneData, setNovoCarneData] = useState("");
+  const [novoCarneQuantidade, setNovoCarneQuantidade] = useState<number>(quantidadeInicial);
   const [criandoCarne, setCriandoCarne] = useState(false);
   const [importando, setImportando] = useState(false);
   const [validando, setValidando] = useState(false);
@@ -236,20 +237,88 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
 
   async function criarCarne(e: FormEvent) {
     e.preventDefault();
-    if (!cliente?.id) return;
-    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) return toast.error("Preencha instituição, identificador e data do carnê.");
+    if (!cliente?.id) return false;
+    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) {
+      toast.error("Preencha instituição, identificador e data do carnê.");
+      return false;
+    }
     setCriandoCarne(true);
     try {
-      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instituicaoFinanceira: novoCarneBanco, identificadorExterno: novoCarneIdentificador, dataGeracao: novoCarneData, quantidadeParcelas: quantidade, valorParcela: parcelaNumero, valorTotal: totalNumero }) });
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instituicaoFinanceira: novoCarneBanco,
+          identificadorExterno: novoCarneIdentificador,
+          dataGeracao: novoCarneData,
+          quantidadeParcelas: novoCarneQuantidade || quantidade,
+          valorParcela: parcelaNumero,
+          valorTotal: totalNumero,
+        }),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível registrar o carnê.");
-      toast.success("Carnê registrado.");
-      setNovoCarneBanco(""); setNovoCarneIdentificador(""); setNovoCarneData("");
-      void carregarPerfilExtra();
+      toast.success(`Carnê de ${d.carne?.quantidade_parcelas ?? novoCarneQuantidade ?? quantidade} parcelas registrado.`);
+      setNovoCarneBanco("");
+      setNovoCarneIdentificador("");
+      setNovoCarneData("");
+      setNovoCarneQuantidade(quantidade);
+      await carregarPerfilExtra();
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao registrar carnê.");
+      return false;
     } finally {
       setCriandoCarne(false);
+    }
+  }
+
+  async function editarCarne(carneId: string) {
+    if (!cliente?.id) return false;
+    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) {
+      toast.error("Preencha instituição, identificador e data do carnê.");
+      return false;
+    }
+    setCriandoCarne(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes/${encodeURIComponent(carneId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instituicaoFinanceira: novoCarneBanco,
+          identificadorExterno: novoCarneIdentificador,
+          dataGeracao: novoCarneData,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível atualizar o carnê.");
+      toast.success("Carnê atualizado.");
+      setNovoCarneBanco("");
+      setNovoCarneIdentificador("");
+      setNovoCarneData("");
+      setNovoCarneQuantidade(quantidade);
+      await carregarPerfilExtra();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao atualizar carnê.");
+      return false;
+    } finally {
+      setCriandoCarne(false);
+    }
+  }
+
+  async function excluirCarne(carneId: string) {
+    if (!cliente?.id) return false;
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes/${encodeURIComponent(carneId)}`, { method: "DELETE" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível excluir o carnê.");
+      toast.success("Carnê excluído.");
+      await carregarPerfilExtra();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir carnê.");
+      return false;
     }
   }
 
@@ -420,7 +489,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
     historico, historicoAberto, setHistoricoAberto,
     carta, atualizarCarta, taxa, atualizarTaxa, quantidade, atualizarQuantidade, parcela, atualizarParcela, vencimento, setVencimento,
     boletos, visiveis, pagas, mostrarTodas, setMostrarTodas, carregandoFin, salvandoFin, gerarOuAjustarParcelas, carregarBoletos,
-    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, criandoCarne, criarCarne, importando, importarCarne, vincularImportacao, ignorarImportacao,
+    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, novoCarneQuantidade, setNovoCarneQuantidade, criandoCarne, criarCarne, editarCarne, excluirCarne, importando, importarCarne, vincularImportacao, ignorarImportacao,
     proximaLiberacao, aguardandoConferencia, validando, confirmarPagamento, rejeitarComprovante,
     baixaAlvo, setBaixaAlvo, baixaData, setBaixaData, baixaJuros, setBaixaJuros, baixaMulta, setBaixaMulta, baixaForma, setBaixaForma, baixaBanco, setBaixaBanco, baixaObs, setBaixaObs, baixaArquivo, setBaixaArquivo, salvandoBaixa, abrirBaixaManual, confirmarBaixaManual,
     vencidas, situacao, situacaoKind, totalParcelasReal, percentualMeta, metaParcelas, elegivel,
