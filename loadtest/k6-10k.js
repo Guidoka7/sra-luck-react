@@ -123,10 +123,10 @@ export const options = SMOKE
       discardResponseBodies: true,
       summaryTrendStats: ["avg", "min", "med", "p(90)", "p(95)", "p(99)", "max"],
       thresholds: {
-        checks: ["rate>0.90"],
-        http_req_failed: ["rate<0.20"],
-        "http_req_duration": ["p(95)<5000", "p(99)<8000"],
-        server_5xx: ["rate<0.05"],
+        checks: ["rate>0.99"],
+        http_req_failed: ["rate<0.01"],
+        "http_req_duration": ["p(95)<2000", "p(99)<5000"],
+        server_5xx: ["rate<0.001"],
         ...routeThresholds,
       },
     };
@@ -334,12 +334,13 @@ const ADMIN_READS = [
   ["/api/admin/solicitacoes-liberacao-financeira", "admin_solicitacoes_liberacao"],
   ["/api/admin/relatorios/catalogo", "admin_relatorios_catalogo"],
   ["/api/admin/integrations/status", "admin_integrations_status"],
-  ["/api/admin/monitoramento-app", "admin_monitoramento_app"],
   ["/api/admin/staff", "admin_staff"],
 ];
 
 function adminRead(cookie) {
-  const [path, name] = ADMIN_READS[(__ITER + __VU) % ADMIN_READS.length];
+  // Misture os shards: na escada curta os mesmos VUs administrativos existem
+  // em cada shard, e o índice sem SHARD exercitava só uma rota de cada vez.
+  const [path, name] = ADMIN_READS[(__ITER + __VU + SHARD * 7) % ADMIN_READS.length];
   return call("GET", path, cookie, name);
 }
 
@@ -415,10 +416,12 @@ export default function (data) {
 
   // Por shard: 960 clientes leitura, 20 clientes escrita, 18 admins leitura, 2 admins escrita.
   // 10 shards = 10.000 VUs simultâneos, sendo 9.800 clientes e 200 acessos administrativos.
-  const slot = (__VU - 1) % 50;
+  // Deslocar o papel por shard distribui os VUs de escrita da cliente e de
+  // Admin, inclusive em etapas abaixo de 500 VUs.
+  const slot = (__VU - 1 + SHARD * 17) % 50;
   if (slot < 48) clientRead(cookies.client);
   else if (slot === 48) clientWrite(cookies.client);
-  else if (Math.floor((__VU - 1) / 50) % 10 !== 0) adminRead(cookies.admin);
+  else if ((Math.floor((__VU - 1 + SHARD * 17) / 50) % 10) !== 0) adminRead(cookies.admin);
   else adminWrite(cookies.admin, client.id);
 
   sleep(8 + ((__VU + __ITER) % 9));

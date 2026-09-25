@@ -158,52 +158,37 @@ function camposLeitura(cliente: any, agendamento: any, proximaParcelaEm: string 
 // ----------------------------------------------------------------------------
 // Visão geral: 5 filas operacionais.
 // ----------------------------------------------------------------------------
-async function visaoGeral(env: Env) {
-  const db = createServiceSupabaseClient(env);
+const ESTAGIOS_CENTRAL = ["preEligibility", "financialReview", "termsConfirmed", "financialRelease", "surgeryConfirmed"] as const;
+
+async function visaoGeral(request: Request, env: Env) {
+  const db = createServiceSupabaseClient(env, request);
+  const url = new URL(request.url);
   const hoje = agoraSaoPaulo().data;
-
-  const { data: clientes, error: erroClientes } = await db.from("clientes")
-    .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia,ativo,acesso_app_liberado,acesso_app_liberado_em")
-    .eq("ativo", true)
-    .order("nome_completo", { ascending: true });
-  if (erroClientes) return json({ erro: publicError(erroClientes) }, 500);
-
-  const clienteIds = (clientes ?? []).map((c: any) => c.id);
-  const safeIds = clienteIds.length ? clienteIds : ["00000000-0000-0000-0000-000000000000"];
-  const [{ data: agendamentosBrutos, error: erroAgendamentos }, { data: boletos }, { data: solicitacoes }] = await Promise.all([
-    db.from("agendamentos")
-      .select("id,cliente_id,status,horario_termos,termos_assinados_em,termos_responsavel,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,agenda_cirurgica_liberada_em,agenda_cirurgica_liberada_manualmente,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,horario_cirurgia,cirurgia_escolhida_em,valor_contrato,pagamento_cirurgia_confirmado_em,processo_concluido_em,created_at,datas(data)")
-      .in("cliente_id", safeIds)
-      .in("status", ["confirmado", "realizado"])
-      .order("created_at", { ascending: false }),
-    db.from("boletos").select("cliente_id,status,data_vencimento").in("cliente_id", safeIds),
-    db.from("solicitacoes_liberacao_financeira").select("cliente_id,status,forma_custeio,saldo_restante,created_at").in("cliente_id", safeIds).order("created_at", { ascending: false }),
-  ]);
-  if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
-  const solicitacaoPorCliente = new Map<string, any>();
-  for (const sl of solicitacoes ?? []) if (!solicitacaoPorCliente.has(sl.cliente_id)) solicitacaoPorCliente.set(sl.cliente_id, sl);
-
-  const agendamentos = agendamentosBrutos ?? [];
-
-  const agendamentoPorCliente = new Map<string, any>();
-  for (const a of agendamentos ?? []) {
-    if (!agendamentoPorCliente.has(a.cliente_id)) agendamentoPorCliente.set(a.cliente_id, a);
+  const estagio = url.searchParams.get("estagio");
+  if (estagio && !ESTAGIOS_CENTRAL.includes(estagio as typeof ESTAGIOS_CENTRAL[number])) return json({ erro: "Fila inválida." }, 400);
+  const cursorNome = url.searchParams.get("aposNome");
+  const cursorId = url.searchParams.get("aposId");
+  if ((cursorNome === null) !== (cursorId === null) || (cursorNome && !estagio)
+    || (cursorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cursorId))) {
+    return json({ erro: "Cursor inválido." }, 400);
   }
-  const parcelasPorCliente = new Map<string, { total: number; pagas: number; proxima: string | null }>();
-  for (const b of boletos ?? []) {
-    const atual = parcelasPorCliente.get(b.cliente_id) ?? { total: 0, pagas: 0, proxima: null };
-    atual.total += 1;
-    if (b.status === "pago") atual.pagas += 1;
-    else if (b.data_vencimento && (!atual.proxima || b.data_vencimento < atual.proxima)) atual.proxima = b.data_vencimento;
-    parcelasPorCliente.set(b.cliente_id, atual);
-  }
+  const { data: snapshot, error } = await db.rpc("loadtest_admin_central_snapshot", {
+    p_hoje: hoje,
+    p_limite: 20,
+    p_estagio: estagio || null,
+    p_apos_nome: cursorNome,
+    p_apos_id: cursorId,
+  });
+  if (error || !snapshot) return json({ erro: publicError(error) }, 500);
+  const dados = snapshot as Record<string, any>;
 
   const filas = { preEligibility: [] as any[], financialReview: [] as any[], termsConfirmed: [] as any[], financialRelease: [] as any[], surgeryConfirmed: [] as any[] };
 
-  for (const cliente of clientes ?? []) {
-    const agendamento = agendamentoPorCliente.get(cliente.id) ?? null;
-    const dataTermos = agendamento ? one(agendamento.datas)?.data ?? null : null;
-    const parcelas = parcelasPorCliente.get(cliente.id) ?? { total: cliente.quantidade_parcelas ?? 0, pagas: 0, proxima: null };
+  for (const fila of ESTAGIOS_CENTRAL) for (const item of dados.filas?.[fila] ?? []) {
+    const cliente = item.cliente;
+    const agendamento = item.agendamento;
+    const dataTermos = agendamento?.data_termos ?? null;
+    const parcelas = item.parcelas ?? { total: 0, pagas: 0, proxima: null };
     const minimo = requiredPaid(parcelas.total || cliente.quantidade_parcelas || 12);
     const faltam = Math.max(0, minimo - parcelas.pagas);
     const appAccess = getAppAccessRequirements({
@@ -259,7 +244,7 @@ async function visaoGeral(env: Env) {
       dataCirurgia: agendamento?.data_cirurgia ?? null,
       pagamentoCirurgiaConfirmadoEm: agendamento?.pagamento_cirurgia_confirmado_em ?? null,
       prazoCirurgico: agendamento ? prazoCirurgico(agendamento.comparecimento_em, agendamento.quitacao_em, agendamento.agenda_cirurgica_prazo_ajuste_dias ?? 0) : null,
-      ...camposLeitura(cliente, agendamento, parcelas.proxima, solicitacaoPorCliente.get(cliente.id) ?? null, parcelas.total || cliente.quantidade_parcelas || 0),
+      ...camposLeitura(cliente, agendamento, parcelas.proxima, item.solicitacao, parcelas.total || cliente.quantidade_parcelas || 0),
     };
     filas[estagio].push(cartao);
   }
@@ -268,11 +253,11 @@ async function visaoGeral(env: Env) {
   filas.financialRelease.sort((a, b) => `${a.dataTermos ?? "9999"} ${a.horarioTermos ?? ""}`.localeCompare(`${b.dataTermos ?? "9999"} ${b.horarioTermos ?? ""}`));
   filas.surgeryConfirmed.sort((a, b) => `${a.dataCirurgia ?? "9999"}`.localeCompare(`${b.dataCirurgia ?? "9999"}`));
 
-  return json({ hoje, filas });
+  return json({ hoje, filas, totais: dados.totais ?? {} });
 }
 
-async function clienteCentral(env: Env, clienteId: string) {
-  const db = createServiceSupabaseClient(env);
+async function clienteCentral(request: Request, env: Env, clienteId: string) {
+  const db = createServiceSupabaseClient(env, request);
   const { data: cliente, error: erroCliente } = await db.from("clientes")
     .select("id,nome_completo,cpf,data_nascimento,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,data_atingiu_percentual,liberacao_financeira_solicitada_em,custeio_confirmado_em,status_cirurgia")
     .eq("id", clienteId)
@@ -623,9 +608,9 @@ export async function adminAgendaCentral(request: Request, env: Env): Promise<Re
   }
   const usuario = `admin:${sessao.adminId}`;
 
-  if (path === "/api/admin/central/visao-geral" && request.method === "GET") return visaoGeral(env);
+  if (path === "/api/admin/central/visao-geral" && request.method === "GET") return visaoGeral(request, env);
   const clienteMatch = path.match(/^\/api\/admin\/central\/cliente\/([^/]+)$/);
-  if (clienteMatch && request.method === "GET") return clienteCentral(env, decodeURIComponent(clienteMatch[1]));
+  if (clienteMatch && request.method === "GET") return clienteCentral(request, env, decodeURIComponent(clienteMatch[1]));
   if (path === "/api/admin/central/termos" && request.method === "GET") return agendaTermos(url, env);
   if (path === "/api/admin/central/cirurgia" && request.method === "GET") return agendaCirurgia(url, env);
 

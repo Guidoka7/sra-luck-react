@@ -29,6 +29,7 @@ export function CentralAcompanhamento() {
   const [aba, setAba] = useState<Aba>(abaParam === "cirurgia" ? "surgery" : abaParam === "termos" ? "terms" : "overview");
   const [dados, setDados] = useState<VisaoGeralResponse | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [carregandoMais, setCarregandoMais] = useState<EstagioCentral | null>(null);
   const [drawer, setDrawer] = useState<{ clienteId: string; estagio: EstagioCentral | null } | null>(null);
   const [novaCliente, setNovaCliente] = useState(false);
   const [escolherDia, setEscolherDia] = useState(false);
@@ -48,6 +49,25 @@ export function CentralAcompanhamento() {
   useEffect(() => { if (hoje) { setDataTermos((d) => d ?? hoje); setDataCirurgia((d) => d ?? hoje); } }, [hoje]);
 
   const aoMudar = useCallback(async () => { setRecarregarKey((k) => k + 1); await carregar(); }, [carregar]);
+  const carregarMais = useCallback(async (estagio: EstagioCentral) => {
+    const atual = dados?.filas[estagio] ?? [];
+    const ultimo = atual.at(-1);
+    if (!ultimo || carregandoMais || atual.length >= (dados?.totais?.[estagio] ?? atual.length)) return;
+    setCarregandoMais(estagio);
+    try {
+      const proxima = await centralApi.visaoGeral({ estagio, aposNome: ultimo.nome, aposId: ultimo.id });
+      setDados((anterior) => anterior ? {
+        ...anterior,
+        filas: { ...anterior.filas, [estagio]: [
+          ...anterior.filas[estagio],
+          ...proxima.filas[estagio].filter((c) => !anterior.filas[estagio].some((a) => a.id === c.id)),
+        ] },
+        totais: proxima.totais,
+      } : anterior);
+      setErro(null);
+    } catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível carregar mais clientes."); }
+    finally { setCarregandoMais(null); }
+  }, [dados, carregandoMais]);
 
   const todos = useMemo(() => dados ? Object.values(dados.filas).flat() as CartaoCliente[] : [], [dados]);
   const cartoes = useMemo(() => new Map(todos.map((c) => [c.id, c])), [todos]);
@@ -99,10 +119,11 @@ export function CentralAcompanhamento() {
     </div>
 
     {erro && !dados && <div className="panel panel-pad" role="alert"><div className="callout danger">{erro}</div><div className="inline-actions" style={{ marginTop: 10 }}><button type="button" className="secondary-btn" onClick={() => void carregar()}>Tentar novamente</button></div></div>}
+    {erro && dados && <div className="panel panel-pad" role="alert"><div className="callout danger">{erro}</div></div>}
     {!erro && !dados && <div className="panel panel-pad"><div className="empty-card">Carregando a Central…</div></div>}
 
     {dados && hoje && aba === "overview" && <section className="view active v46-overview">
-      <OverviewBoard dados={dados} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} />
+      <OverviewBoard dados={dados} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} onCarregarMais={carregarMais} carregandoMais={carregandoMais} />
     </section>}
     {dados && hoje && aba === "terms" && dataTermos && <section className="view active">
       <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} />

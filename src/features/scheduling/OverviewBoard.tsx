@@ -19,10 +19,12 @@ const COLUNAS: { id: EstagioCentral; titulo: string; desc: string }[] = [
  * `/api/admin/central/visao-geral`; nenhuma fila é calculada no navegador —
  * aqui só há filtro/ordenação de exibição.
  */
-export function OverviewBoard({ dados, selecionadoId, onAbrirCliente }: {
+export function OverviewBoard({ dados, selecionadoId, onAbrirCliente, onCarregarMais, carregandoMais }: {
   dados: VisaoGeralResponse;
   selecionadoId: string | null;
   onAbrirCliente: (clienteId: string, estagio: EstagioCentral) => void;
+  onCarregarMais: (estagio: EstagioCentral) => void;
+  carregandoMais: EstagioCentral | null;
 }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState<Ordem>("upcoming");
@@ -56,7 +58,7 @@ export function OverviewBoard({ dados, selecionadoId, onAbrirCliente }: {
 
   return <>
     <div className="filters">
-      <div className="search-field"><span aria-hidden="true">⌕</span><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou CPF..." aria-label="Buscar por nome ou CPF" /></div>
+      <div className="search-field"><span aria-hidden="true">⌕</span><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar nos cartões carregados..." aria-label="Buscar nos cartões carregados por nome ou CPF" /></div>
       <label className="push">Ordenar por: <select className="select" value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)}>
         <option value="upcoming">Próximas</option><option value="nameAsc">Nome A-Z</option><option value="nameDesc">Nome Z-A</option>
       </select></label>
@@ -65,10 +67,12 @@ export function OverviewBoard({ dados, selecionadoId, onAbrirCliente }: {
     <div className="board-wrap"><div className="board">
       {COLUNAS.map((col) => {
         const lista = filas[col.id];
+        const carregadas = dados.filas[col.id].length;
+        const total = dados.totais?.[col.id] ?? carregadas;
         return <section key={col.id} className={`stage-column stage-${col.id}`} aria-label={col.titulo}>
           <div className="stage-head">
             <div className="stage-title">{col.titulo}</div>
-            <span className="stage-count" title={`${lista.length} cliente(s) neste filtro`}>
+            <span className="stage-count" title={`${lista.length} exibidas, ${carregadas} carregadas de ${total} nesta fila`}>
               <span className="stage-count-number">{lista.length}</span>
               <span className="stage-count-label">{lista.length === 1 ? "cliente" : "clientes"}</span>
             </span>
@@ -87,6 +91,9 @@ export function OverviewBoard({ dados, selecionadoId, onAbrirCliente }: {
               ? <div className="empty-card">Nenhuma cliente neste filtro.</div>
               : lista.map((c, i) => <ClientCard key={c.id} c={c} estagio={col.id} indice={i} hoje={dados.hoje} selecionado={selecionadoId === c.id} onAbrir={() => onAbrirCliente(c.id, col.id)} />)}
           </div>
+          {carregadas < total && <button type="button" className="secondary-btn" disabled={carregandoMais !== null} onClick={() => onCarregarMais(col.id)}>
+            {carregandoMais === col.id ? "Carregando…" : `Carregar mais · ${carregadas} de ${total}`}
+          </button>}
         </section>;
       })}
     </div></div>

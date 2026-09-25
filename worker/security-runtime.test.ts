@@ -142,6 +142,27 @@ describe("HTTP ingress and real router", () => {
     expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(1);
     expect(state.queries.filter(q => q.table === "boletos" || q.table === "clientes")).toHaveLength(0);
   });
+  it("pages the Central in one RPC without sending client ID lists to PostgREST", async () => {
+    state.rpc.mockResolvedValue({ data: { filas: { preEligibility: [{
+      cliente: { id: "client-a", nome_completo: "Cliente de teste", cpf: "80000000001", quantidade_parcelas: 12, ativo: true },
+      agendamento: null, parcelas: { total: 12, pagas: 1, proxima: "2026-10-01" }, solicitacao: null,
+    }] }, totais: { preEligibility: 8000 } }, error: null });
+    const response = await worker.fetch(req("/api/admin/central/visao-geral", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    const result = await response.json() as any;
+    expect(result.totais.preEligibility).toBe(8000);
+    expect(result.filas.preEligibility).toHaveLength(1);
+    expect(state.rpc.mock.calls.map(c => c[0])).toEqual(["loadtest_admin_central_snapshot"]);
+    expect(state.queries.map(q => q.table)).toEqual(["colaboradores"]);
+    const next = await worker.fetch(req("/api/admin/central/visao-geral?estagio=preEligibility&aposNome=Cliente%20de%20teste&aposId=11111111-1111-4111-8111-111111111111", "GET", undefined, await adminCookie()), env);
+    expect(next.status).toBe(200);
+    expect(state.rpc.mock.calls[1][1].p_apos_nome).toBe("Cliente de teste");
+  });
+  it("rejects a malformed Central cursor before querying the snapshot", async () => {
+    const response = await worker.fetch(req("/api/admin/central/visao-geral?estagio=preEligibility&aposId=invalid", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
   it("rejects an invalid admin page cursor without querying client data", async () => {
     const response = await worker.fetch(req("/api/admin/clientes/pagina?cursor=not-a-valid-cursor", "GET", undefined, await adminCookie()), env);
     expect(response.status).toBe(400);

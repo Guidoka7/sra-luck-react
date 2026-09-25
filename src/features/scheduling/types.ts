@@ -50,6 +50,7 @@ export interface CartaoCliente {
 export interface VisaoGeralResponse {
   hoje: string;
   filas: Record<EstagioCentral, CartaoCliente[]>;
+  totais?: Partial<Record<EstagioCentral, number>>;
 }
 
 export interface DiaCalendario {

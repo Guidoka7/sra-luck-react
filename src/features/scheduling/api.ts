@@ -1,5 +1,5 @@
 import type { Cliente } from "@/types/database";
-import type { AgendaCirurgiaResponse, AgendaTermosResponse, CartaoCliente, EstagioDrawer, VisaoGeralResponse } from "./types";
+import type { AgendaCirurgiaResponse, AgendaTermosResponse, CartaoCliente, EstagioCentral, EstagioDrawer, VisaoGeralResponse } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path, { cache: "no-store" });
@@ -16,7 +16,10 @@ async function post(path: string, body: Record<string, unknown>): Promise<any> {
 }
 
 export const centralApi = {
-  visaoGeral: () => get<VisaoGeralResponse>("/api/admin/central/visao-geral"),
+  visaoGeral: (cursor?: { estagio: EstagioCentral; aposNome: string; aposId: string }) => {
+    const params = cursor ? new URLSearchParams(cursor) : null;
+    return get<VisaoGeralResponse>(`/api/admin/central/visao-geral${params ? `?${params}` : ""}`);
+  },
   cliente: (clienteId: string) => get<{ estagio: EstagioDrawer; cartao: CartaoCliente }>(`/api/admin/central/cliente/${clienteId}`),
   agendaTermos: (ano: number, mes: number) => get<AgendaTermosResponse>(`/api/admin/central/termos?ano=${ano}&mes=${mes}`),
   agendaCirurgia: (ano: number, mes: number) => get<AgendaCirurgiaResponse>(`/api/admin/central/cirurgia?ano=${ano}&mes=${mes}`),
