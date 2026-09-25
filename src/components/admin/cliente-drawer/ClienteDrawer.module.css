@@ -51,6 +51,32 @@
 .miniRow b{color:#30282a}
 .dropzone{display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px dashed rgba(122,38,50,.35);border-radius:8px;background:#FBF3F4;color:var(--wine);font-size:11px;font-weight:700;cursor:pointer}
 .dropzone[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+
+.carneCardBody{min-height:176px;display:flex;flex-direction:column;justify-content:center}
+.carnePrimaryAction{min-height:62px;border-radius:10px;background:linear-gradient(180deg,#fffafa,#fbf0f2);font-size:12.2px;letter-spacing:.01em;box-shadow:inset 0 1px 0 rgba(255,255,255,.72);transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.carnePrimaryAction:hover{border-color:rgba(122,38,50,.56);background:#faedef;transform:translateY(-1px)}
+.carneFormWrap{display:grid;gap:12px}
+.carneStep{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid rgba(122,38,50,.10);border-radius:9px;background:#fffafa}
+.carneStepIcon{width:32px;height:32px;display:grid;place-items:center;flex:0 0 32px;border-radius:9px;background:var(--blush);color:var(--wine)}
+.carneStepIcon svg{width:16px;height:16px}
+.carneStep strong{display:block;color:#30282a;font-size:11.8px}
+.carneStep span{display:block;margin-top:2px;color:#8a797d;font-size:10.2px;line-height:1.35}
+.carneForm{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px}
+.carneFormActions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:1px}
+.carneSavedArea{display:grid;gap:10px}
+.carneList{display:grid;gap:7px;max-height:154px;overflow:auto;padding-right:2px}
+.carneSaved{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 10px;border:1px solid rgba(122,38,50,.10);border-radius:9px;background:#fffdfd}
+.carneSavedIcon{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--blush);color:var(--wine)}
+.carneSavedIcon svg{width:16px;height:16px}
+.carneSavedMain{min-width:0}
+.carneSavedMain strong{display:block;color:#30282a;font-size:11.6px;line-height:1.25}
+.carneSavedMain span{display:block;margin-top:2px;color:#765f64;font-size:10.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.carneSavedMain small{display:block;margin-top:2px;color:#a08e92;font-size:9.6px}
+.carneSavedActions{display:flex;align-items:center;gap:3px}
+.carneSavedActions .edit,.carneSavedActions .cancel{font-size:10.3px;padding:5px 6px}
+.carneAdd{min-height:36px;border:1px dashed rgba(122,38,50,.30);border-radius:8px;background:transparent;color:var(--wine);display:flex;align-items:center;justify-content:center;gap:7px;font-size:10.8px;font-weight:800;cursor:pointer}
+.carneAdd:hover{background:var(--soft);border-color:rgba(122,38,50,.5)}
+.carneAdd:disabled,.carnePrimaryAction:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .dangerZone{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(220,38,38,.16);border-radius:9px;background:#FFF8F8}
 .dangerZone p{margin:2px 0 0;color:#8a6b70;font-size:10px}
 .dangerBtn{border:1px solid rgba(220,38,38,.35);background:#fff;color:var(--danger);border-radius:7px;min-height:32px;padding:0 11px;font-size:10.8px;font-weight:800;cursor:pointer}
@@ -60,6 +86,7 @@
 .retryBtn{margin-top:8px;border:1px solid var(--wine);background:#fff;color:var(--wine);border-radius:7px;min-height:30px;padding:0 12px;font-size:10.8px;font-weight:800;cursor:pointer}
 .statusMenuNote{padding:7px 9px 4px;color:#8a797d;font-size:9.6px;line-height:1.4}
 @media(max-width:700px){.footer.triple{grid-template-columns:1fr 1fr}.footer.triple>:last-child{grid-column:1/-1}.processWrap{margin:0 -12px;padding:0 12px}}
+@media(max-width:700px){.carneForm{grid-template-columns:1fr}.carneForm .span2,.carneFormActions{grid-column:1}.carneSaved{grid-template-columns:32px minmax(0,1fr)}.carneSavedActions{grid-column:2;justify-content:flex-start}.carneCardBody{min-height:164px}}
 
 .menu .menuLink{display:block;width:100%;padding:8px 9px;border-radius:6px;font-size:10.8px;color:inherit;text-decoration:none}
 .menu .menuLink:hover{background:var(--soft);color:var(--wine)}
@@ -77,6 +104,10 @@
 :global(.dark) .label,:global(.dark) .kpiLabel,:global(.dark) .kpiSub,:global(.dark) .historyDate,:global(.dark) .historyAuthor,:global(.dark) .journeyText,:global(.dark) .table th,:global(.dark) .muted,:global(.dark) .progressCopy p,:global(.dark) .field label,:global(.dark) .modalValue b,:global(.dark) .stage,:global(.dark) .journeyLegend,:global(.dark) .journeyCollapsedNow{color:var(--muted)}
 :global(.dark) .input{background:var(--soft);border-color:var(--border);color:var(--text)}
 :global(.dark) .notes,:global(.dark) .journeyCurrent,:global(.dark) .eligibility,:global(.dark) .appAccessHeader,:global(.dark) .modalValue,:global(.dark) .miniRow,:global(.dark) .stateBox,:global(.dark) .dropzone,:global(.dark) .kpi,:global(.dark) .subtitle .chip{background:var(--soft);border-color:var(--border);color:var(--text)}
+:global(.dark) .carnePrimaryAction,:global(.dark) .carneStep,:global(.dark) .carneSaved{background:var(--soft);border-color:var(--border);color:var(--text)}
+:global(.dark) .carneStep strong,:global(.dark) .carneSavedMain strong{color:var(--text)}
+:global(.dark) .carneStep span,:global(.dark) .carneSavedMain span,:global(.dark) .carneSavedMain small{color:var(--muted)}
+:global(.dark) .carneAdd{border-color:rgba(199,134,155,.28);color:#DCA0B2}
 :global(.dark) .banner{background:rgba(214,174,91,.12);border-color:rgba(214,174,91,.3)}
 :global(.dark) .banner .kicker{color:#D6AE5B}
 :global(.dark) .bannerRow{color:var(--muted)}
