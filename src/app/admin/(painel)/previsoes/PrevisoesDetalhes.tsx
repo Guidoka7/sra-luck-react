@@ -57,6 +57,7 @@ function statusLabelDe(grupo: Grupo, f: ClienteForecast): { label: string; kind:
 
 export default function PrevisoesDetalhes({ allowedClientIds, initialHorizonMonths = 8 }: { allowedClientIds?: string[]; initialHorizonMonths?: number }) {
   const [clientes, setClientes] = useState<ClienteForecast[]>([]);
+  const [totalCarteira, setTotalCarteira] = useState<number | null>(null);
   const [meses, setMeses] = useState<MesForecast[]>([]);
   const [agenda, setAgenda] = useState<Map<string, AgendaCliente>>(new Map());
   const [metaOrcamento, setMetaOrcamento] = useState(100000);
@@ -84,6 +85,7 @@ export default function PrevisoesDetalhes({ allowedClientIds, initialHorizonMont
     ]).then(([f, a, cfg]) => {
       if (!ativo) return;
       setClientes(f.clientes ?? []);
+      setTotalCarteira(typeof f.paginacao?.total === "number" ? f.paginacao.total : null);
       setMeses(f.meses ?? []);
       setMetaOrcamento(Number(cfg?.configuracoes?.meta_orcamento_mensal) || 100000);
       const mapa = new Map<string, AgendaCliente>();
@@ -150,7 +152,7 @@ export default function PrevisoesDetalhes({ allowedClientIds, initialHorizonMont
   return <div className="zip-admin" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
     <div style={{ flex: "1 1 560px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", padding: "2px 2px 14px" }}>
-        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p>{allowedClientSet && <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--rose)", fontWeight: 700 }}>Filtros da carteira preservados · horizonte inicial de {initialHorizonMonths} {initialHorizonMonths === 1 ? "mês" : "meses"} · {classificados.length} cliente(s) no escopo</div>}</div>
+        <div><h1 style={{ fontSize: 27 }}>Previsões</h1><p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--soft)", maxWidth: "62ch" }}>Previsões de elegibilidade, janelas de liberação e impacto de atrasos sobre os próximos meses.</p>{allowedClientSet && <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--rose)", fontWeight: 700 }}>Filtros da carteira preservados · horizonte inicial de {initialHorizonMonths} {initialHorizonMonths === 1 ? "mês" : "meses"} · {classificados.length} cliente(s) no escopo</div>}{totalCarteira !== null && totalCarteira > clientes.length && <div role="status" style={{ marginTop: 6, fontSize: 11, color: "var(--rose)", fontWeight: 700 }}>Indicadores detalhados consideram somente {clientes.length} de {totalCarteira} clientes carregadas. Volte ao painel para carregar mais registros.</div>}</div>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 7, padding: "8px 10px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--panel)", marginBottom: 12 }}>

@@ -164,6 +164,14 @@ describe("HTTP ingress and real router", () => {
     expect(response.status).toBe(400);
     expect(state.rpc).not.toHaveBeenCalled();
   });
+  it("bounds the forecast to one database page while reporting the real total", async () => {
+    state.rpc.mockResolvedValue({ data: { itens: [], total: 10000, cursor: null }, error: null });
+    const response = await worker.fetch(req("/api/admin/previsao-liberacoes", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as any).paginacao.total).toBe(10000);
+    expect(state.rpc.mock.calls.map(c => c[0])).toEqual(["loadtest_admin_forecast_page"]);
+    expect(state.queries.map(q => q.table)).toEqual(["colaboradores"]);
+  });
   it("rejects an invalid admin page cursor without querying client data", async () => {
     const response = await worker.fetch(req("/api/admin/clientes/pagina?cursor=not-a-valid-cursor", "GET", undefined, await adminCookie()), env);
     expect(response.status).toBe(400);

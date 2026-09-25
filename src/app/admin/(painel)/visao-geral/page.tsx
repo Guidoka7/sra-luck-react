@@ -80,6 +80,7 @@ export default function VisaoGeralPage() {
   const [cirurgias, setCirurgias] = useState<Cirurgia[]>([]);
   const [forecastMeses, setForecastMeses] = useState<{ mes: string; total: number }[]>([]);
   const [forecastClientes, setForecastClientes] = useState<ClienteForecast[]>([]);
+  const [forecastTotal, setForecastTotal] = useState<number | null>(null);
   const [metaOrcamento, setMetaOrcamento] = useState(100000);
   const [ano, setAno] = useState(hoje.getFullYear());
   const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth() + 1);
@@ -114,6 +115,7 @@ export default function VisaoGeralPage() {
       setCirurgias((c.cirurgias ?? []).map((x: any) => ({ id: x.id, nome: x.nome, data: x.data, statusCirurgia: x.statusCirurgia })));
       setForecastMeses(f.meses ?? []);
       setForecastClientes((f.clientes ?? []) as ClienteForecast[]);
+      setForecastTotal(typeof f.paginacao?.total === "number" ? f.paginacao.total : null);
       setMetaOrcamento(numero(cfg?.configuracoes?.meta_orcamento_mensal) || 100000);
       setAgendaMeses(agenda.meses ?? []);
       if (sessao?.nome) setPerfil({ nome: sessao.nome, cargo: sessao.cargo ?? "administrativo" });
@@ -304,7 +306,7 @@ export default function VisaoGeralPage() {
       </CardShell>
 
       <CardShell>
-        <CardHeader title="Previsões" sub="Liberações e próximas elegibilidades" href="/admin/previsoes" linkLabel="Ver previsões" />
+        <CardHeader title="Previsões" sub={forecastTotal !== null && forecastTotal > forecastClientes.length ? `Amostra: ${forecastClientes.length} de ${forecastTotal} clientes` : "Liberações e próximas elegibilidades"} href="/admin/previsoes" linkLabel="Ver previsões" />
         <div style={{ padding: "8px 10px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><strong style={{ fontSize: 9.5 }}>Liberações previstas</strong><span style={{ fontSize: 8, color: "var(--soft)" }}>Referência mensal: {formatarMoeda(metaOrcamento)}</span></div>
           <div style={{ height: 116, marginTop: 8, display: "flex", alignItems: "flex-end", gap: 7, borderBottom: "1px solid var(--line)", position: "relative", padding: "0 4px" }}>

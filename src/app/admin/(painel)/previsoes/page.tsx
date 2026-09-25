@@ -105,6 +105,9 @@ export default function PrevisoesPage() {
   const [carregando, setCarregando] = useState(true);
   const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ClienteForecast[]>([]);
+  const [forecastPagina, setForecastPagina] = useState<{ total: number; cursor: { criado: string; id: string } | null } | null>(null);
+  const [carregandoPagina, setCarregandoPagina] = useState(false);
+  const [erroPagina, setErroPagina] = useState<string | null>(null);
   const [agenda, setAgenda] = useState<AgendaCliente[]>([]);
   const [boletos, setBoletos] = useState<Boleto[]>([]);
   const [cirurgias, setCirurgias] = useState<Cirurgia[]>([]);
@@ -134,6 +137,7 @@ export default function PrevisoesPage() {
     ]).then(([f, a, b, c, cl]) => {
       if (!ativo) return;
       setForecast((f.clientes as ClienteForecast[] | undefined) ?? []);
+      setForecastPagina((f.paginacao as { total: number; cursor: { criado: string; id: string } | null } | undefined) ?? null);
       setAgenda((a.clientes as AgendaCliente[] | undefined) ?? []);
       setBoletos((b.boletos as Boleto[] | undefined) ?? []);
       setCirurgias((c.cirurgias as Cirurgia[] | undefined) ?? []);
@@ -143,6 +147,21 @@ export default function PrevisoesPage() {
     }).finally(() => ativo && setCarregando(false));
     return () => { ativo = false; };
   }, []);
+
+  async function carregarMaisPrevisoes() {
+    const cursor = forecastPagina?.cursor;
+    if (!cursor || carregandoPagina) return;
+    setCarregandoPagina(true); setErroPagina(null);
+    try {
+      const params = new URLSearchParams({ antesCriado: cursor.criado, antesId: cursor.id });
+      const resposta = await fetch(`/api/admin/previsao-liberacoes?${params}`, { cache: "no-store" });
+      const dados = await resposta.json() as { clientes?: ClienteForecast[]; paginacao?: typeof forecastPagina; erro?: string };
+      if (!resposta.ok) throw new Error(dados.erro ?? "Não foi possível carregar mais previsões.");
+      setForecast((atual) => [...atual, ...(dados.clientes ?? []).filter((c) => !atual.some((x) => x.clienteId === c.clienteId))]);
+      setForecastPagina(dados.paginacao ?? null);
+    } catch (error) { setErroPagina(error instanceof Error ? error.message : "Não foi possível carregar mais previsões."); }
+    finally { setCarregandoPagina(false); }
+  }
 
   const agendaPorCliente = useMemo(() => new Map(agenda.map((a) => [a.clienteId, a])), [agenda]);
   const clientePorId = useMemo(() => new Map(clientes.map((c) => [c.id, c])), [clientes]);
@@ -332,6 +351,13 @@ export default function PrevisoesPage() {
     </section>
 
     {carregando ? <div className={styles.loading}>Calculando previsões reais da carteira…</div> : erroCarga ? <div className={styles.loading} role="alert"><strong>Não foi possível carregar as previsões.</strong><br />{erroCarga}</div> : <>
+      {forecastPagina && forecast.length < forecastPagina.total && <div role="status" className={styles.loading}>
+        Indicadores e filtros desta tela consideram os registros carregados ({forecast.length} de {forecastPagina.total} clientes).
+        <button type="button" disabled={!forecastPagina.cursor || carregandoPagina} onClick={() => void carregarMaisPrevisoes()}>
+          {carregandoPagina ? " Carregando…" : " Carregar mais previsões"}
+        </button>
+      </div>}
+      {erroPagina && <p role="alert">{erroPagina}</p>}
       <section className={styles.kpis}>
         {kpis.map((k, index) => <article key={k.label} className={styles.kpi}>
           <div className={styles.kpiTop}><span className={styles.kpiIcon}>{k.icon}</span><span>{k.label}</span></div>

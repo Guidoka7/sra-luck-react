@@ -17,7 +17,7 @@ async function auth(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
   const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
   if (!sessao) return json({ erro: "Sessão administrativa expirada." }, 401);
-  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env, request).catch(() => null);
   if (!colaborador || !temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {
     return json({ erro: "Seu papel não tem permissão para visualizar relatórios." }, 403);
   }
@@ -89,10 +89,29 @@ async function fetchOptionalRows(
   }
 }
 
-export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>) {
-  const hoje = hojeSaoPaulo();
+type ForecastPage = { antesCriado: string | null; antesId: string | null };
 
-  const [clientes, boletos] = await Promise.all([
+export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupabaseClient>, pagina?: ForecastPage) {
+  const hoje = hojeSaoPaulo();
+  let clientes: any[];
+  let boletos: any[];
+  let contratosRes: { data: any[]; disponivel: boolean };
+  let crmRes: { data: any[]; disponivel: boolean };
+  let paginacao: { total: number; cursor: { criado: string; id: string } | null; limite: number } | null = null;
+
+  if (pagina) {
+    const { data, error } = await db.rpc("loadtest_admin_forecast_page", {
+      p_limite: 20, p_antes_criado: pagina.antesCriado, p_antes_id: pagina.antesId,
+    });
+    if (error || !data) throw error ?? new Error("Previsão indisponível.");
+    const snapshot = data as { itens: Array<{ cliente: any; parcelas: any[]; contrato: any; crm: any }>; total: number; cursor: { criado: string; id: string } | null };
+    clientes = snapshot.itens.map((item) => item.cliente);
+    boletos = snapshot.itens.flatMap((item) => item.parcelas.map((boleto) => ({ ...boleto, cliente_id: item.cliente.id })));
+    contratosRes = { data: snapshot.itens.flatMap((item) => item.contrato ? [item.contrato] : []), disponivel: false };
+    crmRes = { data: snapshot.itens.flatMap((item) => item.crm ? [item.crm] : []), disponivel: true };
+    paginacao = { total: snapshot.total, cursor: snapshot.cursor, limite: 20 };
+  } else {
+    [clientes, boletos] = await Promise.all([
     fetchAllRows(
       db,
       "clientes",
@@ -111,7 +130,7 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
 
   // CRM e contratos novos enriquecem os dados, mas a tabela clientes continua
   // sendo a fonte mestre da base cadastrada e do valor da carta.
-  const [contratosRes, crmRes] = await Promise.all([
+    [contratosRes, crmRes] = await Promise.all([
     fetchOptionalRows(
       db,
       "contratos_credito",
@@ -126,7 +145,8 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
       "created_at",
       false,
     ),
-  ]);
+    ]);
+  }
 
   const contratos = contratosRes.data;
   const crm = crmRes.data;
@@ -265,6 +285,7 @@ export async function forecastLiberacoes(db: ReturnType<typeof createServiceSupa
       contratosDisponiveis: contratosRes.disponivel,
       crmDisponivel: crmRes.disponivel,
     },
+    ...(paginacao ? { paginacao } : {}),
   };
 }
 
@@ -278,7 +299,14 @@ export async function adminReports(request: Request, env: Env): Promise<Response
 
   if (url.pathname === "/api/admin/previsao-liberacoes") {
     try {
-      return json(await forecastLiberacoes(db));
+      const antesCriado = url.searchParams.get("antesCriado");
+      const antesId = url.searchParams.get("antesId");
+      if ((antesCriado === null) !== (antesId === null)
+        || (antesCriado !== null && !/^\d{4}-\d{2}-\d{2}T/.test(antesCriado))
+        || (antesId !== null && !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(antesId))) {
+        return json({ erro: "Cursor inválido." }, 400);
+      }
+      return json(await forecastLiberacoes(db, { antesCriado, antesId }));
     } catch (error) {
       console.error("Falha no forecast de liberações:", error);
       return json({ erro: "Não foi possível gerar a previsão." }, 500);
