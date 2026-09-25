@@ -35,7 +35,6 @@ const ROUTE_NAMES = [
   "client_agenda",
   "client_boletos",
   "client_notificacoes",
-  "client_journey",
   "client_config",
   "client_home_campanhas",
   "client_notificacoes_ler_todas",
@@ -268,14 +267,13 @@ function cookiesFor(clientId) {
 }
 
 function clientRead(cookie) {
-  const pick = (__ITER + __VU) % 8;
+  const pick = (__ITER + __VU) % 7;
   if (pick === 0) return call("GET", "/agenda", cookie, "client_page_agenda");
   if (pick === 1) return call("GET", "/api/cliente/session", cookie, "client_session");
   if (pick === 2) return call("GET", "/api/cliente/agenda", cookie, "client_agenda");
   if (pick === 3) return call("GET", "/api/cliente/boletos", cookie, "client_boletos");
   if (pick === 4) return call("GET", "/api/cliente/notificacoes", cookie, "client_notificacoes");
-  if (pick === 5) return call("GET", "/api/cliente/journey", cookie, "client_journey");
-  if (pick === 6) return call("GET", "/api/cliente/config", cookie, "client_config");
+  if (pick === 5) return call("GET", "/api/cliente/config", cookie, "client_config");
   return call("GET", "/api/cliente/home-campanhas", cookie, "client_home_campanhas");
 }
 
