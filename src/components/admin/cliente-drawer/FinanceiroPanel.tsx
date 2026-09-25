@@ -11,7 +11,7 @@ import { LeitorCarneModal } from "@/features/leitor-carne/LeitorCarneModal";
 export interface FinanceiroPanelHandle { salvar: () => Promise<void>; editando: () => boolean }
 
 type Modal =
-  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar"; b: Boleto }
+  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar" | "reabrir"; b: Boleto }
   | { tipo: "ajuste" }
   | null;
 
@@ -71,7 +71,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
   function abrirMenu(e: MouseEvent<HTMLButtonElement>, b: Boleto) {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    const largura = 180, altura = 240;
+    const largura = 190, altura = 286;
     const left = Math.max(8, Math.min(r.right - largura, window.innerWidth - largura - 8));
     const top = r.bottom + 4 + altura > window.innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4;
     setMenu({ b, left, top });
@@ -90,6 +90,10 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     if (a === "anexar") { setAnexoAlvo(b); requestAnimationFrame(() => anexoRef.current?.click()); }
     if (a === "confirmar") setModal({ tipo: "confirmar", b });
     if (a === "rejeitar") { setMotivo(""); setModal({ tipo: "rejeitar", b }); }
+    if (a === "reabrir") {
+      if (b.status === "nao_pago" && !b.suspensa) { toast.info("Esta parcela já está em aberto."); return; }
+      setModal({ tipo: "reabrir", b });
+    }
   }
 
   async function salvarEdicao(b: Boleto) {
@@ -248,6 +252,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         <button type="button" role="menuitem" onClick={() => acao("baixa", menu.b)}>Registrar pagamento</button>
         {menu.b.comprovante_url ? <a role="menuitem" className={styles.menuLink} href={cad.comprovanteHref(menu.b)} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>Ver comprovante</a> : <button type="button" role="menuitem" onClick={() => acao("anexar", menu.b)}>Anexar comprovante</button>}
       </>}
+      {(menu.b.status !== "nao_pago" || menu.b.suspensa) && <button type="button" role="menuitem" onClick={() => acao("reabrir", menu.b)}>Voltar para em aberto</button>}
       <div className={styles.separator} /><button className={styles.danger} type="button" role="menuitem" onClick={() => acao("excluir", menu.b)}>Excluir parcela</button>
     </div></div>, document.body)}
 
@@ -274,6 +279,21 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         </div>
         <Acoes busy={cad.alterandoParcela} rotulo="Salvar parcela" onCancel={() => setModal(null)} />
       </form>
+    </Shell>}
+
+    {modal?.tipo === "reabrir" && <Shell titulo="Voltar parcela para em aberto" onClose={() => !cad.alterandoParcela && setModal(null)}>
+      <div className={styles.warning}>
+        <strong>Parcela {modal.b.numero_parcela}/{modal.b.total_parcelas || total} voltará para em aberto.</strong><br />
+        {modal.b.status === "pago"
+          ? "O pagamento será estornado no controle interno, sairá do total pago e o progresso/elegibilidade será recalculado. O histórico financeiro será preservado para auditoria."
+          : modal.b.status === "pendente_confirmacao"
+            ? "A conferência atual será cancelada e a parcela ficará novamente disponível para pagamento."
+            : "A suspensão ou estado atual será removido e a parcela voltará ao fluxo normal de cobrança."}
+      </div>
+      <div className={styles.modalActions}>
+        <button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => setModal(null)}>Cancelar</button>
+        <button className={`${styles.modalBtn} ${styles.primary}`} type="button" disabled={cad.alterandoParcela} onClick={async () => { if (await cad.alterarParcela(modal.b, { acao: "reabrir" }, "Parcela voltou para em aberto.")) setModal(null); }}>{cad.alterandoParcela ? "Atualizando..." : "Voltar para em aberto"}</button>
+      </div>
     </Shell>}
 
     {modal?.tipo === "excluir" && <Shell titulo="Excluir parcela" onClose={() => !cad.alterandoParcela && setModal(null)}>
