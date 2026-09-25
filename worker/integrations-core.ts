@@ -314,8 +314,7 @@ async function registrarTesteIntegracao(env: Env, usuario: string, provedor: str
     usuario,
     acao: "testou_conexao_integracao",
     entidade: "integracoes",
-    entidade_id: provedor,
-    detalhes: resultado,
+    detalhes: { ...resultado, provedor },
   });
 }
 

@@ -1,5 +1,5 @@
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
-import { estadosIntegracoes, obterCredencialParaValidacao } from "./integrations-credenciais";
+import { credenciaisParaStatus, estadosIntegracoes } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { validarConfiguracaoVapid } from "./web-push-config";
@@ -42,7 +42,7 @@ async function exigirAdminAtivo(request: Request, env: Env) {
   if (!env.CLIENTE_SESSION_SECRET) return { resposta: json({ erro: "Serviço temporariamente indisponível." }, 503), adminId: null };
   const sessao = await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET);
   if (!sessao) return { resposta: json({ erro: "Sessão administrativa expirada." }, 401), adminId: null };
-  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env).catch(() => null);
+  const colaborador = await buscarColaboradorAdminAtivo(sessao.adminId, env, request).catch(() => null);
   if (!colaborador) return { resposta: json({ erro: "Acesso administrativo inativo ou não autorizado." }, 403), adminId: null };
   if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS)) {
     return { resposta: json({ erro: "Seu papel não tem permissão para visualizar o painel de integrações." }, 403), adminId: null };
@@ -99,8 +99,8 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   const auth = await exigirAdminAtivo(request, env);
   if (auth.resposta) return auth.resposta;
 
-  const db = createServiceSupabaseClient(env);
-  const estados = await estadosIntegracoes(env, true);
+  const db = createServiceSupabaseClient(env, request);
+  const estados = await estadosIntegracoes(env, true, request);
   if (historico) {
     const { data, error } = await db.from("logs_alteracoes").select("id,usuario,acao,entidade_id,detalhes,created_at")
       .in("entidade", ["integracoes", "integracoes_credenciais"]).order("created_at", { ascending: false }).limit(100);
@@ -108,48 +108,41 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     return json({ eventos: data ?? [] });
   }
 
-  const [pushTable, eventTable, paymentTable, contaAzulTable, rdRawTable, novasVendasTable] = await Promise.all([
-    tabelaDisponivel(db, "web_push_subscriptions"),
+  const [eventTable, rdRawTable, novasVendasTable, pushCount, paymentCount, contaAzulCount, rdCount] = await Promise.all([
     tabelaDisponivel(db, "integracao_eventos"),
-    tabelaDisponivel(db, "pagamentos_externos"),
-    tabelaDisponivel(db, "conta_azul_operacoes"),
     tabelaDisponivel(db, "crm_vendas_entrada"),
     tabelaDisponivel(db, "novas_vendas"),
+    contar(db, "web_push_subscriptions"), contar(db, "pagamentos_externos"),
+    contar(db, "conta_azul_operacoes"), contar(db, "novas_vendas"),
   ]);
+  const pushTable = pushCount !== undefined;
+  const paymentTable = paymentCount !== undefined;
+  const contaAzulTable = contaAzulCount !== undefined;
 
-  const [pushCount, paymentCount, contaAzulCount, rdCount] = await Promise.all([
-    contar(db, "web_push_subscriptions"), contar(db, "pagamentos_externos"), contar(db, "conta_azul_operacoes"), contar(db, "novas_vendas"),
-  ]);
-
+  const credenciais = await credenciaisParaStatus(env, request);
+  const credencial = (provedor: string, chave: string) => credenciais.get(`${provedor}:${chave}`) ?? null;
   const [
     pushPublicKey, pushPrivateKey, pushSubject,
     mpAccessToken, mpWebhookSecret,
     caClientId, caClientSecret, caAccessToken, caRefreshToken,
     rdWebhookSecret, rdClientId, rdClientSecret, rdAccessToken, rdLegacyToken, rdRefreshToken,
-  ] = await Promise.all([
-    obterCredencialParaValidacao(env, "web_push", "vapid_public_key"),
-    obterCredencialParaValidacao(env, "web_push", "vapid_private_key"),
-    obterCredencialParaValidacao(env, "web_push", "vapid_subject"),
-    obterCredencialParaValidacao(env, "mercado_pago", "access_token"),
-    obterCredencialParaValidacao(env, "mercado_pago", "webhook_secret"),
-    obterCredencialParaValidacao(env, "conta_azul", "client_id"),
-    obterCredencialParaValidacao(env, "conta_azul", "client_secret"),
-    obterCredencialParaValidacao(env, "conta_azul", "access_token"),
-    obterCredencialParaValidacao(env, "conta_azul", "refresh_token"),
-    obterCredencialParaValidacao(env, "rd_station", "webhook_secret"),
-    obterCredencialParaValidacao(env, "rd_station", "client_id"),
-    obterCredencialParaValidacao(env, "rd_station", "client_secret"),
-    obterCredencialParaValidacao(env, "rd_station", "access_token"),
-    obterCredencialParaValidacao(env, "rd_station", "api_access_token"),
-    obterCredencialParaValidacao(env, "rd_station", "refresh_token"),
-  ]);
+  ] = [
+    credencial("web_push", "vapid_public_key"), credencial("web_push", "vapid_private_key"), credencial("web_push", "vapid_subject"),
+    credencial("mercado_pago", "access_token"), credencial("mercado_pago", "webhook_secret"),
+    credencial("conta_azul", "client_id"), credencial("conta_azul", "client_secret"), credencial("conta_azul", "access_token"), credencial("conta_azul", "refresh_token"),
+    credencial("rd_station", "webhook_secret"), credencial("rd_station", "client_id"), credencial("rd_station", "client_secret"),
+    credencial("rd_station", "access_token"), credencial("rd_station", "api_access_token"), credencial("rd_station", "refresh_token"),
+  ];
+
+  const { data: verificacoes, error: erroVerificacoes } = await db.rpc("loadtest_admin_integration_checks");
+  if (erroVerificacoes) return json({ erro: "Não foi possível carregar as verificações de integrações." }, 500);
+  const testes = new Map<string, any>(Object.entries(verificacoes ?? {}));
 
   const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
   const pushValidacao = pushCredenciais
     ? await validarConfiguracaoVapid({ subject: pushSubject!, publicKey: pushPublicKey!, privateKey: pushPrivateKey! })
     : { valido: false, detalhe: "As três credenciais VAPID ainda não estão configuradas." };
-  const { data: testePush } = await db.from("logs_alteracoes").select("created_at,detalhes")
-    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "web_push").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const testePush = testes.get("web_push");
   const mpCredenciais = Boolean(mpAccessToken && mpWebhookSecret);
   const contaAzulCredenciais = Boolean(caClientId && caClientSecret && caAccessToken && caRefreshToken);
   const rdOauthConfigurado = Boolean(rdClientId && rdClientSecret);
@@ -174,21 +167,12 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     const { data: webhook } = await db.from("crm_vendas_entrada").select("created_at").eq("provedor", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
     rdUltimoWebhook = webhook?.created_at ?? null;
   }
-  const { data: testeRd } = await db.from("logs_alteracoes").select("detalhes,created_at")
-    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const testeRd = testes.get("rd_station");
   if (testeRd) {
     rdUltimaVerificacao = testeRd.created_at;
     rdConectado = Boolean((testeRd.detalhes as any)?.conectado);
   }
 
-  const provedoresTeste = ["web_push", "mercado_pago", "conta_azul", "rd_station", "gemini", "brb", "bb", "santander", "sicredi", "efi"];
-  const testes = new Map<string, any>();
-  for (const provedor of provedoresTeste) {
-    const { data } = await db.from("logs_alteracoes").select("created_at,detalhes")
-      .eq("acao", "testou_conexao_integracao").eq("entidade_id", provedor)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    testes.set(provedor, data ?? null);
-  }
   const estadoAtivo = (provedor: string) => ({
     ativo: estados.get(provedor)?.ativo === true,
     ativacaoConfigurada: estados.has(provedor),
@@ -257,12 +241,12 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
   ];
 
-  const [geminiChave, frasesTabela, { data: testeGemini }, { count: frasesIa }] = await Promise.all([
-    obterCredencialParaValidacao(env, "gemini", "api_key"),
+  const [frasesTabela, { count: frasesIa }] = await Promise.all([
     tabelaDisponivel(db, "mensagens_do_dia", "data"),
-    db.from("logs_alteracoes").select("created_at,detalhes").eq("acao", "testou_conexao_integracao").eq("entidade_id", "gemini").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("mensagens_do_dia").select("data", { count: "exact", head: true }).eq("origem", "ia"),
   ]);
+  const geminiChave = credencial("gemini", "api_key");
+  const testeGemini = testes.get("gemini");
   const geminiConectado = Boolean(geminiChave && estadoAtivo("gemini").ativo && (testeGemini?.detalhes as any)?.conectado);
   integracoes.push({
     id: "gemini", nome: "Gemini (frase do dia)", grupo: "comunicacao", estado: estadoBase(frasesTabela, Boolean(geminiChave)),
@@ -278,9 +262,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     latenciaMs: estadoValidacaoDe({ credenciais: Boolean(geminiChave), ...estadoAtivo("gemini"), teste: testes.get("gemini") }).latencia,
   });
 
-  const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = await Promise.all([
-    obterCredencialParaValidacao(env, "brb", "webhook_secret"), obterCredencialParaValidacao(env, "bb", "webhook_secret"), obterCredencialParaValidacao(env, "santander", "webhook_secret"), obterCredencialParaValidacao(env, "sicredi", "webhook_secret"), obterCredencialParaValidacao(env, "efi", "webhook_secret"),
-  ]);
+  const [brbSecret, bbSecret, santanderSecret, sicrediSecret, efiSecret] = ["brb", "bb", "santander", "sicredi", "efi"].map((provedor) => credencial(provedor, "webhook_secret"));
   const bancos = [["brb", "BRB", Boolean(brbSecret)], ["bb", "Banco do Brasil", Boolean(bbSecret)], ["santander", "Santander", Boolean(santanderSecret)], ["sicredi", "Sicredi", Boolean(sicrediSecret)], ["efi", "Efí", Boolean(efiSecret)]] as const;
   for (const [id, nome, credenciais] of bancos) {
     integracoes.push({

@@ -201,6 +201,33 @@ export async function obterCredencialParaValidacao(env: Env, provedor: string, c
   return obterCredencialEfetiva(env, provedor, chave, false);
 }
 
+/** Lê credenciais do painel em uma viagem, sem guardar segredos entre requisições. */
+export async function credenciaisParaStatus(env: Env, request: Request): Promise<Map<string, string>> {
+  const valores = new Map<string, string>();
+  for (const [provedor, configuracao] of Object.entries(CATALOGO_PROVEDORES)) {
+    for (const campo of configuracao.campos as CampoCredencial[]) {
+      const valor = env[campo.envVar];
+      if (typeof valor === "string" && valor) valores.set(`${provedor}:${campo.chave}`, valor);
+    }
+  }
+  if (!env.CLIENTE_SESSION_SECRET) return valores;
+  try {
+    const { data, error } = await createServiceSupabaseClient(env, request)
+      .from("integracoes_credenciais")
+      .select("provedor,chave,valor_cifrado,valor_iv")
+      .eq("ativo", true);
+    if (error) return valores;
+    await Promise.all((data ?? []).map(async (linha) => {
+      if (!campoDoProvedor(linha.provedor, linha.chave)) return;
+      try {
+        const valor = await decifrarValor(env.CLIENTE_SESSION_SECRET!, linha.valor_cifrado, linha.valor_iv);
+        if (valor) valores.set(`${linha.provedor}:${linha.chave}`, valor);
+      } catch { /* credencial inválida: mantém o fallback do ambiente */ }
+    }));
+  } catch { /* tabela indisponível: mantém o fallback do ambiente */ }
+  return valores;
+}
+
 async function invalidarAtivacao(db: ReturnType<typeof createServiceSupabaseClient>, env: Env, provedor: string, ator: string, motivo: string) {
   const { error } = await db.from("integracoes_estado").upsert({
     provedor, ativo: false, atualizado_por: ator, atualizado_em: new Date().toISOString(),

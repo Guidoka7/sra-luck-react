@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "./supabase";
 
 const consultas = vi.hoisted(() => [] as { tabela: string; coluna: string }[]);
+const rpcs = vi.hoisted(() => [] as string[]);
 
 vi.mock("./admin-auth", () => ({
   buscarColaboradorAdminAtivo: async () => ({ id: "admin" }),
@@ -13,8 +14,7 @@ vi.mock("./session", () => ({
   verificarTokenAdmin: async () => ({ adminId: "admin" }),
 }));
 vi.mock("./integrations-credenciais", () => ({
-  obterCredencialParaValidacao: async (_env: Env, provedor: string, chave: string) =>
-    provedor === "gemini" && chave === "api_key" ? "chave-teste" : null,
+  credenciaisParaStatus: async () => new Map([["gemini:api_key", "chave-teste"]]),
   estadosIntegracoes: async () => new Map(),
 }));
 vi.mock("./web-push-config", () => ({
@@ -22,6 +22,7 @@ vi.mock("./web-push-config", () => ({
 }));
 vi.mock("./supabase", () => ({
   createServiceSupabaseClient: () => ({
+    rpc: async (nome: string) => { rpcs.push(nome); return { data: {}, error: null }; },
     from: (tabela: string) => ({
       select: (coluna: string) => {
         consultas.push({ tabela, coluna });
@@ -46,6 +47,7 @@ const { integrationsStatusApi } = await import("./integrations-status");
 describe("status da integração Gemini", () => {
   it("reconhece a persistência pela chave data da tabela de mensagens", async () => {
     consultas.length = 0;
+    rpcs.length = 0;
     const resposta = await integrationsStatusApi(
       new Request("https://exemplo.com/api/admin/integrations/status"),
       { CLIENTE_SESSION_SECRET: "segredo-teste" } as Env,
@@ -57,5 +59,7 @@ describe("status da integração Gemini", () => {
       persistenciaPronta: true,
     });
     expect(consultas).toContainEqual({ tabela: "mensagens_do_dia", coluna: "data" });
+    expect(rpcs).toEqual(["loadtest_admin_integration_checks"]);
+    expect(consultas.filter((consulta) => consulta.tabela === "logs_alteracoes")).toHaveLength(0);
   });
 });
