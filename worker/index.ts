@@ -33,6 +33,7 @@ import { adminCarneLeitor } from "./admin-carne-leitor";
 import { getRequestId, installConsoleSanitizer, pseudonymizeActorId, requestLogger, withRequestId } from "./logger";
 import { protectRequest } from "./http-security";
 import { adminReadPermissions, adminWritePermissions } from "./admin-route-permissions";
+import { beginRequest, requestContext, withPerformance } from "./request-context";
 
 const COOKIE_NAME = "cliente_session";
 const MAX_TENTATIVAS = 8;
@@ -117,18 +118,32 @@ async function exigirClienteComAcesso(request: Request, env: Env): Promise<Respo
     return json({ erro: "Serviço temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
   }
 
+  const context = requestContext(request);
+  const authStart = performance.now();
   const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+  if (context) context.authMs += performance.now() - authStart;
   if (!payload) {
     return json({ erro: "Sessão expirada." }, 401, { "Cache-Control": "no-store" });
   }
 
   try {
-    const db = createServiceSupabaseClient(env);
-    const { data: cliente, error } = await db
+    const db = createServiceSupabaseClient(env, request);
+    const path = new URL(request.url).pathname;
+    const fields = path === "/api/cliente/agenda"
+      ? "id,ativo,acesso_app_liberado,nome_completo,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia,data_atingiu_percentual,liberacao_financeira_solicitada_em"
+      : path === "/api/cliente/boletos" && request.method === "GET"
+        ? "id,ativo,acesso_app_liberado,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira"
+        : "id,ativo,acesso_app_liberado";
+    const authorizationStart = performance.now();
+    const { data: rawCliente, error } = await db
       .from("clientes")
-      .select("id,ativo,acesso_app_liberado")
+      .select(fields)
       .eq("id", payload.clienteId)
       .maybeSingle();
+    // The projection is route-specific; the query parser cannot infer a union
+    // from a runtime column list. Authorization fields are present in every list.
+    const cliente = rawCliente as Record<string, any> | null;
+    if (context) context.authorizationMs += performance.now() - authorizationStart;
 
     if (error) {
       requestLogger(request).error("Falha ao revalidar autorização da cliente", {
@@ -153,6 +168,7 @@ async function exigirClienteComAcesso(request: Request, env: Env): Promise<Respo
       return json({ erro: "Seu acesso ao aplicativo não está disponível." }, 403, { "Cache-Control": "no-store" });
     }
 
+    if (context) { context.clienteId = payload.clienteId; context.cliente = cliente; }
     return null;
   } catch (error) {
     requestLogger(request).error("Exceção ao revalidar autorização da cliente", {
@@ -418,17 +434,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/cliente/session" && request.method === "GET") {
     if (!env.CLIENTE_SESSION_SECRET) return json({ autenticado: false }, 503, { "Cache-Control": "no-store" });
-    const payload = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
-    if (!payload) return json({ autenticado: false }, 200, { "Cache-Control": "no-store" });
-
     const bloqueio = await exigirClienteComAcesso(request, env);
     if (bloqueio) {
-      return json({ autenticado: false }, bloqueio.status, {
+      return json({ autenticado: false }, bloqueio.status === 401 ? 200 : bloqueio.status, {
         "Cache-Control": "no-store",
         ...(bloqueio.status === 401 || bloqueio.status === 403 ? { "Set-Cookie": clearSessionCookie(secure) } : {}),
       });
     }
-    return json({ autenticado: true, clienteId: payload.clienteId }, 200, { "Cache-Control": "no-store" });
+    return json({ autenticado: true, clienteId: requestContext(request)!.clienteId }, 200, { "Cache-Control": "no-store" });
   }
 
   if (url.pathname === "/api/cliente/logout" && request.method === "POST") {
@@ -553,8 +566,14 @@ export default {
     const requestId = getRequestId(request);
     const log = requestLogger(request, requestId);
     const inicio = Date.now();
+    let observedRequest = request;
+    beginRequest(request, requestId);
     try {
       const protectedRequest = await protectRequest(request);
+      if (protectedRequest instanceof Request && protectedRequest !== request) {
+        observedRequest = protectedRequest;
+        beginRequest(protectedRequest, requestId);
+      }
       const response = protectedRequest instanceof Response ? protectedRequest : await handleRequest(protectedRequest, env);
       // Avisos gravados pelo banco (agenda, pagamentos, clube) saem como Web Push
       // na próxima ação do painel ou do app, em segundo plano.
@@ -564,10 +583,10 @@ export default {
       if (response.status >= 500) log.error("Requisição concluída com falha de servidor", { ...context, eventCode: "HTTP_5XX" });
       else if (response.status >= 400) log.warn("Requisição concluída com erro do cliente", { ...context, eventCode: "HTTP_4XX" });
       else log.info("Requisição concluída", context);
-      return withRequestId(response, requestId);
+      return withPerformance(observedRequest, withRequestId(response, requestId), env);
     } catch (error) {
       log.error("Exceção não tratada no Worker", { action: "http.request", eventCode: "UNHANDLED_WORKER_EXCEPTION", statusCode: 500, durationMs: Date.now() - inicio, error });
-      return withRequestId(json({ erro: "Falha interna inesperada." }, 500, { "Cache-Control": "no-store" }), requestId);
+      return withPerformance(observedRequest, withRequestId(json({ erro: "Falha interna inesperada." }, 500, { "Cache-Control": "no-store" }), requestId), env);
     }
   },
 } satisfies ExportedHandler<Env>;

@@ -71,7 +71,7 @@ function statusContrato(value: unknown) {
 
 export async function adminVisaoGeral(request: Request, env: Env): Promise<Response> {
   try {
-    const supabase = createServiceSupabaseClient(env);
+    const supabase = createServiceSupabaseClient(env, request);
     const url = new URL(request.url);
     const agoraBrasil = hojeBrasil();
     const anoPadrao = Number(agoraBrasil.slice(0, 4));

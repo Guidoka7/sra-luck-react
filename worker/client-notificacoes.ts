@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
+import { requestContext } from "./request-context";
 
 const COOKIE_NAME = "cliente_session";
 
@@ -11,6 +12,8 @@ function json(data: unknown, status = 200) {
 }
 
 async function sessaoCliente(request: Request, env: Env) {
+  const id = requestContext(request)?.clienteId;
+  if (id) return { clienteId: id };
   if (!env.CLIENTE_SESSION_SECRET) return null;
   return verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
 }
@@ -42,7 +45,7 @@ export async function clientNotificacoesApi(request: Request, env: Env): Promise
     return json({ erro: "Requisição de origem não autorizada." }, 403);
   }
 
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
 
   if (path === "/api/cliente/notificacoes" && request.method === "GET") {
     const { data, error } = await db

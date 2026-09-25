@@ -58,6 +58,35 @@ beforeEach(() => {
 });
 
 describe("HTTP ingress and real router", () => {
+  it("shares the authorized client with the agenda and returns grouped availability", async () => {
+    state.handler = table => ({
+      data: table === "clientes" ? { id: "client-a", ativo: true, acesso_app_liberado: true, nome_completo: "Cliente sintética", valor_contrato: 100 } : [],
+      error: null,
+    });
+    state.rpc.mockImplementation(async (fn: string) => ({ data: fn.startsWith("loadtest_agenda_") ? [] : true, error: null }));
+    const response = await worker.fetch(req("/api/cliente/agenda", "GET", undefined, await clientCookie()), env);
+    expect(response.status).toBe(200);
+    expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(1);
+    expect(state.queries.filter(q => q.table === "agendamentos")).toHaveLength(1);
+    expect(state.queries.filter(q => q.table === "agendamentos")[0].ops).toContainEqual(["eq", "cliente_id", "client-a"]);
+    expect(state.rpc.mock.calls.some(c => c[0] === "loadtest_agenda_datas_snapshot")).toBe(true);
+  });
+  it("bounds the boletos read to one client lookup and one finance snapshot RPC", async () => {
+    state.handler = table => ({ data: table === "clientes"
+      ? { id: "client-a", ativo: true, acesso_app_liberado: true, quantidade_parcelas: 12 }
+      : [], error: null });
+    const response = await worker.fetch(req("/api/cliente/boletos", "GET", undefined, await clientCookie()), env);
+    expect(response.status).toBe(200);
+    expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(1);
+    expect(state.queries.filter(q => q.table === "boletos")).toHaveLength(0);
+    expect(state.rpc.mock.calls.map(c => c[0])).toContain("loadtest_cliente_financeiro_snapshot");
+  });
+  it("reuses a single active collaborator lookup across admin authorization layers", async () => {
+    state.handler = table => ({ data: table === "colaboradores" ? actor : [], error: null });
+    const response = await worker.fetch(req("/api/admin/clientes", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(1);
+  });
   it.each([undefined, "admin_session=invalid", "admin_session=a.b.extra"])("rejects missing or invalid admin cookie %s", async cookie => {
     expect((await worker.fetch(req("/api/admin/clientes", "GET", undefined, cookie), env)).status).toBe(401);
     expect(state.queries).toHaveLength(0);

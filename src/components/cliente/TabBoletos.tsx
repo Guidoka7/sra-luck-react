@@ -65,7 +65,18 @@ interface TabBoletosProps { pagamento?: PagamentoConfig; procedimento?: string |
 export function TabBoletos({ pagamento, procedimento }: TabBoletosProps) {
   const [carregando, setCarregando] = useState(true); const [progresso, setProgresso] = useState<ProgressoResponse | null>(null); const [boletoSelecionado, setBoletoSelecionado] = useState<string | null>(null); const [modalAberto, setModalAberto] = useState(false); const [resolverAberto, setResolverAberto] = useState(false); const [carteiraAberta, setCarteiraAberta] = useState(false); const [acaoComprovante, setAcaoComprovante] = useState<string | null>(null);
   async function carregar(silencioso = false) { if (!silencioso) setCarregando(true); try { const res = await fetch("/api/cliente/boletos", { cache: "no-store" }); if (!res.ok) throw new Error("Erro ao carregar"); setProgresso(await res.json()); } catch { if (!silencioso) toast.error("Erro ao carregar boletos"); } finally { if (!silencioso) setCarregando(false); } }
-  useEffect(() => { carregar(); const intervalo = setInterval(() => carregar(true), 30_000); return () => clearInterval(intervalo); }, []);
+  useEffect(() => {
+    void carregar();
+    let proxima: ReturnType<typeof setTimeout>;
+    const agendar = () => {
+      proxima = setTimeout(() => {
+        if (document.visibilityState === "visible") void carregar(true);
+        agendar();
+      }, 75_000 + Math.random() * 20_000);
+    };
+    agendar();
+    return () => clearTimeout(proxima);
+  }, []);
   useEffect(() => {
     if (!progresso) return;
     const params = new URLSearchParams(window.location.search);

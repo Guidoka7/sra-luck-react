@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { requestContext, timedSupabaseFetch } from "./request-context";
 
 export interface Env {
+  LOAD_TEST_TELEMETRY?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   CLIENTE_SESSION_SECRET?: string;
@@ -50,12 +52,17 @@ export interface Env {
   CRON_SECRET?: string;
 }
 
-export function createServiceSupabaseClient(env: Env): SupabaseClient {
+export function createServiceSupabaseClient(env: Env, request?: Request): SupabaseClient {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("Supabase do Worker não está configurado.");
   }
 
-  return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+  const context = request ? requestContext(request) : undefined;
+  if (context?.db) return context.db;
+  const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
+    ...(context ? { global: { fetch: timedSupabaseFetch(context) } } : {}),
   });
+  if (context) context.db = db;
+  return db;
 }

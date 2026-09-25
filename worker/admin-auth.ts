@@ -1,6 +1,7 @@
 import { getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { requestContext } from "./request-context";
 import { PERMISSOES_VALIDAS, temAcessoAoPainel } from "../src/lib/permissoesEquipe";
 import {
   DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID,
@@ -73,7 +74,7 @@ export function temPermissaoAdmin(colaborador: ColaboradorAdmin, chave: string):
   return colaborador.cargo === "administrativo" || colaborador.permissoes.includes(chave);
 }
 
-export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env): Promise<ColaboradorAdmin | null> {
+export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env, request?: Request): Promise<ColaboradorAdmin | null> {
   // A identidade técnica só pode nascer de uma sessão HMAC criada depois da
   // validação M2M no adapter. Não há usuário Supabase correspondente e nada é
   // persistido com este ID; a allowlist explícita do adapter (leituras + poucas
@@ -88,7 +89,9 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
     };
   }
 
-  const db = createServiceSupabaseClient(env);
+  const context = request ? requestContext(request) : undefined;
+  if (context?.admin?.auth_user_id === authUserId) return context.admin;
+  const db = createServiceSupabaseClient(env, request);
   const { data, error } = await db
     .from("colaboradores")
     .select("id,auth_user_id,cargo,ativo,permissoes")
@@ -102,13 +105,15 @@ export async function buscarColaboradorAdminAtivo(authUserId: string, env: Env):
   const permissoes = Array.isArray(data.permissoes) ? data.permissoes.filter((item): item is string => typeof item === "string" && PERMISSOES_VALIDAS.has(item)) : [];
   if (!temAcessoAoPainel(String(data.cargo), permissoes)) return null;
 
-  return {
+  const autorizado = {
     id: String(data.id),
     auth_user_id: String(data.auth_user_id),
     cargo: data.cargo as CargoAdmin,
-    ativo: true,
+    ativo: true as const,
     permissoes,
   };
+  if (context) context.admin = autorizado;
+  return autorizado;
 }
 
 export async function exigirAdmin(request: Request, env: Env, permissoes?: readonly string[] | null): Promise<Response | null> {
@@ -117,13 +122,19 @@ export async function exigirAdmin(request: Request, env: Env, permissoes?: reado
     return jsonErro("Serviço temporariamente indisponível.", 503);
   }
 
-  const token = getCookie(request, ADMIN_COOKIE);
-  const session: AdminSessionPayload | null = await verificarTokenAdmin(token, env.CLIENTE_SESSION_SECRET);
+  const context = requestContext(request);
+  const authStart = performance.now();
+  const session: AdminSessionPayload | null = context?.admin
+    ? { adminId: context.admin.auth_user_id } as AdminSessionPayload
+    : await verificarTokenAdmin(getCookie(request, ADMIN_COOKIE), env.CLIENTE_SESSION_SECRET);
+  if (context) context.authMs += performance.now() - authStart;
   if (!session) return jsonErro("Sessão administrativa expirada.", 401);
 
   const log = requestLogger(request).child({ actorType: "admin", actorId: await pseudonymizeActorId(session.adminId, env), action: "admin.authorization.validate" });
   try {
-    const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env);
+    const authorizationStart = performance.now();
+    const colaborador = await buscarColaboradorAdminAtivo(session.adminId, env, request);
+    if (context) context.authorizationMs += performance.now() - authorizationStart;
     if (!colaborador) {
       log.warn("Administrador autenticado sem autorização ativa", { eventCode: "ADMIN_AUTH_DENIED", statusCode: 403 });
       return jsonErro("Acesso administrativo não autorizado.", 403);

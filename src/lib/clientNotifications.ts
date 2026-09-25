@@ -61,14 +61,21 @@ export function useNotificacoesCliente() {
 
   useEffect(() => {
     void carregar();
-    const intervalo = window.setInterval(() => void carregar(), 15_000);
+    let proxima: number | undefined;
+    const agendar = () => {
+      proxima = window.setTimeout(() => {
+        if (document.visibilityState === "visible") void carregar();
+        agendar();
+      }, 45_000 + Math.random() * 20_000);
+    };
+    agendar();
     function aoFocar() {
       if (document.visibilityState === "visible") void carregar();
     }
     document.addEventListener("visibilitychange", aoFocar);
     window.addEventListener("focus", aoFocar);
     return () => {
-      window.clearInterval(intervalo);
+      window.clearTimeout(proxima);
       document.removeEventListener("visibilitychange", aoFocar);
       window.removeEventListener("focus", aoFocar);
     };

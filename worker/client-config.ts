@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { obterCredencial } from "./integrations-credenciais";
+import { requestContext } from "./request-context";
 
 const COOKIE_NAME = "cliente_session";
 const PROFILE_BUCKET = "clientes-perfil";
@@ -48,7 +49,7 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
 
   if (url.pathname === "/api/cliente/config-publica") {
     if (request.method !== "GET") return null;
-    const db = createServiceSupabaseClient(env);
+    const db = createServiceSupabaseClient(env, request);
     const { data, error } = await db
       .from("configuracoes")
       .select("whatsapp_contato")
@@ -60,10 +61,12 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
 
   if (url.pathname === "/api/cliente/perfil/foto") {
     if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
-    const sessao = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+    const sessao = requestContext(request)?.clienteId
+      ? { clienteId: requestContext(request)!.clienteId! }
+      : await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
     if (!sessao) return json({ erro: "Sessão expirada." }, 401);
 
-    const db = createServiceSupabaseClient(env);
+    const db = createServiceSupabaseClient(env, request);
 
     if (request.method === "GET") {
       const { data: cliente, error } = await db
@@ -158,10 +161,12 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
   if (url.pathname !== "/api/cliente/config" || request.method !== "GET") return null;
   if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503);
 
-  const sessao = await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
+  const sessao = requestContext(request)?.clienteId
+    ? { clienteId: requestContext(request)!.clienteId! }
+    : await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
   if (!sessao) return json({ erro: "Sessão expirada." }, 401);
 
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
   const [{ data, error }, mercadoPagoToken] = await Promise.all([
     db
       .from("configuracoes")

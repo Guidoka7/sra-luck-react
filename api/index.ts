@@ -19,6 +19,7 @@ function canonicalProductionOrigin(request: Request): string {
 function buildEnv(request: Request): Env {
   return {
     // Ambiente EXCLUSIVO do teste de carga. Nunca aponta para produção.
+    LOAD_TEST_TELEMETRY: "1",
     SUPABASE_URL: "https://xqlxzdmleekbrietejoq.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk",
     CLIENTE_SESSION_SECRET: "sra-luck-load-test-only-session-secret-2026-09-24",

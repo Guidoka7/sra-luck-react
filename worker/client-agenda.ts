@@ -2,6 +2,7 @@ import { regrasOperacionais } from "./regras-operacionais";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { agoraSaoPaulo } from "./surgery-release";
+import { requestContext } from "./request-context";
 
 const COOKIE_NAME = "cliente_session";
 const HORARIOS_VALIDOS = new Set(["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]);
@@ -18,6 +19,8 @@ function dataValida(valor: string | undefined) {
 }
 
 async function sessao(request: Request, env: Env) {
+  const id = requestContext(request)?.clienteId;
+  if (id) return { clienteId: id };
   if (!env.CLIENTE_SESSION_SECRET) return null;
   return verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
 }
@@ -25,18 +28,36 @@ async function sessao(request: Request, env: Env) {
 export async function agenda(request: Request, env: Env): Promise<Response> {
   const s = await sessao(request, env);
   if (!s) return json({ erro: "Sessão expirada." }, 401);
-  const supabase = createServiceSupabaseClient(env);
-  const { data: cliente } = await supabase.from("clientes")
+  const supabase = createServiceSupabaseClient(env, request);
+  const clienteContexto = requestContext(request)?.cliente;
+  const { data: cliente } = clienteContexto?.nome_completo !== undefined
+    ? { data: clienteContexto }
+    : await supabase.from("clientes")
     .select("id,nome_completo,procedimento,valor_contrato,quantidade_parcelas,status_revisao_financeira,financeiro_confirmado_em,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,custeio_confirmado_em,status_financeiro,status_cirurgia,data_atingiu_percentual,liberacao_financeira_solicitada_em")
     .eq("id", s.clienteId)
     .single();
   if (!cliente) return json({ erro: "Cliente não encontrada." }, 404);
 
-  const { data: agendamentos } = await supabase.from("agendamentos")
+  const hoje = agoraSaoPaulo().data;
+  const [agendamentosResult, elegivelResult, solicitacaoResult, datasResult] = await Promise.all([
+    supabase.from("agendamentos")
     .select("id,data_id,status,horario_termos,termos_assinados_em,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,previsao_cirurgia,previsao_cirurgia_confirmada_em,data_cirurgia,horario_cirurgia,valor_contrato,agenda_cirurgica_liberada_em,created_at,datas(data)")
     .eq("cliente_id", cliente.id)
     .in("status", ["confirmado", "realizado"])
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }),
+    supabase.rpc("pode_agendar", { p_cliente_id: cliente.id }),
+    supabase.from("solicitacoes_liberacao_financeira")
+      .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at,updated_at")
+      .eq("cliente_id", cliente.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.rpc("loadtest_agenda_datas_snapshot", { p_hoje: hoje }),
+  ]);
+  const { data: agendamentos } = agendamentosResult;
+  const { data: elegivel } = elegivelResult;
+  const { data: solicitacao } = solicitacaoResult;
+  const { data: datasDisponiveis } = datasResult;
   let ativo: any = (agendamentos ?? []).find((a: any) => a.status === "confirmado") ?? null;
   const concluido = (agendamentos ?? []).find((a: any) => a.status === "realizado") ?? null;
   // A liberação automática após os 5 dias úteis é processada pelo cron do
@@ -48,14 +69,6 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
   const agendaCirurgicaLiberarEm = agendamentoCorrente?.agenda_cirurgica_liberada_em ?? null;
   const cartaDeCredito = Number(agendamentoCorrente?.valor_contrato ?? cliente.valor_contrato ?? 0);
 
-  const { data: elegivel } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
-
-  const { data: solicitacao } = await supabase.from("solicitacoes_liberacao_financeira")
-    .select("id,forma_custeio,saldo_restante,taxa_cartao,total_com_taxa,status,observacao,agendamento_id,created_at,updated_at")
-    .eq("cliente_id", cliente.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
   const agendamentoId = ativo?.id ?? concluido?.id ?? null;
   const { data: remarcacoes } = agendamentoId
     ? await supabase.from("solicitacoes_remarcacao_agendamento")
@@ -67,44 +80,24 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
 
   // Produção: o backend sempre usa a data real de São Paulo. Nenhum cookie
   // ou controle do frontend pode alterar o relógio usado para disponibilidade.
-  const hoje = agoraSaoPaulo().data;
-  const { data: datasDisponiveis } = await supabase.from("datas")
-    .select("id,data,vagas_totais")
-    .eq("status", "disponivel")
-    .gte("data", hoje)
-    .order("data", { ascending: true });
-  const { data: agendamentosAtivos } = await supabase.from("agendamentos").select("data_id").eq("status", "confirmado");
-  const ocupacao = new Map<string, number>();
-  for (const a of agendamentosAtivos ?? []) ocupacao.set(a.data_id, (ocupacao.get(a.data_id) ?? 0) + 1);
   const datas = (datasDisponiveis ?? []).map((d: any) => ({
     id: d.id,
     data: d.data,
-    vagasRestantes: Math.max(0, d.vagas_totais - (ocupacao.get(d.id) ?? 0)),
+    vagasRestantes: d.vagas_restantes,
   }));
 
   const cirurgicaLiberada = Boolean(agendaCirurgicaLiberarEm) && !agendamentoCorrente?.data_cirurgia;
   let datasCirurgiaDisponiveis: Array<{ id: string; data: string; vagasRestantes: number }> = [];
   if (cirurgicaLiberada) {
-    const { data: datasCirurgia } = await supabase.from("datas_liberacao_financeira")
-      .select("id,data,status,fechamento_manual,vagas_totais")
-      .eq("status", "disponivel")
-      .eq("fechamento_manual", false)
-      .gte("data", hoje)
-      .order("data", { ascending: true });
-    const { data: cirurgias } = await supabase.from("agendamentos")
-      .select("data_cirurgia")
-      .in("status", ["confirmado", "realizado"])
-      .not("data_cirurgia", "is", null);
-    const ocupacaoCirurgia = new Map<string, number>();
-    for (const a of cirurgias ?? []) {
-      const data = (a as any).data_cirurgia as string | null;
-      if (!data) continue;
-      ocupacaoCirurgia.set(data, (ocupacaoCirurgia.get(data) ?? 0) + 1);
-    }
+    const [datasCirurgiaResult, dataMinimaResult] = await Promise.all([
+      supabase.rpc("loadtest_agenda_cirurgia_datas_snapshot", { p_hoje: hoje }),
+      supabase.rpc("agenda_data_minima_cirurgia", { p_agendamento_id: agendamentoCorrente.id }),
+    ]);
+    const { data: datasCirurgia } = datasCirurgiaResult;
     // V46 §17: a cliente não vê mês em que sua carta de crédito não caiba no
     // teto de R$ 100.000 — usa a mesma função SQL do backend
     // (agenda_comprometimento_mes), não uma soma recalculada aqui.
-    const mesesDatas = Array.from(new Set((datasCirurgia ?? []).map((d: any) => String(d.data).slice(0, 7))));
+    const mesesDatas = Array.from(new Set<string>((datasCirurgia ?? []).map((d: any) => String(d.data).slice(0, 7))));
     const comprometidoPorMes = new Map<string, number>();
     await Promise.all(mesesDatas.map(async (mes) => {
       const { data: comprometido } = await supabase.rpc("agenda_comprometimento_mes", { p_mes: `${mes}-01`, p_excluir_cliente: cliente.id });
@@ -113,7 +106,7 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
     // Regra interna (migration_076): só a partir da data dos termos + intervalo
     // configurado (padrão 90 dias). Antes disso, as datas não são enviadas e o
     // calendário da cliente as mostra como lotadas.
-    const { data: dataMinima, error: erroDataMinima } = await supabase.rpc("agenda_data_minima_cirurgia", { p_agendamento_id: agendamentoCorrente.id });
+    const { data: dataMinima, error: erroDataMinima } = dataMinimaResult;
     if (erroDataMinima) console.error("Falha ao calcular a data mínima da cirurgia:", erroDataMinima);
     const primeiraData = typeof dataMinima === "string" ? dataMinima.slice(0, 10) : null;
     datasCirurgiaDisponiveis = (datasCirurgia ?? [])
@@ -122,9 +115,9 @@ export async function agenda(request: Request, env: Env): Promise<Response> {
       .map((d: any) => ({
         id: d.id,
         data: d.data,
-        vagasRestantes: Math.max(0, Number(d.vagas_totais ?? 1) - (ocupacaoCirurgia.get(d.data) ?? 0)),
+        vagasRestantes: d.vagas_restantes,
       }))
-      .filter((d) => d.vagasRestantes > 0);
+      .filter((d: { vagasRestantes: number }) => d.vagasRestantes > 0);
   }
 
   const mapAgendamento = (a: any) => a ? {

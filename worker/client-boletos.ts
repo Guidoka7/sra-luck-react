@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { pseudonymizeActorId, requestLogger } from "./logger";
+import { requestContext } from "./request-context";
 
 const COOKIE_NAME = "cliente_session";
 const BUCKET = "boletos-clientes";
@@ -18,6 +19,8 @@ function json(data: unknown, status = 200, headers?: HeadersInit) {
 }
 
 async function sessaoCliente(request: Request, env: Env): Promise<Sessao | null> {
+  const id = requestContext(request)?.clienteId;
+  if (id) return { clienteId: id };
   if (!env.CLIENTE_SESSION_SECRET) return null;
   return verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
 }
@@ -38,24 +41,29 @@ export async function handleClienteBoletos(request: Request, env: Env, boletoId?
   if (!sessao) return json({ erro: "Sessão expirada." }, 401);
   const log = requestLogger(request).child({ actorType: "cliente", actorId: await pseudonymizeActorId(sessao.clienteId, env), entityType: boletoId ? "boleto" : undefined, entityId: boletoId ?? null });
 
-  const supabase = createServiceSupabaseClient(env);
+  const supabase = createServiceSupabaseClient(env, request);
 
   if (!boletoId && request.method === "GET") {
-    const { data: cliente, error: erroCliente } = await supabase.from("clientes").select("id, quantidade_parcelas, status_revisao_financeira, data_atingiu_percentual, observacao_revisao_financeira").eq("id", sessao.clienteId).single();
+    const cached = requestContext(request)?.cliente;
+    const { data: cliente, error: erroCliente } = cached?.quantidade_parcelas !== undefined
+      ? { data: cached, error: null }
+      : await supabase.from("clientes").select("id,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira").eq("id", sessao.clienteId).single();
     if (erroCliente || !cliente) {
       if (erroCliente) log.error("Falha ao carregar cliente para boletos", { action: "client.boletos.list", eventCode: "BOLETOS_CLIENT_LOOKUP_FAILED", statusCode: 404, error: erroCliente });
       return json({ erro: "Cliente não encontrada." }, 404);
     }
 
-    const { data: boletos, error: erroBoletos } = await supabase.from("boletos").select("*").eq("cliente_id", cliente.id).order("numero_parcela", { ascending: true });
+    const { data: rawSnapshot, error: erroBoletos } = await supabase.rpc("loadtest_cliente_financeiro_snapshot", { p_cliente_id: cliente.id });
     if (erroBoletos) {
       log.error("Falha ao carregar boletos", { action: "client.boletos.list", eventCode: "BOLETOS_LIST_FAILED", statusCode: 500, error: erroBoletos });
       return json({ erro: "Erro ao buscar boletos." }, 500);
     }
 
-    const { data: porcentagem } = await supabase.rpc("porcentagem_pagamento", { p_cliente_id: cliente.id });
-    const { data: podeAgendar } = await supabase.rpc("pode_agendar", { p_cliente_id: cliente.id });
-    const { data: agendaLiberada } = await supabase.rpc("agenda_liberada", { p_cliente_id: cliente.id });
+    const snapshot = rawSnapshot as { boletos?: Array<{ status: string; total_parcelas: number; valor: number }>; porcentagem_pagamento?: number; pode_agendar?: boolean; agenda_liberada?: boolean } | null;
+    const boletos = snapshot?.boletos ?? [];
+    const porcentagem = snapshot?.porcentagem_pagamento;
+    const podeAgendar = snapshot?.pode_agendar;
+    const agendaLiberada = snapshot?.agenda_liberada;
     const parcelasPagas = (boletos ?? []).filter((b: { status: string }) => b.status === "pago").length;
 
     return json({

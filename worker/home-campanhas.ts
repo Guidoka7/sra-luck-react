@@ -80,7 +80,7 @@ export async function homeCampanhasApi(request: Request, env: Env): Promise<Resp
 
   // App da cliente: só lê os ajustes (a sessão já foi validada pelo roteador).
   if (path === "/api/cliente/home-campanhas" && request.method === "GET") {
-    const db = createServiceSupabaseClient(env);
+    const db = createServiceSupabaseClient(env, request);
     const { data, error } = await db.from("home_campanhas_config").select("id,base_id,ativo,ordem,dados").is("excluido_em", null);
     // Sem tabela/erro: o app segue com o catálogo padrão.
     return json({ ajustes: error ? [] : (data ?? []).map(paraOverride) });

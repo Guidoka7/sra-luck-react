@@ -13,6 +13,7 @@ function firstEnv(...names: string[]): string | undefined {
 
 function buildEnv(request: Request): Env {
   return {
+    LOAD_TEST_TELEMETRY: "1",
     // Ambiente EXCLUSIVO do teste de carga. Nunca aponta para produção.
     SUPABASE_URL: "https://xqlxzdmleekbrietejoq.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk",

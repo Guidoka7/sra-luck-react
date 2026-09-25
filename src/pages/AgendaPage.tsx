@@ -61,7 +61,10 @@ export function AgendaPage() {
     return () => { ativo = false; };
   }, []);
 
+  const cargaEmCurso = useRef<Promise<void> | null>(null);
   const carregar = useCallback(async (silencioso = false) => {
+    if (cargaEmCurso.current) return cargaEmCurso.current;
+    const tarefa = (async () => {
     if (!silencioso) setLoading(true);
     try {
       const [agendaData, boletosData] = await Promise.all([
@@ -83,6 +86,9 @@ export function AgendaPage() {
     } finally {
       setLoading(false);
     }
+    })();
+    cargaEmCurso.current = tarefa;
+    try { await tarefa; } finally { if (cargaEmCurso.current === tarefa) cargaEmCurso.current = null; }
   }, []);
 
 
@@ -92,7 +98,7 @@ export function AgendaPage() {
     let realtimeDebounce: number | undefined;
     const atualizarAgora = () => {
       window.clearTimeout(realtimeDebounce);
-      realtimeDebounce = window.setTimeout(() => void carregar(true), 60);
+      realtimeDebounce = window.setTimeout(() => void carregar(true), 300 + Math.random() * 4700);
     };
 
     // Realtime é o caminho principal: qualquer abertura/fechamento de data,
@@ -102,15 +108,20 @@ export function AgendaPage() {
 
     // Fallback de segurança caso WebSocket/realtime seja interrompido.
     // Só consulta enquanto o app está visível para evitar tráfego inútil.
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void carregar(true);
-    }, 5000);
+    let fallbackTimer: number | undefined;
+    const agendarFallback = () => {
+      fallbackTimer = window.setTimeout(() => {
+        if (document.visibilityState === "visible") void carregar(true);
+        agendarFallback();
+      }, 60_000 + Math.random() * 30_000);
+    };
+    agendarFallback();
 
     const aoVoltar = () => {
-      if (document.visibilityState === "visible") void carregar(true);
+      if (document.visibilityState === "visible") atualizarAgora();
     };
-    const aoFoco = () => void carregar(true);
-    const aoOnline = () => void carregar(true);
+    const aoFoco = aoVoltar;
+    const aoOnline = aoVoltar;
 
     document.addEventListener("visibilitychange", aoVoltar);
     window.addEventListener("focus", aoFoco);
@@ -118,7 +129,7 @@ export function AgendaPage() {
 
     return () => {
       window.clearTimeout(realtimeDebounce);
-      window.clearInterval(timer);
+      window.clearTimeout(fallbackTimer);
       unsubscribeRealtime();
       document.removeEventListener("visibilitychange", aoVoltar);
       window.removeEventListener("focus", aoFoco);

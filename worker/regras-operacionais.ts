@@ -55,6 +55,7 @@ const COLUNAS: Record<Exclude<keyof RegrasOperacionais, "atualizadoEm" | "atuali
 let atuais: RegrasOperacionais = REGRAS_PADRAO;
 let carregadoEm = 0;
 const VALIDADE_MS = 60_000;
+let atualizacaoEmCurso: Promise<RegrasOperacionais> | null = null;
 
 export function regrasOperacionais(): RegrasOperacionais {
   return atuais;
@@ -78,12 +79,21 @@ export function deLinha(linha: Record<string, unknown> | null | undefined): Regr
 
 /** Recarrega do banco no máximo uma vez por minuto por instância. */
 export async function atualizarRegrasOperacionais(env: Env, forcar = false) {
+  if (atualizacaoEmCurso) return atualizacaoEmCurso;
   if (!forcar && Date.now() - carregadoEm < VALIDADE_MS) return atuais;
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return atuais;
-  carregadoEm = Date.now();
-  const { data, error } = await createServiceSupabaseClient(env).from("regras_operacionais").select("*").eq("id", 1).maybeSingle();
-  if (!error) atuais = deLinha(data as Record<string, unknown> | null);
-  return atuais;
+  // A cold isolate can receive many requests at once. Coalesce the refresh,
+  // then offset the next refresh across isolates to avoid a synchronized wave.
+  const pending = (async () => {
+    const { data, error } = await createServiceSupabaseClient(env).from("regras_operacionais")
+      .select("prazo_liberacao_dias_uteis,teto_mensal_operacional,percentual_12_24x,percentual_36x,percentual_48_72x,app_exige_parcela,app_exige_procedimento,atualizado_em,atualizado_por")
+      .eq("id", 1).maybeSingle();
+    if (!error) atuais = deLinha(data as Record<string, unknown> | null);
+    carregadoEm = Date.now() - Math.floor(Math.random() * (VALIDADE_MS / 4));
+    return atuais;
+  })();
+  atualizacaoEmCurso = pending;
+  try { return await pending; } finally { atualizacaoEmCurso = null; }
 }
 
 /** Percentual mínimo de parcelas pagas para o plano (mesma regra de pode_agendar). */
