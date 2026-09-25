@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, ChevronRight, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, CreditCard, Download, FileText, Loader2, Paperclip, QrCode, ShieldCheck, X } from "lucide-react";
 import "@/styles/pagamento-folha.css";
 import "@/styles/parcelas-lista.css";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
@@ -96,6 +96,7 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [pagandoCartao, setPagandoCartao] = useState(false);
+  const [boletoPreview, setBoletoPreview] = useState<Boleto | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -279,7 +280,8 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
     </>}
 
     {detalhePago && selecionada && <PaidDetail boleto={selecionada} onClose={() => setDetalhePago(false)} />}
-    {paySheet && selecionada && <PaymentSheet boleto={selecionada} pagamento={pagamento} onClose={() => setPaySheet(false)} onUpload={() => abrirUpload(selecionada)} onCard={() => void abrirCartao()} cardBusy={pagandoCartao} />}
+    {paySheet && selecionada && <PaymentSheet boleto={selecionada} pagamento={pagamento} onClose={() => setPaySheet(false)} onUpload={() => abrirUpload(selecionada)} onCard={() => void abrirCartao()} onBoleto={() => setBoletoPreview(selecionada)} cardBusy={pagandoCartao} />}
+    {boletoPreview && <BoletoViewer boleto={boletoPreview} onClose={() => setBoletoPreview(null)} />}
     {upload && selecionada && <UploadSheet boleto={selecionada} arquivo={arquivo} setArquivo={setArquivo} onClose={() => setUpload(false)} onEnviar={() => void enviarComprovante()} enviando={enviando} />}
   </div>;
 }
@@ -305,7 +307,7 @@ function PixChave({ chave }: { chave: string }) {
   return <button type="button" onClick={copiar} className="sl-pag-chave"><span className="truncate">{chave}</span><span className="sl-pag-chave-acao">{copiado ? <><Check className="h-3.5 w-3.5" /> Copiada</> : <><Copy className="h-3.5 w-3.5" /> Copiar</>}</span></button>;
 }
 
-function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }: { boleto: Boleto; pagamento?: PagamentoConfig; onClose: () => void; onUpload: () => void; onCard: () => void; cardBusy: boolean }) {
+function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, onBoleto, cardBusy }: { boleto: Boleto; pagamento?: PagamentoConfig; onClose: () => void; onUpload: () => void; onCard: () => void; onBoleto: () => void; cardBusy: boolean }) {
   const [pixAberto, setPixAberto] = useState(false);
   const valores = calcularValores(boleto, pagamento);
   const pixDisponivel = Boolean(pagamento?.pixChave || pagamento?.pixQrCodeUrl);
@@ -393,11 +395,11 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
             <span className="sl-pag-opcao-texto"><b>Cartão de crédito</b><small>Indisponível no momento</small></span>
           </div>}
 
-          {boleto.boleto_url ? <a href={`/api/cliente/boletos/${boleto.id}/arquivo`} target="_blank" rel="noopener noreferrer" className="sl-pag-opcao">
+          {boleto.boleto_url ? <button type="button" onClick={onBoleto} className="sl-pag-opcao">
             <span className="sl-pag-icone"><FileText className="h-[18px] w-[18px]" /></span>
-            <span className="sl-pag-opcao-texto"><b>Boleto</b><small>Abrir o arquivo da parcela</small></span>
+            <span className="sl-pag-opcao-texto"><b>Boleto</b><small>Visualizar boleto completo</small></span>
             <ChevronRight className="sl-pag-seta" aria-hidden="true" />
-          </a> : <div className="sl-pag-opcao sl-pag-opcao--off" aria-disabled="true">
+          </button> : <div className="sl-pag-opcao sl-pag-opcao--off" aria-disabled="true">
             <span className="sl-pag-icone"><FileText className="h-[18px] w-[18px]" /></span>
             <span className="sl-pag-opcao-texto"><b>Boleto</b><small>Indisponível para esta parcela</small></span>
           </div>}
@@ -409,6 +411,130 @@ function PaymentSheet({ boleto, pagamento, onClose, onUpload, onCard, cardBusy }
         <p className="sl-pag-nota"><ShieldCheck className="h-3.5 w-3.5 flex-none" aria-hidden="true" /> Depois de pagar, envie o comprovante para o financeiro confirmar.</p>
       </div>
     </motion.div>
+  </div>;
+}
+
+function BoletoViewer({ boleto, onClose }: { boleto: Boleto; onClose: () => void }) {
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [paginas, setPaginas] = useState<string[]>([]);
+  const [arquivoUrl, setArquivoUrl] = useState<string | null>(null);
+  const [extensao, setExtensao] = useState("pdf");
+
+  useEffect(() => {
+    let cancelado = false;
+    let urlTemporaria: string | null = null;
+
+    async function carregarBoleto() {
+      setCarregando(true);
+      setErro(null);
+      setPaginas([]);
+      try {
+        const resposta = await fetch(`/api/cliente/boletos/${encodeURIComponent(boleto.id)}/arquivo`, { cache: "no-store" });
+        if (!resposta.ok) {
+          const corpo = await resposta.json().catch(() => ({}));
+          throw new Error(corpo.erro ?? "Não foi possível carregar o boleto.");
+        }
+
+        const blob = await resposta.blob();
+        urlTemporaria = URL.createObjectURL(blob);
+        if (cancelado) {
+          URL.revokeObjectURL(urlTemporaria);
+          return;
+        }
+        setArquivoUrl(urlTemporaria);
+
+        const tipo = (blob.type || "").toLowerCase();
+        const caminho = (boleto.boleto_url || "").toLowerCase();
+        const ehPdf = tipo.includes("pdf") || caminho.endsWith(".pdf");
+
+        if (ehPdf) {
+          setExtensao("pdf");
+          const { abrirPdf, fecharPdf, renderizarPagina } = await import("@/features/leitor-carne/pdf");
+          const documento = await abrirPdf(new Uint8Array(await blob.arrayBuffer()));
+          try {
+            const imagens: string[] = [];
+            const largura = Math.min(1200, Math.max(760, window.innerWidth * 2));
+            for (let numero = 1; numero <= documento.numPages; numero += 1) {
+              if (cancelado) break;
+              const pagina = await documento.getPage(numero);
+              const canvas = await renderizarPagina(pagina, largura);
+              imagens.push(canvas.toDataURL("image/png"));
+            }
+            if (!cancelado) setPaginas(imagens);
+          } finally {
+            await fecharPdf(documento);
+          }
+        } else if (tipo.startsWith("image/")) {
+          setExtensao(tipo.includes("png") ? "png" : "jpg");
+          setPaginas([urlTemporaria]);
+        } else {
+          const extensaoCaminho = caminho.split(".").pop();
+          setExtensao(extensaoCaminho && extensaoCaminho.length <= 5 ? extensaoCaminho : "pdf");
+        }
+      } catch (error) {
+        if (!cancelado) setErro(error instanceof Error ? error.message : "Não foi possível carregar o boleto.");
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    }
+
+    void carregarBoleto();
+    return () => {
+      cancelado = true;
+      if (urlTemporaria) URL.revokeObjectURL(urlTemporaria);
+    };
+  }, [boleto.id, boleto.boleto_url]);
+
+  useEffect(() => {
+    const overflowAnterior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function aoPressionarTecla(evento: KeyboardEvent) {
+      if (evento.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", aoPressionarTecla);
+    return () => {
+      document.body.style.overflow = overflowAnterior;
+      document.removeEventListener("keydown", aoPressionarTecla);
+    };
+  }, [onClose]);
+
+  function baixarBoleto() {
+    if (!arquivoUrl) return;
+    const link = document.createElement("a");
+    link.href = arquivoUrl;
+    link.download = `boleto-parcela-${boleto.numero_parcela}.${extensao}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  return <div className="sl-boleto-modal" role="dialog" aria-modal="true" aria-label={`Boleto da parcela ${boleto.numero_parcela}`}>
+    <div className="sl-boleto-painel">
+      <header className="sl-boleto-topo">
+        <div className="min-w-0">
+          <span className="sl-boleto-kicker">Boleto</span>
+          <strong>Parcela {boleto.numero_parcela} de {boleto.total_parcelas}</strong>
+          <small>Visualização completa do documento</small>
+        </div>
+        <div className="sl-boleto-acoes">
+          <button type="button" onClick={baixarBoleto} disabled={!arquivoUrl || carregando} className="sl-boleto-baixar">
+            <Download className="h-4 w-4" aria-hidden="true" />
+            <span>Baixar boleto</span>
+          </button>
+          <button type="button" onClick={onClose} className="sl-boleto-fechar" aria-label="Fechar boleto"><X className="h-5 w-5" /></button>
+        </div>
+      </header>
+
+      <div className="sl-boleto-corpo">
+        {carregando && <div className="sl-boleto-estado"><Loader2 className="h-6 w-6 animate-spin" /><span>Carregando boleto completo...</span></div>}
+        {!carregando && erro && <div className="sl-boleto-estado sl-boleto-estado--erro"><FileText className="h-7 w-7" /><strong>Não foi possível visualizar o boleto.</strong><span>{erro}</span>{arquivoUrl && <button type="button" onClick={baixarBoleto}>Baixar boleto</button>}</div>}
+        {!carregando && !erro && paginas.length > 0 && <div className="sl-boleto-paginas">
+          {paginas.map((pagina, indice) => <img key={`${boleto.id}-${indice}`} src={pagina} alt={`Página ${indice + 1} do boleto da parcela ${boleto.numero_parcela}`} className="sl-boleto-pagina" />)}
+        </div>}
+        {!carregando && !erro && paginas.length === 0 && arquivoUrl && <iframe title={`Boleto da parcela ${boleto.numero_parcela}`} src={arquivoUrl} className="sl-boleto-iframe" />}
+      </div>
+    </div>
   </div>;
 }
 
