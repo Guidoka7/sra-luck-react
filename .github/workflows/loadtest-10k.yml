@@ -1,12 +1,10 @@
 name: Isolated 10k Load Test
 
 on:
-  push:
-    branches:
-      - load-test-10k-isolated
-    paths:
-      - "loadtest/run-mode.txt"
-      - ".github/workflows/loadtest-10k.yml"
+  workflow_dispatch:
+
+# Suspenso temporariamente em 2026-09-25 a pedido do usuário.
+# Para retomar, restaure o gatilho push desta branch isolada.
 
 permissions:
   contents: read
