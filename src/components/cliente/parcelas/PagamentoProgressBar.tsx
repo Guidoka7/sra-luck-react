@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, Heart } from "lucide-react";
 import { percentualNecessario } from "@/lib/utils";
 
-type ProgressoPagamento = {
-  quantidade_parcelas: number;
+export type ProgressoPagamento = {
+  quantidade_parcelas: number | null;
   porcentagem_pagamento: number;
   parcelas_pagas: number;
 };
@@ -24,33 +24,8 @@ function getMensagem(porcentagem: number, pagas: number, total: number, necessar
   return `Vamos lá! Você está em ${porcentagem}%. São necessários ${necessario}% para desbloquear sua agenda — envie seus comprovantes para acelerar.`;
 }
 
-export function PagamentoProgressBar({ procedimento }: { procedimento?: string | null }) {
-  const [progresso, setProgresso] = useState<ProgressoPagamento | null>(null);
+export function PagamentoProgressBar({ procedimento, progresso }: { procedimento?: string | null; progresso: ProgressoPagamento }) {
   const [aberto, setAberto] = useState(false);
-
-  useEffect(() => {
-    let ativo = true;
-
-    async function carregar() {
-      try {
-        const resposta = await fetch("/api/cliente/boletos", { cache: "no-store" });
-        if (!resposta.ok) return;
-        const dados = (await resposta.json()) as ProgressoPagamento;
-        if (ativo) setProgresso(dados);
-      } catch {
-        // A listagem de parcelas continua funcionando mesmo se a barra não carregar.
-      }
-    }
-
-    void carregar();
-    const timer = window.setInterval(() => void carregar(), 30_000);
-    return () => {
-      ativo = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  if (!progresso) return null;
 
   const total = progresso.quantidade_parcelas || 0;
   const pagas = progresso.parcelas_pagas || 0;

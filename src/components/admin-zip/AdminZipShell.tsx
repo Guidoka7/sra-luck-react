@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { ADMIN_PERMISSIONS as P, CLIENT_PERMISSIONS, FINANCE_PERMISSIONS, pode, type AdminAccessProfile } from "@/lib/adminAccess";
+import { invalidateInstantCache } from "@/lib/instantCache";
 import "@/styles/admin-zip.css";
 
 /**
@@ -76,7 +77,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
 
   async function sair() {
     try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); }
-    finally { router.replace("/admin/login"); }
+    finally { invalidateInstantCache(); router.replace("/admin/login"); }
   }
 
   const ativo = (href: string) => pathname === href || pathname.startsWith(`${href}/`);

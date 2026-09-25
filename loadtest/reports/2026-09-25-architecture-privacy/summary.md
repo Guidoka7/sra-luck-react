@@ -8,6 +8,8 @@ Antes: telas administrativas de finanças baixavam até 5.000 parcelas e 5.000 r
 
 Depois: leituras separadas por domínio via RPC de resumo, página de recebíveis, funil e página de recebidos/vencidos. Totais são agregados no banco; a tela pede no máximo 40–100 linhas por página. O perfil completo da cliente é carregado apenas ao abrir o drawer. O painel de integrações faz uma consulta de credenciais e uma RPC de snapshot, além da autorização. As escritas financeiras, idempotência e regras de negócio permanecem no fluxo existente.
 
+No app da cliente, a página já buscava agenda e parcelas em paralelo, mas a aba Financeiro repetia a busca de parcelas para a barra de progresso e para a lista, cada uma com seu próprio polling a cada 30 segundos. Agora as duas usam o mesmo snapshot da página; a configuração de pagamento usa o retorno da configuração que a página já havia buscado. Após anexar um comprovante, a aba solicita uma revalidação única da página. Assim, abrir a aba passa de três GETs internos adicionais para zero; a fonte continua a API autenticada da cliente. A carga periódica de parcelas na aba cai de dois ciclos extras a cada 30 segundos para o ciclo compartilhado da página (60–90 segundos com jitter, além de Realtime e eventos de foco).
+
 | Rota Admin | Chamadas de banco antes* | Depois* | Limite de resposta | Evidência SQL isolada, requisição individual |
 | --- | ---: | ---: | --- | --- |
 | `/financeiro/resumo` | 3 | 2 | JSON agregado | 708 bytes internos; 481,69 ms |
@@ -23,6 +25,7 @@ Depois: leituras separadas por domínio via RPC de resumo, página de recebívei
 - Migrations 104–108 usam `SECURITY INVOKER`, removem `EXECUTE` de `PUBLIC`, `anon` e `authenticated`, e concedem `EXECUTE` a `service_role`. Apenas o banco de **dados fictícios** recebeu `GRANT EXECUTE` temporário para `anon` fora das migrations, por causa da credencial do Preview de teste. Essa exceção não é uma configuração para produção.
 - Segredo temporário do Preview e segredo de assinatura de sessões sintéticas saíram dos arquivos atuais de workflow/k6. O workflow exige `LOADTEST_VERCEL_SHARE` e `LOADTEST_SESSION_SECRET` em GitHub Actions Secrets e falha antes de iniciar carga quando ausentes. O segredo antigo da sessão de teste e URLs de share presentes no histórico da branch devem ser rotacionados/revogados antes de novos ensaios.
 - Snapshots de agenda/parcelas e prévia da foto deixam de ficar em `localStorage`; dados da cliente só aparecem depois de validar a sessão. Fila de erros passa a `sessionStorage`. Respostas privadas do Worker recebem `Cache-Control: private, no-store` e proteção contra sniffing e vazamento por Referer.
+- O cache de consultas do painel de notificações Admin saiu de `sessionStorage` e agora permanece somente em memória por no máximo 60 segundos. Entradas antigas são removidas da aba e o logout esvazia esse cache.
 - O HTML extraiu scripts inline e o Preview recebeu CSP com `script-src 'self'`, `object-src 'none'` e `frame-ancestors 'none'`. Estilos inline ainda são necessários à interface; isso deve ser reavaliado em uma etapa posterior.
 - IDs de entidades em logs são ocultados; `request_id` válido é preservado. Telemetria periódica mudou de 60 segundos mais eventos frequentes para janela de 4–6 minutos com jitter e pausa em background. O identificador pseudônimo do aparelho foi mantido porque liga assinaturas push ao dispositivo.
 - A chave `anon` do Supabase no bundle é uma chave pública, nunca um segredo. A segurança de dados reais depende de RLS e das regras de autorização. No banco isolado há apenas dados fictícios.
@@ -33,4 +36,4 @@ Depois: leituras separadas por domínio via RPC de resumo, página de recebívei
 
 A meta de conformidade LGPD também requer decisões fora do código: inventário e base legal por finalidade, aviso de privacidade, prazos de retenção, atendimento a titulares, contratos com operadores, revisão periódica de acessos, resposta a incidentes e validação jurídica. Estes controles técnicos não equivalem à certificação legal.
 
-Dev Console: restaurar e confirmar `ACTIVE_HEALTHY` ao encerrar; banco isolado fica pausado, mantendo dados e migrations para continuação.
+Dev Console `grjjatjnbcxksvftoqiv`: `ACTIVE_HEALTHY` confirmado pelo projeto Supabase em 25/09/2026. Banco isolado `xqlxzdmleekbrietejoq`: `INACTIVE`, mantendo apenas dados fictícios e migrations para continuação. A produção não foi acessada nem alterada por este trabalho.

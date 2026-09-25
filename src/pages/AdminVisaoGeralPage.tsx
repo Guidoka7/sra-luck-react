@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, LogOut, ReceiptText, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import { apiJson } from "../lib/api";
+import { invalidateInstantCache } from "../lib/instantCache";
 
 type Item = {
   boletoId?: string;
@@ -158,6 +159,7 @@ export function AdminVisaoGeralPage() {
         headers: { "Content-Type": "application/json" },
       });
     } finally {
+      invalidateInstantCache();
       window.location.replace("/admin/login");
     }
   }

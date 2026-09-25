@@ -23,6 +23,7 @@ import { WhatsAppFab } from "@/components/cliente/WhatsAppFab";
 import { Folha } from "@/components/cliente/clube/ClubeUi";
 import { aplicarTemaCliente, useTemaCliente } from "@/lib/temaCliente";
 import { useRegrasApp } from "@/lib/regrasOperacionais";
+import type { PagamentoConfig } from "@/components/cliente/parcelas/ParcelasPrototype";
 
 export function AgendaPage() {
   // Percentuais e prazo configurados (Dev): re-renderiza quando chegam do servidor.
@@ -44,6 +45,7 @@ export function AgendaPage() {
   const [confirmando, setConfirmando] = useState(false);
   const [celebrando, setCelebrando] = useState<string | null>(null);
   const [whatsappContato, setWhatsappContato] = useState<string | null>(null);
+  const [pagamento, setPagamento] = useState<PagamentoConfig | undefined>(undefined);
 
   const notificacoesState = useNotificacoesCliente();
   const { efetivo: tema } = useTemaCliente();
@@ -55,8 +57,8 @@ export function AgendaPage() {
 
   useEffect(() => {
     let ativo = true;
-    void apiJson<{ whatsappContato?: string | null }>("/api/cliente/config", { cache: "no-store" })
-      .then((dados) => { if (ativo) setWhatsappContato(dados.whatsappContato ?? null); })
+    void apiJson<PagamentoConfig & { whatsappContato?: string | null }>("/api/cliente/config", { cache: "no-store" })
+      .then((dados) => { if (ativo) { setWhatsappContato(dados.whatsappContato ?? null); setPagamento(dados); } })
       .catch(() => { if (ativo) setWhatsappContato(null); });
     return () => { ativo = false; };
   }, []);
@@ -339,7 +341,7 @@ export function AgendaPage() {
 
         {aba === "premios" && <ClubeScreen onIrParcelas={() => setAba("parcelas")} nomeCliente={agenda.cliente.nome} />}
 
-        {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} />}
+        {aba === "parcelas" && <ParcelasTab procedimento={agenda.cliente.procedimento} boletos={boletos} pagamento={pagamento} onAtualizar={recarregarSilencioso} />}
 
         {aba === "mais" && (
           <MaisTab

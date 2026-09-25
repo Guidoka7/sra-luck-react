@@ -2,30 +2,31 @@ const PREFIX = "sra:instant:v2:";
 const DEFAULT_TTL = 60_000;
 
 type CacheEntry<T> = { timestamp: number; data: T };
+// O painel pode conter nomes e histórico de clientes: somente memória da aba.
+// Os registros antigos de sessionStorage são apagados ao carregar o módulo.
+const entries = new Map<string, CacheEntry<unknown>>();
+if (typeof window !== "undefined") {
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(PREFIX)) sessionStorage.removeItem(key);
+    }
+  } catch { /* armazenamento indisponível */ }
+}
 
 function read<T>(key: string, ttl: number): T | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(PREFIX + key);
-    if (!raw) return null;
-    const entry = JSON.parse(raw) as CacheEntry<T>;
-    if (Date.now() - entry.timestamp > ttl) {
-      sessionStorage.removeItem(PREFIX + key);
-      return null;
-    }
-    return entry.data;
-  } catch {
+  const entry = entries.get(key) as CacheEntry<T> | undefined;
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > ttl) {
+    entries.delete(key);
     return null;
   }
+  return entry.data;
 }
 
 export function writeInstantCache<T>(key: string, data: T) {
   if (typeof window === "undefined") return;
-  try {
-    sessionStorage.setItem(PREFIX + key, JSON.stringify({ timestamp: Date.now(), data }));
-  } catch {
-    // Cache is an optimization only; never break the application if storage is full/blocked.
-  }
+  entries.set(key, { timestamp: Date.now(), data });
 }
 
 export function getInstantCache<T>(key: string, ttl = DEFAULT_TTL): T | null {
@@ -54,13 +55,5 @@ export async function refreshInstant<T>(url: string, options?: RequestInit): Pro
 
 export function invalidateInstantCache(prefix?: string) {
   if (typeof window === "undefined") return;
-  try {
-    const fullPrefix = PREFIX + (prefix ?? "");
-    for (let i = sessionStorage.length - 1; i >= 0; i--) {
-      const key = sessionStorage.key(i);
-      if (key?.startsWith(fullPrefix)) sessionStorage.removeItem(key);
-    }
-  } catch {
-    // no-op
-  }
+  for (const key of entries.keys()) if (!prefix || key.startsWith(prefix)) entries.delete(key);
 }

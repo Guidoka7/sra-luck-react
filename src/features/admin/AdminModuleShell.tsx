@@ -6,6 +6,7 @@ import {
 import { ThemeToggle } from "../../components/ui/ThemeToggle";
 import { aplicarPaleta, lerPaletaLocal, paletaDeConfiguracoes, salvarPaletaLocal } from "./adminAppearance";
 import { LOGO_SRC } from "@/assets/brand";
+import { invalidateInstantCache } from "@/lib/instantCache";
 
 const NAV = [
   ["/admin/visao-geral", "Visão Geral", LayoutDashboard],
@@ -52,7 +53,7 @@ export function AdminModuleShell({ path, title, children }: { path: string; titl
 
   async function logout() {
     try { await fetch("/api/admin/logout", { method: "POST", credentials: "include" }); }
-    finally { navigate("/admin/login"); }
+    finally { invalidateInstantCache(); navigate("/admin/login"); }
   }
 
   return (

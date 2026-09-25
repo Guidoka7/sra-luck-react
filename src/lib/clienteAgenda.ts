@@ -66,7 +66,11 @@ export type AgendaData = {
 };
 
 export type BoletosData = {
-  boletos: unknown[];
+  boletos: Array<{
+    id: string; numero_parcela: number; total_parcelas: number; valor: number;
+    data_vencimento: string; status: "nao_pago" | "pago" | "pendente_confirmacao" | "rejeitado";
+    data_pagamento: string | null; comprovante_url: string | null; boleto_url: string | null;
+  }>;
   porcentagem_pagamento: number;
   parcelas_pagas: number;
   parcelas_nao_pagas?: number;

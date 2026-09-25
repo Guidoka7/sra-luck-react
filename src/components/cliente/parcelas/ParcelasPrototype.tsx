@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, ChevronRight, Copy, CreditCard, FileText, Paperclip, QrCode, ShieldCheck, X } from "lucide-react";
 import "@/styles/pagamento-folha.css";
@@ -6,6 +6,7 @@ import "@/styles/parcelas-lista.css";
 import { MarcaSraLuck } from "@/components/cliente/MarcaSraLuck";
 import { toast } from "sonner";
 import { calcularEncargosAtraso } from "@/lib/financeiro/encargos";
+import type { BoletosData } from "@/lib/clienteAgenda";
 
 export type PagamentoConfig = {
   pixChave: string | null;
@@ -26,15 +27,6 @@ type Boleto = {
   comprovante_url: string | null;
   boleto_url: string | null;
 };
-type Progresso = {
-  quantidade_parcelas: number;
-  porcentagem_pagamento: number;
-  pode_agendar: boolean;
-  parcelas_pagas: number;
-  parcelas_nao_pagas: number;
-  boletos: Boleto[];
-};
-
 function quandoVence(dias: number) {
   return dias <= 0 ? "Vence hoje" : dias === 1 ? "Vence amanhã" : `Vence em ${dias} dias`;
 }
@@ -83,10 +75,7 @@ export function resumoParcelas(boletos: Boleto[]): string {
   return `Tudo em dia. Próximo vencimento em ${dataBr(proxima.data_vencimento)}.`;
 }
 
-export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: PagamentoConfig; onResumo?: (texto: string) => void }) {
-  const [dados, setDados] = useState<Progresso | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
+export function ParcelasPrototype({ pagamento, onResumo, dados, onAtualizar }: { pagamento?: PagamentoConfig; onResumo?: (texto: string) => void; dados: BoletosData; onAtualizar: () => Promise<void> }) {
   const [pagasAbertas, setPagasAbertas] = useState(false);
   const [listaCompleta, setListaCompleta] = useState(false);
   const [selecionada, setSelecionada] = useState<Boleto | null>(null);
@@ -97,31 +86,9 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
   const [enviando, setEnviando] = useState(false);
   const [pagandoCartao, setPagandoCartao] = useState(false);
 
-  const carregar = useCallback(async () => {
-    try {
-      const resposta = await fetch("/api/cliente/boletos", { cache: "no-store" });
-      const corpo = await resposta.json();
-      if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível carregar as parcelas.");
-      setDados(corpo);
-      onResumo?.(resumoParcelas(corpo.boletos ?? []));
-      setErro(null);
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não foi possível carregar as parcelas.");
-    } finally {
-      setLoading(false);
-    }
-  }, [onResumo]);
-
   useEffect(() => {
-    void carregar();
-    const timer = window.setInterval(() => void carregar(), 30_000);
-    return () => window.clearInterval(timer);
-  }, [carregar]);
-
-  if (loading) return <div className="px-5 py-12 text-center text-[10.5px] font-light text-[#9A8A86]">Carregando parcelas...</div>;
-  if (!dados || erro) {
-    return <div className="mx-5 mt-4 rounded-[17px] border border-[#F0D3D1] bg-[#FBEBEA] p-4 text-center"><div className="text-[11px] text-[#8F2A25]">{erro ?? "Não foi possível carregar as parcelas."}</div><button type="button" onClick={() => { setLoading(true); void carregar(); }} className="mt-3 rounded-[10px] bg-[#6B1F2E] px-3 py-2 text-[10px] font-semibold text-white">Tentar novamente</button></div>;
-  }
+    onResumo?.(resumoParcelas(dados.boletos));
+  }, [dados, onResumo]);
 
   const pagas = dados.boletos.filter((boleto) => boleto.status === "pago");
   const pendentes = dados.boletos.filter((boleto) => boleto.status !== "pago");
@@ -173,7 +140,7 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
       if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível enviar o comprovante.");
       toast.success("Comprovante enviado para análise.");
       setUpload(false);
-      await carregar();
+      await onAtualizar();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível enviar o comprovante.");
     } finally {
