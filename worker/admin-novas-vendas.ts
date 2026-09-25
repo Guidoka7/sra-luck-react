@@ -111,15 +111,34 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
       return json({ erro: "Informe CPF (11 dígitos) e data de nascimento para concluir o cadastro." }, 400);
     }
 
+    const nomeCompleto = String(body.nomeCompleto ?? venda.nome_completo ?? "").trim();
+    if (!nomeCompleto) return json({ erro: "Informe o nome completo para concluir o cadastro." }, 400);
+    const telefone = body.telefone !== undefined ? String(body.telefone ?? "").trim() || null : venda.telefone;
+    const email = body.email !== undefined ? String(body.email ?? "").trim() || null : venda.email;
+    const procedimento = body.procedimento !== undefined ? String(body.procedimento ?? "").trim() || null : null;
+    const consultora = body.consultora !== undefined ? String(body.consultora ?? "").trim() || null : venda.vendedora_responsavel ?? null;
+    const observacoes = body.observacoes !== undefined ? String(body.observacoes ?? "").trim() || null : null;
+    const valorContrato = body.valorContrato !== undefined ? Number(body.valorContrato) : Number(venda.valor_contrato ?? 0);
+    if (!Number.isFinite(valorContrato) || valorContrato < 0) return json({ erro: "Valor da carta de crédito inválido." }, 400);
+    const taxaAdministrativa = body.taxaAdministrativaPercentual !== undefined ? Number(body.taxaAdministrativaPercentual) : Number(venda.taxa_administrativa ?? 0);
+    if (!Number.isFinite(taxaAdministrativa) || taxaAdministrativa < 0) return json({ erro: "Taxa administrativa inválida." }, 400);
+    const quantidadeParcelas = body.quantidadeParcelas !== undefined ? Number(body.quantidadeParcelas) : venda.quantidade_parcelas;
+    if (quantidadeParcelas != null && (!Number.isInteger(quantidadeParcelas) || quantidadeParcelas <= 0)) {
+      return json({ erro: "Quantidade de parcelas inválida." }, 400);
+    }
+
     const { data: cliente, error: erroCliente } = await db.from("clientes").insert({
-      nome_completo: venda.nome_completo,
+      nome_completo: nomeCompleto,
       cpf,
       data_nascimento: dataNascimento,
-      telefone: venda.telefone,
-      email: venda.email,
-      valor_contrato: Number(venda.valor_contrato ?? 0),
-      taxa_administrativa_percentual: Number(venda.taxa_administrativa ?? 0),
-      quantidade_parcelas: venda.quantidade_parcelas ?? null,
+      telefone,
+      email,
+      procedimento,
+      consultora,
+      observacoes_internas: observacoes,
+      valor_contrato: valorContrato,
+      taxa_administrativa_percentual: taxaAdministrativa,
+      quantidade_parcelas: quantidadeParcelas ?? null,
       vendedora_id: venda.vendedora_id ?? null,
       ativo: true,
       status_cirurgia: "nao_agendada",
