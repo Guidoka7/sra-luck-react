@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_BASE: "https://sra-luck-react-7yd7ly95q-guidoka7.vercel.app"
+  TARGET_BASE: "https://sra-luck-react-gmffjaylf-guidoka7.vercel.app"
   VERCEL_SHARE: ${{ secrets.LOADTEST_VERCEL_SHARE }}
   LOADTEST_SESSION_SECRET: ${{ secrets.LOADTEST_SESSION_SECRET }}
 
