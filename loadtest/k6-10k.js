@@ -60,7 +60,6 @@ const ROUTE_NAMES = [
   "admin_integrations_status",
   "admin_monitoramento_app",
   "admin_staff",
-  "admin_credit_ops_contracts",
   "admin_cliente_boletos",
   "admin_central_cliente",
   "admin_cliente_patch",
@@ -304,14 +303,13 @@ const ADMIN_READS = [
   ["/api/admin/previsao-liberacoes", "admin_previsao_liberacoes"],
   ["/api/admin/cirurgias-confirmadas", "admin_cirurgias_confirmadas"],
   ["/api/admin/configuracoes", "admin_configuracoes"],
-  ["/api/admin/notificacoes", "admin_notificacoes"],
+  ["/api/admin/notificacoes/automacao", "admin_notificacoes"],
   ["/api/admin/agendamentos-termos", "admin_agendamentos_termos"],
   ["/api/admin/solicitacoes-liberacao-financeira", "admin_solicitacoes_liberacao"],
   ["/api/admin/relatorios/catalogo", "admin_relatorios_catalogo"],
   ["/api/admin/integrations/status", "admin_integrations_status"],
   ["/api/admin/monitoramento-app", "admin_monitoramento_app"],
   ["/api/admin/staff", "admin_staff"],
-  ["/api/admin/credit-ops/contracts", "admin_credit_ops_contracts"],
 ];
 
 function adminRead(cookie) {
@@ -354,6 +352,7 @@ function smoke(data) {
     () => call("GET", "/api/cliente/agenda", cookies.client, "client_agenda"),
     () => call("GET", "/api/cliente/boletos", cookies.client, "client_boletos"),
     () => call("GET", "/api/admin/session", cookies.admin, "admin_session"),
+    () => call("GET", "/api/admin/notificacoes/automacao", cookies.admin, "admin_notificacoes"),
     () => call("GET", "/api/admin/visao-geral", cookies.admin, "admin_visao_geral"),
     () => call("GET", `/api/admin/clientes/${client.id}/boletos`, cookies.admin, "admin_cliente_boletos"),
     () => call("GET", `/api/admin/central/cliente/${client.id}`, cookies.admin, "admin_central_cliente"),
