@@ -18,6 +18,22 @@ export function exclusaoClienteDeveArquivar(error: unknown): boolean {
 }
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
 async function body(request: Request): Promise<Json> { try { return await request.json(); } catch { return {}; } }
+
+async function todasAsLinhas<T = Json>(
+  carregar: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: any }>,
+): Promise<{ data: T[]; error: any }> {
+  const data: T[] = [];
+  const tamanho = 1000;
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const de = pagina * tamanho;
+    const resultado = await carregar(de, de + tamanho - 1);
+    if (resultado.error) return { data, error: resultado.error };
+    const lote = resultado.data ?? [];
+    data.push(...lote);
+    if (lote.length < tamanho) return { data, error: null };
+  }
+  return { data, error: { message: "Leitura excedeu o limite operacional de 100 mil registros." } };
+}
 async function exigirAdmin(request: Request, env: Env) { if (!env.CLIENTE_SESSION_SECRET) return json({ erro: "Serviço temporariamente indisponível." }, 503); const token=getCookie(request,"admin_session"); return (await verificarTokenAdmin(token,env.CLIENTE_SESSION_SECRET))?null:json({erro:"Sessão administrativa expirada."},401); }
 
 async function exigirPermissao(request: Request, env: Env, permissao: string, mensagem: string): Promise<Response | null> {
@@ -143,7 +159,34 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
   const auth=await exigirAdmin(request,env);if(auth)return auth;const supabase=createServiceSupabaseClient(env);
-  if(path==="/api/admin/clientes"&&request.method==="GET"){const {data,error}=await supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,taxa_administrativa_percentual,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,acesso_app_liberado,acesso_app_liberado_em,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,valor_total_plano,valor_parcela_plano,created_at,updated_at").order("created_at",{ascending:false});if(error)return json({erro:publicError(error)},500);const {data:boletos}=await supabase.from("boletos").select("cliente_id,status");const {data:agendamentos}=await supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]);const {data:carnesRows}=await supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false});const {data:vendasRows}=await supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null);const resumo=new Map<string,{total:number;pagos:number}>();for(const b of boletos??[]){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}const agenda=new Map<string,any>();for(const a of (agendamentos??[]) as any[]){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}const bancoPorCliente=new Map<string,string>();for(const cn of (carnesRows??[]) as any[]){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}const origemPorCliente=new Map<string,string>();for(const v of (vendasRows??[]) as any[]){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}return json({clientes:(data??[]).map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:bancoPorCliente.get(c.id)??null,origem_venda:origemPorCliente.get(c.id)??null};})});}
+  if(path==="/api/admin/clientes"&&request.method==="GET"){
+    const [clientesRes,boletosRes,agendamentosRes,carnesRes,vendasRes]=await Promise.all([
+      todasAsLinhas<any>((de,ate)=>supabase.from("clientes").select("id,nome_completo,cpf,data_nascimento,telefone,email,procedimento,medico,hospital,consultora,valor_contrato,taxa_administrativa_percentual,status_cirurgia,status_financeiro,observacoes_internas,quantidade_parcelas,status_revisao_financeira,data_atingiu_percentual,observacao_revisao_financeira,financeiro_saldo_restante,financeiro_taxa_cartao,financeiro_total_com_taxa,financeiro_formas_custeio,financeiro_confirmado_em,custeio_confirmado_em,ativo,status_contrato,suspenso_desde,suspenso_ate,suspensao_motivo,vendedora_id,acesso_app_liberado,acesso_app_liberado_em,inicio_plano,forma_pagamento_plano,instituicao_pagamento,dia_cobranca,status_plano,valor_total_plano,valor_parcela_plano,created_at,updated_at").order("created_at",{ascending:false}).range(de,ate)),
+      todasAsLinhas<any>((de,ate)=>supabase.from("boletos").select("cliente_id,status").order("cliente_id",{ascending:true}).range(de,ate)),
+      todasAsLinhas<any>((de,ate)=>supabase.from("agendamentos").select("cliente_id,status,horario_termos,termos_assinados_em,datas(data)").in("status",["confirmado","realizado"]).order("cliente_id",{ascending:true}).range(de,ate)),
+      todasAsLinhas<any>((de,ate)=>supabase.from("carnes").select("cliente_id,instituicao_financeira,data_geracao").order("data_geracao",{ascending:false}).range(de,ate)),
+      todasAsLinhas<any>((de,ate)=>supabase.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id","is",null).order("cliente_id",{ascending:true}).range(de,ate)),
+    ]);
+    for(const resultado of [clientesRes,boletosRes,agendamentosRes,carnesRes,vendasRes])if(resultado.error)return json({erro:publicError(resultado.error)},500);
+    const data=clientesRes.data,boletos=boletosRes.data,agendamentos=agendamentosRes.data,carnesRows=carnesRes.data,vendasRows=vendasRes.data;
+    const resumo=new Map<string,{total:number;pagos:number}>();
+    for(const b of boletos){const r=resumo.get(b.cliente_id)??{total:0,pagos:0};r.total++;if(b.status==="pago")r.pagos++;resumo.set(b.cliente_id,r);}
+    const agenda=new Map<string,any>();
+    for(const a of agendamentos){const d=Array.isArray(a.datas)?a.datas[0]?.data:a.datas?.data;const old=agenda.get(a.cliente_id);if(!old||(a.status==="realizado"&&old.status==="confirmado"))agenda.set(a.cliente_id,{data:d??null,horario:a.horario_termos?String(a.horario_termos).slice(0,5):null,termosAssinadosEm:a.termos_assinados_em??null,status:a.status});}
+    const bancoPorCliente=new Map<string,string>();
+    for(const cn of carnesRows){if(!bancoPorCliente.has(cn.cliente_id)&&cn.instituicao_financeira)bancoPorCliente.set(cn.cliente_id,cn.instituicao_financeira);}
+    const origemPorCliente=new Map<string,string>();
+    for(const v of vendasRows){if(v.cliente_id&&!origemPorCliente.has(v.cliente_id)&&v.origem_venda)origemPorCliente.set(v.cliente_id,v.origem_venda);}
+    const clientes=data.map((c:any)=>{const r=resumo.get(c.id),a=agenda.get(c.id);return {...c,porcentagem_pagamento:r?.total?Math.round(r.pagos/r.total*1000)/10:null,parcelas_pagas:r?.pagos??null,parcelas_total:r?.total??null,termos_assinados_em:a?.termosAssinadosEm??null,proximo_agendamento_data:a?.status==="confirmado"?a.data:null,proximo_agendamento_horario:a?.status==="confirmado"?a.horario:null,banco:bancoPorCliente.get(c.id)??null,origem_venda:origemPorCliente.get(c.id)??null};});
+    const visiveis=clientes.filter((c:any)=>c.ativo!==false);
+    const operacionais=visiveis.filter((c:any)=>c.status_contrato!=="cancelado");
+    const totais={
+      aguardandoCadastroFinanceiro:operacionais.filter((c:any)=>Number(c.parcelas_total??0)===0).length,
+      cadastradas:operacionais.filter((c:any)=>Number(c.parcelas_total??0)>0).length,
+      canceladas:visiveis.filter((c:any)=>c.status_contrato==="cancelado").length,
+    };
+    return json({clientes,totais});
+  }
   if(path==="/api/admin/clientes"&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.CLIENTES_EDITAR,"Seu papel não tem permissão para criar clientes.");if(semPermissao)return semPermissao;const b=await body(request),cpf=String(b.cpf??"").replace(/\D/g,""),dataNascimento=String(b.dataNascimento??"").trim();if(!b.nomeCompleto||cpf.length!==11)return json({erro:"Nome e CPF são obrigatórios."},400);if(!dataNascimentoValida(dataNascimento))return json({erro:"Informe uma data de nascimento válida."},400);const {data,error}=await supabase.from("clientes").insert({nome_completo:b.nomeCompleto,cpf,data_nascimento:dataNascimento,telefone:b.telefone||null,email:b.email||null,procedimento:b.procedimento||null,medico:b.medico||null,hospital:b.hospital||null,consultora:b.consultora||null,valor_contrato:Number(b.valorContrato)||0,taxa_administrativa_percentual:Number(b.taxaAdministrativaPercentual)||0,observacoes_internas:b.observacoes||null,ativo:b.ativo!==false,status_cirurgia:"nao_agendada",status_financeiro:"a_pagar"}).select("*").single();if(error)return json({erro:error.code==="23505"?"Já existe uma cliente cadastrada com esse CPF.":publicError(error)},400);return json({cliente:data});}
   const cliente=path.match(/^\/api\/admin\/clientes\/([^/]+)$/);if(cliente&&request.method==="PATCH"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.CLIENTES_EDITAR,"Seu papel não tem permissão para editar clientes.");if(semPermissao)return semPermissao;const b=await body(request),id=decodeURIComponent(cliente[1]),patch:any={};if(b.dataNascimento!==undefined&&!dataNascimentoValida(String(b.dataNascimento??"").trim()))return json({erro:"Informe uma data de nascimento válida."},400);const map:Record<string,string>={nomeCompleto:"nome_completo",cpf:"cpf",dataNascimento:"data_nascimento",telefone:"telefone",email:"email",procedimento:"procedimento",medico:"medico",hospital:"hospital",consultora:"consultora",valorContrato:"valor_contrato",taxaAdministrativaPercentual:"taxa_administrativa_percentual",observacoes:"observacoes_internas",ativo:"ativo"};for(const [a,k]of Object.entries(map))if(b[a]!==undefined)patch[k]=a==="cpf"?String(b[a]).replace(/\D/g,""):a==="dataNascimento"?String(b[a]).trim():b[a];const {data,error}=await supabase.from("clientes").update(patch).eq("id",id).select("*").single();if(error)return json({erro:error.code==="23505"?"Já existe uma cliente ativa cadastrada com esse CPF.":publicError(error)},400);return json({cliente:data});}
   if(cliente&&request.method==="DELETE"){

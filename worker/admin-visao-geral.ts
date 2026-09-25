@@ -69,6 +69,22 @@ function statusContrato(value: unknown) {
   return ["ativo", "suspenso", "negativado", "cancelado"].includes(status) ? status : "ativo";
 }
 
+async function todasAsLinhas<T = any>(
+  carregar: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: any }>,
+): Promise<{ data: T[]; error: any }> {
+  const data: T[] = [];
+  const tamanho = 1000;
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const de = pagina * tamanho;
+    const resultado = await carregar(de, de + tamanho - 1);
+    if (resultado.error) return { data, error: resultado.error };
+    const lote = resultado.data ?? [];
+    data.push(...lote);
+    if (lote.length < tamanho) return { data, error: null };
+  }
+  return { data, error: { message: "Leitura excedeu o limite operacional de 100 mil registros." } };
+}
+
 export async function adminVisaoGeral(request: Request, env: Env): Promise<Response> {
   try {
     const supabase = createServiceSupabaseClient(env);
@@ -100,14 +116,13 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       credenciaisRes,
       atividadeRes,
     ] = await Promise.all([
-      supabase.from("clientes")
+      todasAsLinhas<any>((de, ate) => supabase.from("clientes")
         .select("id,nome_completo,cpf,data_nascimento,acesso_app_liberado,status_contrato,status_revisao_financeira,valor_contrato,quantidade_parcelas,created_at,ativo")
-        .order("created_at", { ascending: false }),
-      supabase.from("boletos")
+        .order("created_at", { ascending: false }).range(de, ate)),
+      todasAsLinhas<any>((de, ate) => supabase.from("boletos")
         .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,comprovante_url,suspensa,clientes(id,nome_completo,cpf)")
-        .order("data_vencimento", { ascending: true })
-        .limit(5000),
-      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro"),
+        .order("data_vencimento", { ascending: true }).range(de, ate)),
+      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro").is("cliente_id", null),
       supabase.from("agendamentos")
         .select("id,cliente_id,status,horario_termos,termos_assinados_em,clientes(id,nome_completo,status_financeiro,status_cirurgia),datas!inner(data)")
         .in("status", ["confirmado", "realizado"])
@@ -174,6 +189,11 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const pagosNaSemana = boletos.filter((b) => b.status === "pago" && b.data_pagamento && String(b.data_pagamento).slice(0, 10) >= inicioSemana && String(b.data_pagamento).slice(0, 10) < fimSemana);
     const clientesInadimplentes = new Set(vencidos.map((b) => String(b.cliente_id ?? "")).filter(Boolean)).size;
     const clientesComParcela = new Set(boletos.map((b) => String(b.cliente_id ?? "")).filter(Boolean));
+    const clientesSemFinanceiro = clientes.filter((c) =>
+      c.ativo !== false
+      && statusContrato(c.status_contrato) !== "cancelado"
+      && !clientesComParcela.has(String(c.id))
+    ).length;
     const clientesProntasAcessoApp = clientes.filter((c) =>
       !c.acesso_app_liberado
       && Boolean(c.nome_completo)
@@ -307,7 +327,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       periodo: { ano, mes, inicio, fimExclusivo, hoje: agoraBrasil },
       kpis: {
         novasClientesHoje,
-        aguardandoCadastro: novasVendasRes.count ?? 0,
+        aguardandoCadastro: (novasVendasRes.count ?? 0) + clientesSemFinanceiro,
         aguardandoConferencia: aguardandoConferencia.length,
         clientesAtivas: clientStats.ativas,
         termosHoje: termosHojeLista.length,

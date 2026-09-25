@@ -22,6 +22,7 @@ import styles from "./ClienteDrawer.module.css";
 
 export type AbaDrawer = "process" | "profile" | "finance" | "journey";
 type Central = { estagio: EstagioDrawer; cartao: CartaoCliente };
+type OrigemCrmBadge = { funil: string | null; etapa: string | null };
 
 export interface ClienteDrawerProps {
   /** `null` abre o cadastro de uma nova cliente (somente Perfil). */
@@ -177,7 +178,25 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [statusAberto, setStatusAberto] = useState(false);
   const [suspensao, setSuspensao] = useState(false);
+  const [origemCrm, setOrigemCrm] = useState<OrigemCrmBadge | null>(null);
   const ocupadoRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const vendaId = props.preCadastro?.id ?? null;
+    const clienteId = cadastro?.id ?? null;
+    if (!vendaId && !clienteId) { setOrigemCrm(null); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams(vendaId ? { vendaId } : { clienteId: clienteId! });
+    fetch(`/api/admin/novas-vendas/origem?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const data = await response.json().catch(() => ({})) as { origem?: OrigemCrmBadge | null };
+        return data.origem ?? null;
+      })
+      .then((origem) => { if (!controller.signal.aborted) setOrigemCrm(origem); })
+      .catch(() => { if (!controller.signal.aborted) setOrigemCrm(null); });
+    return () => controller.abort();
+  }, [props.preCadastro?.id, cadastro?.id]);
   const contentRef = useRef<HTMLElement>(null);
   const financeRef = useRef<FinanceiroPanelHandle>(null);
   const formId = "cliente-drawer-perfil";
@@ -332,7 +351,14 @@ function DrawerConteudo(props: ClienteDrawerProps & {
     <header className={styles.header}>
       <div className={styles.clientHead}>
         <h2 className={styles.title} id="client-drawer-title">{criando ? cad.nome || "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
-        {props.preCadastro ? <div className={styles.subtitle}><span className={styles.chip}>Pré-cadastro · RD Station</span></div> : !criando && <div className={styles.subtitle}>
+        {props.preCadastro ? <div className={styles.subtitle}>
+          <span className={styles.chip}>Pré-cadastro · RD Station</span>
+          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
+          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
+        </div> : !criando && <div className={styles.subtitle}>
+          {origemCrm && <span className={styles.chip}>RD Station</span>}
+          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
+          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}

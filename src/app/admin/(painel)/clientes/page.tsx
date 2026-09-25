@@ -26,6 +26,7 @@ type Funil = "aguardando" | "cadastradas" | "canceladas";
 type ViewMode = "list" | "grid";
 type SortMode = "recent" | "old" | "az" | "za";
 type PeriodMode = "all" | "today" | "7" | "30";
+type TotaisClientes = { aguardandoCadastroFinanceiro: number; cadastradas: number; canceladas: number };
 
 const TAB_LABEL: Record<Funil, string> = { aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
 const TABS: Funil[] = ["aguardando", "cadastradas", "canceladas"];
@@ -99,6 +100,8 @@ export default function ClientesPage() {
   const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
+  const [totaisClientes, setTotaisClientes] = useState<TotaisClientes | null>(null);
+  const [totalNovasVendas, setTotalNovasVendas] = useState<number | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [funil, setFunil] = useState<Funil>("cadastradas");
   const [busca, setBusca] = useState("");
@@ -115,25 +118,36 @@ export default function ClientesPage() {
     const crmUrl = "/api/admin/novas-vendas?status=aguardando_cadastro";
     // A lista do RD já está persistida no nosso banco. Mostra o último snapshot
     // instantaneamente ao entrar/atualizar a página e revalida em paralelo.
-    const cachedClientes = getInstantCache<{ clientes?: Cliente[] }>(clientesUrl, 24 * 60 * 60 * 1000);
-    const cachedCrm = getInstantCache<{ vendas?: NovaVenda[] }>(crmUrl, 24 * 60 * 60 * 1000);
-    if (cachedClientes) setClientes(cachedClientes.clientes ?? []);
-    if (cachedCrm) setNovasVendas(cachedCrm.vendas ?? []);
+    const cachedClientes = getInstantCache<{ clientes?: Cliente[]; totais?: TotaisClientes }>(clientesUrl, 24 * 60 * 60 * 1000);
+    const cachedCrm = getInstantCache<{ vendas?: NovaVenda[]; total?: number }>(crmUrl, 24 * 60 * 60 * 1000);
+    if (cachedClientes) {
+      setClientes(cachedClientes.clientes ?? []);
+      if (cachedClientes.totais) setTotaisClientes(cachedClientes.totais);
+    }
+    if (cachedCrm) {
+      setNovasVendas(cachedCrm.vendas ?? []);
+      if (typeof cachedCrm.total === "number") setTotalNovasVendas(cachedCrm.total);
+    }
     if (!cachedClientes && !cachedCrm) setCarregando(true);
     else setCarregando(false);
 
     const carregarClientes = force || cachedClientes
-      ? refreshInstant<{ clientes?: Cliente[] }>(clientesUrl)
-      : fetchInstant<{ clientes?: Cliente[] }>(clientesUrl);
+      ? refreshInstant<{ clientes?: Cliente[]; totais?: TotaisClientes }>(clientesUrl)
+      : fetchInstant<{ clientes?: Cliente[]; totais?: TotaisClientes }>(clientesUrl);
     const carregarCrm = force || cachedCrm
-      ? refreshInstant<{ vendas?: NovaVenda[] }>(crmUrl)
-      : fetchInstant<{ vendas?: NovaVenda[] }>(crmUrl);
+      ? refreshInstant<{ vendas?: NovaVenda[]; total?: number }>(crmUrl)
+      : fetchInstant<{ vendas?: NovaVenda[]; total?: number }>(crmUrl);
 
     const [resultadoClientes, resultadoCrm] = await Promise.allSettled([carregarClientes, carregarCrm]);
-    if (resultadoClientes.status === "fulfilled") setClientes(resultadoClientes.value.clientes ?? []);
-    else if (!cachedClientes) toast.error(resultadoClientes.reason instanceof Error ? resultadoClientes.reason.message : "Falha ao carregar clientes.");
+    if (resultadoClientes.status === "fulfilled") {
+      setClientes(resultadoClientes.value.clientes ?? []);
+      setTotaisClientes(resultadoClientes.value.totais ?? null);
+    } else if (!cachedClientes) toast.error(resultadoClientes.reason instanceof Error ? resultadoClientes.reason.message : "Falha ao carregar clientes.");
 
-    if (resultadoCrm.status === "fulfilled") setNovasVendas(resultadoCrm.value.vendas ?? []);
+    if (resultadoCrm.status === "fulfilled") {
+      setNovasVendas(resultadoCrm.value.vendas ?? []);
+      setTotalNovasVendas(typeof resultadoCrm.value.total === "number" ? resultadoCrm.value.total : null);
+    }
     // Se o RD/API estiver momentaneamente lento, mantém o snapshot já exibido.
     setCarregando(false);
   }
@@ -180,7 +194,12 @@ export default function ClientesPage() {
     return noPeriodo(v.created_at, periodo);
   }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
-  const counts: Record<Funil, number> = { aguardando: novas.length + aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
+  const counts: Record<Funil, number | null> = {
+    aguardando: totalNovasVendas != null && totaisClientes ? totalNovasVendas + totaisClientes.aguardandoCadastroFinanceiro : null,
+    cadastradas: totaisClientes?.cadastradas ?? null,
+    canceladas: totaisClientes?.canceladas ?? null,
+  };
+  const countAtual = counts[funil];
   const total = ehAguardando ? vendasFiltradas.length + filtradas.length : filtradas.length;
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
@@ -219,7 +238,7 @@ export default function ClientesPage() {
       {TABS.map((t) => <button key={t} className={`${styles.tab} ${funil === t ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={funil === t} onClick={() => { setFunil(t); setMenuId(null); }}>
         <span className={styles.tabIcon}><Svg d={ICON[t]} fill={t === "cadastradas"} /></span>
         <span className={styles.tabLabel}>{TAB_LABEL[t]}</span>
-        <span className={styles.countPill}>{counts[t]}</span>
+        <span className={styles.countPill}>{counts[t] ?? "—"}</span>
       </button>)}
     </nav>
 
@@ -254,7 +273,7 @@ export default function ClientesPage() {
     <section className={styles.listCard}>
       <header className={styles.cardHead}>
         <div>
-          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{counts[funil]} {counts[funil] === 1 ? "cliente" : "clientes"}</span></div>
+          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{countAtual ?? "—"} {countAtual === 1 ? "cliente" : "clientes"}</span></div>
           <div className={styles.cardSub}>{total} nesta página</div>
         </div>
         <div className={styles.cardTools}>
