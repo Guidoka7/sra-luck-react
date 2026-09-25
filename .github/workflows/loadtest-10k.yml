@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 env:
-  TARGET_BASE: "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app"
-  VERCEL_SHARE: "soSXnzSYuvgaO6wuumpiTtWoybuG2EmN"
+  TARGET_BASE: "https://load-test-10k-isolated.sra-luck-react.pages.dev"
+  VERCEL_SHARE: ""
 
 jobs:
   preflight:
