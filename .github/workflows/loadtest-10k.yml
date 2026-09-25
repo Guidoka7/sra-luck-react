@@ -47,20 +47,6 @@ jobs:
       - name: Pull k6
         run: docker pull grafana/k6:latest
 
-      - name: Prepare k6 for protected Vercel Preview
-        shell: bash
-        run: |
-          python <<'PY'
-          from pathlib import Path
-          p = Path("loadtest/k6-10k.js")
-          s = p.read_text()
-          needle = '    redirects: 10,'
-          replacement = '    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
-          if needle not in s:
-              raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(needle, replacement, 1))
-          PY
-
       - name: Mint GitHub OIDC token
         uses: actions/github-script@v7
         id: oidc
@@ -116,20 +102,6 @@ jobs:
 
       - name: Pull k6
         run: docker pull grafana/k6:latest
-
-      - name: Prepare k6 for protected Vercel Preview
-        shell: bash
-        run: |
-          python <<'PY'
-          from pathlib import Path
-          p = Path("loadtest/k6-10k.js")
-          s = p.read_text()
-          needle = '    redirects: 10,'
-          replacement = '    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
-          if needle not in s:
-              raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(needle, replacement, 1))
-          PY
 
       - name: Wait for synchronized start
         shell: bash

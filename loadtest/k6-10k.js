@@ -148,6 +148,9 @@ function ensurePreviewAccess() {
   if (previewReady) return;
   const url = SHARE ? `${BASE}/?_vercel_share=${SHARE}` : `${BASE}/`;
   const res = http.get(url, {
+    headers: {
+      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
+    },
     redirects: 10,
     tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
   });
@@ -170,6 +173,7 @@ function call(method, path, cookie, name, body = null) {
   const headers = {
     Accept: "application/json",
     "Cache-Control": "no-cache",
+    "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
   };
   if (method !== "GET" && method !== "HEAD") {
     headers.Origin = BASE;
