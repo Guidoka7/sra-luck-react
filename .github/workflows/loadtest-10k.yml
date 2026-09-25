@@ -8,6 +8,7 @@ on:
       - "loadtest/run-mode.txt"
       - ".github/workflows/loadtest-10k.yml"
 
+  # Validation suite runs independently from protected runtime smoke.
 permissions:
   contents: read
   id-token: write
