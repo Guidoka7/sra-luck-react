@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  TARGET_BASE: "https://load-test-10k-isolated.sra-luck-react.pages.dev"
+  TARGET_BASE: "https://31bfe3f0.sra-luck-react.pages.dev"
   VERCEL_SHARE: ""
 
 jobs:
