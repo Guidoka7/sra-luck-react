@@ -150,6 +150,7 @@ function ensurePreviewAccess() {
   const res = http.get(url, {
     headers: {
       "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
+      "x-vercel-set-bypass-cookie": "true",
     },
     redirects: 10,
     tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
