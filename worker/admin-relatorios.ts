@@ -676,7 +676,7 @@ export async function adminRelatorios(request: Request, env: Env): Promise<Respo
     }
   }
 
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
 
   if (url.pathname === "/api/admin/relatorios/dashboard" && request.method === "GET") {
     if (!temPermissaoAdmin(colaborador, PERMISSOES_ADMIN.RELATORIOS_VISUALIZAR)) {

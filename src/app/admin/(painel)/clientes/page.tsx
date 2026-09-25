@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { ClienteDrawer, type AbaDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
 import { formatarCpf } from "@/lib/cpf";
 import { formatarMoeda } from "@/lib/utils";
-import { fetchInstant, getInstantCache, refreshInstant } from "@/lib/instantCache";
 import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
 import styles from "@/components/admin/lista/AdminLista.module.css";
 import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
@@ -96,6 +95,13 @@ export default function ClientesPage() {
   const acessoTotal = useAcessoTotalAdmin();
   const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [totais, setTotais] = useState({ aguardando: 0, cadastradas: 0, canceladas: 0 });
+  const [bancosDisponiveis, setBancosDisponiveis] = useState<string[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [maisCarregando, setMaisCarregando] = useState(false);
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  const requestSeq = useRef(0);
+  const lastRefresh = useRef(0);
   const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [funil, setFunil] = useState<Funil>("cadastradas");
@@ -109,22 +115,55 @@ export default function ClientesPage() {
   const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; aba: AbaDrawer } | null>(null);
   const [cadastrandoVenda, setCadastrandoVenda] = useState<string | null>(null);
 
-  async function carregar(force = false) {
-    const url = "/api/admin/clientes";
-    const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null;
-    if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true);
+  async function carregar(force = false, cursor: string | null = null) {
+    const seq = cursor ? requestSeq.current : ++requestSeq.current;
+    if (cursor) setMaisCarregando(true);
+    else { setCarregando(true); setClientes([]); setNextCursor(null); }
     try {
-      const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url);
-      setClientes(data.clientes ?? []);
-      try { const r = await fetch("/api/admin/novas-vendas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setNovasVendas(d.vendas ?? []); } catch { /* staging opcional */ }
-    } catch (e) { if (!cached) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); } finally { setCarregando(false); }
+      const params = new URLSearchParams({ funil: funil === "novas" ? "cadastradas" : funil, ordem: ordenacao, limite: "50" });
+      if (buscaAplicada.trim()) params.set("busca", buscaAplicada.trim());
+      if (banco !== "all") params.set("banco", banco);
+      if (status !== "all") params.set("status", status);
+      if (periodo !== "all") {
+        const inicio = new Date(); inicio.setHours(0, 0, 0, 0);
+        inicio.setDate(inicio.getDate() - (periodo === "today" ? 0 : Number(periodo)));
+        params.set("desde", inicio.toISOString());
+      }
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/admin/clientes/pagina?${params}`, { cache: "no-store" });
+      const data = await response.json() as { clientes?: Cliente[]; nextCursor?: string | null; erro?: string };
+      if (!response.ok) throw new Error(data.erro ?? "Falha ao carregar clientes.");
+      if (seq !== requestSeq.current) return;
+      setClientes((previous) => cursor ? [...previous, ...(data.clientes ?? [])] : (data.clientes ?? []));
+      setNextCursor(data.nextCursor ?? null);
+      lastRefresh.current = Date.now();
+      if (force) void carregarCatalogos();
+    } catch (e) { if (seq === requestSeq.current) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); }
+    finally { if (seq === requestSeq.current) { setCarregando(false); setMaisCarregando(false); } }
+  }
+  async function carregarCatalogos() {
+    try {
+      const [rTotais, rBancos] = await Promise.all([
+        fetch("/api/admin/clientes/totais", { cache: "no-store" }),
+        fetch("/api/admin/clientes/bancos", { cache: "no-store" }),
+      ]);
+      if (rTotais.ok) setTotais(await rTotais.json());
+      if (rBancos.ok) setBancosDisponiveis((await rBancos.json()).bancos ?? []);
+    } catch { /* contadores e opções não impedem a lista */ }
   }
   useEffect(() => {
     const termoInicial = new URLSearchParams(window.location.search).get("busca")?.trim();
     if (termoInicial) setBusca(termoInicial);
   }, []);
 
-  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => setBuscaAplicada(busca), 300); return () => window.clearTimeout(timer); }, [busca]);
+  useEffect(() => { void carregar(); }, [funil, buscaAplicada, banco, status, periodo, ordenacao]);
+  useEffect(() => { void carregarCatalogos(); }, []);
+  useEffect(() => {
+    const aoFoco = () => { if (document.visibilityState === "visible" && Date.now() - lastRefresh.current > 300_000) void carregar(true); };
+    document.addEventListener("visibilitychange", aoFoco);
+    return () => document.removeEventListener("visibilitychange", aoFoco);
+  }, [funil, buscaAplicada, banco, status, periodo, ordenacao]);
 
   useEffect(() => {
     if (!menuId) return;
@@ -146,23 +185,16 @@ export default function ClientesPage() {
   const canceladas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato === "cancelado"), [clientesVisiveis]);
   const ehVenda = funil === "novas";
 
-  const baseClientes = funil === "aguardando" ? aguardandoCadastro : funil === "canceladas" ? canceladas : cadastradas;
-  const bancos = useMemo(() => Array.from(new Set(baseClientes.map((c) => c.banco?.trim()).filter((b): b is string => Boolean(b)))).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [baseClientes]);
-  useEffect(() => { if (banco !== "all" && !bancos.includes(banco)) setBanco("all"); }, [banco, bancos]);
+  const bancos = bancosDisponiveis;
 
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
-  const filtradas = useMemo(() => ordenar(baseClientes.filter((c) => {
-    if (termo && ![c.nome_completo, c.cpf, c.telefone, c.consultora, c.origem_venda, c.banco].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo)) return false;
-    if (banco !== "all" && c.banco !== banco) return false;
-    if (status !== "all" && (c.status_contrato ?? "ativo") !== status) return false;
-    return noPeriodo(c.created_at, periodo);
-  }), ordenacao, (c) => c.nome_completo ?? "", (c) => c.created_at), [baseClientes, termo, banco, status, periodo, ordenacao]);
+  const filtradas = clientesVisiveis;
   const vendasFiltradas = useMemo(() => ordenar(novas.filter((v) => {
     if (termo && ![v.nome_completo, v.cpf, v.telefone, v.vendedora_responsavel, v.origem_venda].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo)) return false;
     return noPeriodo(v.created_at, periodo);
   }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
-  const counts: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
+  const counts: Record<Funil, number> = { novas: novas.length, ...totais };
   const total = ehVenda ? vendasFiltradas.length : filtradas.length;
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
@@ -252,7 +284,7 @@ export default function ClientesPage() {
       <header className={styles.cardHead}>
         <div>
           <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{counts[funil]} {counts[funil] === 1 ? "cliente" : "clientes"}</span></div>
-          <div className={styles.cardSub}>{total} nesta página</div>
+        <div className={styles.cardSub}>{total} {total === 1 ? "registro carregado" : "registros carregados"}{nextCursor ? " · há mais clientes" : ""}</div>
         </div>
         <div className={styles.cardTools}>
           <span className={styles.orderLabel}>Ordenar por</span>
@@ -310,6 +342,11 @@ export default function ClientesPage() {
               <div><div className={styles.gridLabel}>Campanha</div><div className={styles.gridValue}>{c.origem_venda || "—"}</div></div>
             </div>
           </article>)}</div>}
+      {!ehVenda && nextCursor && <div style={{ display: "flex", justifyContent: "center", padding: "20px" }}>
+        <button className={styles.primaryBtn} type="button" disabled={maisCarregando} onClick={() => void carregar(false, nextCursor)}>
+          {maisCarregando ? "Carregando…" : "Carregar mais clientes"}
+        </button>
+      </div>}
     </section>
 
     {drawer && <ClienteDrawer key={drawer.id ?? "nova"} clienteId={drawer.id} cliente={drawer.cliente} abaInicial={drawer.aba}

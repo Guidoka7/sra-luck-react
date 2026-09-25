@@ -58,7 +58,7 @@ export async function adminFinance(request: Request, env: Env): Promise<Response
 
   const denied = await exigirAdmin(request, env);
   if (denied) return denied;
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
 
   if (path === "/api/admin/datas-liberacao-financeira") {
     if (request.method === "GET") {

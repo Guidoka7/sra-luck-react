@@ -416,7 +416,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
   const auth = await exigirAdmin(request, env);
   if (auth instanceof Response) return auth;
   if (request.method !== "GET" && !origemSegura(request)) return json({ erro: "Origem da requisição não autorizada." }, 403);
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
   const usuario = `admin:${auth.adminId}`;
 
   try {

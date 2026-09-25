@@ -274,7 +274,7 @@ export async function adminReports(request: Request, env: Env): Promise<Response
   if (request.method !== "GET") return null;
   const denied = await auth(request, env);
   if (denied) return denied;
-  const db = createServiceSupabaseClient(env);
+  const db = createServiceSupabaseClient(env, request);
 
   if (url.pathname === "/api/admin/previsao-liberacoes") {
     try {

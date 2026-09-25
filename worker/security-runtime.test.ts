@@ -87,6 +87,24 @@ describe("HTTP ingress and real router", () => {
     expect(response.status).toBe(200);
     expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(1);
   });
+  it("pages admin clients with a single bounded RPC and one active collaborator lookup", async () => {
+    state.rpc.mockResolvedValue({ data: [{ id: "11111111-1111-4111-8111-111111111111", created_at: "2026-09-25T00:00:00Z" }], error: null });
+    const response = await worker.fetch(req("/api/admin/clientes/pagina?limite=0&funil=cadastradas", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+    const bounded = await worker.fetch(req("/api/admin/clientes/pagina?limite=500&funil=cadastradas", "GET", undefined, await adminCookie()), env);
+    expect(bounded.status).toBe(200);
+    expect(state.rpc).toHaveBeenCalledTimes(1);
+    expect(state.rpc.mock.calls[0][0]).toBe("loadtest_admin_clientes_pagina_recent");
+    expect(state.rpc.mock.calls[0][1].p_limite).toBe(50);
+    expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(2);
+    expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(0);
+  });
+  it("rejects an invalid admin page cursor without querying client data", async () => {
+    const response = await worker.fetch(req("/api/admin/clientes/pagina?cursor=not-a-valid-cursor", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
   it.each([undefined, "admin_session=invalid", "admin_session=a.b.extra"])("rejects missing or invalid admin cookie %s", async cookie => {
     expect((await worker.fetch(req("/api/admin/clientes", "GET", undefined, cookie), env)).status).toBe(401);
     expect(state.queries).toHaveLength(0);
