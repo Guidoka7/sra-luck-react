@@ -17,8 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_BASE: "https://sra-luck-react-db8wtidyx-guidoka7.vercel.app"
+  TARGET_BASE: "https://sra-luck-react-7yd7ly95q-guidoka7.vercel.app"
   VERCEL_SHARE: ${{ secrets.LOADTEST_VERCEL_SHARE }}
+  LOADTEST_SESSION_SECRET: ${{ secrets.LOADTEST_SESSION_SECRET }}
 
 jobs:
   preflight:
@@ -32,6 +33,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require protected Preview secret
+        run: |
+          if [ -z "$VERCEL_SHARE" ] || [ -z "$LOADTEST_SESSION_SECRET" ]; then
+            echo "LOADTEST_VERCEL_SHARE and LOADTEST_SESSION_SECRET must be GitHub Actions repository secrets." >&2
+            exit 1
+          fi
 
       - name: Select isolated test stage
         id: profile

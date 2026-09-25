@@ -12,11 +12,11 @@ const SMOKE = PROFILE === "smoke";
 const STAIR_TARGET = /^stair_(1500|2000|3000|5000|7500|10000)$/.test(PROFILE) ? Number(PROFILE.slice(6)) / 10 : 0;
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
 // Deployment imutável da branch; o cookie de share é vinculado a esta URL.
-const ISOLATED_PREVIEW = "https://sra-luck-react-db8wtidyx-guidoka7.vercel.app";
+const ISOLATED_PREVIEW = "https://sra-luck-react-7yd7ly95q-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
-const SESSION_SECRET = "sra-luck-load-test-only-session-secret-2026-09-24";
+const SESSION_SECRET = __ENV.LOADTEST_SESSION_SECRET || "";
 
 const server5xx = new Rate("server_5xx");
 const routeFail = new Rate("route_fail");
@@ -151,15 +151,14 @@ function signedToken(payload) {
 
 export function setup() {
   if (!BASE) throw new Error("TARGET_BASE é obrigatório.");
+  if (!SHARE || !SESSION_SECRET) throw new Error("Hard-stop: segredos isolados do Preview e da sessão de teste ausentes.");
   if (BASE !== ISOLATED_PREVIEW || (!["smoke", "progressive", "full"].includes(PROFILE) && !STAIR_TARGET) || SHARD < 0 || SHARD > 9) {
     throw new Error("Hard-stop: alvo, perfil ou shard fora do ambiente isolado aprovado.");
   }
   // Este é o único hard-stop do cenário: nunca gerar carga contra outro deployment.
-  if (SHARE) {
-    http.get(`${BASE}/?_vercel_share=${encodeURIComponent(SHARE)}`, {
-      tags: { name: "isolated_share_setup" },
-    });
-  }
+  http.get(`${BASE}/?_vercel_share=${encodeURIComponent(SHARE)}`, {
+    tags: { name: "isolated_share_setup" },
+  });
   const identity = http.get(`${BASE}/api/loadtest/identity`, {
     responseType: "text", tags: { name: "isolated_identity" },
   });
