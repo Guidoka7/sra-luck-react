@@ -106,8 +106,7 @@ export default function ClientesPage() {
   const [ordenacao, setOrdenacao] = useState<SortMode>("recent");
   const [view, setView] = useState<ViewMode>("list");
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; aba: AbaDrawer } | null>(null);
-  const [cadastrandoVenda, setCadastrandoVenda] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; venda: NovaVenda | null; aba: AbaDrawer } | null>(null);
 
   async function carregar(force = false) {
     const url = "/api/admin/clientes";
@@ -166,23 +165,8 @@ export default function ClientesPage() {
   const total = ehAguardando ? vendasFiltradas.length + filtradas.length : filtradas.length;
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
-  function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, aba }); }
-
-  /** Conversão de uma venda do CRM em cliente — `POST /api/admin/novas-vendas/:id/cadastrar`. */
-  async function cadastrarVenda(v: NovaVenda) {
-    const cpf = window.prompt("CPF da cliente (11 dígitos):", v.cpf ?? "");
-    const nascimento = cpf ? window.prompt("Data de nascimento (AAAA-MM-DD):") : null;
-    if (!cpf || !nascimento) return;
-    setCadastrandoVenda(v.id);
-    try {
-      const r = await fetch(`/api/admin/novas-vendas/${encodeURIComponent(v.id)}/cadastrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cpf, dataNascimento: nascimento }) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.erro ?? "Não foi possível cadastrar a cliente.");
-      toast.success("Cliente cadastrada. Gere as parcelas no Financeiro.");
-      await carregar(true);
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível cadastrar a cliente."); }
-    finally { setCadastrandoVenda(null); }
-  }
+  function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, venda: null, aba }); }
+  function abrirVenda(venda: NovaVenda) { setMenuId(null); setDrawer({ id: null, cliente: null, venda, aba: "profile" }); }
 
   function RowMenu({ cliente }: { cliente: Cliente }) {
     const aberto = menuId === cliente.id;
@@ -273,24 +257,22 @@ export default function ClientesPage() {
         : total === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>Nenhuma cliente encontrada.</strong><span>{ehAguardando ? "Nenhuma cliente recebida do CRM ou aguardando geração do financeiro." : "Ajuste a busca ou os filtros desta lista."}</span></div>
         : ehAguardando ? <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
-              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Origem</th><th>Valor</th><th>Status</th><th className={styles.center}>Ação</th></tr></thead>
+              <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
+              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Origem</th><th>Valor</th><th>Status</th></tr></thead>
               <tbody>
-                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "default" }}>
+                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "pointer" }} onClick={() => abrirVenda(v)}>
                   <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
                   <td>{v.vendedora_responsavel || <Dash />}</td>
                   <td>{v.origem_venda || <Dash />}</td>
                   <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
                   <td><span className={styles.statusPill}><span className={styles.statusDot} />Recebida do CRM</span></td>
-                  <td className={styles.center}><button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button></td>
                 </tr>)}
-                {filtradas.map((c) => <tr key={`cliente-${c.id}`} onClick={() => abrir(c, "finance")}>
+                {filtradas.map((c) => <tr key={`cliente-${c.id}`} style={{ cursor: "pointer" }} onClick={() => abrir(c, "profile")}>
                   <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                   <td>{c.consultora || <Dash />}</td>
                   <td>{c.origem_venda || <Dash />}</td>
                   <td>{formatarMoeda(Number(c.valor_contrato ?? 0))}</td>
                   <td><span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span></td>
-                  <td className={styles.center}><RowMenu cliente={c} /></td>
                 </tr>)}
               </tbody>
             </table>
@@ -321,7 +303,7 @@ export default function ClientesPage() {
           </article>)}</div>}
     </section>
 
-    {drawer && <ClienteDrawer key={drawer.id ?? "nova"} clienteId={drawer.id} cliente={drawer.cliente} abaInicial={drawer.aba}
+    {drawer && <ClienteDrawer key={drawer.id ?? drawer.venda?.id ?? "nova"} clienteId={drawer.id} cliente={drawer.cliente} preCadastro={drawer.venda} abaInicial={drawer.aba}
       onClose={() => setDrawer(null)} onChanged={() => carregar(true)} />}
   </div>;
 }
