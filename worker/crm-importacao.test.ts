@@ -8,7 +8,7 @@ import { normalizarDealRd } from "./rd-station-readonly";
 import type { Env } from "./supabase";
 
 const env = {} as Env;
-const FUNIL = "a".repeat(24), ETAPA = "b".repeat(24), OUTRA = "c".repeat(24);
+const FUNIL = "a".repeat(24), ETAPA = "b".repeat(24), OUTRA = "c".repeat(24), FUNIL2 = "d".repeat(24), ETAPA2 = "e".repeat(24);
 const config = (parcial: Partial<ConfigCrm> = {}): ConfigCrm => ({ ...PADRAO_CRM, mapeamento: { ...PADRAO_CRM.mapeamento }, deduplicarPor: { ...PADRAO_CRM.deduplicarPor }, ...parcial });
 
 const deal = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -45,6 +45,63 @@ describe("configuração do CRM", () => {
     const s = normalizarDealRd(d, { contatos: new Map([["ct1", c]]) })!;
     const v = aplicarMapeamento(s, d, c, config({ mapeamento: { ...PADRAO_CRM.mapeamento, quantidade_parcelas: "deal:parcelas_contrato", cpf: "contact:cpf", telefone: "ignorar" } }));
     expect(v).toMatchObject({ nome: "Ana Souza", cpf: "12345678909", telefone: null, email: "ana@exemplo.com", quantidade_parcelas: 12, banco: "BRB", valor_contrato: 5000 });
+  });
+
+  it("aceita vários funis com etapas e preenchimentos independentes", () => {
+    const base = { ...PADRAO_CRM.mapeamento };
+    const r = validarConfigCrm({
+      ativo: true,
+      frequenciaMinutos: 15,
+      status: "won",
+      mapeamento: base,
+      funis: [
+        { pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { cpf: "contact:cpf", banco: "ignorar" } },
+        { pipelineId: FUNIL2, etapas: [ETAPA2], mapeamento: { cpf: "ignorar", banco: "deal:banco_especial" } },
+      ],
+      deduplicarPor: { cpf: true, telefone: true, email: true },
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      config: {
+        pipelineId: null,
+        etapas: [],
+        funis: [
+          { pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { cpf: "contact:cpf", banco: "ignorar", email: "auto" } },
+          { pipelineId: FUNIL2, etapas: [ETAPA2], mapeamento: { cpf: "ignorar", banco: "deal:banco_especial", email: "auto" } },
+        ],
+      },
+    });
+    expect(validarConfigCrm({
+      funis: [
+        { pipelineId: FUNIL, etapas: [], mapeamento: {} },
+        { pipelineId: FUNIL, etapas: [], mapeamento: {} },
+      ],
+    })).toMatchObject({ ok: false });
+  });
+
+  it("aplica o preenchimento específico do funil da negociação", () => {
+    const cfg = config({
+      funis: [
+        { pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { ...PADRAO_CRM.mapeamento, cpf: "contact:cpf", banco: "ignorar" } },
+        { pipelineId: FUNIL2, etapas: [ETAPA2], mapeamento: { ...PADRAO_CRM.mapeamento, cpf: "ignorar", banco: "deal:banco_especial" } },
+      ],
+    });
+    const c1 = contato("F1", "Cliente Um", "61 99999-0001", "um@x.com", "12345678909");
+    const d1 = deal("F1");
+    const s1 = normalizarDealRd(d1, { contatos: new Map([["ctF1", c1]]) })!;
+    expect(aplicarMapeamento(s1, d1, c1, cfg)).toMatchObject({ cpf: "12345678909", banco: null });
+
+    const d2 = deal("F2", {
+      pipeline_id: FUNIL2,
+      stage_id: ETAPA2,
+      contact_ids: ["ctF2"],
+      custom_fields: { banco_especial: "Banco Dois" },
+    });
+    const c2 = contato("F2", "Cliente Dois", "61 99999-0002", "dois@x.com", "98765432100");
+    const s2 = normalizarDealRd(d2, { contatos: new Map([["ctF2", c2]]) })!;
+    expect(aplicarMapeamento(s2, d2, c2, cfg)).toMatchObject({ cpf: null, banco: "Banco Dois" });
+    expect(passaNoFiltro(s2, cfg)).toBeNull();
+    expect(passaNoFiltro(normalizarDealRd(deal("F3", { pipeline_id: "f".repeat(24) }))!, cfg)).toMatch(/funis/);
   });
 
   it("telefone: celular com e sem o 9 e com +55 viram a mesma chave; fixo não colide com celular", () => {
@@ -97,6 +154,33 @@ describe("importação", () => {
     expect(itens.find((i) => i.external_id === "CPF")).toMatchObject({ resultado: "cliente_existente", correspondencias: [{ tipo: "cliente", id: "cli-1", por: ["cpf"] }] });
     expect(itens.find((i) => i.external_id === "TEL")).toMatchObject({ resultado: "duplicada", correspondencias: [{ tipo: "venda", id: "nv-1", por: ["telefone"] }] });
     expect(tabela("integracao_importacoes")[0]).toMatchObject({ origem: "manual", status: "concluida", totais: { criadas: 2 } });
+  });
+
+  it("consulta vários funis e preserva o mapeamento de cada um", async () => {
+    const { db, tabela } = cenario();
+    const chamados: string[] = [];
+    const cfg = config({
+      funis: [
+        { pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { ...PADRAO_CRM.mapeamento, banco: "ignorar" } },
+        { pipelineId: FUNIL2, etapas: [ETAPA2], mapeamento: { ...PADRAO_CRM.mapeamento, banco: "deal:banco_especial" } },
+      ],
+    });
+    const f = {
+      deals: async (filtro: string) => {
+        chamados.push(filtro);
+        return filtro.includes(FUNIL2)
+          ? [deal("MF2", { pipeline_id: FUNIL2, stage_id: ETAPA2, contact_ids: [], custom_fields: { banco_especial: "Banco Funil 2" } })] as never[]
+          : [deal("MF1", { contact_ids: [], custom_fields: { banco_especial: "Ignorado" } })] as never[];
+      },
+      refs: async () => ({ contatos: [], usuarios: [], campanhas: [], fontes: [] }),
+    };
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:multi" }, { db, config: cfg, fontes: f });
+    expect(r).toMatchObject({ ok: true, criadas: 2, erros: 0 });
+    expect(chamados).toHaveLength(2);
+    expect(chamados).toContain(`pipeline_id:${FUNIL} stage_id:(${ETAPA}) status:won`);
+    expect(chamados).toContain(`pipeline_id:${FUNIL2} stage_id:(${ETAPA2}) status:won`);
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "MF1")).toMatchObject({ banco_local: null });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "MF2")).toMatchObject({ banco_local: "Banco Funil 2" });
   });
 
   it("deduplicação desligada por chave", async () => {
