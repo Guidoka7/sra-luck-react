@@ -12,7 +12,7 @@
  *   banco (migration_091) quando a cliente tem parcelas E acesso ao app liberado.
  * - RD continua somente leitura (só GET em /crm/v2).
  */
-import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm } from "./integracoes-registro";
+import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
   arrayValue, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
@@ -42,18 +42,50 @@ export type ValoresVenda = {
 
 // ------------------------------------------------------------------ filtro RDQL
 
-export function filtroRdql(config: ConfigCrm) {
+function funisConfigurados(config: ConfigCrm): ConfigCrmFunil[] {
+  if (Array.isArray(config.funis) && config.funis.length) return config.funis;
+  if (config.pipelineId) {
+    return [{
+      pipelineId: config.pipelineId,
+      etapas: Array.isArray(config.etapas) ? config.etapas : [],
+      mapeamento: { ...config.mapeamento },
+    }];
+  }
+  return [];
+}
+
+function partesFiltro(config: ConfigCrm, funil?: ConfigCrmFunil) {
   const partes: string[] = [];
-  if (config.pipelineId) partes.push(`pipeline_id:${config.pipelineId}`);
-  if (config.etapas.length) partes.push(`stage_id:(${config.etapas.join(",")})`);
+  if (funil?.pipelineId) partes.push(`pipeline_id:${funil.pipelineId}`);
+  if (funil?.etapas?.length) partes.push(`stage_id:(${funil.etapas.join(",")})`);
   if (config.status !== "qualquer") partes.push(`status:${config.status}`);
   return partes.join(" ");
 }
 
+/** Um filtro por funil; sem seleção explícita, lê todos os funis com o status configurado. */
+export function filtrosRdql(config: ConfigCrm): string[] {
+  const funis = funisConfigurados(config);
+  return funis.length ? funis.map((f) => partesFiltro(config, f)) : [partesFiltro(config)];
+}
+
+/** Texto usado no histórico/logs. */
+export function filtroRdql(config: ConfigCrm) {
+  return filtrosRdql(config).join(" || ");
+}
+
+function funilParaSnapshot(s: RdDealSnapshot, config: ConfigCrm) {
+  const funis = funisConfigurados(config);
+  return funis.find((f) => f.pipelineId === s.rdPipelineId) ?? null;
+}
+
 /** Webhook e reprocessamentos passam pelo mesmo filtro da importação. */
 export function passaNoFiltro(s: RdDealSnapshot, config: ConfigCrm): string | null {
-  if (config.pipelineId && s.rdPipelineId !== config.pipelineId) return "Fora do funil configurado.";
-  if (config.etapas.length && (!s.rdStageId || !config.etapas.includes(s.rdStageId))) return "Fora das etapas configuradas.";
+  const funis = funisConfigurados(config);
+  if (funis.length) {
+    const funil = funilParaSnapshot(s, config);
+    if (!funil) return "Fora dos funis configurados.";
+    if (funil.etapas.length && (!s.rdStageId || !funil.etapas.includes(s.rdStageId))) return "Fora das etapas configuradas para este funil.";
+  }
   if (config.status !== "qualquer" && s.rdStatus && s.rdStatus !== config.status) return `Status ${s.rdStatus} diferente do configurado (${config.status}).`;
   return null;
 }
@@ -103,9 +135,11 @@ export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json |
     taxa_administrativa: s.taxaAdministrativaOriginal, tipo_venda: s.tipoVendaOriginal,
     procedimento: autoPorNome(deal, "procedimento"), banco: autoPorNome(deal, "banco"),
   };
+  const funil = funilParaSnapshot(s, config);
+  const mapa = funil?.mapeamento ?? config.mapeamento;
   const out = { nome: s.nomeOriginal } as ValoresVenda;
   for (const campo of CAMPOS_CRM) {
-    const fonte = config.mapeamento[campo] ?? "auto";
+    const fonte = mapa[campo] ?? config.mapeamento[campo] ?? "auto";
     let bruto: unknown;
     if (fonte === "ignorar") bruto = null;
     else if (fonte.startsWith("deal:")) bruto = valorPersonalizado(deal, fonte.slice(5));
@@ -309,7 +343,8 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
   const { data: trava } = await db.rpc("integracao_tentar_trava", { p_nome: "crm_importacao", p_segundos: 600 });
   if (trava === false) return { ok: false as const, ocupado: true, erro: "Já existe uma importação em andamento." };
   const config = deps.config ?? await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
-  const filtro = filtroRdql(config);
+  const filtros = filtrosRdql(config);
+  const filtro = filtros.join(" || ");
   const { data: imp, error: erroImp } = await db.from("integracao_importacoes")
     .insert({ provedor: "rd_station", origem: opcoes.origem, filtro, iniciado_por: opcoes.ator }).select("id").single();
   if (erroImp || !imp) {
@@ -321,11 +356,20 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
   try {
     // As três leituras são independentes. Fazê-las em paralelo reduz bastante o
     // tempo total de importação e evita desperdiçar a janela de execução da Edge.
-    const [deals, r, indice] = await Promise.all([
-      fontes.deals(filtro),
+    const [gruposDeals, r, indice] = await Promise.all([
+      Promise.all(filtros.map((f) => fontes.deals(f))),
       fontes.refs(),
       carregarIndice(db),
     ]);
+    // Um negócio pertence a um funil, mas removemos repetidos por segurança caso o provedor
+    // devolva a mesma negociação em filtros sobrepostos.
+    const porId = new Map<string, Json>();
+    let anonimo = 0;
+    for (const deal of gruposDeals.flat()) {
+      const id = stringValue(deal.id) || `__sem_id_${anonimo++}`;
+      if (!porId.has(id)) porId.set(id, deal);
+    }
+    const deals = [...porId.values()];
     const refs = { contatos: mapById(r.contatos), usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
     const itens: ItemImportacao[] = [];
     for (const deal of deals) {
