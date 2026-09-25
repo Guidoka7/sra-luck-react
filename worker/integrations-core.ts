@@ -365,10 +365,20 @@ async function alterarEstadoIntegracao(request: Request, env: Env) {
  * Agendador (pg_cron a cada 15 min, ou Vercel Cron): importação do CRM na frequência
  * configurada e sincronização da Conta Azul, cada uma só se estiver ligada.
  */
-async function cronIntegracoes(request: Request, env: Env) {
+type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
+
+async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!rotinaAutorizada(request, env)) return json({ erro: "Não autorizado." }, 401);
   const resultado: Record<string, unknown> = {};
-  try { resultado.crm = await importacaoAgendadaSeDevida(env); } catch { resultado.crm = { erro: "Falha na importação agendada do CRM." }; }
+
+  const crm = importacaoAgendadaSeDevida(env);
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(crm.then(() => undefined).catch(() => undefined));
+    resultado.crm = { agendada: true, processamento: "segundo_plano" };
+  } else {
+    try { resultado.crm = await crm; } catch { resultado.crm = { erro: "Falha na importação agendada do CRM." }; }
+  }
+
   try { resultado.contaAzul = await sincronizarContaAzul(env, { origem: "agendada", ator: "sistema:agendador" }); } catch { resultado.contaAzul = { erro: "Falha na sincronização da Conta Azul." }; }
   return json(resultado);
 }
@@ -400,10 +410,10 @@ async function salvarConfigApi(request: Request, env: Env) {
   return json(r);
 }
 
-export async function integrationsApi(request: Request, env: Env): Promise<Response | null> {
+export async function integrationsApi(request: Request, env: Env, ctx?: BackgroundContext): Promise<Response | null> {
   const webPush = await webPushConfigApi(request, env);
   if (webPush) return webPush;
-  const rd = await rdStationReadonlyApi(request, env);
+  const rd = await rdStationReadonlyApi(request, env, ctx);
   if (rd) return rd;
   const path = new URL(request.url).pathname;
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
@@ -413,7 +423,7 @@ export async function integrationsApi(request: Request, env: Env): Promise<Respo
   if (path === "/api/admin/integrations/config" && request.method === "POST") return salvarConfigApi(request, env);
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
   if (path === "/api/admin/integrations/estado" && request.method === "POST") return alterarEstadoIntegracao(request, env);
-  if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env);
+  if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env, ctx);
   const contaAzul = await contaAzulApi(request, env);
   if (contaAzul) return contaAzul;
   return null;
