@@ -299,24 +299,22 @@ export default function ClientesPage() {
             <table className={styles.table}>
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Banco</th><th>Status</th><th className={styles.center}>Ações</th></tr></thead>
-              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
+              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, "profile")}>
                 <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{c.consultora || <Dash />}</td>
                 <td>{c.origem_venda || <Dash />}</td>
                 <td>{c.banco ? <span className={styles.bankPill}>{c.banco}</span> : <Dash />}</td>
-                <td>{funil === "aguardando"
-                  ? <span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span>
-                  : <span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span>}</td>
+                <td><span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span></td>
                 <td className={styles.center}><RowMenu cliente={c} /></td>
               </tr>)}</tbody>
             </table>
           </div>
-        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
+        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, "profile")}>
             <RowMenu cliente={c} />
             <div className={styles.clientCardTop}><Avatar nome={c.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div>
             <div className={styles.gridDetails}>
               <div><div className={styles.gridLabel}>Banco</div><div className={styles.gridValue}>{c.banco || "—"}</div></div>
-              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{funil === "aguardando" ? "Falta gerar financeiro" : STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
+              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
               <div><div className={styles.gridLabel}>Vendedora</div><div className={styles.gridValue}>{c.consultora || "—"}</div></div>
               <div><div className={styles.gridLabel}>Campanha</div><div className={styles.gridValue}>{c.origem_venda || "—"}</div></div>
             </div>
