@@ -6,6 +6,7 @@ import { getCookie, verificarTokenAdmin } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { dataNascimentoValida, getAppAccessRequirements } from "./app-access";
 import { hojeSaoPaulo } from "../src/lib/dataCivil";
+import { invalidatePublicRead } from "./public-read-cache";
 
 type Json = Record<string, any>;
 
@@ -216,6 +217,7 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
       patch.updated_at=new Date().toISOString();
       const r=await supabase.from("configuracoes").update(patch).eq("id",1).select("*").maybeSingle();
       if(r.error)return json({erro:publicError(r.error)},400);
+      invalidatePublicRead(`${env.SUPABASE_URL}:cliente-config`);
       return json({configuracoes:r.data});
     }
   }

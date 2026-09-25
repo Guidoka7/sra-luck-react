@@ -1,6 +1,7 @@
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { invalidatePublicRead } from "./public-read-cache";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -153,29 +154,29 @@ let estadoCache: { em: number; mapa: Map<string, EstadoProvedor> } | null = null
  * Sem linha, ou sem a tabela, a integração segue ativa — exatamente o
  * comportamento anterior. Cache curto por isolate para não multiplicar consultas.
  */
-export async function estadosIntegracoes(env: Env, forcar = false): Promise<Map<string, EstadoProvedor>> {
+export async function estadosIntegracoes(env: Env, forcar = false, request?: Request): Promise<Map<string, EstadoProvedor>> {
   if (!forcar && estadoCache && Date.now() - estadoCache.em < ESTADO_CACHE_MS) return estadoCache.mapa;
   const mapa = new Map<string, EstadoProvedor>();
   try {
-    const { data, error } = await createServiceSupabaseClient(env).from("integracoes_estado").select("provedor,ativo,atualizado_por,atualizado_em");
+    const { data, error } = await createServiceSupabaseClient(env, request).from("integracoes_estado").select("provedor,ativo,atualizado_por,atualizado_em");
     if (!error) for (const linha of (data ?? []) as EstadoProvedor[]) mapa.set(linha.provedor, linha);
   } catch { /* sem tabela: todas ativas */ }
   estadoCache = { em: Date.now(), mapa };
   return mapa;
 }
 
-export async function integracaoDesativada(env: Env, provedor: string) {
-  return (await estadosIntegracoes(env)).get(provedor)?.ativo === false;
+export async function integracaoDesativada(env: Env, provedor: string, request?: Request) {
+  return (await estadosIntegracoes(env, false, request)).get(provedor)?.ativo === false;
 }
 
-async function obterCredencialEfetiva(env: Env, provedor: string, chave: string, respeitarEstado: boolean): Promise<string | null> {
+async function obterCredencialEfetiva(env: Env, provedor: string, chave: string, respeitarEstado: boolean, request?: Request): Promise<string | null> {
   const campo = campoDoProvedor(provedor, chave);
-  if (respeitarEstado && campo && env.SUPABASE_URL && await integracaoDesativada(env, provedor)) return null;
+  if (respeitarEstado && campo && env.SUPABASE_URL && await integracaoDesativada(env, provedor, request)) return null;
   const doAmbiente = campo ? (env[campo.envVar] as string | undefined) || null : null;
 
   if (!env.CLIENTE_SESSION_SECRET) return doAmbiente;
   try {
-    const db = createServiceSupabaseClient(env);
+    const db = createServiceSupabaseClient(env, request);
     const { data, error } = await db
       .from("integracoes_credenciais")
       .select("valor_cifrado,valor_iv")
@@ -191,8 +192,8 @@ async function obterCredencialEfetiva(env: Env, provedor: string, chave: string,
   }
 }
 
-export async function obterCredencial(env: Env, provedor: string, chave: string): Promise<string | null> {
-  return obterCredencialEfetiva(env, provedor, chave, true);
+export async function obterCredencial(env: Env, provedor: string, chave: string, request?: Request): Promise<string | null> {
+  return obterCredencialEfetiva(env, provedor, chave, true, request);
 }
 
 /** Usa a credencial real mesmo com a integração desligada, exclusivamente para validação/ativação. */
@@ -200,11 +201,12 @@ export async function obterCredencialParaValidacao(env: Env, provedor: string, c
   return obterCredencialEfetiva(env, provedor, chave, false);
 }
 
-async function invalidarAtivacao(db: ReturnType<typeof createServiceSupabaseClient>, provedor: string, ator: string, motivo: string) {
+async function invalidarAtivacao(db: ReturnType<typeof createServiceSupabaseClient>, env: Env, provedor: string, ator: string, motivo: string) {
   const { error } = await db.from("integracoes_estado").upsert({
     provedor, ativo: false, atualizado_por: ator, atualizado_em: new Date().toISOString(),
   }, { onConflict: "provedor" });
   if (!error) estadoCache = null;
+  if (!error && provedor === "mercado_pago") invalidatePublicRead(`${env.SUPABASE_URL}:cliente-config`);
   await db.from("logs_alteracoes").insert({
     usuario: ator,
     acao: "invalidou_integracao_para_revalidacao",
@@ -236,6 +238,7 @@ export async function salvarCredencialInterna(env: Env, provedor: string, chave:
     atualizado_em: new Date().toISOString(),
   }, { onConflict: "provedor,chave" });
   if (error) throw new Error("FALHA_SALVAR_CREDENCIAL_INTERNA");
+  if (provedor === "mercado_pago") invalidatePublicRead(`${env.SUPABASE_URL}:cliente-config`);
 }
 
 export async function credenciaisApi(request: Request, env: Env): Promise<Response | null> {
@@ -307,6 +310,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
       const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: colaborador.id, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
       if (error) return json({ erro: "A estrutura de liga/desliga ainda não foi aplicada neste ambiente (migration_087)." }, 409);
       estadoCache = null;
+      if (provedor === "mercado_pago") invalidatePublicRead(`${env.SUPABASE_URL}:cliente-config`);
       await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "desativou_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: { validacaoReal: true } });
       return json({ ok: true, provedor, ativo: false });
     }
@@ -315,7 +319,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
 
     if (body.remover) {
       await db.from("integracoes_credenciais").delete().eq("provedor", provedor).eq("chave", chave);
-      await invalidarAtivacao(db, provedor, colaborador.id, `credencial_removida:${chave}`);
+      await invalidarAtivacao(db, env, provedor, colaborador.id, `credencial_removida:${chave}`);
       await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "removeu_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave, requerRevalidacao: true } });
       return json({ ok: true, ativo: false, requerRevalidacao: true });
     }
@@ -329,7 +333,7 @@ export async function credenciaisApi(request: Request, env: Env): Promise<Respon
     } catch {
       return json({ erro: "Não foi possível salvar a credencial." }, 500);
     }
-    await invalidarAtivacao(db, provedor, colaborador.id, `credencial_alterada:${chave}`);
+    await invalidarAtivacao(db, env, provedor, colaborador.id, `credencial_alterada:${chave}`);
     await db.from("logs_alteracoes").insert({ usuario: colaborador.id, acao: "atualizou_credencial_integracao", entidade: "integracoes_credenciais", detalhes: { provedor, chave, requerRevalidacao: true } });
     return json({ ok: true, ativo: false, requerRevalidacao: true });
   }

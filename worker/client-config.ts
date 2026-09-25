@@ -2,6 +2,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { getCookie, verificarTokenSessao } from "./session";
 import { obterCredencial } from "./integrations-credenciais";
 import { requestContext } from "./request-context";
+import { cachedPublicRead } from "./public-read-cache";
 
 const COOKIE_NAME = "cliente_session";
 const PROFILE_BUCKET = "clientes-perfil";
@@ -166,22 +167,30 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
     : await verificarTokenSessao(getCookie(request, COOKIE_NAME), env.CLIENTE_SESSION_SECRET);
   if (!sessao) return json({ erro: "Sessão expirada." }, 401);
 
-  const db = createServiceSupabaseClient(env, request);
-  const [{ data, error }, mercadoPagoToken] = await Promise.all([
-    db
-      .from("configuracoes")
-      .select("pix_chave,pix_qrcode_base64,pix_desconto_percentual,whatsapp_contato,telefone_contato")
-      .maybeSingle(),
-    obterCredencial(env, "mercado_pago", "access_token"),
-  ]);
-  if (error) { console.error("Falha ao carregar configuração da cliente:", error); return json({ erro: "Não foi possível carregar as configurações agora." }, 500); }
-
-  return json({
-    pixChave: data?.pix_chave || null,
-    pixQrCodeUrl: data?.pix_qrcode_base64 || null,
-    pixDescontoPercentual: Number(data?.pix_desconto_percentual ?? 0),
-    whatsappContato: data?.whatsapp_contato || null,
-    telefoneContato: data?.telefone_contato || null,
-    cartaoDisponivel: Boolean(mercadoPagoToken),
-  });
+  try {
+    const config = await cachedPublicRead(`${env.SUPABASE_URL}:cliente-config`, async () => {
+      const db = createServiceSupabaseClient(env, request);
+      const [{ data, error }, mercadoPagoToken] = await Promise.all([
+        db.from("configuracoes")
+          .select("pix_chave,pix_qrcode_base64,pix_desconto_percentual,whatsapp_contato,telefone_contato")
+          .maybeSingle(),
+        obterCredencial(env, "mercado_pago", "access_token", request),
+      ]);
+      if (error) throw error;
+      // O cache guarda apenas opções globais e a disponibilidade booleana,
+      // nunca a credencial descriptografada ou qualquer dado da cliente.
+      return {
+        pixChave: data?.pix_chave || null,
+        pixQrCodeUrl: data?.pix_qrcode_base64 || null,
+        pixDescontoPercentual: Number(data?.pix_desconto_percentual ?? 0),
+        whatsappContato: data?.whatsapp_contato || null,
+        telefoneContato: data?.telefone_contato || null,
+        cartaoDisponivel: Boolean(mercadoPagoToken),
+      };
+    });
+    return json(config);
+  } catch (error) {
+    console.error("Falha ao carregar configuração da cliente:", error);
+    return json({ erro: "Não foi possível carregar as configurações agora." }, 500);
+  }
 }

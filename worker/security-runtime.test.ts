@@ -63,13 +63,32 @@ describe("HTTP ingress and real router", () => {
       data: table === "clientes" ? { id: "client-a", ativo: true, acesso_app_liberado: true, nome_completo: "Cliente sintética", valor_contrato: 100 } : [],
       error: null,
     });
-    state.rpc.mockImplementation(async (fn: string) => ({ data: fn.startsWith("loadtest_agenda_") ? [] : true, error: null }));
+    state.rpc.mockImplementation(async (fn: string) => ({ data: fn === "loadtest_cliente_agenda_snapshot"
+      ? { agendamentos: [], elegivel: true, solicitacao: null, remarcacoes: [], datas_disponiveis: [], datas_cirurgia: [], data_minima: null, comprometido_por_mes: {} }
+      : true, error: null }));
     const response = await worker.fetch(req("/api/cliente/agenda", "GET", undefined, await clientCookie()), env);
     expect(response.status).toBe(200);
     expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(1);
-    expect(state.queries.filter(q => q.table === "agendamentos")).toHaveLength(1);
-    expect(state.queries.filter(q => q.table === "agendamentos")[0].ops).toContainEqual(["eq", "cliente_id", "client-a"]);
-    expect(state.rpc.mock.calls.some(c => c[0] === "loadtest_agenda_datas_snapshot")).toBe(true);
+    expect(state.queries.filter(q => q.table === "agendamentos")).toHaveLength(0);
+    expect(state.rpc.mock.calls).toHaveLength(1);
+    expect(state.rpc.mock.calls[0][0]).toBe("loadtest_cliente_agenda_snapshot");
+    expect(state.rpc.mock.calls[0][1].p_cliente_id).toBe("client-a");
+  });
+  it("keeps the surgery date and monthly credit rules inside a single agenda snapshot", async () => {
+    state.handler = table => ({ data: table === "clientes"
+      ? { id: "client-a", ativo: true, acesso_app_liberado: true, nome_completo: "Cliente sintética", valor_contrato: 100 }
+      : [], error: null });
+    state.rpc.mockResolvedValue({ data: {
+      agendamentos: [{ id: "schedule-a", status: "confirmado", agenda_cirurgica_liberada_em: "2026-09-20", valor_contrato: 100 }],
+      elegivel: true, solicitacao: null, remarcacoes: [], datas_disponiveis: [],
+      datas_cirurgia: [{ id: "before", data: "2030-01-01", vagas_restantes: 1 }, { id: "allowed", data: "2030-02-01", vagas_restantes: 1 }, { id: "full", data: "2030-02-02", vagas_restantes: 0 }],
+      data_minima: "2030-01-02", comprometido_por_mes: { "2030-01": 0, "2030-02": 80000 },
+    }, error: null });
+    const response = await worker.fetch(req("/api/cliente/agenda", "GET", undefined, await clientCookie()), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as any).datasCirurgiaDisponiveis).toEqual([{ id: "allowed", data: "2030-02-01", vagasRestantes: 1 }]);
+    expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(1);
+    expect(state.rpc).toHaveBeenCalledTimes(1);
   });
   it("bounds the boletos read to one client lookup and one finance snapshot RPC", async () => {
     state.handler = table => ({ data: table === "clientes"
@@ -80,6 +99,17 @@ describe("HTTP ingress and real router", () => {
     expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(1);
     expect(state.queries.filter(q => q.table === "boletos")).toHaveLength(0);
     expect(state.rpc.mock.calls.map(c => c[0])).toContain("loadtest_cliente_financeiro_snapshot");
+  });
+  it("revalidates each client even when global interface configuration is cached", async () => {
+    state.handler = (table, ops) => ({ data: table === "clientes"
+      ? { id: ops.find((op: any[]) => op[0] === "eq" && op[1] === "id")?.[2], ativo: true, acesso_app_liberado: true }
+      : table === "configuracoes" ? { whatsapp_contato: "0000" } : [], error: null });
+    const a = await clientCookie();
+    const b = `cliente_session=${await criarTokenSessao("client-b", env.CLIENTE_SESSION_SECRET)}`;
+    expect((await worker.fetch(req("/api/cliente/config", "GET", undefined, a), env)).status).toBe(200);
+    expect((await worker.fetch(req("/api/cliente/config", "GET", undefined, b), env)).status).toBe(200);
+    expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(2);
+    expect(state.queries.filter(q => q.table === "configuracoes")).toHaveLength(1);
   });
   it("reuses a single active collaborator lookup across admin authorization layers", async () => {
     state.handler = table => ({ data: table === "colaboradores" ? actor : [], error: null });

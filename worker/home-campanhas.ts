@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin } from "./session";
+import { cachedPublicRead, invalidatePublicRead } from "./public-read-cache";
 import {
   HOME_CAMPAIGN_ARTES,
   HOME_CAMPAIGN_DESTINOS_CONFIGURAVEIS,
@@ -80,10 +81,14 @@ export async function homeCampanhasApi(request: Request, env: Env): Promise<Resp
 
   // App da cliente: só lê os ajustes (a sessão já foi validada pelo roteador).
   if (path === "/api/cliente/home-campanhas" && request.method === "GET") {
-    const db = createServiceSupabaseClient(env, request);
-    const { data, error } = await db.from("home_campanhas_config").select("id,base_id,ativo,ordem,dados").is("excluido_em", null);
-    // Sem tabela/erro: o app segue com o catálogo padrão.
-    return json({ ajustes: error ? [] : (data ?? []).map(paraOverride) });
+    const key = `${env.SUPABASE_URL}:home-campanhas`;
+    const ajustes = await cachedPublicRead(key, async () => {
+      const db = createServiceSupabaseClient(env, request);
+      const { data, error } = await db.from("home_campanhas_config").select("id,base_id,ativo,ordem,dados").is("excluido_em", null);
+      if (error) throw error;
+      return (data ?? []).map(paraOverride);
+    }).catch(() => [] as HomeCampaignOverride[]);
+    return json({ ajustes });
   }
 
   if (!path.startsWith("/api/admin/home-campanhas")) return null;
@@ -112,6 +117,7 @@ export async function homeCampanhasApi(request: Request, env: Env): Promise<Resp
     if ("erro" in v) return json({ erro: v.erro }, 400);
     const { data, error } = await db.from("home_campanhas_config").insert({ ...v.linha, atualizado_por: usuario }).select("*").single();
     if (error) return json({ erro: "Não foi possível salvar. Aplique a migration do carrossel." }, 503);
+    invalidatePublicRead(`${env.SUPABASE_URL}:home-campanhas`);
     await db.from("logs_alteracoes").insert({ usuario, acao: "criou_cartao_carrossel", entidade: "home_campanhas", entidade_id: null, detalhes: { id, base: v.linha.base_id } });
     return json({ ajuste: data }, 201);
   }
@@ -123,6 +129,7 @@ export async function homeCampanhasApi(request: Request, env: Env): Promise<Resp
     if ("erro" in v) return json({ erro: v.erro }, 400);
     const { data, error } = await db.from("home_campanhas_config").upsert({ ...v.linha, atualizado_por: usuario, atualizado_em: new Date().toISOString(), excluido_em: null }, { onConflict: "id" }).select("*").single();
     if (error) return json({ erro: "Não foi possível salvar. Aplique a migration do carrossel." }, 503);
+    invalidatePublicRead(`${env.SUPABASE_URL}:home-campanhas`);
     await db.from("logs_alteracoes").insert({ usuario, acao: "alterou_cartao_carrossel", entidade: "home_campanhas", entidade_id: null, detalhes: { id, ativo: v.linha.ativo, ordem: v.linha.ordem, campos: Object.keys(v.linha.dados ?? {}) } });
     return json({ ajuste: data });
   }
@@ -135,6 +142,7 @@ export async function homeCampanhasApi(request: Request, env: Env): Promise<Resp
       ? await db.from("home_campanhas_config").delete().eq("id", id)
       : await db.from("home_campanhas_config").update({ excluido_em: new Date().toISOString(), atualizado_por: usuario }).eq("id", id);
     if (error) return json({ erro: "Não foi possível remover." }, 503);
+    invalidatePublicRead(`${env.SUPABASE_URL}:home-campanhas`);
     await db.from("logs_alteracoes").insert({ usuario, acao: PADRAO.has(id) ? "restaurou_cartao_carrossel" : "excluiu_cartao_carrossel", entidade: "home_campanhas", entidade_id: null, detalhes: { id } });
     return json({ ok: true });
   }
