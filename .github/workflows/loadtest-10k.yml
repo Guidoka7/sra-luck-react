@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_BASE: "https://sra-luck-react-reub6gu1w-guidoka7.vercel.app"
-  VERCEL_SHARE: "sAcrrI0lOWLMZ4Uew5nk0yKKBv8gajaP"
+  TARGET_BASE: "https://sra-luck-react-c4mounp9g-guidoka7.vercel.app"
+  VERCEL_SHARE: "RRegYHaigLT2yrOm1bM61h4lXilkrDCb"
 
 jobs:
   preflight:
