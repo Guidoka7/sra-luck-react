@@ -9,6 +9,7 @@ const SHARE = __ENV.VERCEL_SHARE || "";
 const SHARD = Number(__ENV.SHARD || "0");
 const PROFILE = __ENV.PROFILE || (__ENV.SMOKE === "1" ? "smoke" : "full");
 const SMOKE = PROFILE === "smoke";
+const STAIR_TARGET = /^stair_(1500|2000|3000|5000|7500|10000)$/.test(PROFILE) ? Number(PROFILE.slice(6)) / 10 : 0;
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
 // Deployment imutável da branch; o cookie de share é vinculado a esta URL.
 const ISOLATED_PREVIEW = "https://sra-luck-react-msb237v3l-guidoka7.vercel.app";
@@ -100,12 +101,16 @@ export const options = SMOKE
     }
   : {
       stages: PROFILE === "progressive" ? [
+        { duration: "30s", target: 25 },
+        { duration: "2m", target: 25 },
         { duration: "30s", target: 50 },
-        { duration: "45s", target: 50 },
-        { duration: "30s", target: 150 },
-        { duration: "45s", target: 150 },
-        { duration: "30s", target: 300 },
-        { duration: "60s", target: 300 },
+        { duration: "2m", target: 50 },
+        { duration: "30s", target: 100 },
+        { duration: "2m", target: 100 },
+        { duration: "30s", target: 0 },
+      ] : STAIR_TARGET ? [
+        { duration: "90s", target: STAIR_TARGET },
+        { duration: "3m", target: STAIR_TARGET },
         { duration: "30s", target: 0 },
       ] : [
         { duration: "2m", target: 1000 },
@@ -143,7 +148,7 @@ function signedToken(payload) {
 
 export function setup() {
   if (!BASE) throw new Error("TARGET_BASE é obrigatório.");
-  if (BASE !== ISOLATED_PREVIEW || !["smoke", "progressive", "full"].includes(PROFILE) || SHARD < 0 || SHARD > 9) {
+  if (BASE !== ISOLATED_PREVIEW || (!["smoke", "progressive", "full"].includes(PROFILE) && !STAIR_TARGET) || SHARD < 0 || SHARD > 9) {
     throw new Error("Hard-stop: alvo, perfil ou shard fora do ambiente isolado aprovado.");
   }
   // Este é o único hard-stop do cenário: nunca gerar carga contra outro deployment.
