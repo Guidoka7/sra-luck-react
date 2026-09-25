@@ -181,12 +181,19 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
     }
   }
 
-  // Hierarquia da tela: 1) parcela vencida mais antiga em destaque forte;
-  // 2) próxima a vencer em destaque moderado; 3) demais em lista compacta.
+  // Hierarquia da tela:
+  // - sem atraso: destaca a próxima parcela;
+  // - com 1 vencida: destaca a vencida e, abaixo, a próxima;
+  // - com 2+ vencidas: destaca TODAS as vencidas e não exibe card de próxima parcela.
   const pagavel = (boleto: Boleto) => boleto.status !== "pendente_confirmacao";
-  const destaque = pendentes.find((boleto) => pagavel(boleto) && calcularValores(boleto, pagamento).vencida) ?? null;
-  const proxima = pendentes.find((boleto) => pagavel(boleto) && !calcularValores(boleto, pagamento).vencida) ?? null;
-  const demais = pendentes.filter((boleto) => boleto !== destaque && boleto !== proxima);
+  const vencidas = pendentes.filter((boleto) => pagavel(boleto) && calcularValores(boleto, pagamento).vencida);
+  const multiplasVencidas = vencidas.length >= 2;
+  const destaquesAtraso = vencidas;
+  const proxima = multiplasVencidas
+    ? null
+    : pendentes.find((boleto) => pagavel(boleto) && !calcularValores(boleto, pagamento).vencida) ?? null;
+  const idsDestaque = new Set(destaquesAtraso.map((boleto) => boleto.id));
+  const demais = pendentes.filter((boleto) => !idsDestaque.has(boleto.id) && boleto !== proxima);
   const listaVisivel = listaCompleta ? demais : demais.slice(0, LISTA_INICIAL);
 
   return <div className="sl-parc pb-3">
@@ -205,33 +212,37 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
       </button>
     </div>
 
-    {destaque && (() => {
-      const valores = calcularValores(destaque, pagamento);
-      const rejeitado = destaque.status === "rejeitado";
-      return <><div className="sl-parc-etapa sl-parc-etapa--alerta">Em atraso</div><div className="sl-parc-proxima sl-parc-proxima--vencida">
-        <div className="sl-parc-proxima-linha">
-          <button type="button" onClick={() => abrirPagamento(destaque)} className="sl-parc-proxima-info" aria-label={`Ver parcela ${destaque.numero_parcela}, vencida`}>
-            <span className="sl-parc-numero sl-parc-numero--alerta">{destaque.numero_parcela}</span>
-            <span className="sl-parc-linha-texto">
-              <span className="sl-parc-badge-vencida">{rejeitado ? "Ajustar comprovante" : `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}`}</span>
-              <b>{brl(valores.valorHoje)}</b>
-            </span>
-          </button>
-          <button type="button" onClick={() => abrirPagamento(destaque)} className="sl-parc-proxima-pagar">Resolver agora</button>
-        </div>
-        <small className="sl-parc-proxima-rodape">Valor atualizado para pagar hoje</small>
-      </div></>;
-    })()}
+    {destaquesAtraso.length > 0 && <>
+      <div className="sl-parc-etapa sl-parc-etapa--alerta">Em atraso</div>
+      {destaquesAtraso.map((destaque) => {
+        const valores = calcularValores(destaque, pagamento);
+        const rejeitado = destaque.status === "rejeitado";
+        return <div key={destaque.id} className="sl-parc-proxima sl-parc-proxima--vencida">
+          <div className="sl-parc-proxima-linha">
+            <button type="button" onClick={() => abrirPagamento(destaque)} className="sl-parc-proxima-info" aria-label={`Ver parcela ${destaque.numero_parcela}, vencida`}>
+              <span className="sl-parc-numero sl-parc-numero--alerta">{destaque.numero_parcela}</span>
+              <span className="sl-parc-linha-texto">
+                <span className="sl-parc-badge-vencida">{rejeitado ? "Ajustar comprovante" : `Vencida há ${valores.dias} dia${valores.dias === 1 ? "" : "s"}`}</span>
+                <b>{brl(valores.valorHoje)}</b>
+              </span>
+            </button>
+            <button type="button" onClick={() => abrirPagamento(destaque)} className="sl-parc-proxima-pagar">Resolver agora</button>
+          </div>
+          <small className="sl-parc-proxima-rodape">Valor atualizado para pagar hoje</small>
+        </div>;
+      })}
+    </>}
 
     {proxima && (() => {
       const dias = diasParaVencer(proxima.data_vencimento);
       const rejeitado = proxima.status === "rejeitado";
-      return <>{destaque && <div className="sl-parc-etapa">Próxima parcela</div>}<div className={`sl-parc-proxima ${destaque ? "sl-parc-proxima--depois" : ""} ${dias <= DIAS_DESTAQUE && !rejeitado ? "sl-parc-proxima--breve" : ""}`}>
+      const temUmaVencida = vencidas.length === 1;
+      return <>{temUmaVencida && <div className="sl-parc-etapa">Próxima parcela</div>}<div className={`sl-parc-proxima ${temUmaVencida ? "sl-parc-proxima--depois" : ""} ${dias <= DIAS_DESTAQUE && !rejeitado ? "sl-parc-proxima--breve" : ""}`}>
         <div className="sl-parc-proxima-linha">
           <button type="button" onClick={() => abrirPagamento(proxima)} className="sl-parc-proxima-info" aria-label={`Ver parcela ${proxima.numero_parcela}`}>
             <span className="sl-parc-numero">{proxima.numero_parcela}</span>
             <span className="sl-parc-linha-texto">
-              <span className="sl-parc-proxima-rotulo">{destaque ? `Parcela ${proxima.numero_parcela} de ${total}` : "Próxima parcela"}</span>
+              <span className="sl-parc-proxima-rotulo">{temUmaVencida ? `Parcela ${proxima.numero_parcela} de ${total}` : "Próxima parcela"}</span>
               <b>{brl(calcularValores(proxima, pagamento).valorHoje)}</b>
             </span>
           </button>
@@ -248,7 +259,8 @@ export function ParcelasPrototype({ pagamento, onResumo }: { pagamento?: Pagamen
         const emAnalise = boleto.status === "pendente_confirmacao";
         const rejeitado = boleto.status === "rejeitado";
         const ano = boleto.data_vencimento.slice(0, 4);
-        const anoAnterior = indice > 0 ? listaVisivel[indice - 1].data_vencimento.slice(0, 4) : (proxima ?? destaque)?.data_vencimento.slice(0, 4);
+        const referenciaAnterior = proxima ?? destaquesAtraso[destaquesAtraso.length - 1];
+        const anoAnterior = indice > 0 ? listaVisivel[indice - 1].data_vencimento.slice(0, 4) : referenciaAnterior?.data_vencimento.slice(0, 4);
         const status = emAnalise ? { texto: "Em análise", tom: "analise" } : rejeitado ? { texto: "Reenviar", tom: "alerta" } : valores.vencida ? { texto: "Vencida", tom: "alerta" } : { texto: "A vencer", tom: "neutro" };
         return <Fragment key={boleto.id}>
           {listaCompleta && ano !== anoAnterior && <div className="sl-parc-ano">{ano}</div>}
