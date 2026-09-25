@@ -249,26 +249,46 @@ export type CampoCrm = typeof CAMPOS_CRM[number];
 export type FonteCampoCrm = string;
 export const FREQUENCIAS_CRM = [15, 30, 60, 180, 360, 720, 1440] as const;
 
+export type ConfigCrmFunil = {
+  pipelineId: string;
+  /** Vazio = todas as etapas desse funil. */
+  etapas: string[];
+  /** Mapeamento específico deste funil. */
+  mapeamento: Record<CampoCrm, FonteCampoCrm>;
+};
+
 export type ConfigCrm = {
   /** Importação agendada ligada (a manual e o webhook funcionam sempre). */
   ativo: boolean;
   frequenciaMinutos: number;
-  /** null = todos os funis. */
+  /**
+   * Configuração nova: vários funis, cada um com etapas e mapeamento próprios.
+   * Vazio = todos os funis usando o mapeamento padrão.
+   */
+  funis: ConfigCrmFunil[];
+  /**
+   * Compatibilidade com configurações antigas. Quando `funis` é salvo,
+   * estes dois campos ficam limpos.
+   */
   pipelineId: string | null;
-  /** Vazio = todas as etapas do funil. */
   etapas: string[];
   status: "won" | "ongoing" | "qualquer";
+  /** Padrão/fallback quando não há override por funil. */
   mapeamento: Record<CampoCrm, FonteCampoCrm>;
   deduplicarPor: { cpf: boolean; telefone: boolean; email: boolean };
 };
 
+const MAPEAMENTO_CRM_PADRAO = () =>
+  Object.fromEntries(CAMPOS_CRM.map((c) => [c, "auto"])) as Record<CampoCrm, FonteCampoCrm>;
+
 export const PADRAO_CRM: ConfigCrm = {
   ativo: false,
   frequenciaMinutos: 60,
+  funis: [],
   pipelineId: null,
   etapas: [],
   status: "won",
-  mapeamento: Object.fromEntries(CAMPOS_CRM.map((c) => [c, "auto"])) as Record<CampoCrm, FonteCampoCrm>,
+  mapeamento: MAPEAMENTO_CRM_PADRAO(),
   deduplicarPor: { cpf: true, telefone: true, email: true },
 };
 
@@ -279,40 +299,100 @@ function objeto(bruto: unknown): Record<string, unknown> | null {
   return bruto && typeof bruto === "object" && !Array.isArray(bruto) ? bruto as Record<string, unknown> : null;
 }
 
+function validarMapaCrm(bruto: unknown, base: Record<CampoCrm, FonteCampoCrm>): Validacao<Record<CampoCrm, FonteCampoCrm>> {
+  if (bruto === undefined || bruto === null) return { ok: true, config: { ...base } };
+  const m = objeto(bruto);
+  if (!m) return { ok: false, erro: "Mapeamento inválido." };
+  const out = { ...base };
+  for (const [campo, fonte] of Object.entries(m)) {
+    if (!(CAMPOS_CRM as readonly string[]).includes(campo)) return { ok: false, erro: `Campo do Sra Luck desconhecido: ${campo}.` };
+    if (typeof fonte !== "string" || !FONTE_CRM.test(fonte)) return { ok: false, erro: `Fonte inválida para ${campo}.` };
+    out[campo as CampoCrm] = fonte;
+  }
+  return { ok: true, config: out };
+}
+
 export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
   const c = objeto(bruto);
   if (!c) return { ok: false, erro: "Configuração inválida." };
   const extra = Object.keys(c).find((k) => !(k in PADRAO_CRM));
   if (extra) return { ok: false, erro: `Campo não permitido: ${extra}.` };
-  const out: ConfigCrm = { ...PADRAO_CRM, mapeamento: { ...PADRAO_CRM.mapeamento }, deduplicarPor: { ...PADRAO_CRM.deduplicarPor }, etapas: [] };
-  if (c.ativo !== undefined) { if (typeof c.ativo !== "boolean") return { ok: false, erro: "ativo deve ser verdadeiro ou falso." }; out.ativo = c.ativo; }
+
+  const out: ConfigCrm = {
+    ...PADRAO_CRM,
+    funis: [],
+    mapeamento: MAPEAMENTO_CRM_PADRAO(),
+    deduplicarPor: { ...PADRAO_CRM.deduplicarPor },
+    etapas: [],
+  };
+
+  if (c.ativo !== undefined) {
+    if (typeof c.ativo !== "boolean") return { ok: false, erro: "ativo deve ser verdadeiro ou falso." };
+    out.ativo = c.ativo;
+  }
   if (c.frequenciaMinutos !== undefined && c.frequenciaMinutos !== null) {
     const f = Number(c.frequenciaMinutos);
     if (!(FREQUENCIAS_CRM as readonly number[]).includes(f)) return { ok: false, erro: `Frequência deve ser uma de: ${FREQUENCIAS_CRM.join(", ")} minutos.` };
     out.frequenciaMinutos = f;
   }
+
+  if (c.status !== undefined && c.status !== null) {
+    if (!["won", "ongoing", "qualquer"].includes(String(c.status))) return { ok: false, erro: "Status inválido." };
+    out.status = c.status as ConfigCrm["status"];
+  }
+
+  const mapaPadrao = validarMapaCrm(c.mapeamento, MAPEAMENTO_CRM_PADRAO());
+  if (!mapaPadrao.ok) return mapaPadrao;
+  out.mapeamento = mapaPadrao.config;
+
+  // Formato antigo: um único funil.
   if (c.pipelineId !== undefined && c.pipelineId !== null && c.pipelineId !== "") {
     if (typeof c.pipelineId !== "string" || !ID_RD.test(c.pipelineId)) return { ok: false, erro: "Funil inválido." };
     out.pipelineId = c.pipelineId;
   }
   if (c.etapas !== undefined && c.etapas !== null) {
-    if (!Array.isArray(c.etapas) || c.etapas.length > 30 || c.etapas.some((e) => typeof e !== "string" || !ID_RD.test(e))) return { ok: false, erro: "Etapas inválidas." };
+    if (!Array.isArray(c.etapas) || c.etapas.length > 50 || c.etapas.some((e) => typeof e !== "string" || !ID_RD.test(e))) return { ok: false, erro: "Etapas inválidas." };
     out.etapas = [...new Set(c.etapas as string[])];
   }
-  if (out.etapas.length && !out.pipelineId) return { ok: false, erro: "Escolha o funil antes das etapas." };
-  if (c.status !== undefined && c.status !== null) {
-    if (!["won", "ongoing", "qualquer"].includes(String(c.status))) return { ok: false, erro: "Status inválido." };
-    out.status = c.status as ConfigCrm["status"];
-  }
-  if (c.mapeamento !== undefined && c.mapeamento !== null) {
-    const m = objeto(c.mapeamento);
-    if (!m) return { ok: false, erro: "Mapeamento inválido." };
-    for (const [campo, fonte] of Object.entries(m)) {
-      if (!(CAMPOS_CRM as readonly string[]).includes(campo)) return { ok: false, erro: `Campo do Sra Luck desconhecido: ${campo}.` };
-      if (typeof fonte !== "string" || !FONTE_CRM.test(fonte)) return { ok: false, erro: `Fonte inválida para ${campo}.` };
-      out.mapeamento[campo as CampoCrm] = fonte;
+  if (out.etapas.length && !out.pipelineId && c.funis === undefined) return { ok: false, erro: "Escolha o funil antes das etapas." };
+
+  // Formato novo: vários funis com etapas e mapeamento independentes.
+  if (c.funis !== undefined && c.funis !== null) {
+    if (!Array.isArray(c.funis) || c.funis.length > 20) return { ok: false, erro: "Selecione no máximo 20 funis." };
+    const ids = new Set<string>();
+    for (const brutoFunil of c.funis) {
+      const funil = objeto(brutoFunil);
+      if (!funil) return { ok: false, erro: "Configuração de funil inválida." };
+      if (Object.keys(funil).some((k) => !["pipelineId", "etapas", "mapeamento"].includes(k))) return { ok: false, erro: "Configuração de funil possui campo não permitido." };
+
+      const pipelineId = typeof funil.pipelineId === "string" ? funil.pipelineId : "";
+      if (!ID_RD.test(pipelineId)) return { ok: false, erro: "Funil inválido." };
+      if (ids.has(pipelineId)) return { ok: false, erro: "O mesmo funil não pode ser selecionado duas vezes." };
+      ids.add(pipelineId);
+
+      const etapas = funil.etapas == null ? [] : funil.etapas;
+      if (!Array.isArray(etapas) || etapas.length > 50 || etapas.some((e) => typeof e !== "string" || !ID_RD.test(e))) return { ok: false, erro: "Etapas inválidas em um dos funis." };
+
+      const mapa = validarMapaCrm(funil.mapeamento, out.mapeamento);
+      if (!mapa.ok) return mapa;
+      out.funis.push({
+        pipelineId,
+        etapas: [...new Set(etapas as string[])],
+        mapeamento: mapa.config,
+      });
     }
+    // A configuração nova é a fonte de verdade; limpa o legado para não haver ambiguidade.
+    out.pipelineId = null;
+    out.etapas = [];
+  } else if (out.pipelineId) {
+    // Migra em memória a configuração antiga sem exigir alteração imediata no banco.
+    out.funis = [{
+      pipelineId: out.pipelineId,
+      etapas: [...out.etapas],
+      mapeamento: { ...out.mapeamento },
+    }];
   }
+
   if (c.deduplicarPor !== undefined && c.deduplicarPor !== null) {
     const d = objeto(c.deduplicarPor);
     if (!d || Object.keys(d).some((k) => !["cpf", "telefone", "email"].includes(k)) || Object.values(d).some((v) => typeof v !== "boolean")) return { ok: false, erro: "Deduplicação inválida." };
@@ -376,7 +456,7 @@ export function validarConfigContaAzul(bruto: unknown): Validacao<ConfigContaAzu
 export type CampoFormulario = {
   chave: string;
   rotulo: string;
-  tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano";
+  tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano" | "rd_funis";
   ajuda?: string;
   placeholder?: string;
   min?: number; max?: number; passo?: number; maxLength?: number;
@@ -402,10 +482,9 @@ const ROTULO_CAMPO_CRM: Record<CampoCrm, string> = {
 const CAMPOS_CRM_FORM: CampoFormulario[] = [
   { chave: "ativo", rotulo: "Importação automática ligada", tipo: "booleano", ajuda: "A importação manual e o webhook funcionam mesmo desligada." },
   { chave: "frequenciaMinutos", rotulo: "Frequência", tipo: "selecao", opcoes: FREQUENCIAS_CRM.map((m) => ({ valor: String(m), rotulo: m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "1 vez por dia" })) },
-  { chave: "pipelineId", rotulo: "Funil", tipo: "selecao", opcoesDe: "rd_funis", ajuda: "Em branco = todos os funis." },
-  { chave: "etapas", rotulo: "Etapas", tipo: "multi_selecao", opcoesDe: "rd_etapas", ajuda: "Nenhuma marcada = todas as etapas do funil." },
   { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
-  { chave: "mapeamento", rotulo: "Campos importados", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "O nome sempre é importado. Automático = leitura atual (contato e campos com nome parecido)." },
+  { chave: "mapeamento", rotulo: "Preenchimento padrão", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Fallback para todos os funis. Cada funil selecionado pode sobrescrever este preenchimento campo a campo." },
+  { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas e quais dados preencher. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
   { chave: "deduplicarPor", rotulo: "Deduplicar por", tipo: "grupo_booleano", itens: [{ chave: "cpf", rotulo: "CPF" }, { chave: "telefone", rotulo: "Telefone" }, { chave: "email", rotulo: "E-mail" }] },
 ];
 
