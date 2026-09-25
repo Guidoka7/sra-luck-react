@@ -3,7 +3,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { getCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
 import { CATALOGO_PROVEDORES, credenciaisApi, integracaoDesativada, obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
-import { rdStationReadonlyApi } from "./rd-station-readonly";
+import { garantirWebhooksRd, rdStationReadonlyApi } from "./rd-station-readonly";
 import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
@@ -370,6 +370,9 @@ type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
 async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!rotinaAutorizada(request, env)) return json({ erro: "Não autorizado." }, 401);
   const resultado: Record<string, unknown> = {};
+
+  try { resultado.rdWebhooks = await garantirWebhooksRd(env, "sistema:agendador"); }
+  catch { resultado.rdWebhooks = { erro: "Falha ao garantir webhooks do RD Station." }; }
 
   const crm = importacaoAgendadaSeDevida(env);
   if (ctx?.waitUntil) {
