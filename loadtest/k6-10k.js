@@ -12,7 +12,7 @@ const SMOKE = PROFILE === "smoke";
 const STAIR_TARGET = /^stair_(1500|2000|3000|5000|7500|10000)$/.test(PROFILE) ? Number(PROFILE.slice(6)) / 10 : 0;
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
 // Deployment imutável da branch; o cookie de share é vinculado a esta URL.
-const ISOLATED_PREVIEW = "https://sra-luck-react-msb237v3l-guidoka7.vercel.app";
+const ISOLATED_PREVIEW = "https://sra-luck-react-7o4aqvcwz-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
@@ -77,6 +77,9 @@ const minutes = Array.from({ length: 35 }, (_, minute) => ({
   timeouts: new Counter(`minute_${minute}_timeouts`),
   protection: new Counter(`minute_${minute}_protection`),
   witnessedVus: new Counter(`minute_${minute}_witnessedVus`),
+  duration: new Trend(`minute_${minute}_duration`, true),
+  dbCalls: new Trend(`minute_${minute}_dbCalls`),
+  dbTime: new Trend(`minute_${minute}_dbTime`, true),
 }));
 const routeDurations = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_duration_${route}`, true)]));
 const routeDbCalls = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_db_calls_${route}`)]));
@@ -253,12 +256,16 @@ function call(method, path, cookie, name, body = null) {
   server5xx.add(res.status >= 500, metricTags);
   appRequests.add(1, metricTags);
   minute.requests.add(1);
+  minute.duration.add(res.timings.duration);
   routeDurations[name].add(res.timings.duration);
   const dbCalls = res.headers["X-Loadtest-Db-Calls"] ?? res.headers["X-Loadtest-DB-Calls"];
-  if (dbCalls !== undefined && Number.isFinite(Number(dbCalls))) routeDbCalls[name].add(Number(dbCalls));
+  if (dbCalls !== undefined && Number.isFinite(Number(dbCalls))) {
+    routeDbCalls[name].add(Number(dbCalls));
+    minute.dbCalls.add(Number(dbCalls));
+  }
   const timings = res.headers["Server-Timing"] || "";
   const dbTime = timings.match(/(?:^|,)\s*db;dur=([\d.]+)/);
-  if (dbTime) routeDbTime[name].add(Number(dbTime[1]));
+  if (dbTime) { routeDbTime[name].add(Number(dbTime[1])); minute.dbTime.add(Number(dbTime[1])); }
   if (SMOKE && typeof res.body === "string") {
     const encoded = encoding.b64encode(res.body);
     routePayloadBytes[name].add(encoded.length * 3 / 4 - (encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0));
@@ -370,11 +377,17 @@ function smoke(data) {
     () => call("GET", "/api/cliente/session", cookies.client, "client_session"),
     () => call("GET", "/api/cliente/agenda", cookies.client, "client_agenda"),
     () => call("GET", "/api/cliente/boletos", cookies.client, "client_boletos"),
+    () => call("GET", "/api/cliente/notificacoes", cookies.client, "client_notificacoes"),
+    () => call("GET", "/api/cliente/config", cookies.client, "client_config"),
+    () => call("GET", "/api/cliente/home-campanhas", cookies.client, "client_home_campanhas"),
     () => call("GET", "/api/admin/session", cookies.admin, "admin_session"),
     () => call("GET", "/api/admin/notificacoes/automacao", cookies.admin, "admin_notificacoes"),
     () => call("GET", "/api/admin/visao-geral", cookies.admin, "admin_visao_geral"),
     () => call("GET", "/api/admin/clientes/pagina?limite=50", cookies.admin, "admin_clientes_pagina"),
     () => call("GET", "/api/admin/clientes/totais", cookies.admin, "admin_clientes_totais"),
+    () => call("GET", "/api/admin/financeiro/resumo?inicio=2026-01-01&fim=2026-12-31", cookies.admin, "admin_financeiro_resumo"),
+    () => call("GET", "/api/admin/financeiro/clientes", cookies.admin, "admin_financeiro_clientes"),
+    () => call("GET", "/api/admin/financeiro/recebiveis?inicio=2026-01-01&fim=2026-12-31&pagina=1&limite=50", cookies.admin, "admin_financeiro_recebiveis"),
     () => call("GET", `/api/admin/clientes/${client.id}/boletos`, cookies.admin, "admin_cliente_boletos"),
     () => call("GET", `/api/admin/central/cliente/${client.id}`, cookies.admin, "admin_central_cliente"),
   ];
@@ -392,9 +405,9 @@ export default function (data) {
   const client = data.clients[(__VU - 1) % data.clients.length];
   const cookies = cookiesFor(client.id);
 
-  if (PROFILE === "full" && START_EPOCH) {
+  if (START_EPOCH) {
     const b = bucket();
-    if (b >= 2 && b < 32 && b !== lastWitnessBucket) {
+    if (b < 35 && b !== lastWitnessBucket) {
       minutes[b].witnessedVus.add(1);
       lastWitnessBucket = b;
     }

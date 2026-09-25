@@ -33,8 +33,12 @@ for (const shard of shards) {
       route.failures += failures;
       route.total += total;
       const duration = metric(shard, `route_duration_${tags.route}`);
+      route.worstShardP50Ms = max([route.worstShardP50Ms, Number(duration.med)]);
       route.worstShardP95Ms = max([route.worstShardP95Ms, Number(duration["p(95)"])]);
       route.worstShardP99Ms = max([route.worstShardP99Ms, Number(duration["p(99)"])]);
+      route.maxDbCalls = max([route.maxDbCalls, Number(metric(shard, `route_db_calls_${tags.route}`).max)]);
+      route.worstDbP95Ms = max([route.worstDbP95Ms, Number(metric(shard, `route_db_time_${tags.route}`)["p(95)"])]);
+      route.maxPayloadBytes = max([route.maxPayloadBytes, Number(metric(shard, `route_payload_bytes_${tags.route}`).max)]);
       routes.set(tags.route, route);
     }
     const match = name.match(/^minute_(\d+)_(requests|failures|server5xx|client4xx|timeouts|protection|witnessedVus)$/);
@@ -42,6 +46,16 @@ for (const shard of shards) {
       const minute = Number(match[1]);
       const row = timeline.get(minute) || { minute, requests: 0, failures: 0, server5xx: 0, client4xx: 0, timeouts: 0, protection: 0, witnessedVus: 0 };
       row[match[2]] += Number(v.count || 0);
+      timeline.set(minute, row);
+    }
+    const minuteTrend = name.match(/^minute_(\d+)_(duration|dbCalls|dbTime)$/);
+    if (minuteTrend) {
+      const minute = Number(minuteTrend[1]);
+      const row = timeline.get(minute) || { minute, requests: 0, failures: 0, server5xx: 0, client4xx: 0, timeouts: 0, protection: 0, witnessedVus: 0 };
+      const key = minuteTrend[2] === "duration" ? "latency" : minuteTrend[2];
+      row[`${key}P95MaxShard`] = max([row[`${key}P95MaxShard`], Number(v["p(95)"])]);
+      row[`${key}P99MaxShard`] = max([row[`${key}P99MaxShard`], Number(v["p(99)"])]);
+      row[`${key}Max`] = max([row[`${key}Max`], Number(v.max)]);
       timeline.set(minute, row);
     }
   }
@@ -83,7 +97,7 @@ const report = {
   shardStarts: shards.map((s) => ({ shard: s.shard, startedAt: s.startedAt, endedAt: s.generatedAt, maxVus: metric(s, "vus").max })),
   rampReached, fullPlateauWitnessed: witnessedAllMinutes,
   plateauMinutesWitnessed: plateau.filter((row) => row.witnessedVus === 10000).length,
-  firstObservedDegradationMinute: series.find((row) => row.server5xx > 0 || row.timeouts > 0)?.minute ?? null,
+  firstObservedDegradationMinute: series.find((row) => row.server5xx > 0 || row.timeouts > 0 || row.failureRate >= 0.01 || row.latencyP95MaxShard >= 2000)?.minute ?? null,
   timeline: series, routes: sortedRoutes,
 };
 fs.writeFileSync("aggregate.json", JSON.stringify(report, null, 2));
@@ -98,11 +112,11 @@ const lines = [
   `10.000 VUs atingidos em todos os shards: ${rampReached ? "sim" : "não comprovado"}. Platô integral testemunhado: ${witnessedAllMinutes ? "sim" : "não comprovado"} (${report.plateauMinutesWitnessed}/30 minutos).`,
   "Os percentis acima são os piores entre shards; percentis globais não podem ser reconstruídos dos resumos.",
   "", "## Minutos observados", "",
-  "| Minuto | Requisições | Falhas | 5xx | 4xx | Timeouts | Proteção | VUs testemunhados |", "|---:|---:|---:|---:|---:|---:|---:|",
-  ...series.map((row) => `| ${row.minute} | ${row.requests} | ${pct(row.failureRate)} | ${row.server5xx} | ${row.client4xx} | ${row.timeouts} | ${row.protection} | ${row.witnessedVus} |`),
+  "| Minuto | Requisições | Falhas | 5xx | 4xx | Timeouts | p95 pior shard | p99 pior shard | DB p95 | VUs testemunhados |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+  ...series.map((row) => `| ${row.minute} | ${row.requests} | ${pct(row.failureRate)} | ${row.server5xx} | ${row.client4xx} | ${row.timeouts} | ${ms(row.latencyP95MaxShard)} | ${ms(row.latencyP99MaxShard)} | ${ms(row.dbTimeP95MaxShard)} | ${row.witnessedVus} |`),
   "", "## Rotas instrumentadas", "",
-  "| Rota | Amostra | Falhas | Taxa | Maior p95 | Maior p99 |", "|---|---:|---:|---:|---:|---:|",
-  ...sortedRoutes.map((row) => `| ${row.route} | ${row.total} | ${row.failures} | ${pct(row.failureRate)} | ${ms(row.worstShardP95Ms)} | ${ms(row.worstShardP99Ms)} |`),
+  "| Rota | Amostra | Falhas | Taxa | DB calls máximo | p50 pior shard | p95 pior shard | p99 pior shard | DB p95 | Payload máximo (smoke) |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+  ...sortedRoutes.map((row) => `| ${row.route} | ${row.total} | ${row.failures} | ${pct(row.failureRate)} | ${row.maxDbCalls ?? "n/a"} | ${ms(row.worstShardP50Ms)} | ${ms(row.worstShardP95Ms)} | ${ms(row.worstShardP99Ms)} | ${ms(row.worstDbP95Ms)} | ${row.maxPayloadBytes ?? "n/a"} |`),
   "",
 ];
 fs.writeFileSync("summary.md", lines.join("\n"));

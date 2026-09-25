@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_BASE: "https://sra-luck-react-msb237v3l-guidoka7.vercel.app"
-  VERCEL_SHARE: "w0JYp2ucAMMHOWRa1XPmGoghVIgtb8Qg"
+  TARGET_BASE: "https://sra-luck-react-7o4aqvcwz-guidoka7.vercel.app"
+  VERCEL_SHARE: "8tucSW63POO2DoA1agOAbFrF8ZevPdbr"
 
 jobs:
   preflight:
@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           PROFILE=$(cat loadtest/run-mode.txt)
-          case "$PROFILE" in smoke|progressive|full) ;; *) echo "Invalid test stage" >&2; exit 1 ;; esac
+          case "$PROFILE" in smoke|progressive|stair_1500|stair_2000|stair_3000|stair_5000|stair_7500|stair_10000|full) ;; *) echo "Invalid test stage" >&2; exit 1 ;; esac
           test "${{ github.ref }}" = "refs/heads/load-test-10k-isolated"
           echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
 
