@@ -442,11 +442,32 @@ async function handleWebhook(request: Request, env: Env) {
   }
 }
 
-async function sincronizar(request: Request, env: Env, adminId: string) {
+type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
+
+async function sincronizar(request: Request, env: Env, adminId: string, ctx?: BackgroundContext) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  const r = await importarCrm(env, { origem: "manual", ator: `admin:${adminId}` });
+  const ator = `admin:${adminId}`;
+  const tarefa = (async () => {
+    const r = await importarCrm(env, { origem: "manual", ator });
+    if (r.ok) {
+      await createServiceSupabaseClient(env).from("logs_alteracoes").insert({
+        usuario: ator,
+        acao: "sincronizou_rd_station_somente_leitura",
+        entidade: "integracoes",
+        entidade_id: "rd_station",
+        detalhes: r,
+      });
+    }
+    return r;
+  })();
+
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
+    return json({ ok: true, iniciado: true, processamento: "segundo_plano" }, 202);
+  }
+
+  const r = await tarefa;
   if (!r.ok) return json({ erro: r.erro }, "ocupado" in r && r.ocupado ? 409 : 502);
-  await createServiceSupabaseClient(env).from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "sincronizou_rd_station_somente_leitura", entidade: "integracoes", entidade_id: "rd_station", detalhes: r });
   return json(r, r.erros ? 207 : 200);
 }
 
@@ -531,7 +552,7 @@ async function oauthCallback(request: Request, env: Env) {
   }
 }
 
-export async function rdStationReadonlyApi(request: Request, env: Env): Promise<Response | null> {
+export async function rdStationReadonlyApi(request: Request, env: Env, ctx?: BackgroundContext): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (path === "/api/integrations/rd-station/webhook" && request.method === "POST") return handleWebhook(request, env);
   if (path === "/api/integrations/rd-station/oauth/callback" && request.method === "GET") return oauthCallback(request, env);
@@ -539,7 +560,7 @@ export async function rdStationReadonlyApi(request: Request, env: Env): Promise<
   const adminId = await requireAdminComPermissao(request, env);
   if (!adminId) return json({ erro: "Sem permissão para gerenciar a integração RD Station." }, 403);
   if (path.endsWith("/authorize-url") && request.method === "GET") return authorizationUrl(env, adminId);
-  if ((path.endsWith("/sync") || path.endsWith("/importar")) && request.method === "POST") return sincronizar(request, env, adminId);
+  if ((path.endsWith("/sync") || path.endsWith("/importar")) && request.method === "POST") return sincronizar(request, env, adminId, ctx);
   const crm = await rotasCrm(request, env, adminId, path);
   if (crm) return crm;
   if (path.endsWith("/test") && request.method === "POST") return testar(env, adminId);
