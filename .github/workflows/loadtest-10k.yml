@@ -34,11 +34,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require protected Preview secret
+      - name: Detect protected Preview secrets
+        id: protected_secrets
+        shell: bash
         run: |
-          if [ -z "$VERCEL_SHARE" ] || [ -z "$LOADTEST_SESSION_SECRET" ]; then
-            echo "LOADTEST_VERCEL_SHARE and LOADTEST_SESSION_SECRET must be GitHub Actions repository secrets." >&2
-            exit 1
+          if [ -n "$VERCEL_SHARE" ] && [ -n "$LOADTEST_SESSION_SECRET" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Protected Preview smoke will be skipped until the repository secrets are configured."
           fi
 
       - name: Select isolated test stage
@@ -68,10 +72,12 @@ jobs:
         run: npm run build
 
       - uses: grafana/setup-k6-action@v1
+        if: steps.protected_secrets.outputs.available == 'true'
         with:
           k6-version: '2.3.0'
 
       - name: Runtime smoke against isolated Preview
+        if: steps.protected_secrets.outputs.available == 'true'
         env:
           SHARD: "0"
           PROFILE: "smoke"
