@@ -111,7 +111,7 @@ function signedToken(payload) {
 }
 
 export function setup() {
-  if (!BASE || !SHARE) throw new Error("TARGET_BASE e VERCEL_SHARE são obrigatórios.");
+  if (!BASE) throw new Error("TARGET_BASE é obrigatório.");
 
   const first = 80000000001 + SHARD * 1000;
   const last = first + 999;
@@ -146,13 +146,14 @@ let cachedAdminCookie = "";
 
 function ensurePreviewAccess() {
   if (previewReady) return;
-  const res = http.get(`${BASE}/?_vercel_share=${SHARE}`, {
+  const url = SHARE ? `${BASE}/?_vercel_share=${SHARE}` : `${BASE}/`;
+  const res = http.get(url, {
     redirects: 10,
-    tags: { name: "vercel_sso" },
+    tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
   });
   const ok = res.status >= 200 && res.status < 400;
-  check(res, { "vercel preview access": () => ok });
-  if (!ok) throw new Error(`Falha de acesso ao Preview Vercel: HTTP ${res.status}`);
+  check(res, { "test host access": () => ok });
+  if (!ok) throw new Error(`Falha de acesso ao host isolado: HTTP ${res.status}`);
   previewReady = true;
 }
 
