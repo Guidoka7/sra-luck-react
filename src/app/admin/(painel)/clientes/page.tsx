@@ -279,19 +279,19 @@ export default function ClientesPage() {
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Origem</th><th>Valor</th><th>Status</th></tr></thead>
               <tbody>
-                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "pointer" }} onClick={() => abrirVenda(v)}>
-                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
-                  <td>{v.vendedora_responsavel || <Dash />}</td>
-                  <td>{v.origem_venda || <Dash />}</td>
-                  <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
-                  <td><span className={styles.statusPill}><span className={styles.statusDot} />Recebida do CRM</span></td>
-                </tr>)}
                 {filtradas.map((c) => <tr key={`cliente-${c.id}`} style={{ cursor: "pointer" }} onClick={() => abrir(c, "profile")}>
                   <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                   <td>{c.consultora || <Dash />}</td>
                   <td>{c.origem_venda || <Dash />}</td>
                   <td>{formatarMoeda(Number(c.valor_contrato ?? 0))}</td>
                   <td><span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span></td>
+                </tr>)}
+                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "pointer" }} onClick={() => abrirVenda(v)}>
+                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
+                  <td>{v.vendedora_responsavel || <Dash />}</td>
+                  <td>{v.origem_venda || <Dash />}</td>
+                  <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
+                  <td><span className={styles.statusPill}><span className={styles.statusDot} />Recebida do CRM</span></td>
                 </tr>)}
               </tbody>
             </table>
