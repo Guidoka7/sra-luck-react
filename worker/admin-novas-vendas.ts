@@ -47,7 +47,12 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
 
   if (path === "/api/admin/novas-vendas" && request.method === "GET") {
     const status = url.searchParams.get("status");
-    let query = db.from("novas_vendas").select("*").order("data_venda", { ascending: false });
+    // A listagem do funil não precisa carregar payload_original nem snapshots
+    // pesados do RD. Com centenas/milhares de vendas isso reduz bastante o JSON
+    // transferido e o tempo até a primeira pintura no Admin.
+    let query = db.from("novas_vendas")
+      .select("id,rd_station_id,cliente_id,nome_completo,cpf,telefone,email,data_venda,vendedora_responsavel,valor_contrato,quantidade_parcelas,valor_parcela,taxa_administrativa,tipo_venda,origem_venda,status,created_at,updated_at,vendedora_id")
+      .order("data_venda", { ascending: false });
     if (status) query = query.eq("status", status);
     const { data, error } = await query;
     if (error) return json({ erro: publicError(error) }, 500);

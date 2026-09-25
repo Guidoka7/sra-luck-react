@@ -111,14 +111,31 @@ export default function ClientesPage() {
   const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; venda: NovaVenda | null; aba: AbaDrawer } | null>(null);
 
   async function carregar(force = false) {
-    const url = "/api/admin/clientes";
-    const cached = !force ? getInstantCache<{ clientes?: Cliente[] }>(url) : null;
-    if (cached) { setClientes(cached.clientes ?? []); setCarregando(false); } else setCarregando(true);
-    try {
-      const data = force ? await refreshInstant<{ clientes?: Cliente[] }>(url) : await fetchInstant<{ clientes?: Cliente[] }>(url);
-      setClientes(data.clientes ?? []);
-      try { const r = await fetch("/api/admin/novas-vendas", { cache: "no-store" }); const d = await r.json(); if (r.ok) setNovasVendas(d.vendas ?? []); } catch { /* staging opcional */ }
-    } catch (e) { if (!cached) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); } finally { setCarregando(false); }
+    const clientesUrl = "/api/admin/clientes";
+    const crmUrl = "/api/admin/novas-vendas?status=aguardando_cadastro";
+    // A lista do RD já está persistida no nosso banco. Mostra o último snapshot
+    // instantaneamente ao entrar/atualizar a página e revalida em paralelo.
+    const cachedClientes = getInstantCache<{ clientes?: Cliente[] }>(clientesUrl, 24 * 60 * 60 * 1000);
+    const cachedCrm = getInstantCache<{ vendas?: NovaVenda[] }>(crmUrl, 24 * 60 * 60 * 1000);
+    if (cachedClientes) setClientes(cachedClientes.clientes ?? []);
+    if (cachedCrm) setNovasVendas(cachedCrm.vendas ?? []);
+    if (!cachedClientes && !cachedCrm) setCarregando(true);
+    else setCarregando(false);
+
+    const carregarClientes = force || cachedClientes
+      ? refreshInstant<{ clientes?: Cliente[] }>(clientesUrl)
+      : fetchInstant<{ clientes?: Cliente[] }>(clientesUrl);
+    const carregarCrm = force || cachedCrm
+      ? refreshInstant<{ vendas?: NovaVenda[] }>(crmUrl)
+      : fetchInstant<{ vendas?: NovaVenda[] }>(crmUrl);
+
+    const [resultadoClientes, resultadoCrm] = await Promise.allSettled([carregarClientes, carregarCrm]);
+    if (resultadoClientes.status === "fulfilled") setClientes(resultadoClientes.value.clientes ?? []);
+    else if (!cachedClientes) toast.error(resultadoClientes.reason instanceof Error ? resultadoClientes.reason.message : "Falha ao carregar clientes.");
+
+    if (resultadoCrm.status === "fulfilled") setNovasVendas(resultadoCrm.value.vendas ?? []);
+    // Se o RD/API estiver momentaneamente lento, mantém o snapshot já exibido.
+    setCarregando(false);
   }
   useEffect(() => {
     const termoInicial = new URLSearchParams(window.location.search).get("busca")?.trim();
