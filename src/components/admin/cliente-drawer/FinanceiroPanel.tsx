@@ -375,7 +375,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
       </div>
       <div className={styles.modalActions}>
         <button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => setModal(null)}>Cancelar</button>
-        <button className={`${styles.modalBtn} ${styles.deleteBtn}`} type="button" onClick={async () => { if (await cad.excluirCarne(modal.carne.id)) setModal(null); }}>Excluir carnê</button>
+        <button className={`${styles.modalBtn} ${styles.deleteBtn}`} type="button" disabled={cad.criandoCarne} onClick={async () => { if (await cad.excluirCarne(modal.carne.id)) setModal(null); }}>{cad.criandoCarne ? "Excluindo..." : "Excluir carnê"}</button>
       </div>
     </Shell>}
 
