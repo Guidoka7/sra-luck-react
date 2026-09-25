@@ -29,6 +29,11 @@ interface Contexto {
   documentoJaImportado: { em: string } | null;
 }
 
+export interface LeituraCarneConcluida {
+  quantidadeParcelas: number;
+  instituicao: string;
+}
+
 const ROTULO_ACAO: Record<AcaoItem, string> = { criar: "Criar nova parcela", anexar: "Anexar à parcela do cadastro", substituir: "Substituir o boleto da parcela", ignorar: "Não importar" };
 const ROTULO_NIVEL: Record<NivelConfianca, string> = { ALTA: "Confiança alta", MEDIA: "Confiança média", BAIXA: "Confiança baixa" };
 const TIPO_DOC: Record<string, string> = { PDF_TEXT: "PDF com texto", PDF_SCANNED: "PDF escaneado", MIXED_PDF: "PDF misto", IMAGE: "Imagem" };
@@ -55,7 +60,7 @@ function estiloCaixa(c: Caixa) {
   return { left: `${c.x0 * 100}%`, top: `${c.y0 * 100}%`, width: `${Math.max(0.5, (c.x1 - c.x0) * 100)}%`, height: `${Math.max(0.5, (c.y1 - c.y0) * 100)}%` };
 }
 
-export function LeitorCarneModal({ clienteId, onClose, onImportado }: { clienteId: string; onClose: () => void; onImportado: () => void }) {
+export function LeitorCarneModal({ clienteId, onClose, onImportado }: { clienteId: string; onClose: () => void; onImportado: (dados?: LeituraCarneConcluida) => void }) {
   const [etapa, setEtapa] = useState<Etapa>({ tipo: "escolher" });
   const [arrastando, setArrastando] = useState(false);
   const [arquivo, setArquivo] = useState<ArquivoRecebido | null>(null);
@@ -77,10 +82,11 @@ export function LeitorCarneModal({ clienteId, onClose, onImportado }: { clienteI
   // As parcelas do drawer são recarregadas ao fechar: recarregar antes
   // desmontaria o painel e esconderia o resultado da importação.
   const importou = useRef(false);
+  const dadosImportados = useRef<LeituraCarneConcluida | null>(null);
   const fechar = useCallback(() => {
     if (etapa.tipo === "importando") return;
     controle.current?.abort();
-    if (importou.current) onImportado();
+    if (importou.current) onImportado(dadosImportados.current ?? undefined);
     onClose();
   }, [etapa.tipo, onClose, onImportado]);
 
@@ -168,6 +174,10 @@ export function LeitorCarneModal({ clienteId, onClose, onImportado }: { clienteI
         cpfDivergenteConfirmado: cpfDivergente && cpfConfirmado,
       }, (p) => setEtapa({ tipo: "importando", ...p }), ac.signal);
       importou.current = true;
+      dadosImportados.current = {
+        quantidadeParcelas: carne.resumo.totalInformado ?? carne.resumo.encontradas,
+        instituicao: carne.banco.valor ?? "",
+      };
       setEtapa({ tipo: "concluido", resultado });
     } catch (e) {
       setErroImportacao(e instanceof DOMException && e.name === "AbortError" ? "Importação cancelada. Nada foi gravado nas parcelas." : e instanceof ErroImportacao || e instanceof Error ? e.message : "Não foi possível concluir a importação.");
