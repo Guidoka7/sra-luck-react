@@ -32,6 +32,9 @@ export interface ClienteFunilItem {
 export interface FunilFinanceiro {
   itens: ClienteFunilItem[];
   funis: Array<{ bucket: FunilClienteBucket; total: number }>;
+  total: number;
+  pagina: number;
+  limite: number;
 }
 
 export type ToneRecebivel = "neutral" | "success" | "alert" | "gold" | "rose" | "indigo";

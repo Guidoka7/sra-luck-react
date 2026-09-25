@@ -70,9 +70,18 @@ export function timedSupabaseFetch(context: RequestContext): typeof fetch {
 
 export function withPerformance(request: Request, response: Response, env: Env): Response {
   const context = requestContext(request);
-  if (!context || env.LOAD_TEST_TELEMETRY !== "1") return response;
-  const elapsedMs = performance.now() - context.startedAt;
   const headers = new Headers(response.headers);
+  const path = new URL(request.url).pathname;
+  if (/^\/api\/(cliente|admin|equipe|monitoramento)(?:\/|$)/.test(path)) {
+    // Também vale no Worker direto, fora das regras de headers do Vercel.
+    headers.set("Cache-Control", "private, no-store");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+  }
+  if (!context || env.LOAD_TEST_TELEMETRY !== "1") {
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+  const elapsedMs = performance.now() - context.startedAt;
   headers.set("Server-Timing", [
     `auth;dur=${context.authMs.toFixed(1)}`,
     `authorization;dur=${context.authorizationMs.toFixed(1)}`,

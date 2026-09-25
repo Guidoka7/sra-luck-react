@@ -1,5 +1,5 @@
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
-import { credenciaisParaStatus, estadosIntegracoes } from "./integrations-credenciais";
+import { credenciaisParaStatus } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { validarConfiguracaoVapid } from "./web-push-config";
@@ -50,15 +50,13 @@ async function exigirAdminAtivo(request: Request, env: Env) {
   return { resposta: null, adminId: sessao.adminId };
 }
 
-async function tabelaDisponivel(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string, chave = "id") {
-  const { error } = await db.from(tabela).select(chave, { count: "exact", head: true });
-  return !error;
-}
-
-async function contar(db: ReturnType<typeof createServiceSupabaseClient>, tabela: string) {
-  const { count, error } = await db.from(tabela).select("id", { count: "exact", head: true });
-  return error ? undefined : (count ?? 0);
-}
+type IntegrationSnapshot = {
+  estados: Array<{ provedor: string; ativo: boolean }>;
+  disponibilidade: Record<"push" | "eventos" | "pagamentos" | "contaAzul" | "crm" | "vendas" | "frases", boolean>;
+  contagens: Record<"push" | "pagamentos" | "contaAzul" | "vendas" | "frasesIa", number | null>;
+  rd: { ultimaSincronizacao: string | null; erros: number; ultimoWebhook: string | null };
+  verificacoes: Record<string, { created_at?: string; detalhes?: any }>;
+};
 
 function estadoBase(persistenciaPronta: boolean, credenciaisConfiguradas: boolean): EstadoIntegracao {
   if (!persistenciaPronta) return "base_incompleta";
@@ -100,7 +98,6 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   if (auth.resposta) return auth.resposta;
 
   const db = createServiceSupabaseClient(env, request);
-  const estados = await estadosIntegracoes(env, true, request);
   if (historico) {
     const { data, error } = await db.from("logs_alteracoes").select("id,usuario,acao,entidade_id,detalhes,created_at")
       .in("entidade", ["integracoes", "integracoes_credenciais"]).order("created_at", { ascending: false }).limit(100);
@@ -108,18 +105,20 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     return json({ eventos: data ?? [] });
   }
 
-  const [eventTable, rdRawTable, novasVendasTable, pushCount, paymentCount, contaAzulCount, rdCount] = await Promise.all([
-    tabelaDisponivel(db, "integracao_eventos"),
-    tabelaDisponivel(db, "crm_vendas_entrada"),
-    tabelaDisponivel(db, "novas_vendas"),
-    contar(db, "web_push_subscriptions"), contar(db, "pagamentos_externos"),
-    contar(db, "conta_azul_operacoes"), contar(db, "novas_vendas"),
+  const [{ data, error }, credenciais] = await Promise.all([
+    db.rpc("loadtest_admin_integration_snapshot"), credenciaisParaStatus(env, request),
   ]);
-  const pushTable = pushCount !== undefined;
-  const paymentTable = paymentCount !== undefined;
-  const contaAzulTable = contaAzulCount !== undefined;
-
-  const credenciais = await credenciaisParaStatus(env, request);
+  if (error || !data) return json({ erro: "Não foi possível carregar o estado das integrações." }, 500);
+  const snapshot = data as IntegrationSnapshot;
+  const estados = new Map(snapshot.estados.map((estado) => [estado.provedor, estado]));
+  const { push: pushTable, eventos: eventTable, pagamentos: paymentTable,
+    contaAzul: contaAzulTable, crm: rdRawTable, vendas: novasVendasTable } = snapshot.disponibilidade;
+  const pushCount = snapshot.contagens.push ?? undefined;
+  const paymentCount = snapshot.contagens.pagamentos ?? undefined;
+  const contaAzulCount = snapshot.contagens.contaAzul ?? undefined;
+  const rdCount = snapshot.contagens.vendas ?? undefined;
+  const frasesIa = snapshot.contagens.frasesIa;
+  const testes = new Map<string, any>(Object.entries(snapshot.verificacoes));
   const credencial = (provedor: string, chave: string) => credenciais.get(`${provedor}:${chave}`) ?? null;
   const [
     pushPublicKey, pushPrivateKey, pushSubject,
@@ -134,10 +133,6 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     credencial("rd_station", "access_token"), credencial("rd_station", "api_access_token"), credencial("rd_station", "refresh_token"),
   ];
 
-  const { data: verificacoes, error: erroVerificacoes } = await db.rpc("loadtest_admin_integration_checks");
-  if (erroVerificacoes) return json({ erro: "Não foi possível carregar as verificações de integrações." }, 500);
-  const testes = new Map<string, any>(Object.entries(verificacoes ?? {}));
-
   const pushCredenciais = Boolean(pushPublicKey && pushPrivateKey && pushSubject);
   const pushValidacao = pushCredenciais
     ? await validarConfiguracaoVapid({ subject: pushSubject!, publicKey: pushPublicKey!, privateKey: pushPrivateKey! })
@@ -150,23 +145,11 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   const rdCredenciais = Boolean(rdWebhookSecret && rdOauthConfigurado);
   const rdPersistencia = rdRawTable && eventTable && novasVendasTable;
 
-  let rdUltimaSincronizacao: string | null = null;
-  let rdUltimoWebhook: string | null = null;
-  let rdErros = 0;
+  const rdUltimaSincronizacao = snapshot.rd.ultimaSincronizacao;
+  const rdUltimoWebhook = snapshot.rd.ultimoWebhook;
+  const rdErros = snapshot.rd.erros;
   let rdUltimaVerificacao: string | null = null;
   let rdConectado = false;
-  if (eventTable) {
-    const [{ data: sync }, { count: erros }] = await Promise.all([
-      db.from("integracao_eventos").select("created_at").eq("provedor", "rd_station").eq("event_type", "sync_manual").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      db.from("integracao_eventos").select("id", { count: "exact", head: true }).eq("provedor", "rd_station").eq("status", "erro"),
-    ]);
-    rdUltimaSincronizacao = sync?.created_at ?? null;
-    rdErros = erros ?? 0;
-  }
-  if (rdRawTable) {
-    const { data: webhook } = await db.from("crm_vendas_entrada").select("created_at").eq("provedor", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
-    rdUltimoWebhook = webhook?.created_at ?? null;
-  }
   const testeRd = testes.get("rd_station");
   if (testeRd) {
     rdUltimaVerificacao = testeRd.created_at;
@@ -241,10 +224,7 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
   ];
 
-  const [frasesTabela, { count: frasesIa }] = await Promise.all([
-    tabelaDisponivel(db, "mensagens_do_dia", "data"),
-    db.from("mensagens_do_dia").select("data", { count: "exact", head: true }).eq("origem", "ia"),
-  ]);
+  const frasesTabela = snapshot.disponibilidade.frases;
   const geminiChave = credencial("gemini", "api_key");
   const testeGemini = testes.get("gemini");
   const geminiConectado = Boolean(geminiChave && estadoAtivo("gemini").ativo && (testeGemini?.detalhes as any)?.conectado);

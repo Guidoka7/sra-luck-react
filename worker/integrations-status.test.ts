@@ -22,7 +22,16 @@ vi.mock("./web-push-config", () => ({
 }));
 vi.mock("./supabase", () => ({
   createServiceSupabaseClient: () => ({
-    rpc: async (nome: string) => { rpcs.push(nome); return { data: {}, error: null }; },
+    rpc: async (nome: string) => {
+      rpcs.push(nome);
+      return { data: {
+        estados: [],
+        disponibilidade: { push: true, eventos: true, pagamentos: true, contaAzul: false, crm: true, vendas: true, frases: true },
+        contagens: { push: 0, pagamentos: 0, contaAzul: null, vendas: 0, frasesIa: 1 },
+        rd: { ultimaSincronizacao: null, erros: 0, ultimoWebhook: null },
+        verificacoes: {},
+      }, error: null };
+    },
     from: (tabela: string) => ({
       select: (coluna: string) => {
         consultas.push({ tabela, coluna });
@@ -44,8 +53,8 @@ vi.mock("./supabase", () => ({
 
 const { integrationsStatusApi } = await import("./integrations-status");
 
-describe("status da integração Gemini", () => {
-  it("reconhece a persistência pela chave data da tabela de mensagens", async () => {
+describe("snapshot do painel de integrações", () => {
+  it("reconhece a persistência da Gemini sem repetir consultas REST", async () => {
     consultas.length = 0;
     rpcs.length = 0;
     const resposta = await integrationsStatusApi(
@@ -58,8 +67,7 @@ describe("status da integração Gemini", () => {
       estado: "credenciais_presentes",
       persistenciaPronta: true,
     });
-    expect(consultas).toContainEqual({ tabela: "mensagens_do_dia", coluna: "data" });
-    expect(rpcs).toEqual(["loadtest_admin_integration_checks"]);
-    expect(consultas.filter((consulta) => consulta.tabela === "logs_alteracoes")).toHaveLength(0);
+    expect(rpcs).toEqual(["loadtest_admin_integration_snapshot"]);
+    expect(consultas).toHaveLength(0);
   });
 });

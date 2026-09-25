@@ -4,7 +4,7 @@ import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { detectarTipoArquivo as detectarTipoComprovante } from "./arquivos";
-import { hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
+import { hojeSaoPaulo } from "../src/lib/dataCivil";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -104,178 +104,66 @@ function origemSegura(request: Request) {
   try { return new URL(origin).origin === new URL(request.url).origin; } catch { return false; }
 }
 
-async function carregarBase(db: Db) {
-  const [boletosResult, recebimentosResult] = await Promise.all([
-    db.from("boletos").select(BOLETO_SELECT, { count: "exact" }).order("data_vencimento", { ascending: true }).limit(5000),
-    db.from("financeiro_recebimentos").select(RECEBIMENTO_SELECT).order("created_at", { ascending: false }).limit(5000),
-  ]);
-  if (boletosResult.error) throw new Error(boletosResult.error.message);
-  if (recebimentosResult.error) throw new Error(recebimentosResult.error.message);
-  return {
-    boletos: boletosResult.data ?? [],
-    recebimentos: recebimentosResult.data ?? [],
-    truncado: Number(boletosResult.count ?? 0) > 5000,
-  };
-}
-
-function receitaAdministrativa(boleto: any, valor: number) {
-  const cliente = clienteDo(boleto);
-  const base = dinheiro(cliente.valor_contrato);
-  const custo = dinheiro(cliente.custo_total);
-  const taxaTotal = Math.max(0, custo - base) || dinheiro(base * dinheiro(cliente.taxa_administrativa_percentual) / 100);
-  return custo > 0 ? dinheiro(valor * taxaTotal / custo) : 0;
-}
-
 async function resumo(db: Db, url: URL) {
   const { inicio, fim } = periodo(url);
-  const { boletos, recebimentos, truncado } = await carregarBase(db);
-  const porBoleto = indiceRecebimentos(recebimentos);
-  let aReceber = 0; let recebido = 0; let vencido = 0; let aguardando = 0; let receitaRealizada = 0; let receitaFutura = 0;
-  const evolucao = new Map<string, { previsto: number; realizado: number; vencido: number; receitaRealizada: number; receitaFutura: number }>();
-  const futuros = { 30: 0, 60: 0, 90: 0 };
-  const hoje = hojeIso();
-  const horizonte = (dias: number) => { const d = new Date(`${hoje}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + dias); return d.toISOString().slice(0, 10); };
-
-  for (const boleto of boletos as any[]) {
-    const rec = porBoleto.get(boleto.id);
-    const vencimento = boleto.data_vencimento as string | null;
-    const dataRecebida = rec?.status_validacao === "validado" ? rec.data_pagamento : boleto.data_pagamento;
-    const valorPrevisto = dinheiro(boleto.valor);
-    const valorRealizado = rec?.status_validacao === "validado" ? dinheiro(rec.valor_recebido) : boleto.status === "pago" ? valorPrevisto : 0;
-    const emPeriodo = Boolean(vencimento && vencimento >= inicio && vencimento <= fim);
-    const recebidoNoPeriodo = Boolean(dataRecebida && dataRecebida >= inicio && dataRecebida <= fim);
-
-    if (emPeriodo) {
-      aReceber += valorPrevisto;
-      if (boleto.status === "pendente_confirmacao") aguardando += 1;
-      if (statusCalculado(boleto) === "vencido") vencido += valorPrevisto;
-      if (boleto.status !== "pago") receitaFutura += receitaAdministrativa(boleto, valorPrevisto);
-    }
-    if (recebidoNoPeriodo) {
-      recebido += valorRealizado;
-      receitaRealizada += receitaAdministrativa(boleto, valorRealizado);
-    }
-
-    const chave = (dataRecebida || vencimento || "").slice(0, 7);
-    if (chave && ((vencimento && vencimento >= inicio && vencimento <= fim) || recebidoNoPeriodo)) {
-      const atual = evolucao.get(chave) ?? { previsto: 0, realizado: 0, vencido: 0, receitaRealizada: 0, receitaFutura: 0 };
-      if (emPeriodo) {
-        atual.previsto += valorPrevisto;
-        if (statusCalculado(boleto) === "vencido") atual.vencido += valorPrevisto;
-        if (boleto.status !== "pago") atual.receitaFutura += receitaAdministrativa(boleto, valorPrevisto);
-      }
-      if (recebidoNoPeriodo) {
-        atual.realizado += valorRealizado;
-        atual.receitaRealizada += receitaAdministrativa(boleto, valorRealizado);
-      }
-      evolucao.set(chave, atual);
-    }
-
-    if (boleto.status !== "pago" && !boleto.suspensa && vencimento && vencimento >= hoje) {
-      if (vencimento <= horizonte(30)) futuros[30] += valorPrevisto;
-      if (vencimento <= horizonte(60)) futuros[60] += valorPrevisto;
-      if (vencimento <= horizonte(90)) futuros[90] += valorPrevisto;
-    }
-  }
-
-  const grafico = [...evolucao.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, item]) => ({
-    label: label.split("-").reverse().join("/"),
-    previsto: dinheiro(item.previsto), realizado: dinheiro(item.realizado), vencido: dinheiro(item.vencido),
-    receitaRealizada: dinheiro(item.receitaRealizada), receitaFutura: dinheiro(item.receitaFutura),
-  }));
-  return {
-    periodo: { inicio, fim },
-    kpis: {
-      aReceber: dinheiro(aReceber), recebido: dinheiro(recebido), vencido: dinheiro(vencido), aguardandoValidacao: aguardando,
-      divergencias: null, divergenciasDisponiveis: false,
-      receitaAdministrativaRealizada: dinheiro(receitaRealizada), receitaAdministrativaFutura: dinheiro(receitaFutura),
-    },
-    previsao: { dias30: dinheiro(futuros[30]), dias60: dinheiro(futuros[60]), dias90: dinheiro(futuros[90]) },
-    evolucao: grafico,
-    ultimaAtualizacao: new Date().toISOString(), truncado,
-  };
+  const { data, error } = await db.rpc("loadtest_finance_summary", {
+    p_inicio: inicio, p_fim: fim, p_hoje: hojeIso(),
+  });
+  if (error || !data) throw new Error("Não foi possível consultar o resumo financeiro.");
+  return data;
 }
 
-function filtrarRecebiveis(rows: any[], url: URL) {
-  const { inicio, fim } = periodo(url);
-  const busca = texto(url.searchParams.get("busca")).toLocaleLowerCase("pt-BR");
-  const filtro = texto(url.searchParams.get("status")) || "todos";
-  return rows.filter((item) => {
-    if (item.vencimento && (item.vencimento < inicio || item.vencimento > fim)) return false;
-    if (filtro !== "todos" && item.status !== filtro) return false;
-    if (busca && !`${item.cliente} ${item.cpf ?? ""} ${item.numeroParcela}/${item.totalParcelas} ${item.externalId ?? ""}`.toLocaleLowerCase("pt-BR").includes(busca)) return false;
-    return true;
-  });
+function paginaFinanceira(url: URL) {
+  const numero = (value: string | null, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  return { pagina: Math.min(numero(url.searchParams.get("pagina"), 1), 100000),
+    limite: Math.min(numero(url.searchParams.get("limite"), 40), 100) };
 }
 
 async function listarRecebiveis(db: Db, url: URL) {
-  const { boletos, recebimentos, truncado } = await carregarBase(db);
-  const porBoleto = indiceRecebimentos(recebimentos);
-  const todos = (boletos as any[]).map((boleto) => apresentarRecebivel(boleto, porBoleto.get(boleto.id)));
-  const filtrados = filtrarRecebiveis(todos, url);
-  const pagina = Math.max(1, Number(url.searchParams.get("pagina") ?? 1));
-  const limite = Math.min(100, Math.max(10, Number(url.searchParams.get("limite") ?? 40)));
-  const inicio = (pagina - 1) * limite;
-  return { itens: filtrados.slice(inicio, inicio + limite), total: filtrados.length, pagina, limite, truncado };
+  const { inicio, fim } = periodo(url);
+  const { pagina, limite } = paginaFinanceira(url);
+  const { data, error } = await db.rpc("loadtest_finance_receivables_page", {
+    p_inicio: inicio, p_fim: fim, p_status: texto(url.searchParams.get("status")) || "todos",
+    p_busca: texto(url.searchParams.get("busca")).slice(0, 100), p_pagina: pagina, p_limite: limite,
+  });
+  if (error || !data) throw new Error("Não foi possível consultar os recebíveis.");
+  const snapshot = data as { total: number; itens: any[] };
+  return {
+    itens: snapshot.itens.map((item) => apresentarRecebivel({
+      ...item, clientes: { nome_completo: item.nome_completo, cpf: item.cpf },
+    }, item.status_validacao ? {
+      ...item, data_pagamento: item.recebimento_data,
+      comprovante_url: item.recebimento_comprovante,
+    } : undefined)),
+    total: Number(snapshot.total), pagina, limite, truncado: false,
+  };
 }
 
 async function listarRecebidos(db: Db, url: URL) {
-  const data = dataValida(url.searchParams.get("data")) ? url.searchParams.get("data")! : hojeIso();
+  const dataDia = dataValida(url.searchParams.get("data")) ? url.searchParams.get("data")! : hojeIso();
   const tipo = texto(url.searchParams.get("tipo")) === "vencidos" ? "vencidos" : "recebidos";
-  const busca = texto(url.searchParams.get("busca")).toLocaleLowerCase("pt-BR");
-  const { boletos, recebimentos, truncado } = await carregarBase(db);
-  const boletosPorId = new Map((boletos as any[]).map((boleto) => [boleto.id, boleto]));
-  let itens: any[];
-
-  if (tipo === "recebidos") {
-    const { inicio, fimExclusivo } = intervaloDiaOperacionalUtc(data);
-    const inicioMs = Date.parse(inicio);
-    const fimExclusivoMs = Date.parse(fimExclusivo);
-    const recebidosDoDia: any[] = [];
-    for (const recebimento of recebimentos as any[]) {
-      const confirmadoEmMs = recebimento.validado_em ? Date.parse(recebimento.validado_em) : Number.NaN;
-      if (
-        recebimento.status_validacao !== "validado"
-        || !Number.isFinite(confirmadoEmMs)
-        || confirmadoEmMs < inicioMs
-        || confirmadoEmMs >= fimExclusivoMs
-      ) continue;
-      const boleto = boletosPorId.get(recebimento.boleto_id);
-      if (!boleto) continue;
-      recebidosDoDia.push({
-        ...apresentarRecebivel(boleto, recebimento),
-        recebimentoId: recebimento.id,
-        confirmadoEm: recebimento.validado_em,
-      });
-    }
-    itens = recebidosDoDia.sort((a, b) => String(b.confirmadoEm ?? "").localeCompare(String(a.confirmadoEm ?? "")));
-  } else {
-    const porBoleto = indiceRecebimentos(recebimentos as any[]);
-    itens = (boletos as any[])
-      .filter((boleto) => statusCalculado(boleto) === "vencido")
-      .map((boleto) => {
-        const recebimento = porBoleto.get(boleto.id);
-        return {
-          ...apresentarRecebivel(boleto, recebimento),
-          recebimentoId: recebimento?.id ?? null,
-          confirmadoEm: recebimento?.validado_em ?? null,
-        };
-      })
-      .sort((a, b) => String(a.vencimento ?? "9999-12-31").localeCompare(String(b.vencimento ?? "9999-12-31")));
-  }
-
-  const filtrados = busca
-    ? itens.filter((item) => `${item.cliente} ${item.cpf ?? ""} ${item.numeroParcela}/${item.totalParcelas} ${item.origem ?? ""} ${item.formaPagamento ?? ""}`.toLocaleLowerCase("pt-BR").includes(busca))
-    : itens;
-
+  const { pagina, limite } = paginaFinanceira(url);
+  const { data, error } = await db.rpc("loadtest_finance_received_page", {
+    p_tipo: tipo, p_data: dataDia, p_busca: texto(url.searchParams.get("busca")).slice(0, 100),
+    p_pagina: pagina, p_limite: limite, p_hoje: hojeIso(),
+  });
+  if (error || !data) throw new Error("Não foi possível consultar os recebimentos.");
+  const snapshot = data as { total: number; itens: any[] };
   return {
-    itens: filtrados,
-    total: filtrados.length,
-    pagina: 1,
-    limite: filtrados.length,
-    truncado,
-    data,
-    tipo,
+    itens: snapshot.itens.map((item) => ({
+      ...apresentarRecebivel({ ...item,
+        clientes: { nome_completo: item.nome_completo, cpf: item.cpf },
+      }, item.status_validacao ? {
+        ...item, data_pagamento: item.recebimento_data,
+        comprovante_url: item.recebimento_comprovante,
+      } : undefined),
+      recebimentoId: item.recebimento_id ?? item.ultimo_recebimento_id ?? null,
+      confirmadoEm: item.confirmado_em ?? null,
+    })),
+    total: Number(snapshot.total), pagina, limite, truncado: false, data: dataDia, tipo,
   };
 }
 
@@ -331,74 +219,35 @@ type FunilCliente = "aguardando_conferencia" | "ativos" | "todos" | "suspensos" 
  * bucket. "Ativo" exige financeiro real E nenhum estado administrativo
  * anormal (suspenso/negativado/cancelado) — nunca é inferido do carnê.
  */
-async function clientesFunil(db: Db) {
-  const [{ data: todosClientes, error: erroClientes }, { boletos, recebimentos }, { data: vendasRows }] = await Promise.all([
-    db.from("clientes").select("id,nome_completo,cpf,status_contrato,valor_contrato,custo_total,consultora").order("nome_completo", { ascending: true }),
-    carregarBase(db),
-    db.from("novas_vendas").select("cliente_id,origem_venda").not("cliente_id", "is", null),
-  ]);
-  if (erroClientes) throw new Error(erroClientes.message);
-
-  const origemPorCliente = new Map<string, string>();
-  for (const v of (vendasRows ?? []) as any[]) if (v.cliente_id && !origemPorCliente.has(v.cliente_id) && v.origem_venda) origemPorCliente.set(v.cliente_id, v.origem_venda);
-
-  const porBoleto = indiceRecebimentos(recebimentos);
-  const porCliente = new Map<string, { pagas: number; total: number; saldoAReceber: number; vencidas: number; aguardandoValidacao: number; proximoVencimento: string | null }>();
-  for (const boleto of boletos) {
-    const agregado = porCliente.get(boleto.cliente_id) ?? { pagas: 0, total: 0, saldoAReceber: 0, vencidas: 0, aguardandoValidacao: 0, proximoVencimento: null };
-    const apresentado = apresentarRecebivel(boleto, porBoleto.get(boleto.id));
-    agregado.total += 1;
-    if (apresentado.status === "pago") agregado.pagas += 1;
-    else { agregado.saldoAReceber += apresentado.valorEsperado; if (!agregado.proximoVencimento && boleto.data_vencimento) agregado.proximoVencimento = boleto.data_vencimento; }
-    if (apresentado.status === "vencido") agregado.vencidas += 1;
-    if (apresentado.status === "pendente_confirmacao") agregado.aguardandoValidacao += 1;
-    porCliente.set(boleto.cliente_id, agregado);
-  }
-
-  const itens = (todosClientes ?? [])
-    .filter((cliente: any) => (porCliente.get(cliente.id)?.total ?? 0) > 0)
-    .map((cliente: any) => {
-      const agregado = porCliente.get(cliente.id)!;
-      const statusContrato = cliente.status_contrato ?? "ativo";
-      let bucket: FunilCliente;
-      if (statusContrato === "cancelado") bucket = "cancelados";
-      else if (statusContrato === "negativado") bucket = "negativados";
-      else if (statusContrato === "suspenso") bucket = "suspensos";
-      else if (agregado.aguardandoValidacao > 0) bucket = "aguardando_conferencia";
-      else bucket = "ativos";
-
-      const quitado = agregado.pagas === agregado.total;
-      const proximaAcao = agregado.aguardandoValidacao > 0 ? "Validar comprovante" : agregado.vencidas > 0 ? "Cobrar parcela vencida" : quitado ? "Sem pendência" : "Acompanhar";
-
-      return {
-        clienteId: cliente.id,
-        nome: cliente.nome_completo,
-        cpf: cliente.cpf,
-        statusContrato,
-        bucket,
-        quitado,
-        parcelasPagas: agregado.pagas,
-        parcelasTotal: agregado.total,
-        saldoAReceber: dinheiro(agregado.saldoAReceber),
-        vencidas: agregado.vencidas,
-        aguardandoValidacao: agregado.aguardandoValidacao,
-        proximaAcao,
-        vendedora: cliente.consultora ?? null,
-        campanha: origemPorCliente.get(cliente.id) ?? null,
-        proximoVencimento: agregado.proximoVencimento,
-      };
-    });
-
-  const funis = [
-    { bucket: "aguardando_conferencia" as const, total: itens.filter((i) => i.bucket === "aguardando_conferencia").length },
-    { bucket: "ativos" as const, total: itens.filter((i) => i.bucket === "ativos").length },
-    { bucket: "todos" as const, total: itens.length },
-    { bucket: "suspensos" as const, total: itens.filter((i) => i.bucket === "suspensos").length },
-    { bucket: "negativados" as const, total: itens.filter((i) => i.bucket === "negativados").length },
-    { bucket: "cancelados" as const, total: itens.filter((i) => i.bucket === "cancelados").length },
-  ];
-
-  return { itens, funis };
+async function clientesFunil(db: Db, url: URL) {
+  const { pagina, limite } = paginaFinanceira(url);
+  const bucket = texto(url.searchParams.get("bucket")) || "todos";
+  const ordenacao = texto(url.searchParams.get("ordenacao")) || "venc";
+  if (!["todos", "aguardando_conferencia", "ativos", "suspensos", "negativados", "cancelados"].includes(bucket)
+    || !["venc", "saldo", "az", "za"].includes(ordenacao)) throw new Error("Filtro financeiro inválido.");
+  const { data, error } = await db.rpc("loadtest_finance_client_funnel", {
+    p_bucket: bucket, p_busca: texto(url.searchParams.get("busca")).slice(0, 100),
+    p_ordenacao: ordenacao, p_pagina: pagina, p_limite: limite, p_hoje: hojeIso(),
+  });
+  if (error || !data) throw new Error("Não foi possível consultar o funil financeiro.");
+  const snapshot = data as { itens: any[]; funis: Array<{ bucket: FunilCliente; total: number }>; total: number };
+  const itens = snapshot.itens.map((row) => {
+    const pagas = Number(row.pagas);
+    const total = Number(row.total);
+    const vencidas = Number(row.vencidas);
+    const aguardando = Number(row.aguardando);
+    return {
+      clienteId: row.cliente_id, nome: row.nome, cpf: row.cpf,
+      statusContrato: row.status_contrato ?? "ativo", bucket: row.bucket,
+      quitado: pagas === total, parcelasPagas: pagas, parcelasTotal: total,
+      saldoAReceber: dinheiro(row.saldo), vencidas, aguardandoValidacao: aguardando,
+      proximaAcao: aguardando > 0 ? "Validar comprovante"
+        : vencidas > 0 ? "Cobrar parcela vencida" : pagas === total ? "Sem pendência" : "Acompanhar",
+      vendedora: row.vendedora ?? null, campanha: row.campanha ?? null,
+      proximoVencimento: row.proximo_vencimento,
+    };
+  });
+  return { itens, funis: snapshot.funis, total: Number(snapshot.total), pagina, limite };
 }
 
 async function encaminharParcelas(request: Request, env: Env, clienteId: string, payload: Json) {
@@ -421,12 +270,19 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
 
   try {
     if (path === "/api/admin/financeiro/resumo" && request.method === "GET") return json(await resumo(db, url));
-    if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db));
+    if (path === "/api/admin/financeiro/clientes" && request.method === "GET") return json(await clientesFunil(db, url));
+    const clienteFunilId = path.match(/^\/api\/admin\/financeiro\/clientes\/([0-9a-f-]{36})$/i);
+    if (clienteFunilId && request.method === "GET") {
+      const { data, error } = await db.from("clientes").select("*").eq("id", clienteFunilId[1]).maybeSingle();
+      if (error) throw new Error("Não foi possível carregar a cliente.");
+      return data ? json({ cliente: data }) : json({ erro: "Cliente não encontrada." }, 404);
+    }
     if (path === "/api/admin/financeiro/recebidos" && request.method === "GET") return json(await listarRecebidos(db, url));
     if (path === "/api/admin/financeiro/recebiveis" && request.method === "GET") return json(await listarRecebiveis(db, url));
 
     if (path === "/api/admin/financeiro/validacoes" && request.method === "GET") {
-      const base = await listarRecebiveis(db, new URL(`${url.origin}/api/admin/financeiro/recebiveis?status=pendente_confirmacao&inicio=2000-01-01&fim=2999-12-31&limite=100`));
+      const { pagina } = paginaFinanceira(url);
+      const base = await listarRecebiveis(db, new URL(`${url.origin}/api/admin/financeiro/recebiveis?status=pendente_confirmacao&inicio=2000-01-01&fim=2999-12-31&limite=100&pagina=${pagina}`));
       return json({ ...base, itens: base.itens.sort((a: any, b: any) => String(a.vencimento ?? a.createdAt).localeCompare(String(b.vencimento ?? b.createdAt))) });
     }
 

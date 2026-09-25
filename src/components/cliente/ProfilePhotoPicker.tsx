@@ -43,22 +43,15 @@ function chaveCache(fallback: string) {
 
 function lerCache(chave: string): FotoCache | null {
   try {
-    const valor = localStorage.getItem(chave);
-    if (!valor) return null;
-    const cache = JSON.parse(valor) as Partial<FotoCache>;
-    if (!cache.preview || !cache.versao) return null;
-    return { preview: cache.preview, versao: cache.versao };
+    localStorage.removeItem(chave);
   } catch {
-    return null;
+    // Remoção legada não depende da disponibilidade do armazenamento.
   }
+  return null;
 }
 
-function salvarCache(chave: string, cache: FotoCache) {
-  try {
-    localStorage.setItem(chave, JSON.stringify(cache));
-  } catch {
-    // O cache local é só uma otimização visual. A foto oficial continua no Supabase.
-  }
+function salvarCache(_chave: string, _cache: FotoCache) {
+  // Somente o componente atual mantém a prévia; a imagem oficial é autenticada.
 }
 
 function canvasParaBlob(canvas: HTMLCanvasElement, tipo: string, qualidade: number) {

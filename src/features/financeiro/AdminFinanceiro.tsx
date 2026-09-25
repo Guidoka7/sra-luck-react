@@ -63,6 +63,7 @@ export default function AdminFinanceiro() {
   const [periodo, setPeriodo] = useState<PeriodoFinanceiro>(() => ({ inicio: inicioMes(), fim: fimMes() }));
   const [preset, setPreset] = useState("mes"); const [busca, setBusca] = useState(""); const buscaDiferida = useDeferredValue(busca); const [status, setStatus] = useState("todos");
   const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null); const [lista, setLista] = useState<ListaRecebiveis | null>(null); const [validacoes, setValidacoes] = useState<ListaRecebiveis | null>(null);
+  const [paginaRecebiveis, setPaginaRecebiveis] = useState(1); const [paginaValidacoes, setPaginaValidacoes] = useState(1);
   const [carregando, setCarregando] = useState(true); const [erro, setErro] = useState(""); const [revisao, setRevisao] = useState(0);
   const [drawerId, setDrawerId] = useState<string | null>(null); const [baixa, setBaixa] = useState<Recebivel | null>(null); const [editar, setEditar] = useState<Recebivel | null>(null); const [validar, setValidar] = useState<Recebivel | null>(null);
   const [gerar, setGerar] = useState(false); const [clientes, setClientes] = useState<ClienteFinanceiro[]>([]);
@@ -75,18 +76,21 @@ export default function AdminFinanceiro() {
   useEffect(() => {
     let ativo = true; setCarregando(true); setErro("");
     const tarefa = aba === "visao-geral" ? financeiroApi.resumo(periodo).then((data) => { if (ativo) setResumo(data); })
-      : aba === "recebiveis" ? financeiroApi.recebiveis({ ...periodo, busca: buscaDiferida, status, limite: 100 }).then((data) => { if (ativo) setLista(data); })
-        : aba === "validacao" ? financeiroApi.validacoes().then((data) => { if (ativo) setValidacoes(data); }) : Promise.resolve();
+      : aba === "recebiveis" ? financeiroApi.recebiveis({ ...periodo, busca: buscaDiferida, status, pagina: paginaRecebiveis, limite: 100 }).then((data) => {
+        if (ativo) setLista((anterior) => paginaRecebiveis === 1 ? data : { ...data, itens: [...(anterior?.itens ?? []), ...data.itens] });
+      }) : aba === "validacao" ? financeiroApi.validacoes(paginaValidacoes).then((data) => {
+        if (ativo) setValidacoes((anterior) => paginaValidacoes === 1 ? data : { ...data, itens: [...(anterior?.itens ?? []), ...data.itens] });
+      }) : Promise.resolve();
     tarefa.catch((error) => { if (ativo) setErro(error instanceof Error ? error.message : "Falha ao carregar o Financeiro."); }).finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [aba, buscaDiferida, periodo, revisao, status]);
+  }, [aba, buscaDiferida, periodo, revisao, status, paginaRecebiveis, paginaValidacoes]);
 
-  const atualizar = useCallback(() => setRevisao((value) => value + 1), []);
+  const atualizar = useCallback(() => { setPaginaRecebiveis(1); setPaginaValidacoes(1); setRevisao((value) => value + 1); }, []);
   function concluir(mensagem: string) { setBaixa(null); setEditar(null); setValidar(null); setGerar(false); setDrawerId(null); atualizar(); toast.success(mensagem); }
   async function abrirGeracao() { setGerar(true); if (!clientes.length) { try { setClientes(await financeiroApi.clientes()); } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao carregar clientes."); } } }
 
-  function aplicarPreset(value: string) { setPreset(value); if (value !== "personalizado") setPeriodo(periodoPreset(value)); }
-  function pesquisar(value: string) { setBusca(value); if (value && aba !== "recebiveis") navegar("recebiveis"); }
+  function aplicarPreset(value: string) { setPreset(value); setPaginaRecebiveis(1); if (value !== "personalizado") setPeriodo(periodoPreset(value)); }
+  function pesquisar(value: string) { setBusca(value); setPaginaRecebiveis(1); if (value && aba !== "recebiveis") navegar("recebiveis"); }
 
   return <div className="space-y-4 pb-8 text-clay dark:text-[#e7dedd]">
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-2 border-dashed border-amber-500/50 bg-amber-500/10 px-4 py-3 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200">
@@ -108,9 +112,9 @@ export default function AdminFinanceiro() {
         </label>
         {preset === "personalizado" ? <div className="flex shrink-0 items-center gap-1.5">
           <CalendarDays className="h-3.5 w-3.5 text-rose" />
-          <Input aria-label="Data inicial" className="h-9 w-[126px] rounded-lg py-1.5 text-[11px]" type="date" value={periodo.inicio} onChange={(e) => setPeriodo((current) => ({ ...current, inicio: e.target.value }))} />
+          <Input aria-label="Data inicial" className="h-9 w-[126px] rounded-lg py-1.5 text-[11px]" type="date" value={periodo.inicio} onChange={(e) => { setPaginaRecebiveis(1); setPeriodo((current) => ({ ...current, inicio: e.target.value })); }} />
           <span className="text-[10px] text-clay/35">até</span>
-          <Input aria-label="Data final" className="h-9 w-[126px] rounded-lg py-1.5 text-[11px]" type="date" value={periodo.fim} onChange={(e) => setPeriodo((current) => ({ ...current, fim: e.target.value }))} />
+          <Input aria-label="Data final" className="h-9 w-[126px] rounded-lg py-1.5 text-[11px]" type="date" value={periodo.fim} onChange={(e) => { setPaginaRecebiveis(1); setPeriodo((current) => ({ ...current, fim: e.target.value })); }} />
         </div> : null}
         <span className="shrink-0 text-right text-[10px] text-clay/38 dark:text-white/32">{resumo?.ultimaAtualizacao ? `Atualizado ${new Date(resumo.ultimaAtualizacao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "Aguardando atualização"}</span>
       </div>
@@ -121,7 +125,7 @@ export default function AdminFinanceiro() {
     </nav>
 
     {erro ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-alert/20 bg-alert/[0.06] p-3 text-xs text-alert dark:border-[#C7869B]/30 dark:bg-[#C7869B]/10 dark:text-[#DCA0B2]"><span>{erro}</span><button type="button" onClick={atualizar} className="font-bold uppercase tracking-[.1em]">Tentar novamente</button></div> : null}
-    {resumo?.truncado || lista?.truncado ? <p className="rounded-xl border border-gold/25 bg-gold/[0.06] p-3 text-xs text-clay/60 dark:text-white/50">A consulta atingiu o limite operacional de 5.000 parcelas. Refine o período antes de tomar uma decisão financeira.</p> : null}
+    {resumo?.truncado || lista?.truncado ? <p className="rounded-xl border border-gold/25 bg-gold/[0.06] p-3 text-xs text-clay/60 dark:text-white/50">A consulta financeira não está completa. Atualize a tela antes de tomar uma decisão.</p> : null}
 
     {aba === "clientes" ? <FinanceiroClientesFunil /> : null}
     {aba === "visao-geral" ? <FinanceiroOverview resumo={resumo} carregando={carregando} onNavegar={navegar} /> : null}
@@ -129,10 +133,11 @@ export default function AdminFinanceiro() {
       <div className="mb-3 flex flex-col gap-2 border-b border-rose/10 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/8">
         <div><h2 className="text-base text-burgundy dark:text-cream">Contas a receber</h2><p className="mt-0.5 text-xs text-clay/50 dark:text-white/42">{lista?.total ?? 0} lançamento(s) no período selecionado.</p></div>
         <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-blush/45 p-1 dark:bg-white/[0.04]">
-          {STATUS_FILTROS.map((item) => <button key={item.value} type="button" onClick={() => setStatus(item.value)} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition", status === item.value ? "bg-white text-burgundy shadow-sm dark:bg-white/10 dark:text-cream" : "text-clay/55 hover:text-burgundy dark:text-white/45 dark:hover:text-cream")}>{item.label}</button>)}
+          {STATUS_FILTROS.map((item) => <button key={item.value} type="button" onClick={() => { setPaginaRecebiveis(1); setStatus(item.value); }} className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition", status === item.value ? "bg-white text-burgundy shadow-sm dark:bg-white/10 dark:text-cream" : "text-clay/55 hover:text-burgundy dark:text-white/45 dark:hover:bg-white/6 dark:hover:text-cream")}>{item.label}</button>)}
         </div>
       </div>
       <RecebiveisTable itens={lista?.itens ?? []} carregando={carregando} onAbrir={(item) => setDrawerId(item.id)} />
+      {!carregando && lista && lista.itens.length < lista.total && <button type="button" className="mt-3 w-full rounded-lg border p-2 text-xs" onClick={() => setPaginaRecebiveis((atual) => atual + 1)}>Carregar mais ({lista.itens.length} de {lista.total})</button>}
     </Panel> : null}
     {aba === "validacao" ? <Panel className="overflow-hidden p-3 dark:border-white/8 dark:bg-[#17181D]/92">
       <div className="mb-3 flex flex-col gap-2 border-b border-rose/10 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/8">
@@ -143,6 +148,7 @@ export default function AdminFinanceiro() {
         </div>
       </div>
       <RecebiveisTable itens={validacoes?.itens ?? []} carregando={carregando} validacao onAbrir={(item) => setValidar(item)} />
+      {!carregando && validacoes && validacoes.itens.length < validacoes.total && <button type="button" className="mt-3 w-full rounded-lg border p-2 text-xs" onClick={() => setPaginaValidacoes((atual) => atual + 1)}>Carregar mais ({validacoes.itens.length} de {validacoes.total})</button>}
     </Panel> : null}
 
     {aba === "contratos" ? estadoFuturo("Contratos recebidos", "Área preparada para uma futura estrutura de staging. Não há dados simulados, importação do RD Station ou botão de sincronização nesta fase.") : null}

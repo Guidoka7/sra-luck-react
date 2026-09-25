@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { lerCacheCliente, limparCacheCliente } from "@/lib/clienteAgenda";
+import { limparCacheCliente } from "@/lib/clienteAgenda";
 import { MARK_SRC } from "@/assets/brand";
 
 interface SessionGateProps {
@@ -15,10 +15,8 @@ function previewPermitido(): boolean {
 }
 
 export function SessionGate({ audience, children }: SessionGateProps) {
-  // Cliente com dados já guardados neste aparelho: abre a área na hora enquanto
-  // a sessão é confirmada em segundo plano. Se a sessão não for válida, os
-  // dados locais são apagados e ela volta ao login (as APIs exigem sessão).
-  const [state, setState] = useState<"checking" | "ok" | "denied">(() => (audience === "cliente" && lerCacheCliente() ? "ok" : "checking"));
+  // Nunca exibir dados pessoais em cache antes de confirmar a sessão ativa.
+  const [state, setState] = useState<"checking" | "ok" | "denied">("checking");
   const preview = useMemo(() => {
     const solicitado = new URLSearchParams(window.location.search).get("preview") === "1";
     return solicitado && previewPermitido();
@@ -37,9 +35,7 @@ export function SessionGate({ audience, children }: SessionGateProps) {
         return data.autenticado === true;
       })
       .then((ok) => setState(ok ? "ok" : "denied"))
-      // Falha de rede (ex.: sem internet) não é sessão inválida: quem já estava
-      // aberta com dados locais continua; sem dados, segue o fluxo normal.
-      .catch(() => setState((atual) => (audience === "cliente" && atual === "ok" ? "ok" : "denied")));
+      .catch(() => setState("denied"));
   }, [audience, preview]);
 
   useEffect(() => {

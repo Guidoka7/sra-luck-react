@@ -142,6 +142,26 @@ describe("HTTP ingress and real router", () => {
     expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(1);
     expect(state.queries.filter(q => q.table === "boletos" || q.table === "clientes")).toHaveLength(0);
   });
+  it("reads the full finance summary through one RPC without downloading installments", async () => {
+    state.rpc.mockResolvedValue({ data: { periodo: { inicio: "2026-09-01", fim: "2026-09-30" },
+      kpis: { aReceber: 25000000 }, evolucao: [], truncado: false }, error: null });
+    const response = await worker.fetch(req("/api/admin/financeiro/resumo?inicio=2026-09-01&fim=2026-09-30", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as any).kpis.aReceber).toBe(25000000);
+    expect(state.rpc.mock.calls.map(c => c[0])).toEqual(["loadtest_finance_summary"]);
+    expect(state.queries.map(q => q.table)).toEqual(["colaboradores"]);
+    expect(response.headers.get("Cache-Control")).toContain("no-store");
+  });
+  it("paginates the finance funnel with exact totals and no bulk client reads", async () => {
+    state.rpc.mockResolvedValue({ data: { itens: [], total: 10000,
+      funis: [{ bucket: "todos", total: 10000 }] }, error: null });
+    const response = await worker.fetch(req("/api/admin/financeiro/clientes?bucket=todos&limite=50", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    expect((await response.json() as any).total).toBe(10000);
+    expect(state.rpc.mock.calls.map(c => c[0])).toEqual(["loadtest_finance_client_funnel"]);
+    expect(state.rpc.mock.calls[0][1].p_limite).toBe(50);
+    expect(state.queries.map(q => q.table)).toEqual(["colaboradores"]);
+  });
   it("pages the Central in one RPC without sending client ID lists to PostgREST", async () => {
     state.rpc.mockResolvedValue({ data: { filas: { preEligibility: [{
       cliente: { id: "client-a", nome_completo: "Cliente de teste", cpf: "80000000001", quantidade_parcelas: 12, ativo: true },

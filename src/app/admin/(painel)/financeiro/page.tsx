@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useDeferredValue, useEffect, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { ClienteDrawer, type AbaDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
@@ -9,7 +9,6 @@ import { formatarMoeda } from "@/lib/utils";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { FUNIL_CLIENTE_LABEL } from "@/features/financeiro/types";
 import type { ClienteFunilItem, FunilClienteBucket, Recebivel, RecebidosSubfunil } from "@/features/financeiro/types";
-import type { Cliente } from "@/types/database";
 import styles from "@/components/admin/lista/AdminLista.module.css";
 import { PainelOperacaoIntegracao } from "@/features/admin/PainelOperacaoIntegracao";
 import { ContaAzulOperacao } from "@/features/admin/IntegracoesOperacao";
@@ -87,8 +86,11 @@ export default function FinanceiroPage() {
   const acessoTotal = useAcessoTotalAdmin();
   const { theme } = useTheme();
   const [itens, setItens] = useState<ClienteFunilItem[]>([]);
-  const [clientesCompletos, setClientesCompletos] = useState<Cliente[]>([]);
   const [funis, setFunis] = useState<Array<{ bucket: FunilClienteBucket; total: number }>>([]);
+  const [pagina, setPagina] = useState(1);
+  const [totalFiltrados, setTotalFiltrados] = useState(0);
+  const [revisao, setRevisao] = useState(0);
+  const sequencia = useRef(0);
   const [bucket, setBucket] = useState<FinanceiroBucket>("aguardando_conferencia");
   const [busca, setBusca] = useState("");
   const [ordenacao, setOrdenacao] = useState<SortMode>("venc");
@@ -100,43 +102,62 @@ export default function FinanceiroPage() {
   const [diaRecebidos, setDiaRecebidos] = useState(() => hojeSaoPaulo());
   const [recebidosDia, setRecebidosDia] = useState<Recebivel[]>([]);
   const [vencidosTotais, setVencidosTotais] = useState<Recebivel[]>([]);
-  const [carregandoRecebidos, setCarregandoRecebidos] = useState(false);
+  const [totalRecebidos, setTotalRecebidos] = useState(0);
+  const [totalVencidos, setTotalVencidos] = useState(0);
+  const [paginaRecebidos, setPaginaRecebidos] = useState(1);
+  const [paginaVencidos, setPaginaVencidos] = useState(1);
+  const sequenciaRecebidos = useRef({ recebidos: 0, vencidos: 0 });
+  const [carregandoDia, setCarregandoDia] = useState(false);
+  const [carregandoVencidos, setCarregandoVencidos] = useState(false);
   const [erroRecebidos, setErroRecebidos] = useState<string | null>(null);
+  const buscaDiferida = useDeferredValue(busca);
 
   async function carregar() {
+    const atual = ++sequencia.current;
+    setCarregando(true);
     try {
-      const [funil, lista] = await Promise.all([financeiroApi.funilClientes(), financeiroApi.clientes()]);
-      setItens(funil.itens);
+      const funil = await financeiroApi.funilClientes({ bucket, busca: buscaDiferida, ordenacao, pagina, limite: 50 });
+      if (atual !== sequencia.current) return;
+      setItens((anteriores) => pagina === 1 ? funil.itens : [...anteriores, ...funil.itens]);
       setFunis(funil.funis);
-      setClientesCompletos(lista as Cliente[]);
+      setTotalFiltrados(funil.total);
       setErro(null);
     } catch (error) {
+      if (atual !== sequencia.current) return;
       const msg = error instanceof Error ? error.message : "Falha ao carregar o funil de clientes.";
       setErro(msg); toast.error(msg);
     } finally {
-      setCarregando(false);
+      if (atual === sequencia.current) setCarregando(false);
     }
   }
-  async function carregarRecebidos() {
-    setCarregandoRecebidos(true);
+  async function carregarRecebidos(tipo: RecebidosSubfunil) {
+    const dia = tipo === "recebidos";
+    const paginaAtual = dia ? paginaRecebidos : paginaVencidos;
+    const atual = ++sequenciaRecebidos.current[tipo];
+    (dia ? setCarregandoDia : setCarregandoVencidos)(true);
     try {
-      const [recebidos, vencidos] = await Promise.all([
-        financeiroApi.recebidos({ data: diaRecebidos, tipo: "recebidos" }),
-        financeiroApi.recebidos({ data: diaRecebidos, tipo: "vencidos" }),
-      ]);
-      setRecebidosDia(recebidos.itens);
-      setVencidosTotais(vencidos.itens);
+      const resultado = await financeiroApi.recebidos({ data: diaRecebidos, tipo, busca: buscaDiferida, pagina: paginaAtual, limite: 50 });
+      if (atual !== sequenciaRecebidos.current[tipo]) return;
+      if (dia) {
+        setRecebidosDia((atuais) => paginaAtual === 1 ? resultado.itens : [...atuais, ...resultado.itens]);
+        setTotalRecebidos(resultado.total);
+      } else {
+        setVencidosTotais((atuais) => paginaAtual === 1 ? resultado.itens : [...atuais, ...resultado.itens]);
+        setTotalVencidos(resultado.total);
+      }
       setErroRecebidos(null);
     } catch (error) {
+      if (atual !== sequenciaRecebidos.current[tipo]) return;
       const msg = error instanceof Error ? error.message : "Falha ao carregar recebidos e vencidos.";
       setErroRecebidos(msg);
       toast.error(msg);
     } finally {
-      setCarregandoRecebidos(false);
+      if (atual === sequenciaRecebidos.current[tipo]) (dia ? setCarregandoDia : setCarregandoVencidos)(false);
     }
   }
-  useEffect(() => { void carregar(); }, []);
-  useEffect(() => { if (bucket === "recebidos") void carregarRecebidos(); }, [bucket, diaRecebidos]);
+  useEffect(() => { if (bucket !== "recebidos") void carregar(); }, [bucket, buscaDiferida, ordenacao, pagina, revisao]);
+  useEffect(() => { if (bucket === "recebidos") void carregarRecebidos("recebidos"); }, [bucket, diaRecebidos, buscaDiferida, paginaRecebidos, revisao]);
+  useEffect(() => { if (bucket === "recebidos") void carregarRecebidos("vencidos"); }, [bucket, buscaDiferida, paginaVencidos, revisao]);
 
   useEffect(() => {
     if (!menuId) return;
@@ -148,30 +169,16 @@ export default function FinanceiroPage() {
   }, [menuId]);
 
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
-  const visiveis = useMemo(() => {
-    if (bucket === "recebidos") return [];
-    const base = bucket === "todos" ? itens : itens.filter((item) => item.bucket === bucket);
-    const filtrados = termo ? base.filter((i) => [i.nome, i.cpf, i.vendedora, i.campanha].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo)) : base;
-    return [...filtrados].sort((a, b) => {
-      if (ordenacao === "saldo") return b.saldoAReceber - a.saldoAReceber;
-      if (ordenacao === "venc") return (a.proximoVencimento ?? "9999").localeCompare(b.proximoVencimento ?? "9999");
-      const cmp = a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
-      return ordenacao === "az" ? cmp : -cmp;
-    });
-  }, [itens, bucket, termo, ordenacao]);
+  const visiveis = bucket === "recebidos" ? [] : itens;
 
-  const recebidosFiltrados = useMemo(() => {
-    if (!termo) return recebidosDia;
-    return recebidosDia.filter((i) => [i.cliente, i.cpf, `${i.numeroParcela}/${i.totalParcelas}`, i.origem, i.formaPagamento].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo));
-  }, [recebidosDia, termo]);
-  const vencidosFiltrados = useMemo(() => {
-    if (!termo) return vencidosTotais;
-    return vencidosTotais.filter((i) => [i.cliente, i.cpf, `${i.numeroParcela}/${i.totalParcelas}`, i.origem].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo));
-  }, [vencidosTotais, termo]);
+  const recebidosFiltrados = recebidosDia;
+  const vencidosFiltrados = vencidosTotais;
   const recebidosVisiveis = subfunil === "recebidos" ? recebidosFiltrados : vencidosFiltrados;
+  const carregandoRecebidos = subfunil === "recebidos" ? carregandoDia : carregandoVencidos;
+  const totalSubfunil = subfunil === "recebidos" ? totalRecebidos : totalVencidos;
 
   const total = (b: FinanceiroBucket) => b === "recebidos"
-    ? (subfunil === "recebidos" ? recebidosFiltrados.length : vencidosFiltrados.length)
+    ? totalSubfunil
     : funis.find((f) => f.bucket === b)?.total ?? 0;
   function abrir(item: ClienteFunilItem, aba: AbaDrawer = "finance") { setMenuId(null); setDrawer({ id: item.clienteId, aba }); }
   function abrirRecebivel(item: Recebivel, aba: AbaDrawer = "finance") { setMenuId(null); setDrawer({ id: item.clienteId, aba }); }
@@ -190,7 +197,7 @@ export default function FinanceiroPage() {
     </section>
 
     <nav className={styles.tabs} aria-label="Funil financeiro" role="tablist" style={{ "--tabs": ORDEM.length } as CSSProperties}>
-      {ORDEM.map((b) => <button key={b} className={`${styles.tab} ${bucket === b ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={bucket === b} onClick={() => { setBucket(b); setMenuId(null); }}>
+      {ORDEM.map((b) => <button key={b} className={`${styles.tab} ${bucket === b ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={bucket === b} onClick={() => { setBucket(b); setPagina(1); setMenuId(null); }}>
         <span className={styles.tabIcon}><Svg d={ICON[b]} /></span>
         <span className={styles.tabLabel}>{b === "recebidos" ? "Recebidos" : FUNIL_CLIENTE_LABEL[b]}</span>
         <span className={styles.countPill}>{total(b)}</span>
@@ -198,8 +205,8 @@ export default function FinanceiroPage() {
     </nav>
 
     <section className={styles.filters} aria-label="Filtros do financeiro">
-      <label className={styles.field}><Svg d={ICON.search} /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, campanha ou vendedora..." aria-label="Buscar clientes no financeiro" /></label>
-      <button className={styles.clearBtn} type="button" onClick={() => setBusca("")}><Svg d={ICON.clear} />Limpar busca</button>
+      <label className={styles.field}><Svg d={ICON.search} /><input value={busca} onChange={(e) => { setBusca(e.target.value); setPagina(1); setPaginaRecebidos(1); setPaginaVencidos(1); }} placeholder="Buscar por nome, CPF, campanha ou vendedora..." aria-label="Buscar clientes no financeiro" /></label>
+      <button className={styles.clearBtn} type="button" onClick={() => { setBusca(""); setPagina(1); setPaginaRecebidos(1); setPaginaVencidos(1); }}><Svg d={ICON.clear} />Limpar busca</button>
     </section>
 
     <section className={styles.listCard}>
@@ -208,7 +215,7 @@ export default function FinanceiroPage() {
           <div>
             <div className={styles.cardTitleLine}>
               <span className={styles.cardTitle}>{subfunil === "recebidos" ? "Recebidos no dia" : "Vencidos totais"}</span>
-              <span className={styles.cardCount}>{recebidosVisiveis.length} {recebidosVisiveis.length === 1 ? "registro" : "registros"}</span>
+              <span className={styles.cardCount}>{totalSubfunil} {totalSubfunil === 1 ? "registro" : "registros"}</span>
             </div>
             <div className={styles.cardSub}>{subfunil === "recebidos" ? `Confirmações e baixas de ${dataBr(diaRecebidos)}` : "Todas as parcelas vencidas em aberto, independentemente do dia selecionado."}</div>
           </div>
@@ -216,7 +223,7 @@ export default function FinanceiroPage() {
 
         <nav className={styles.tabs} aria-label="Filtros de recebidos" role="tablist" style={{ "--tabs": 2, height: 46, margin: "14px 16px 0" } as CSSProperties}>
           {(["recebidos", "vencidos"] as RecebidosSubfunil[]).map((tipo) => {
-            const quantidade = tipo === "recebidos" ? recebidosFiltrados.length : vencidosFiltrados.length;
+            const quantidade = tipo === "recebidos" ? totalRecebidos : totalVencidos;
             return <button key={tipo} className={`${styles.tab} ${subfunil === tipo ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={subfunil === tipo} onClick={() => { setSubfunil(tipo); setMenuId(null); }}>
               <span className={styles.tabLabel}>{tipo === "recebidos" ? "Recebidos" : "Vencidos"}</span>
               <span className={styles.countPill}>{quantidade}</span>
@@ -229,14 +236,14 @@ export default function FinanceiroPage() {
             ? "Lista somente comprovantes confirmados e baixas cuja confirmação ocorreu no dia selecionado."
             : "Vencidos mostra o total acumulado em aberto. O seletor de dia permanece na tela, mas não restringe esta lista."}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className={styles.rowMenuBtn} type="button" aria-label="Dia anterior" title="Dia anterior" onClick={() => setDiaRecebidos((atual) => adicionarDiasCivil(atual, -1))}>‹</button>
+            <button className={styles.rowMenuBtn} type="button" aria-label="Dia anterior" title="Dia anterior" onClick={() => { setPaginaRecebidos(1); setDiaRecebidos((atual) => adicionarDiasCivil(atual, -1)); }}>‹</button>
             <strong className={styles.mono} style={{ minWidth: 92, textAlign: "center", color: "var(--text)" }}>{dataBr(diaRecebidos)}</strong>
-            <button className={styles.rowMenuBtn} type="button" aria-label="Próximo dia" title="Próximo dia" onClick={() => setDiaRecebidos((atual) => adicionarDiasCivil(atual, 1))}>›</button>
+            <button className={styles.rowMenuBtn} type="button" aria-label="Próximo dia" title="Próximo dia" onClick={() => { setPaginaRecebidos(1); setDiaRecebidos((atual) => adicionarDiasCivil(atual, 1)); }}>›</button>
           </div>
         </div>
 
         {carregandoRecebidos ? <div className={styles.loadingState}>Carregando recebimentos...</div>
-          : erroRecebidos && recebidosDia.length === 0 && vencidosTotais.length === 0 ? <div className={styles.emptyState} role="alert"><Svg d={ICON.empty} /><strong>Não foi possível carregar os recebimentos.</strong><span>{erroRecebidos}</span><button className={styles.clearBtn} style={{ margin: "12px auto 0" }} type="button" onClick={() => void carregarRecebidos()}>Tentar novamente</button></div>
+          : erroRecebidos && recebidosVisiveis.length === 0 ? <div className={styles.emptyState} role="alert"><Svg d={ICON.empty} /><strong>Não foi possível carregar os recebimentos.</strong><span>{erroRecebidos}</span><button className={styles.clearBtn} style={{ margin: "12px auto 0" }} type="button" onClick={() => void carregarRecebidos(subfunil)}>Tentar novamente</button></div>
           : recebidosVisiveis.length === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>{subfunil === "recebidos" ? "Nenhum recebimento neste dia." : "Nenhuma parcela vencida."}</strong><span>{termo ? "A busca atual não encontrou registros." : subfunil === "recebidos" ? "Use as setas para consultar outro dia." : "Não há vencidos em aberto no momento."}</span></div>
           : <div className={styles.tableWrap}>
               <table className={styles.table}>
@@ -268,6 +275,11 @@ export default function FinanceiroPage() {
                 })}</tbody>
               </table>
             </div>}
+        {!carregandoRecebidos && recebidosVisiveis.length < totalSubfunil &&
+          <button type="button" className={styles.clearBtn} onClick={() => subfunil === "recebidos"
+            ? setPaginaRecebidos((atual) => atual + 1) : setPaginaVencidos((atual) => atual + 1)}>
+            Carregar mais ({recebidosVisiveis.length} de {totalSubfunil})
+          </button>}
       </> : <>
         <header className={styles.cardHead}>
           <div>
@@ -277,7 +289,7 @@ export default function FinanceiroPage() {
           <div className={styles.cardTools}>
             <span className={styles.orderLabel}>Ordenar por</span>
             <label className={styles.smallSelect}>
-              <select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as SortMode)} aria-label="Ordenar clientes do financeiro">
+              <select value={ordenacao} onChange={(e) => { setOrdenacao(e.target.value as SortMode); setPagina(1); }} aria-label="Ordenar clientes do financeiro">
                 <option value="venc">Vencimento mais próximo</option><option value="saldo">Maior saldo em aberto</option><option value="az">Nome A-Z</option><option value="za">Nome Z-A</option>
               </select>
               <Svg d={ICON.chevron} />
@@ -319,6 +331,10 @@ export default function FinanceiroPage() {
                 })}</tbody>
               </table>
             </div>}
+        {!carregando && !erro && itens.length < totalFiltrados &&
+          <button type="button" className={styles.clearBtn} onClick={() => setPagina((atual) => atual + 1)}>
+            Carregar mais clientes ({itens.length} de {totalFiltrados})
+          </button>}
       </>}
     </section>
 
@@ -326,7 +342,7 @@ export default function FinanceiroPage() {
       <a href="/admin/financeiro/avancado" className={styles.cardSub} style={{ textDecoration: "underline" }}>Ferramenta interna transitória — recebíveis em lote e conciliação bancária →</a>
     </div>
 
-    {drawer && <ClienteDrawer key={drawer.id} clienteId={drawer.id} cliente={clientesCompletos.find((c) => c.id === drawer.id) ?? null} abaInicial={drawer.aba}
-      onClose={() => setDrawer(null)} onChanged={() => { void carregar(); if (bucket === "recebidos") void carregarRecebidos(); }} />}
+    {drawer && <ClienteDrawer key={drawer.id} clienteId={drawer.id} cliente={null} abaInicial={drawer.aba}
+      onClose={() => setDrawer(null)} onChanged={() => { setPagina(1); setPaginaRecebidos(1); setPaginaVencidos(1); setRevisao((atual) => atual + 1); }} />}
   </div>;
 }

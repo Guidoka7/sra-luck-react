@@ -24,8 +24,8 @@ export const financeiroApi = {
   resumo: (periodo: PeriodoFinanceiro) => request<ResumoFinanceiro>(`/api/admin/financeiro/resumo?${query(periodo)}`),
   recebiveis: (params: PeriodoFinanceiro & { busca?: string; status?: string; pagina?: number; limite?: number }) =>
     request<ListaRecebiveis>(`/api/admin/financeiro/recebiveis?${query(params)}`),
-  validacoes: () => request<ListaRecebiveis>("/api/admin/financeiro/validacoes"),
-  recebidos: (params: { data: string; tipo: RecebidosSubfunil; busca?: string }) =>
+  validacoes: (pagina = 1) => request<ListaRecebiveis>(`/api/admin/financeiro/validacoes?pagina=${pagina}`),
+  recebidos: (params: { data: string; tipo: RecebidosSubfunil; busca?: string; pagina?: number; limite?: number }) =>
     request<ListaRecebidosFinanceiro>(`/api/admin/financeiro/recebidos?${query(params)}`),
   detalhe: (id: string) => request<DetalheRecebivel>(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}`),
   baixa: (id: string, payload: Record<string, unknown>) => request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}/baixa`, {
@@ -42,7 +42,9 @@ export const financeiroApi = {
   alterar: (id: string, payload: Record<string, unknown>) => request(`/api/admin/financeiro/recebiveis/${encodeURIComponent(id)}`, {
     method: "PATCH", body: JSON.stringify(payload),
   }),
-  funilClientes: () => request<FunilFinanceiro>("/api/admin/financeiro/clientes"),
+  funilClientes: (params: { bucket?: string; busca?: string; ordenacao?: string; pagina?: number; limite?: number } = {}) =>
+    request<FunilFinanceiro>(`/api/admin/financeiro/clientes?${query(params)}`),
+  clienteFunil: (id: string) => request<{ cliente: ClienteFinanceiro }>(`/api/admin/financeiro/clientes/${encodeURIComponent(id)}`),
   clientes: async () => {
     const data = await request<{ clientes?: ClienteFinanceiro[] } | ClienteFinanceiro[]>("/api/admin/clientes");
     return Array.isArray(data) ? data : data.clientes ?? [];

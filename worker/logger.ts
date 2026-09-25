@@ -20,8 +20,9 @@ type LogContext = {
   [key: string]: unknown;
 };
 
-const SENSITIVE_KEY = /(password|senha|authorization|cookie|set-cookie|session|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|webhook[_-]?secret|service[_-]?role|api[_-]?key|cpf|data[_-]?nascimento|birth|email|telefone|phone|whatsapp|endereco|address|pix|qr[_-]?code|card|pan|cvv|p256dh|endpoint|auth|nome[_-]?completo|full[_-]?name|private[_-]?key|credential|credencial|segredo|chave[_-]?privada|stack)/i;
+const SENSITIVE_KEY = /(password|senha|authorization|cookie|set-cookie|session|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|webhook[_-]?secret|service[_-]?role|api[_-]?key|cpf|data[_-]?nascimento|birth|email|telefone|phone|whatsapp|endereco|address|pix|qr[_-]?code|card|pan|cvv|p256dh|endpoint|auth|nome[_-]?completo|full[_-]?name|private[_-]?key|credential|credencial|segredo|chave[_-]?privada|stack|entity[_-]?id)/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_IN_PATH_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const BEARER_RE = /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b/g;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -65,7 +66,8 @@ export function sanitizeLogValue(value: unknown, depth = 0): unknown {
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 60)) {
-      out[key] = SENSITIVE_KEY.test(key) ? "[REDACTED]" : sanitizeLogValue(item, depth + 1);
+      out[key] = key === "requestId" && typeof item === "string" && UUID_RE.test(item) ? item
+        : SENSITIVE_KEY.test(key) ? "[REDACTED]" : sanitizeLogValue(item, depth + 1);
     }
     return out;
   }
@@ -169,7 +171,7 @@ export function createLogger(base: LogContext = {}): Logger {
 
 export function requestLogger(request: Request, requestId = getRequestId(request)): Logger {
   const url = new URL(request.url);
-  return createLogger({ requestId, route: url.pathname, method: request.method });
+  return createLogger({ requestId, route: url.pathname.replace(UUID_IN_PATH_RE, ":id"), method: request.method });
 }
 
 export function withRequestId(response: Response, requestId: string): Response {

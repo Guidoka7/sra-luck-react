@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Panel } from "@/components/admin/ExecutiveUI";
@@ -13,8 +13,10 @@ const ORDEM: FunilClienteBucket[] = ["aguardando_conferencia", "ativos", "todos"
 
 export function FinanceiroClientesFunil() {
   const [itens, setItens] = useState<ClienteFunilItem[]>([]);
-  const [clientesCompletos, setClientesCompletos] = useState<Cliente[]>([]);
   const [funis, setFunis] = useState<Array<{ bucket: FunilClienteBucket; total: number }>>([]);
+  const [pagina, setPagina] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [revisao, setRevisao] = useState(0);
   const [bucket, setBucket] = useState<FunilClienteBucket>("aguardando_conferencia");
   const [carregando, setCarregando] = useState(true);
   const [modal, setModal] = useState<Cliente | null>(null);
@@ -22,24 +24,27 @@ export function FinanceiroClientesFunil() {
   async function carregar() {
     setCarregando(true);
     try {
-      const [funil, lista] = await Promise.all([financeiroApi.funilClientes(), financeiroApi.clientes()]);
-      setItens(funil.itens);
+      const funil = await financeiroApi.funilClientes({ bucket, pagina, limite: 50 });
+      setItens((anteriores) => pagina === 1 ? funil.itens : [...anteriores, ...funil.itens]);
       setFunis(funil.funis);
-      setClientesCompletos(lista as Cliente[]);
+      setTotal(funil.total);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar o funil de clientes.");
     } finally {
       setCarregando(false);
     }
   }
-  useEffect(() => { void carregar(); }, []);
+  useEffect(() => { void carregar(); }, [bucket, pagina, revisao]);
 
-  const visiveis = useMemo(() => bucket === "todos" ? itens : itens.filter((item) => item.bucket === bucket), [itens, bucket]);
+  const visiveis = itens;
 
-  function abrir(item: ClienteFunilItem) {
-    const cliente = clientesCompletos.find((c) => c.id === item.clienteId);
-    if (!cliente) { toast.error("Não foi possível abrir o perfil completo desta cliente agora."); return; }
-    setModal(cliente);
+  async function abrir(item: ClienteFunilItem) {
+    try {
+      const { cliente } = await financeiroApi.clienteFunil(item.clienteId);
+      setModal(cliente as Cliente);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível abrir a cliente agora.");
+    }
   }
 
   return <>
@@ -47,7 +52,7 @@ export function FinanceiroClientesFunil() {
       <div className="mb-3 flex flex-wrap gap-1.5">
         {ORDEM.map((b) => {
           const total = funis.find((f) => f.bucket === b)?.total ?? 0;
-          return <button key={b} type="button" onClick={() => setBucket(b)} className={cn("flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition", bucket === b ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/55 hover:bg-blush/50 dark:text-white/45 dark:hover:bg-white/6")}>
+          return <button key={b} type="button" onClick={() => { setBucket(b); setPagina(1); }} className={cn("flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition", bucket === b ? "bg-burgundy text-cream shadow-sm dark:bg-[#A85F7D]" : "text-clay/55 hover:bg-blush/50 dark:text-white/45 dark:hover:bg-white/6")}>
             {FUNIL_CLIENTE_LABEL[b]}<span className={cn("rounded-full px-1.5 py-0.5 text-[9px]", bucket === b ? "bg-white/20" : "bg-rose/10 text-rose")}>{total}</span>
           </button>;
         })}
@@ -55,7 +60,7 @@ export function FinanceiroClientesFunil() {
 
       {carregando ? <div className="py-16 text-center text-xs text-clay/50 dark:text-white/45">Carregando clientes…</div>
         : visiveis.length === 0 ? <div className="py-16 text-center text-xs text-clay/50 dark:text-white/45">Nenhuma cliente neste estágio agora.</div>
-        : <div className="divide-y divide-rose/8 dark:divide-white/6">{visiveis.map((item) => <button key={item.clienteId} type="button" onClick={() => abrir(item)} className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition hover:bg-blush/25 dark:hover:bg-white/[0.03]">
+        : <div className="divide-y divide-rose/8 dark:divide-white/6">{visiveis.map((item) => <button key={item.clienteId} type="button" onClick={() => void abrir(item)} className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition hover:bg-blush/25 dark:hover:bg-white/[0.03]">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blush text-burgundy dark:bg-white/8 dark:text-rose"><UserRound className="h-3.5 w-3.5" /></span>
               <span className="min-w-0"><span className="block truncate text-sm font-semibold text-burgundy dark:text-cream">{item.nome}</span><span className="block text-[11px] text-clay/50 dark:text-white/42">{item.parcelasPagas}/{item.parcelasTotal} parcelas pagas</span></span>
@@ -67,8 +72,8 @@ export function FinanceiroClientesFunil() {
               <span className="hidden text-[10px] text-clay/45 dark:text-white/40 sm:block">{item.proximaAcao}</span>
               <ArrowRight className="h-3.5 w-3.5 text-clay/30" />
             </div>
-          </button>)}</div>}
+          </button>)}{!carregando && itens.length < total && <button type="button" onClick={() => setPagina((atual) => atual + 1)} className="w-full py-3 text-center text-xs font-semibold text-burgundy">Carregar mais clientes ({itens.length} de {total})</button>}</div>}
     </Panel>
-    {modal ? <ClienteDrawer cliente={modal} abaInicial="financeiro" onClose={() => setModal(null)} onSalvo={() => { setModal(null); void carregar(); }} /> : null}
+    {modal ? <ClienteDrawer cliente={modal} abaInicial="financeiro" onClose={() => setModal(null)} onSalvo={() => { setModal(null); setPagina(1); setRevisao((atual) => atual + 1); }} /> : null}
   </>;
 }

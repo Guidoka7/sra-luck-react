@@ -16,9 +16,10 @@ function displayMode() {
 
 function deviceKey() {
   const key = "sra-luck-device-key";
+  // A mesma chave pseudônima liga telemetria à assinatura push deste aparelho.
   let value = localStorage.getItem(key);
   if (!value) {
-    value = `${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    value = crypto.randomUUID();
     localStorage.setItem(key, value);
   }
   return value;
@@ -40,9 +41,14 @@ export function AppTelemetry() {
   useEffect(() => {
     let cancelado = false;
     let enviando = false;
+    let proximoEnvio = 0;
+    let timer: number | undefined;
 
     const enviar = async () => {
-      if (cancelado || enviando) return;
+      const agora = Date.now();
+      if (cancelado || enviando || document.visibilityState === "hidden" || agora < proximoEnvio) return;
+      // Jitter evita que milhares de navegadores gravem no mesmo segundo.
+      proximoEnvio = agora + 4 * 60_000 + Math.random() * 2 * 60_000;
       enviando = true;
       try {
         const standalone = displayMode() === "standalone";
@@ -73,17 +79,17 @@ export function AppTelemetry() {
       }
     };
 
-    enviar();
-    const interval = window.setInterval(enviar, 60 * 1000);
-    window.addEventListener("resize", enviar, { passive: true });
+    const agendar = () => {
+      timer = window.setTimeout(() => { void enviar(); agendar(); }, 4 * 60_000 + Math.random() * 2 * 60_000);
+    };
+    timer = window.setTimeout(() => { void enviar(); agendar(); }, Math.random() * 30_000);
     window.addEventListener("focus", enviar);
     document.addEventListener("visibilitychange", enviar);
     navigator.serviceWorker?.addEventListener("controllerchange", enviar);
 
     return () => {
       cancelado = true;
-      window.clearInterval(interval);
-      window.removeEventListener("resize", enviar);
+      window.clearTimeout(timer);
       window.removeEventListener("focus", enviar);
       document.removeEventListener("visibilitychange", enviar);
       navigator.serviceWorker?.removeEventListener("controllerchange", enviar);

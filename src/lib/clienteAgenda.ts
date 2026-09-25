@@ -1,8 +1,7 @@
 /**
  * Formato das respostas de /api/cliente/agenda e /api/cliente/boletos usado
- * pelo app da cliente, e o cache local que permite abrir a aba Agenda
- * instantaneamente ao recarregar a página (os dados são revalidados em
- * seguida, em silêncio).
+ * pelo app da cliente. O snapshot financeiro pode ser reutilizado apenas
+ * enquanto esta página está aberta; não fica gravado no dispositivo.
  */
 
 /**
@@ -79,29 +78,28 @@ export type BoletosData = {
 };
 
 const CHAVE_CACHE = "sra-luck-cliente-snapshot-v1";
-const VALIDADE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+const VALIDADE_CACHE_MS = 60_000;
 
 type CacheCliente = { agenda: AgendaData; boletos: BoletosData; salvoEm: number };
+let cacheMemoria: CacheCliente | null = null;
 
 export function lerCacheCliente(): { agenda: AgendaData; boletos: BoletosData } | null {
   try {
-    const bruto = localStorage.getItem(CHAVE_CACHE);
-    if (!bruto) return null;
-    const cache = JSON.parse(bruto) as CacheCliente;
-    if (!cache?.agenda?.cliente || !cache?.boletos || Date.now() - cache.salvoEm > VALIDADE_CACHE_MS) return null;
-    return { agenda: cache.agenda, boletos: cache.boletos };
+    // Apaga snapshots legados com informações pessoais e financeiras persistidas.
+    localStorage.removeItem(CHAVE_CACHE);
   } catch {
-    return null;
+    // Armazenamento desabilitado: o cache em memória ainda funciona.
   }
+  if (!cacheMemoria || Date.now() - cacheMemoria.salvoEm > VALIDADE_CACHE_MS) return null;
+  return { agenda: cacheMemoria.agenda, boletos: cacheMemoria.boletos };
 }
 
 export function salvarCacheCliente(agenda: AgendaData, boletos: BoletosData) {
-  try {
-    localStorage.setItem(CHAVE_CACHE, JSON.stringify({ agenda, boletos, salvoEm: Date.now() } satisfies CacheCliente));
-  } catch {}
+  cacheMemoria = { agenda, boletos, salvoEm: Date.now() } satisfies CacheCliente;
 }
 
-/** Chamado ao sair e na tela de login, para que outra pessoa nunca veja dados anteriores. */
+/** Chamado ao sair e na tela de login. */
 export function limparCacheCliente() {
+  cacheMemoria = null;
   try { localStorage.removeItem(CHAVE_CACHE); } catch {}
 }

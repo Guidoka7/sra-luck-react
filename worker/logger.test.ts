@@ -31,4 +31,10 @@ describe("observability logger", () => {
     expect(first).toMatch(/^usr_[0-9a-f]{16}$/);
     expect(first).not.toContain(original);
   });
+  it("preserva request_id válido e suprime o identificador da entidade em logs", () => {
+    const requestId = "93fabdb1-3e2f-4c05-8111-6b1535e38be4";
+    expect(sanitizeLogValue({ requestId, entityId: "client-secret-id" })).toEqual({
+      requestId, entityId: "[REDACTED]",
+    });
+  });
 });

@@ -62,9 +62,10 @@ function normalizarErro(value: unknown) {
 
 function enfileirar(payload: string) {
   try {
-    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    localStorage.removeItem(QUEUE_KEY);
+    const fila = JSON.parse(sessionStorage.getItem(QUEUE_KEY) || "[]");
     const atualizada = [...fila.slice(-19), JSON.parse(payload)];
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(atualizada));
+    sessionStorage.setItem(QUEUE_KEY, JSON.stringify(atualizada));
   } catch { /* monitoramento nunca interrompe a aplicação */ }
 }
 
@@ -82,15 +83,17 @@ async function enviar(payload: string) {
 async function reenviarFila() {
   if (typeof window === "undefined") return;
   try {
-    const fila = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]") as unknown[];
+    // Não reenvia eventos legados persistidos entre sessões no aparelho.
+    localStorage.removeItem(QUEUE_KEY);
+    const fila = JSON.parse(sessionStorage.getItem(QUEUE_KEY) || "[]") as unknown[];
     if (!fila.length) return;
     const restantes: unknown[] = [];
     for (const item of fila.slice(-20)) {
       const ok = await enviar(JSON.stringify(sanitizar(item)));
       if (!ok) restantes.push(item);
     }
-    if (restantes.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(restantes));
-    else localStorage.removeItem(QUEUE_KEY);
+    if (restantes.length) sessionStorage.setItem(QUEUE_KEY, JSON.stringify(restantes));
+    else sessionStorage.removeItem(QUEUE_KEY);
   } catch { /* manter a fila para a próxima oportunidade */ }
 }
 
