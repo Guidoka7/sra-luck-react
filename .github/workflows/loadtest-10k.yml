@@ -23,6 +23,7 @@ env:
 jobs:
   preflight:
     name: Preflight + full functional suite
+    if: ${{ !contains(github.event.head_commit.message, '[loadtest:pause]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -140,7 +141,7 @@ jobs:
   aggregate:
     name: Aggregate isolated load report
     needs: [preflight, load]
-    if: always()
+    if: ${{ always() && !contains(github.event.head_commit.message, '[loadtest:pause]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
