@@ -410,7 +410,7 @@ describe("trusted ingress and signed webhook resource", () => {
       for (const ip of ["forged-one", "forged-two"]) {
         const r = req("/api/admin/auth", "POST", { email: "qa@example.invalid", senha: "test-password" });
         r.headers.set("cf-connecting-ip", ip); r.headers.set("x-real-ip", ip); r.headers.set("x-forwarded-for", "192.0.2.1");
-        expect((await vercelHandler(r)).status).toBe(429);
+        expect((await vercelHandler.fetch(r)).status).toBe(429);
       }
       expect(state.rpc.mock.calls[0][1].p_chave).toBe(state.rpc.mock.calls[2][1].p_chave);
     } finally { vi.unstubAllEnvs(); }

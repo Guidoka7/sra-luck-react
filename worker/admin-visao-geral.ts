@@ -86,7 +86,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const graficoInicio = `${chaveMes(ano, mes, -2)}-01`;
     const graficoFim = `${chaveMes(ano, mes, 4)}-01`;
 
-    const [snapshotRes, agendaRes, totaisClientesRes, novasVendasRes] = await Promise.all([
+    const [snapshotRes, agendaRes] = await Promise.all([
       supabase.rpc("loadtest_admin_dashboard_stats", {
         p_hoje: agoraBrasil, p_inicio: inicio, p_fim: fimExclusivo,
         p_semana_inicio: inicioSemana, p_semana_fim: fimSemana,
@@ -96,17 +96,14 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
         p_inicio: inicio, p_fim: fimExclusivo,
         p_hoje: agoraBrasil, p_proximos_fim: fimProximos7,
       }),
-      supabase.rpc("loadtest_admin_clientes_totais"),
-      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro").is("cliente_id", null),
     ]);
 
-    for (const result of [snapshotRes, agendaRes, totaisClientesRes, novasVendasRes]) {
+    for (const result of [snapshotRes, agendaRes]) {
       if (result.error) return json({ erro: publicError(result.error) }, 500);
     }
 
     const snapshot = (snapshotRes.data ?? {}) as any;
     const billStats = snapshot.boletos ?? {};
-    const totaisClientes = (totaisClientesRes.data ?? {}) as any;
     const agendaSnapshot = (agendaRes.data ?? {}) as any;
     const termosMes = (agendaSnapshot.termosMes ?? []) as any[];
     const cirurgiasMes = (agendaSnapshot.cirurgiasMes ?? []) as any[];
@@ -247,7 +244,7 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       periodo: { ano, mes, inicio, fimExclusivo, hoje: agoraBrasil },
       kpis: {
         novasClientesHoje,
-        aguardandoCadastro: Number(novasVendasRes.count ?? 0) + Number(totaisClientes.aguardando ?? 0),
+        aguardandoCadastro: Number(snapshot.novasVendas ?? 0) + Number(snapshot.clientes?.aguardando_financeiro ?? 0),
         aguardandoConferencia: Number(billStats.conferencia ?? 0),
         clientesAtivas: clientStats.ativas,
         termosHoje: termosHojeLista.length,

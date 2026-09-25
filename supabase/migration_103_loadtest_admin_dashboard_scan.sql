@@ -14,6 +14,11 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
       count(*) FILTER (WHERE status_contrato::text='negativado') AS negativadas,
       count(*) FILTER (WHERE status_contrato::text='cancelado') AS canceladas,
       count(*) FILTER (WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date=p_hoje) AS novas_hoje,
+      count(*) FILTER (
+        WHERE coalesce(ativo,true)
+          AND status_contrato IS DISTINCT FROM 'cancelado'
+          AND NOT EXISTS (SELECT 1 FROM public.boletos bx WHERE bx.cliente_id=clientes.id)
+      ) AS aguardando_financeiro,
       coalesce(sum(valor_contrato) FILTER (WHERE coalesce(status_contrato::text,'ativo')='ativo'),0) AS valor_ativo
     FROM public.clientes
   ),
@@ -88,7 +93,7 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
       count(*) FILTER (WHERE last_access_at IS NULL OR last_access_at<now()-interval '7 days') sem_acesso
     FROM public.cliente_app_devices
   ),
-  novas_vendas AS (SELECT count(*) total FROM public.novas_vendas WHERE status='aguardando_cadastro'),
+  novas_vendas AS (SELECT count(*) total FROM public.novas_vendas WHERE status='aguardando_cadastro' AND cliente_id IS NULL),
   notificacoes AS (SELECT count(*) total FROM public.notificacao_logs
     WHERE created_at >= (p_hoje::timestamp AT TIME ZONE 'America/Sao_Paulo')
       AND created_at < ((p_hoje+1)::timestamp AT TIME ZONE 'America/Sao_Paulo') AND push_enviadas>0),
