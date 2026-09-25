@@ -148,10 +148,6 @@ function ensurePreviewAccess() {
   if (previewReady) return;
   const url = SHARE ? `${BASE}/?_vercel_share=${SHARE}` : `${BASE}/`;
   const res = http.get(url, {
-    headers: {
-      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
-      "x-vercel-set-bypass-cookie": "true",
-    },
     redirects: 10,
     tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
   });
@@ -180,7 +176,12 @@ function call(method, path, cookie, name, body = null) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = http.request(method, `${BASE}${path}`, body, {
+  const sep = path.includes("?") ? "&" : "?";
+  const requestUrl = SHARE
+    ? `${BASE}${path}${sep}_vercel_share=${encodeURIComponent(SHARE)}`
+    : `${BASE}${path}`;
+
+  const res = http.request(method, requestUrl, body, {
     headers,
     tags: { name },
     redirects: 5,
