@@ -319,10 +319,14 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
   const importacaoId = String((imp as Json).id);
   const fontes = deps.fontes ?? fontesRd(env);
   try {
-    const deals = await fontes.deals(filtro);
-    const r = await fontes.refs();
+    // As três leituras são independentes. Fazê-las em paralelo reduz bastante o
+    // tempo total de importação e evita desperdiçar a janela de execução da Edge.
+    const [deals, r, indice] = await Promise.all([
+      fontes.deals(filtro),
+      fontes.refs(),
+      carregarIndice(db),
+    ]);
     const refs = { contatos: mapById(r.contatos), usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
-    const indice = await carregarIndice(db);
     const itens: ItemImportacao[] = [];
     for (const deal of deals) {
       const snapshot = normalizarDealRd(deal, refs);
