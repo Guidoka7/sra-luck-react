@@ -22,6 +22,7 @@ const routeFail = new Rate("route_fail");
 const appRequests = new Counter("app_requests");
 const client4xx = new Counter("client_4xx");
 const timeouts = new Counter("request_timeouts");
+const protectionChallenges = new Counter("protection_challenges");
 let lastWitnessBucket = -1;
 
 function bucket() {
@@ -73,6 +74,7 @@ const minutes = Array.from({ length: 35 }, (_, minute) => ({
   server5xx: new Counter(`minute_${minute}_server5xx`),
   client4xx: new Counter(`minute_${minute}_client4xx`),
   timeouts: new Counter(`minute_${minute}_timeouts`),
+  protection: new Counter(`minute_${minute}_protection`),
   witnessedVus: new Counter(`minute_${minute}_witnessedVus`),
 }));
 const routeDurations = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_duration_${route}`, true)]));
@@ -155,6 +157,8 @@ export function setup() {
   if (identity.status !== 200 || marker?.projectRef !== "xqlxzdmleekbrietejoq" || marker?.isolated !== true || marker?.externalIntegrationsDisabled !== true) {
     throw new Error(`Hard-stop: Preview não confirmou o Supabase isolado (HTTP ${identity.status}, tipo ${identity.headers["Content-Type"] || "desconhecido"}).`);
   }
+  const previewCookies = http.cookieJar().cookiesForURL(BASE);
+  if (!Object.keys(previewCookies).length) throw new Error("Hard-stop: Preview não forneceu cookie para os VUs.");
 
   const first = 80000000001 + SHARD * 1000;
   const last = first + 999;
@@ -180,24 +184,18 @@ export function setup() {
     throw new Error(`Shard ${SHARD}: esperado 1000 clientes, recebido ${clients?.length ?? 0}`);
   }
 
-  return { clients, startedAt: new Date().toISOString() };
+  return { clients, previewCookies, startedAt: new Date().toISOString() };
 }
 
-let previewReady = false;
 let cachedClientCookie = "";
 let cachedAdminCookie = "";
 
-function ensurePreviewAccess() {
-  if (previewReady) return;
-  const url = SHARE ? `${BASE}/?_vercel_share=${SHARE}` : `${BASE}/`;
-  const res = http.get(url, {
-    redirects: 10,
-    tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
-  });
-  const ok = res.status >= 200 && res.status < 400;
-  check(res, { "test host access": () => ok });
-  if (!ok) throw new Error(`Falha de acesso ao host isolado: HTTP ${res.status}`);
-  previewReady = true;
+function ensurePreviewAccess(previewCookies) {
+  // O k6 limpa o jar de cookies entre iterações. Reaplicar o cookie obtido e
+  // validado no setup evita 10.000 negociações SSO durante a rampa.
+  for (const [name, values] of Object.entries(previewCookies)) {
+    if (values[0]) http.cookieJar().set(BASE, name, values[0]);
+  }
 }
 
 function call(method, path, cookie, name, body = null) {
@@ -238,7 +236,9 @@ function call(method, path, cookie, name, body = null) {
     console.log(`[SMOKE] ${name} HTTP ${res.status}${snippet ? ` :: ${snippet}` : ""}`);
   }
 
-  const failed = !(res.status >= 200 && res.status < 400);
+  const unexpectedHtml = path.startsWith("/api/") && res.status >= 200 && res.status < 400
+    && !String(res.headers["Content-Type"] || "").toLowerCase().includes("application/json");
+  const failed = !(res.status >= 200 && res.status < 400) || unexpectedHtml;
   routeFail.add(failed, metricTags);
   server5xx.add(res.status >= 500, metricTags);
   appRequests.add(1, metricTags);
@@ -250,7 +250,11 @@ function call(method, path, cookie, name, body = null) {
   if (res.status >= 400 && res.status < 500) minute.client4xx.add(1);
   if (res.status === 0) timeouts.add(1, metricTags);
   if (res.status === 0) minute.timeouts.add(1);
-  check(res, { [`${name} HTTP < 400`]: (r) => r.status < 400 });
+  if (unexpectedHtml) {
+    protectionChallenges.add(1, metricTags);
+    minute.protection.add(1);
+  }
+  check(res, { [`${name} resposta válida`]: () => !failed });
   return res;
 }
 
@@ -358,7 +362,7 @@ function smoke(data) {
 }
 
 export default function (data) {
-  ensurePreviewAccess();
+  ensurePreviewAccess(data.previewCookies);
 
   if (SMOKE) {
     smoke(data);

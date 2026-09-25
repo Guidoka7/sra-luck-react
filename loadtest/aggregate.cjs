@@ -37,10 +37,10 @@ for (const shard of shards) {
       route.worstShardP99Ms = max([route.worstShardP99Ms, Number(duration["p(99)"])]);
       routes.set(tags.route, route);
     }
-    const match = name.match(/^minute_(\d+)_(requests|failures|server5xx|client4xx|timeouts|witnessedVus)$/);
+    const match = name.match(/^minute_(\d+)_(requests|failures|server5xx|client4xx|timeouts|protection|witnessedVus)$/);
     if (match) {
       const minute = Number(match[1]);
-      const row = timeline.get(minute) || { minute, requests: 0, failures: 0, server5xx: 0, client4xx: 0, timeouts: 0, witnessedVus: 0 };
+      const row = timeline.get(minute) || { minute, requests: 0, failures: 0, server5xx: 0, client4xx: 0, timeouts: 0, protection: 0, witnessedVus: 0 };
       row[match[2]] += Number(v.count || 0);
       timeline.set(minute, row);
     }
@@ -73,6 +73,7 @@ const report = {
   totalAppRequests: requests, appFailures: failed, appFailureRate: requests ? failed / requests : null,
   totalServer5xx: fiveHundreds, total4xx: sum(shards.map((s) => metric(s, "client_4xx").count)),
   totalTimeouts: sum(shards.map((s) => metric(s, "request_timeouts").count)),
+  totalProtectionChallenges: sum(shards.map((s) => metric(s, "protection_challenges").count)),
   worstShardP50Ms: max(shards.map((s) => Number(metric(s, "http_req_duration").med))),
   worstShardP95Ms: max(shards.map((s) => Number(metric(s, "http_req_duration")["p(95)"]))),
   worstShardP99Ms: max(shards.map((s) => Number(metric(s, "http_req_duration")["p(99)"]))),
@@ -92,13 +93,13 @@ const lines = [
   "# Sra. Luck — carga no ambiente isolado", "",
   `Perfil: ${profile}. Shards: ${shards.length}/${report.expectedShards}.`,
   `Requisições da aplicação: ${requests}; HTTP incluindo acesso ao Preview: ${httpRequests}.`,
-  `Falhas de aplicação: ${failed} (${pct(report.appFailureRate)}); 5xx: ${fiveHundreds}; 4xx: ${report.total4xx}; timeouts: ${report.totalTimeouts}.`,
+  `Falhas de aplicação: ${failed} (${pct(report.appFailureRate)}); 5xx: ${fiveHundreds}; 4xx: ${report.total4xx}; timeouts: ${report.totalTimeouts}; desafios do Preview: ${report.totalProtectionChallenges}.`,
   `Média HTTP: ${ms(report.meanHttpMs)}; maior p50/p95/p99 entre shards: ${ms(report.worstShardP50Ms)} / ${ms(report.worstShardP95Ms)} / ${ms(report.worstShardP99Ms)}; máximo: ${ms(report.maxObservedMs)}.`,
   `10.000 VUs atingidos em todos os shards: ${rampReached ? "sim" : "não comprovado"}. Platô integral testemunhado: ${witnessedAllMinutes ? "sim" : "não comprovado"} (${report.plateauMinutesWitnessed}/30 minutos).`,
   "Os percentis acima são os piores entre shards; percentis globais não podem ser reconstruídos dos resumos.",
   "", "## Minutos observados", "",
-  "| Minuto | Requisições | Falhas | 5xx | 4xx | Timeouts | VUs testemunhados |", "|---:|---:|---:|---:|---:|---:|---:|",
-  ...series.map((row) => `| ${row.minute} | ${row.requests} | ${pct(row.failureRate)} | ${row.server5xx} | ${row.client4xx} | ${row.timeouts} | ${row.witnessedVus} |`),
+  "| Minuto | Requisições | Falhas | 5xx | 4xx | Timeouts | Proteção | VUs testemunhados |", "|---:|---:|---:|---:|---:|---:|---:|",
+  ...series.map((row) => `| ${row.minute} | ${row.requests} | ${pct(row.failureRate)} | ${row.server5xx} | ${row.client4xx} | ${row.timeouts} | ${row.protection} | ${row.witnessedVus} |`),
   "", "## Rotas instrumentadas", "",
   "| Rota | Amostra | Falhas | Taxa | Maior p95 | Maior p99 |", "|---|---:|---:|---:|---:|---:|",
   ...sortedRoutes.map((row) => `| ${row.route} | ${row.total} | ${row.failures} | ${pct(row.failureRate)} | ${ms(row.worstShardP95Ms)} | ${ms(row.worstShardP99Ms)} |`),
