@@ -31,6 +31,9 @@ export type ValoresVenda = {
   cpf: string | null;
   telefone: string | null;
   email: string | null;
+  vendedora: string | null;
+  origem: string | null;
+  campanha: string | null;
   valor_contrato: number;
   quantidade_parcelas: number | null;
   valor_parcela: number | null;
@@ -130,8 +133,9 @@ function converter(campo: CampoCrm, bruto: unknown): string | number | null {
 
 export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json | undefined, config: ConfigCrm): ValoresVenda {
   const auto: Record<CampoCrm, unknown> = {
-    cpf: s.cpfOriginal, telefone: s.telefoneOriginal, email: s.emailOriginal, valor_contrato: s.valorOriginal,
-    quantidade_parcelas: s.quantidadeParcelasOriginal, valor_parcela: s.valorParcelaOriginal,
+    cpf: s.cpfOriginal, telefone: s.telefoneOriginal, email: s.emailOriginal,
+    vendedora: s.vendedoraOriginal, origem: s.origemOriginal, campanha: s.campanhaOriginal,
+    valor_contrato: s.valorOriginal, quantidade_parcelas: s.quantidadeParcelasOriginal, valor_parcela: s.valorParcelaOriginal,
     taxa_administrativa: s.taxaAdministrativaOriginal, tipo_venda: s.tipoVendaOriginal,
     procedimento: autoPorNome(deal, "procedimento"), banco: autoPorNome(deal, "banco"),
   };
@@ -247,7 +251,7 @@ function linhaNovaVenda(s: RdDealSnapshot, v: ValoresVenda, importacaoId: string
     telefone: v.telefone,
     email: v.email,
     data_venda: s.dataVenda,
-    vendedora_responsavel: s.vendedoraOriginal,
+    vendedora_responsavel: v.vendedora,
     valor_contrato: v.valor_contrato,
     quantidade_parcelas: v.quantidade_parcelas,
     valor_parcela: v.valor_parcela,
@@ -257,8 +261,8 @@ function linhaNovaVenda(s: RdDealSnapshot, v: ValoresVenda, importacaoId: string
     banco_local: v.banco,
     rd_procedimento_original: v.procedimento,
     rd_banco_original: v.banco,
-    origem_venda: s.origemOriginal,
-    campanha_local: s.campanhaOriginal,
+    origem_venda: v.origem,
+    campanha_local: v.campanha,
     // Regra: toda cliente nova entra em "Aguardando cadastro". Nunca outro status aqui.
     status: "aguardando_cadastro",
     importacao_id: importacaoId,
@@ -271,7 +275,7 @@ export async function processarNegociacao(db: Db, entrada: {
 }): Promise<ItemImportacao> {
   const { deal, snapshot: s, contato, config, indice, importacaoId } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
-  const dados = { ...valores, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda, vendedora: s.vendedoraOriginal, campanha: s.campanhaOriginal, origem: s.origemOriginal };
+  const dados = { ...valores, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
   const existente = indice.vendaPorRd.get(s.rdStationId);
