@@ -243,7 +243,7 @@ function validarConfigGemini(bruto: unknown): Validacao<ConfigGemini> {
 
 // ------------------------------------------------------------------ CRM (RD Station) → importação
 
-export const CAMPOS_CRM = ["cpf", "telefone", "email", "valor_contrato", "quantidade_parcelas", "valor_parcela", "taxa_administrativa", "tipo_venda", "procedimento", "banco"] as const;
+export const CAMPOS_CRM = ["cpf", "telefone", "email", "vendedora", "origem", "campanha", "valor_contrato", "quantidade_parcelas", "valor_parcela", "taxa_administrativa", "tipo_venda", "procedimento", "banco"] as const;
 export type CampoCrm = typeof CAMPOS_CRM[number];
 /** auto = leitura automática atual; ignorar = não importa; deal:<slug> / contact:<slug> = campo personalizado. */
 export type FonteCampoCrm = string;
@@ -475,8 +475,9 @@ const CAMPOS_GEMINI: CampoFormulario[] = [
 ];
 
 const ROTULO_CAMPO_CRM: Record<CampoCrm, string> = {
-  cpf: "CPF", telefone: "Telefone", email: "E-mail", valor_contrato: "Valor do contrato", quantidade_parcelas: "Quantidade de parcelas",
-  valor_parcela: "Valor da parcela", taxa_administrativa: "Taxa administrativa", tipo_venda: "Tipo de venda", procedimento: "Procedimento", banco: "Banco",
+  cpf: "CPF", telefone: "Telefone", email: "E-mail", vendedora: "Vendedora / responsável", origem: "Origem", campanha: "Campanha",
+  valor_contrato: "Valor do contrato", quantidade_parcelas: "Quantidade de parcelas", valor_parcela: "Valor da parcela",
+  taxa_administrativa: "Taxa administrativa", tipo_venda: "Tipo de venda", procedimento: "Procedimento", banco: "Banco",
 };
 
 const CAMPOS_CRM_FORM: CampoFormulario[] = [
