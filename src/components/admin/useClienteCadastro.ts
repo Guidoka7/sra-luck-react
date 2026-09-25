@@ -309,6 +309,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
 
   async function excluirCarne(carneId: string) {
     if (!cliente?.id) return false;
+    setCriandoCarne(true);
     try {
       const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes/${encodeURIComponent(carneId)}`, { method: "DELETE" });
       const d = await r.json().catch(() => ({}));
@@ -319,6 +320,8 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao excluir carnê.");
       return false;
+    } finally {
+      setCriandoCarne(false);
     }
   }
 
