@@ -14,7 +14,7 @@ permissions:
 
 env:
   TARGET_BASE: "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app"
-  VERCEL_SHARE: ""
+  VERCEL_SHARE: "rHbV3dtJvcqn6huJAtZVDBA8LfsYYO92"
 
 jobs:
   preflight:
