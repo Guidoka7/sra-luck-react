@@ -172,7 +172,6 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar.");
       toast.success(editando ? "Perfil atualizado." : origemCrm ? "Pré-cadastro concluído. Cliente vinculada ao CRM." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
       onSalvo(d.cliente ?? undefined);
-      if (!editando) onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar.");
     } finally {

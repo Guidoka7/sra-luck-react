@@ -51,8 +51,9 @@ export interface ClienteDrawerProps {
  */
 export function ClienteDrawer(props: ClienteDrawerProps) {
   const { clienteId, onClose } = props;
-  const criando = !clienteId;
   const [cadastro, setCadastro] = useState<Cliente | null>(props.cliente ?? null);
+  const clienteIdAtual = clienteId ?? cadastro?.id ?? null;
+  const criando = !clienteIdAtual;
   const [erroCadastro, setErroCadastro] = useState<string | null>(null);
   const [central, setCentral] = useState<Central | null>(null);
   const [erroCentral, setErroCentral] = useState<string | null>(null);
@@ -63,27 +64,27 @@ export function ClienteDrawer(props: ClienteDrawerProps) {
   const escBloqueado = useRef<() => boolean>(() => false);
 
   const carregarCadastro = useCallback(async () => {
-    if (!clienteId) return null;
+    if (!clienteIdAtual) return null;
     try {
-      const c = await centralApi.clienteCadastro(clienteId);
+      const c = await centralApi.clienteCadastro(clienteIdAtual);
       if (!c) throw new Error("Cadastro da cliente não encontrado.");
       setCadastro(c); setErroCadastro(null);
       return c;
     } catch (e) { setErroCadastro(e instanceof Error ? e.message : "Não foi possível carregar a cliente."); return null; }
-  }, [clienteId]);
+  }, [clienteIdAtual]);
 
   const carregarCentral = useCallback(async () => {
-    if (!clienteId) return null;
-    try { const r = await centralApi.cliente(clienteId); setCentral(r); setErroCentral(null); return r; }
+    if (!clienteIdAtual) return null;
+    try { const r = await centralApi.cliente(clienteIdAtual); setCentral(r); setErroCentral(null); return r; }
     catch (e) { setErroCentral(e instanceof Error ? e.message : "Não foi possível carregar o processo."); return null; }
-  }, [clienteId]);
+  }, [clienteIdAtual]);
 
   useEffect(() => {
-    if (!clienteId) return;
+    if (!clienteIdAtual) return;
     if (!props.cliente) void carregarCadastro();
     void carregarCentral();
     // Carrega uma vez por cliente; `props.cliente` é só o valor inicial.
-  }, [clienteId, carregarCadastro, carregarCentral]);
+  }, [clienteIdAtual, carregarCadastro, carregarCentral]);
 
   useEffect(() => {
     lastFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -189,7 +190,15 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   }, [cadastro, setCadastro, carregarCentral, onChanged]);
 
   const cad = useClienteCadastro(cadastro, {
-    onSalvo: (c) => { if (criando) void onChanged?.(); else void recarregar(c); },
+    onSalvo: (c) => {
+      if (criando && c) {
+        setCadastro(c);
+        void onChanged?.();
+        return;
+      }
+      if (criando) { void onChanged?.(); return; }
+      void recarregar(c);
+    },
     onClose: requestClose,
     preCadastro: props.preCadastro ?? null,
   });
