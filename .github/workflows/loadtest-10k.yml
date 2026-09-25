@@ -1,10 +1,12 @@
 name: Isolated 10k Load Test
 
 on:
-  workflow_dispatch:
-
-# Suspenso temporariamente em 2026-09-25 a pedido do usuário.
-# Para retomar, restaure o gatilho push desta branch isolada.
+  push:
+    branches:
+      - load-test-10k-isolated
+    paths:
+      - "loadtest/run-mode.txt"
+      - ".github/workflows/loadtest-10k.yml"
 
 permissions:
   contents: read
@@ -15,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_BASE: "https://sra-luck-react-7o4aqvcwz-guidoka7.vercel.app"
-  VERCEL_SHARE: "8tucSW63POO2DoA1agOAbFrF8ZevPdbr"
+  TARGET_BASE: "https://sra-luck-react-reub6gu1w-guidoka7.vercel.app"
+  VERCEL_SHARE: "sAcrrI0lOWLMZ4Uew5nk0yKKBv8gajaP"
 
 jobs:
   preflight:
