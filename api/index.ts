@@ -2,8 +2,6 @@ import worker from "../worker/index";
 import type { Env } from "../worker/supabase";
 import { authorizeDevConsoleRequest } from "../worker/dev-console-auth";
 
-export const config = { runtime: "edge" };
-
 function firstEnv(...names: string[]): string | undefined {
   for (const name of names) {
     const value = process.env[name]?.trim();
@@ -58,7 +56,7 @@ function buildEnv(request: Request): Env {
   };
 }
 
-export default async function handler(request: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
+async function handleRequest(request: Request) {
   const url = new URL(request.url);
 
   // Branch de carga isolada: o k6 deve comprovar o destino antes de enviar tráfego.
@@ -94,5 +92,11 @@ export default async function handler(request: Request, context?: { waitUntil?: 
   const authorizedRequest = await authorizeDevConsoleRequest(trustedRequest, env);
   if (authorizedRequest instanceof Response) return authorizedRequest;
 
-  return worker.fetch(authorizedRequest, env, context);
+  return worker.fetch(authorizedRequest, env);
 }
+
+// Use the default Vercel Node.js runtime. The previous Edge runtime forced the
+// entire API graph into the 1 MB Edge bundle limit. Vercel Functions support
+// the Web Fetch handler natively, so we keep the same Request/Response contract
+// without pulling the monolithic worker into an Edge Function.
+export default { fetch: handleRequest };
