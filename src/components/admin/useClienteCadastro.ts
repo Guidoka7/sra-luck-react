@@ -53,7 +53,8 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
   const [historicoAberto, setHistoricoAberto] = useState(false);
 
   const quantidadeInicial = (cliente?.quantidade_parcelas ?? preCadastro?.quantidade_parcelas ?? 12) as QuantidadeParcelas;
-  const taxaInicial = cliente?.taxa_administrativa_percentual ?? preCadastro?.taxa_administrativa ?? TAXA_ADMINISTRATIVA_PADRAO[quantidadeInicial] ?? 0;
+  const taxaInformadaInicial = Number(cliente?.taxa_administrativa_percentual ?? preCadastro?.taxa_administrativa ?? 0);
+  const taxaInicial = taxaInformadaInicial > 0 ? taxaInformadaInicial : (TAXA_ADMINISTRATIVA_PADRAO[quantidadeInicial] ?? 0);
   const valorInicial = Number(cliente?.valor_contrato ?? preCadastro?.valor_contrato ?? 0);
   const [carta, setCarta] = useState(valorInicial > 0 ? moedaNumero(valorInicial) : "");
   const [quantidade, setQuantidade] = useState<QuantidadeParcelas>(quantidadeInicial);
@@ -83,12 +84,41 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, 
   const parcelaAutomatica = quantidade ? totalAutomatico / quantidade : 0;
 
   useEffect(() => { if (!parcela && !parcelaManual && parcelaAutomatica > 0) setParcela(moedaNumero(parcelaAutomatica)); }, [parcela, parcelaManual, parcelaAutomatica]);
-  function atualizarCarta(valor: string) { const novo = mascararMoedaInput(valor); setCarta(novo); const n = Number(desmascararMoeda(novo)) || 0; const t = n * (1 + taxaNumero / 100); setTotal(moedaNumero(t)); if (!parcelaManual) setParcela(moedaNumero(quantidade ? t / quantidade : 0)); }
-  function atualizarTaxa(valor: string) { setTaxa(valor); const n = Number(valor.replace(",", ".")) || 0; const t = cartaNumero * (1 + n / 100); setTotal(moedaNumero(t)); if (!parcelaManual) setParcela(moedaNumero(quantidade ? t / quantidade : 0)); }
-  function atualizarQuantidade(valor: string) { const q = Number(valor) as QuantidadeParcelas; setQuantidade(q); if (!parcelaManual) setParcela(moedaNumero(q ? totalNumero / q : 0)); }
+
+  // A taxa padrão já existe por quantidade de parcelas. No formulário ela é
+  // apenas uma sugestão: entra automaticamente, mas continua totalmente editável.
+  // Carta, taxa ou quantidade alteradas recalculam a sugestão da parcela; se a
+  // operação digitar outro valor de parcela depois disso, o valor manual é mantido.
+  function atualizarCarta(valor: string) {
+    const novo = mascararMoedaInput(valor);
+    setCarta(novo);
+    const n = Number(desmascararMoeda(novo)) || 0;
+    const t = n * (1 + taxaNumero / 100);
+    setTotal(n > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(n > 0 && quantidade ? moedaNumero(t / quantidade) : "");
+  }
+  function atualizarTaxa(valor: string) {
+    setTaxa(valor);
+    const n = Number(valor.replace(",", ".")) || 0;
+    const t = cartaNumero * (1 + n / 100);
+    setTotal(cartaNumero > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(cartaNumero > 0 && quantidade ? moedaNumero(t / quantidade) : "");
+  }
+  function atualizarQuantidade(valor: string) {
+    const q = Number(valor) as QuantidadeParcelas;
+    setQuantidade(q);
+    const taxaPadrao = TAXA_ADMINISTRATIVA_PADRAO[q] ?? 0;
+    setTaxa(String(taxaPadrao).replace(".", ","));
+    const t = cartaNumero * (1 + taxaPadrao / 100);
+    setTotal(cartaNumero > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(cartaNumero > 0 && q ? moedaNumero(t / q) : "");
+  }
   function atualizarParcela(valor: string) { setParcelaManual(true); setParcela(mascararMoedaInput(valor)); }
 
-  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setParcelaManual(false); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); if (d.cliente?.valor_contrato != null) setCarta(moedaNumero(Number(d.cliente.valor_contrato))); if (d.cliente?.taxa_administrativa_percentual != null) setTaxa(String(d.cliente.taxa_administrativa_percentual).replace(".", ",")); if (d.cliente?.custo_total != null) setTotal(moedaNumero(Number(d.cliente.custo_total))); if (lista[0]?.total_parcelas) setQuantidade(Number(lista[0].total_parcelas) as QuantidadeParcelas); if (lista[0]?.valor) { setParcela(moedaNumero(Number(lista[0].valor))); setParcelaManual(true); } else setParcelaManual(false); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
+  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setParcelaManual(false); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); const qtdCarregada = Number(lista[0]?.total_parcelas ?? d.cliente?.quantidade_parcelas ?? quantidadeInicial) as QuantidadeParcelas; const taxaCarregada = Number(d.cliente?.taxa_administrativa_percentual ?? 0); const taxaEfetiva = taxaCarregada > 0 ? taxaCarregada : (TAXA_ADMINISTRATIVA_PADRAO[qtdCarregada] ?? 0); const cartaCarregada = Number(d.cliente?.valor_contrato ?? 0); if (d.cliente?.valor_contrato != null) setCarta(moedaNumero(cartaCarregada)); setTaxa(String(taxaEfetiva).replace(".", ",")); if (qtdCarregada) setQuantidade(qtdCarregada); if (d.cliente?.custo_total != null && taxaCarregada > 0) setTotal(moedaNumero(Number(d.cliente.custo_total))); else if (cartaCarregada > 0) setTotal(moedaNumero(cartaCarregada * (1 + taxaEfetiva / 100))); if (lista[0]?.valor) { setParcela(moedaNumero(Number(lista[0].valor))); setParcelaManual(true); } else if (cartaCarregada > 0 && qtdCarregada) { setParcela(moedaNumero((cartaCarregada * (1 + taxaEfetiva / 100)) / qtdCarregada)); setParcelaManual(false); } else setParcelaManual(false); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
   useEffect(() => { void carregarBoletos(); }, [cliente?.id]);
 
   async function carregarPerfilExtra() {
