@@ -273,6 +273,120 @@ export async function rdGet(env: Env, path: string): Promise<Json> {
   return data;
 }
 
+async function rdWebhookRequest(env: Env, method: "GET" | "POST" | "PUT", path: string, body?: Json): Promise<Json> {
+  if (!path.startsWith("/webhooks")) throw new Error("RD_WEBHOOK_PATH_INVALID");
+  let token = await rdCredentialConfiguracao(env, "access_token", "api_access_token");
+  if (!token) throw new Error("RD_ACCESS_TOKEN_MISSING");
+  const executar = (access: string) => fetch(`${RD_CRM_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${access}`,
+      Accept: "application/json",
+      ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
+  });
+  let response = await executar(token);
+  if (response.status === 401) {
+    token = await renovarToken(env);
+    response = await executar(token);
+  }
+  const data = await response.json().catch(() => ({})) as Json;
+  if (!response.ok) throw new Error(`RD_WEBHOOK_HTTP_${response.status}`);
+  return data;
+}
+
+function gerarSegredoWebhook() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let bin = "";
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+const RD_WEBHOOK_EVENTS = ["crm_deal_created", "crm_deal_updated", "crm_deal_deleted"] as const;
+const RD_WEBHOOK_HEADER = "x-sra-luck-rd-key";
+
+export async function garantirWebhooksRd(env: Env, actor = "sistema:rd_station_webhook_setup") {
+  const db = createServiceSupabaseClient(env);
+  let secret = await rdCredentialConfiguracao(env, "webhook_secret");
+  let segredoCriado = false;
+  if (!secret) {
+    secret = gerarSegredoWebhook();
+    await salvarCredencialInterna(env, "rd_station", "webhook_secret", secret, actor);
+    segredoCriado = true;
+  }
+
+  const base = (env.PUBLIC_APP_URL || "").replace(/\/$/, "");
+  if (!base.startsWith("https://")) throw new Error("RD_WEBHOOK_PUBLIC_URL_MISSING");
+  const callbackUrl = `${base}/api/integrations/rd-station/webhook`;
+
+  const listagem = await rdWebhookRequest(env, "GET", "/webhooks?page[number]=1&page[size]=100");
+  const existentes = arrayValue(listagem.data).map(objectValue);
+  const resultados: Array<{ event: string; id: string | null; acao: "criado" | "atualizado" | "mantido" }> = [];
+
+  for (const event of RD_WEBHOOK_EVENTS) {
+    const nome = `Sra. Luck · ${event}`;
+    const existente = existentes.find((item) => {
+      const mesmoEvento = stringValue(item.event_name) === event;
+      const mesmaUrl = stringValue(item.url) === callbackUrl;
+      const mesmoNome = stringValue(item.name) === nome;
+      return mesmoEvento && (mesmaUrl || mesmoNome);
+    });
+
+    const data = {
+      name: nome,
+      event_name: event,
+      http_method: "POST",
+      url: callbackUrl,
+      status: "active",
+      auth_header: RD_WEBHOOK_HEADER,
+      auth_key: secret,
+    };
+
+    if (!existente) {
+      const criado = await rdWebhookRequest(env, "POST", "/webhooks", { data });
+      resultados.push({ event, id: stringValue(objectValue(criado.data).id) || null, acao: "criado" });
+      continue;
+    }
+
+    const id = stringValue(existente.id);
+    const precisaAtualizar = segredoCriado
+      || stringValue(existente.url) !== callbackUrl
+      || stringValue(existente.status) !== "active"
+      || stringValue(existente.http_method).toUpperCase() !== "POST"
+      || stringValue(existente.auth_header).toLowerCase() !== RD_WEBHOOK_HEADER;
+
+    if (precisaAtualizar && id) {
+      const atualizado = await rdWebhookRequest(env, "PUT", `/webhooks/${encodeURIComponent(id)}`, { data });
+      resultados.push({ event, id: stringValue(objectValue(atualizado.data).id) || id, acao: "atualizado" });
+    } else {
+      resultados.push({ event, id: id || null, acao: "mantido" });
+    }
+  }
+
+  await db.from("logs_alteracoes").insert({
+    usuario: actor,
+    acao: "configurou_webhooks_rd_station",
+    entidade: "integracoes",
+    entidade_id: "rd_station",
+    detalhes: {
+      callbackUrl,
+      authHeader: RD_WEBHOOK_HEADER,
+      segredoCriado,
+      eventos: resultados,
+    },
+  });
+
+  return {
+    ok: true as const,
+    callbackUrl,
+    authHeader: RD_WEBHOOK_HEADER,
+    segredoConfigurado: true,
+    segredoCriado,
+    eventos: resultados,
+  };
+}
+
 export async function listarTudo(env: Env, resource: string, filter?: string) {
   const itens: Json[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -381,19 +495,9 @@ export async function registrarEvento(db: Db, input: { eventId?: string | null; 
   return db.from("integracao_eventos").insert(row);
 }
 
-async function handleWebhook(request: Request, env: Env) {
-  const secret = await rdCredential(env, "webhook_secret");
-  if (!secret) return json({ erro: "Webhook RD Station não configurado." }, 503);
-  const supplied = request.headers.get("x-sra-luck-rd-key") || request.headers.get("x-rd-webhook-key") || "";
-  if (!supplied || supplied.length !== secret.length) return json({ erro: "Webhook não autorizado." }, 401);
-  const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > 1_000_000) return json({ erro: "Evento muito grande." }, 413);
-  let diff = 0;
-  for (let i = 0; i < supplied.length; i++) diff |= supplied.charCodeAt(i) ^ secret.charCodeAt(i);
-  if (diff !== 0) return json({ erro: "Webhook não autorizado." }, 401);
+type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
 
-  const payload = await request.json().catch(() => null) as Json | null;
-  if (!payload) return json({ erro: "JSON inválido." }, 400);
+async function processarWebhookRd(payload: Json, env: Env) {
   const eventType = stringValue(payload.event_name) || "unknown";
   const transaction = stringValue(payload.transaction_uuid) || null;
   const document = objectValue(payload.document);
@@ -402,7 +506,7 @@ async function handleWebhook(request: Request, env: Env) {
 
   if (transaction) {
     const { data: duplicado } = await db.from("crm_vendas_entrada").select("id").eq("provedor", "rd_station").eq("transaction_uuid", transaction).maybeSingle();
-    if (duplicado) return json({ ok: true, duplicate: true, id: duplicado.id });
+    if (duplicado) return { ok: true, duplicate: true, id: duplicado.id };
   }
 
   let snapshot: RdDealSnapshot | null = null;
@@ -411,7 +515,6 @@ async function handleWebhook(request: Request, env: Env) {
     if (eventType === "crm_deal_deleted" && dealId) {
       await db.from("novas_vendas").update({ rd_status: "deleted", rd_excluido_em: new Date().toISOString(), rd_snapshot: document, payload_original: document, sincronizado_rd_em: new Date().toISOString() }).eq("rd_station_id", dealId);
     } else if (eventType.startsWith("crm_deal_")) {
-      // Mesmo filtro, mapeamento e deduplicação da importação (crm-importacao.ts).
       const r = await importarDoWebhook(env, db, document, transaction);
       snapshot = r?.snapshot ?? null;
       persistencia = r ? { resultado: r.item.resultado, id: r.item.nova_venda_id, motivo: r.item.motivo } : null;
@@ -434,19 +537,65 @@ async function handleWebhook(request: Request, env: Env) {
       status: "aguardando_conferencia",
     });
     await registrarEvento(db, { eventId: transaction, eventType, referencia: dealId, payload, status: "processado" });
-    return json({ ok: true, recebido: true, venda: persistencia });
+    return { ok: true, recebido: true, venda: persistencia };
   } catch (error) {
     const mensagem = error instanceof Error ? error.message : "Falha ao persistir webhook RD";
     await registrarEvento(db, { eventId: transaction, eventType, referencia: dealId, payload, status: "erro", erro: mensagem });
+    throw error;
+  }
+}
+
+async function handleWebhook(request: Request, env: Env, ctx?: BackgroundContext) {
+  const secret = await rdCredential(env, "webhook_secret");
+  if (!secret) return json({ erro: "Webhook RD Station não configurado." }, 503);
+  const supplied = request.headers.get("x-sra-luck-rd-key") || request.headers.get("x-rd-webhook-key") || "";
+  if (!supplied || supplied.length !== secret.length) return json({ erro: "Webhook não autorizado." }, 401);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 1_000_000) return json({ erro: "Evento muito grande." }, 413);
+  let diff = 0;
+  for (let i = 0; i < supplied.length; i++) diff |= supplied.charCodeAt(i) ^ secret.charCodeAt(i);
+  if (diff !== 0) return json({ erro: "Webhook não autorizado." }, 401);
+
+  const payload = await request.json().catch(() => null) as Json | null;
+  if (!payload) return json({ erro: "JSON inválido." }, 400);
+
+  const tarefa = processarWebhookRd(payload, env);
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
+    return json({ ok: true, recebido: true, processamento: "segundo_plano" }, 202);
+  }
+
+  try {
+    return json(await tarefa);
+  } catch {
     return json({ erro: "Não foi possível processar o evento do RD Station." }, 500);
   }
 }
 
-async function sincronizar(request: Request, env: Env, adminId: string) {
+async function sincronizar(request: Request, env: Env, adminId: string, ctx?: BackgroundContext) {
   if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-  const r = await importarCrm(env, { origem: "manual", ator: `admin:${adminId}` });
+  const ator = `admin:${adminId}`;
+  const tarefa = (async () => {
+    const r = await importarCrm(env, { origem: "manual", ator });
+    if (r.ok) {
+      await createServiceSupabaseClient(env).from("logs_alteracoes").insert({
+        usuario: ator,
+        acao: "sincronizou_rd_station_somente_leitura",
+        entidade: "integracoes",
+        entidade_id: "rd_station",
+        detalhes: r,
+      });
+    }
+    return r;
+  })();
+
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
+    return json({ ok: true, iniciado: true, processamento: "segundo_plano" }, 202);
+  }
+
+  const r = await tarefa;
   if (!r.ok) return json({ erro: r.erro }, "ocupado" in r && r.ocupado ? 409 : 502);
-  await createServiceSupabaseClient(env).from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "sincronizou_rd_station_somente_leitura", entidade: "integracoes", entidade_id: "rd_station", detalhes: r });
   return json(r, r.erros ? 207 : 200);
 }
 
@@ -531,15 +680,20 @@ async function oauthCallback(request: Request, env: Env) {
   }
 }
 
-export async function rdStationReadonlyApi(request: Request, env: Env): Promise<Response | null> {
+export async function rdStationReadonlyApi(request: Request, env: Env, ctx?: BackgroundContext): Promise<Response | null> {
   const path = new URL(request.url).pathname;
-  if (path === "/api/integrations/rd-station/webhook" && request.method === "POST") return handleWebhook(request, env);
+  if (path === "/api/integrations/rd-station/webhook" && request.method === "POST") return handleWebhook(request, env, ctx);
   if (path === "/api/integrations/rd-station/oauth/callback" && request.method === "GET") return oauthCallback(request, env);
   if (!path.startsWith("/api/admin/integrations/rd-station/")) return null;
   const adminId = await requireAdminComPermissao(request, env);
   if (!adminId) return json({ erro: "Sem permissão para gerenciar a integração RD Station." }, 403);
   if (path.endsWith("/authorize-url") && request.method === "GET") return authorizationUrl(env, adminId);
-  if ((path.endsWith("/sync") || path.endsWith("/importar")) && request.method === "POST") return sincronizar(request, env, adminId);
+  if (path.endsWith("/webhooks/configurar") && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    try { return json(await garantirWebhooksRd(env, `admin:${adminId}`)); }
+    catch { return json({ erro: "Não foi possível configurar os webhooks do RD Station agora." }, 502); }
+  }
+  if ((path.endsWith("/sync") || path.endsWith("/importar")) && request.method === "POST") return sincronizar(request, env, adminId, ctx);
   const crm = await rotasCrm(request, env, adminId, path);
   if (crm) return crm;
   if (path.endsWith("/test") && request.method === "POST") return testar(env, adminId);

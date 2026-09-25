@@ -12,7 +12,7 @@ import { zipChip, type ZipKind } from "@/components/admin-zip/zipUi";
 
 type Json = Record<string, any>;
 type Campo = {
-  chave: string; rotulo: string; tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano";
+  chave: string; rotulo: string; tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano" | "rd_funis";
   ajuda?: string; placeholder?: string; min?: number; max?: number; passo?: number; maxLength?: number;
   opcoes?: { valor: string; rotulo: string }[]; opcoesDe?: "rd_funis" | "rd_etapas" | "rd_campos" | "ca_contas" | "ca_categorias"; itens?: { chave: string; rotulo: string }[];
 };
@@ -88,6 +88,17 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
 
   if (!fn) return <div style={muted}>{msg?.t ?? "Carregando configuração…"}</div>;
   const set = (k: string, v: unknown) => setValores((a) => ({ ...a, [k]: v }));
+  const atualizarFunil = (pipelineId: string, ativo: boolean, alterar?: (cfg: Json) => Json) => setValores((atual) => {
+    const lista: Json[] = Array.isArray(atual.funis) ? [...atual.funis] : [];
+    const idx = lista.findIndex((x) => x.pipelineId === pipelineId);
+    if (!ativo) {
+      return { ...atual, funis: lista.filter((x) => x.pipelineId !== pipelineId), pipelineId: null, etapas: [] };
+    }
+    const base: Json = idx >= 0 ? lista[idx] : { pipelineId, etapas: [], mapeamento: { ...(atual.mapeamento ?? {}) } };
+    const proximo = alterar ? alterar(base) : base;
+    if (idx >= 0) lista[idx] = proximo; else lista.push(proximo);
+    return { ...atual, funis: lista, pipelineId: null, etapas: [] };
+  });
   return <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
     {opcoes?.erro && <div style={{ ...caixa, color: "var(--gold)" }}>Listas do provedor indisponíveis: {opcoes.erro}</div>}
     {(fn.campos as Campo[]).map((c) => <label key={c.chave} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 10.5, fontWeight: 600 }}>
@@ -111,6 +122,32 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
         {(c.itens ?? []).map((it) => <FragmentoLinha key={it.chave} rotulo={it.rotulo} valor={valores[c.chave]?.[it.chave] ?? "auto"} opcoes={fontesMapeamento} onChange={(v) => set(c.chave, { ...(valores[c.chave] ?? {}), [it.chave]: v })} />)}
       </div>}
       {c.tipo === "grupo_booleano" && <div style={{ display: "flex", gap: 12, fontWeight: 500 }}>{(c.itens ?? []).map((it) => <span key={it.chave} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={valores[c.chave]?.[it.chave] !== false} onChange={(e) => set(c.chave, { ...(valores[c.chave] ?? {}), [it.chave]: e.target.checked })} />{it.rotulo}</span>)}</div>}
+      {c.tipo === "rd_funis" && <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {((opcoes?.funis ?? []) as Json[]).map((funil) => {
+          const lista: Json[] = Array.isArray(valores.funis) ? valores.funis : [];
+          const cfg = lista.find((x) => x.pipelineId === funil.id);
+          const ativo = Boolean(cfg);
+          const etapas: string[] = Array.isArray(cfg?.etapas) ? cfg.etapas : [];
+          const mapa: Json = cfg?.mapeamento ?? valores.mapeamento ?? {};
+          return <div key={funil.id} style={{ ...caixa, display: "flex", flexDirection: "column", gap: 7 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <input type="checkbox" checked={ativo} onChange={(e) => atualizarFunil(funil.id, e.target.checked)} />
+              <strong>{funil.nome}</strong>
+            </span>
+            {ativo && <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {(funil.etapas ?? []).map((etapa: Json) => <span key={etapa.id} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontWeight: 500 }}>
+                  <input type="checkbox" checked={etapas.includes(etapa.id)} onChange={(e) => atualizarFunil(funil.id, true, (x) => ({ ...x, etapas: e.target.checked ? [...etapas, etapa.id] : etapas.filter((id) => id !== etapa.id) }))} />
+                  {etapa.nome}
+                </span>)}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(110px,1fr) 1.4fr", gap: 5, alignItems: "center", fontWeight: 500 }}>
+                {(c.itens ?? []).map((it) => <FragmentoLinha key={it.chave} rotulo={it.rotulo} valor={mapa[it.chave] ?? "auto"} opcoes={fontesMapeamento} onChange={(v) => atualizarFunil(funil.id, true, (x) => ({ ...x, mapeamento: { ...(x.mapeamento ?? valores.mapeamento ?? {}), [it.chave]: v } }))} />)}
+              </div>
+            </>}
+          </div>;
+        })}
+      </div>}
       {c.ajuda && <span style={{ ...muted, fontWeight: 400 }}>{c.ajuda}</span>}
     </label>)}
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>

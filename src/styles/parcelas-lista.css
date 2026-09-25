@@ -306,3 +306,153 @@ html[data-tema-cliente="escuro"] .sl-parc-proxima--breve { border-color: rgba(21
 .sl-parc-proxima--breve .sl-parc-proxima-rodape { color: var(--parc-dourado); font-weight: 700; }
 html[data-tema-cliente="escuro"] .sl-parc-proxima--breve .sl-parc-proxima-rodape,
 html[data-tema-cliente="escuro"] .sl-parc-proxima-rodape.sl-parc-aviso { color: var(--parc-dourado); }
+
+
+/* Visualizador de boleto no app: modal em tela cheia, sem sair do PWA. */
+.sl-boleto-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  justify-content: center;
+  background: rgba(31, 24, 23, 0.72);
+  backdrop-filter: blur(5px);
+}
+.sl-boleto-painel {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  max-width: 1100px;
+  flex-direction: column;
+  overflow: hidden;
+  background: #F8F5F4;
+}
+.sl-boleto-topo {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(max(env(safe-area-inset-top), 0px) + 12px) 14px 12px;
+  border-bottom: 1px solid #E9DEDB;
+  background: rgba(255, 252, 251, 0.97);
+  box-shadow: 0 4px 18px rgba(66, 37, 39, 0.08);
+}
+.sl-boleto-topo > div:first-child { display: flex; min-width: 0; flex-direction: column; }
+.sl-boleto-kicker { color: #A8773F; font-size: 9px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.sl-boleto-topo strong { margin-top: 2px; color: #5F2230; font-family: var(--font-heading, Georgia, serif); font-size: 18px; line-height: 1.1; }
+.sl-boleto-topo small { margin-top: 2px; color: #8A7471; font-size: 10.5px; }
+.sl-boleto-acoes { display: flex; flex: none; align-items: center; gap: 8px; }
+.sl-boleto-baixar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #E8D6D4;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #6B1F2E;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(107, 31, 46, 0.08);
+}
+.sl-boleto-baixar:disabled { cursor: default; opacity: 0.45; }
+.sl-boleto-fechar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #F0E6E3;
+  color: #6B1F2E;
+}
+.sl-boleto-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 10px calc(max(env(safe-area-inset-bottom), 0px) + 24px);
+  background: #E9E4E2;
+  -webkit-overflow-scrolling: touch;
+}
+.sl-boleto-paginas {
+  display: flex;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: 12px;
+}
+.sl-boleto-pagina {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 5px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 26px rgba(48, 35, 34, 0.16);
+}
+.sl-boleto-iframe {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  height: calc(100dvh - 112px);
+  margin: 0 auto;
+  border: 0;
+  border-radius: 7px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 26px rgba(48, 35, 34, 0.16);
+}
+.sl-boleto-estado {
+  display: flex;
+  min-height: 55vh;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-direction: column;
+  color: #6B1F2E;
+  text-align: center;
+  font-size: 12px;
+}
+.sl-boleto-estado--erro { padding: 24px; color: #8F2A25; }
+.sl-boleto-estado--erro strong { font-family: var(--font-heading, Georgia, serif); font-size: 18px; }
+.sl-boleto-estado--erro span { max-width: 320px; color: #8A7471; }
+.sl-boleto-estado--erro button {
+  margin-top: 6px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #6B1F2E;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+}
+html[data-tema-cliente="escuro"] .sl-boleto-painel { background: #171619; }
+html[data-tema-cliente="escuro"] .sl-boleto-topo { border-color: #302D31; background: rgba(28, 27, 30, 0.98); }
+html[data-tema-cliente="escuro"] .sl-boleto-topo strong { color: #F0C4CE; }
+html[data-tema-cliente="escuro"] .sl-boleto-topo small { color: #A7A0A5; }
+html[data-tema-cliente="escuro"] .sl-boleto-baixar { border-color: #3A3438; background: #252327; color: #F0C4CE; }
+html[data-tema-cliente="escuro"] .sl-boleto-fechar { background: #2F2B2F; color: #F0C4CE; }
+html[data-tema-cliente="escuro"] .sl-boleto-corpo { background: #111013; }
+html[data-tema-cliente="escuro"] .sl-boleto-estado { color: #F0C4CE; }
+html[data-tema-cliente="escuro"] .sl-boleto-estado--erro span { color: #A7A0A5; }
+
+@media (min-width: 700px) {
+  .sl-boleto-painel {
+    height: calc(100dvh - 32px);
+    margin: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 24px;
+    box-shadow: 0 28px 80px rgba(26, 18, 18, 0.34);
+  }
+  .sl-boleto-topo { padding-top: 12px; }
+}
+
+@media (max-width: 430px) {
+  .sl-boleto-baixar span { display: none; }
+  .sl-boleto-baixar { width: 38px; padding: 0; }
+  .sl-boleto-corpo { padding-left: 6px; padding-right: 6px; }
+}

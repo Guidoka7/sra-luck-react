@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { formatarCpf } from "@/lib/cpf";
 import { desmascararMoeda, mascararMoedaInput, percentualNecessario } from "@/lib/utils";
-import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
+import type { Boleto, Carne, Cliente, ImportacaoBoleto, LogAlteracao, NovaVenda, QuantidadeParcelas, StatusContratoCliente } from "@/types/database";
 import { STATUS_CONTRATO_LABEL, TAXA_ADMINISTRATIVA_PADRAO } from "@/types/database";
 import { financeiroApi } from "@/features/financeiro/financeiroApi";
 import { dataNascimentoValida } from "../../../worker/app-access";
@@ -15,17 +15,17 @@ const moedaNumero = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDi
  * Perfil e Financeiro compartilham estado (ex.: salvar o perfil também envia
  * carta de crédito/taxa), por isso ficam no mesmo hook.
  */
-export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }: { onSalvo: (cliente?: Cliente) => void; onClose: () => void }) {
+export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose, preCadastro = null }: { onSalvo: (cliente?: Cliente) => void; onClose: () => void; preCadastro?: NovaVenda | null }) {
   const editando = Boolean(cliente);
 
-  const [nome, setNome] = useState(cliente?.nome_completo ?? "");
-  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : "");
+  const [nome, setNome] = useState(cliente?.nome_completo ?? preCadastro?.nome_completo ?? "");
+  const [cpf, setCpf] = useState(cliente ? formatarCpf(cliente.cpf) : preCadastro?.cpf ? formatarCpf(preCadastro.cpf) : "");
   const [nascimento, setNascimento] = useState(cliente?.data_nascimento ?? "");
-  const [telefone, setTelefone] = useState(cliente?.telefone ?? "");
-  const [email, setEmail] = useState(cliente?.email ?? "");
+  const [telefone, setTelefone] = useState(cliente?.telefone ?? preCadastro?.telefone ?? "");
+  const [email, setEmail] = useState(cliente?.email ?? preCadastro?.email ?? "");
   const [procedimento, setProcedimento] = useState(cliente?.procedimento ?? "");
   const [observacoes, setObservacoes] = useState(cliente?.observacoes_internas ?? "");
-  const [consultora, setConsultora] = useState(cliente?.consultora ?? "");
+  const [consultora, setConsultora] = useState(cliente?.consultora ?? preCadastro?.vendedora_responsavel ?? "");
   const [acessoLiberado, setAcessoLiberado] = useState(Boolean(cliente?.acesso_app_liberado));
   const [acessoLiberadoEm, setAcessoLiberadoEm] = useState<string | null>(cliente?.acesso_app_liberado_em ?? null);
   const [liberandoAcesso, setLiberandoAcesso] = useState(false);
@@ -52,11 +52,15 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const [historico, setHistorico] = useState<LogAlteracao[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
 
-  const [carta, setCarta] = useState(cliente ? moedaNumero(cliente.valor_contrato) : "");
-  const [quantidade, setQuantidade] = useState<QuantidadeParcelas>((cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas);
-  const [taxa, setTaxa] = useState(cliente?.taxa_administrativa_percentual != null ? String(cliente.taxa_administrativa_percentual).replace(".", ",") : String(TAXA_ADMINISTRATIVA_PADRAO[(cliente?.quantidade_parcelas ?? 12) as QuantidadeParcelas]).replace(".", ","));
-  const [total, setTotal] = useState(() => (cliente ? moedaNumero(cliente.valor_contrato * (1 + Number(cliente.taxa_administrativa_percentual ?? 0) / 100)) : ""));
-  const [parcela, setParcela] = useState("");
+  const quantidadeInicial = (cliente?.quantidade_parcelas ?? preCadastro?.quantidade_parcelas ?? 12) as QuantidadeParcelas;
+  const taxaInformadaInicial = Number(cliente?.taxa_administrativa_percentual ?? preCadastro?.taxa_administrativa ?? 0);
+  const taxaInicial = taxaInformadaInicial > 0 ? taxaInformadaInicial : (TAXA_ADMINISTRATIVA_PADRAO[quantidadeInicial] ?? 0);
+  const valorInicial = Number(cliente?.valor_contrato ?? preCadastro?.valor_contrato ?? 0);
+  const [carta, setCarta] = useState(valorInicial > 0 ? moedaNumero(valorInicial) : "");
+  const [quantidade, setQuantidade] = useState<QuantidadeParcelas>(quantidadeInicial);
+  const [taxa, setTaxa] = useState(String(taxaInicial).replace(".", ","));
+  const [total, setTotal] = useState(() => valorInicial > 0 ? moedaNumero(valorInicial * (1 + Number(taxaInicial) / 100)) : "");
+  const [parcela, setParcela] = useState(preCadastro?.valor_parcela ? moedaNumero(Number(preCadastro.valor_parcela)) : "");
   const [parcelaManual, setParcelaManual] = useState(false);
   const [vencimento, setVencimento] = useState("");
   const [boletos, setBoletos] = useState<Boleto[]>([]);
@@ -68,6 +72,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const [novoCarneBanco, setNovoCarneBanco] = useState("");
   const [novoCarneIdentificador, setNovoCarneIdentificador] = useState("");
   const [novoCarneData, setNovoCarneData] = useState("");
+  const [novoCarneQuantidade, setNovoCarneQuantidade] = useState<number>(quantidadeInicial);
   const [criandoCarne, setCriandoCarne] = useState(false);
   const [importando, setImportando] = useState(false);
   const [validando, setValidando] = useState(false);
@@ -80,12 +85,41 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const parcelaAutomatica = quantidade ? totalAutomatico / quantidade : 0;
 
   useEffect(() => { if (!parcela && !parcelaManual && parcelaAutomatica > 0) setParcela(moedaNumero(parcelaAutomatica)); }, [parcela, parcelaManual, parcelaAutomatica]);
-  function atualizarCarta(valor: string) { const novo = mascararMoedaInput(valor); setCarta(novo); const n = Number(desmascararMoeda(novo)) || 0; const t = n * (1 + taxaNumero / 100); setTotal(moedaNumero(t)); if (!parcelaManual) setParcela(moedaNumero(quantidade ? t / quantidade : 0)); }
-  function atualizarTaxa(valor: string) { setTaxa(valor); const n = Number(valor.replace(",", ".")) || 0; const t = cartaNumero * (1 + n / 100); setTotal(moedaNumero(t)); if (!parcelaManual) setParcela(moedaNumero(quantidade ? t / quantidade : 0)); }
-  function atualizarQuantidade(valor: string) { const q = Number(valor) as QuantidadeParcelas; setQuantidade(q); if (!parcelaManual) setParcela(moedaNumero(q ? totalNumero / q : 0)); }
+
+  // A taxa padrão já existe por quantidade de parcelas. No formulário ela é
+  // apenas uma sugestão: entra automaticamente, mas continua totalmente editável.
+  // Carta, taxa ou quantidade alteradas recalculam a sugestão da parcela; se a
+  // operação digitar outro valor de parcela depois disso, o valor manual é mantido.
+  function atualizarCarta(valor: string) {
+    const novo = mascararMoedaInput(valor);
+    setCarta(novo);
+    const n = Number(desmascararMoeda(novo)) || 0;
+    const t = n * (1 + taxaNumero / 100);
+    setTotal(n > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(n > 0 && quantidade ? moedaNumero(t / quantidade) : "");
+  }
+  function atualizarTaxa(valor: string) {
+    setTaxa(valor);
+    const n = Number(valor.replace(",", ".")) || 0;
+    const t = cartaNumero * (1 + n / 100);
+    setTotal(cartaNumero > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(cartaNumero > 0 && quantidade ? moedaNumero(t / quantidade) : "");
+  }
+  function atualizarQuantidade(valor: string) {
+    const q = Number(valor) as QuantidadeParcelas;
+    setQuantidade(q);
+    const taxaPadrao = TAXA_ADMINISTRATIVA_PADRAO[q] ?? 0;
+    setTaxa(String(taxaPadrao).replace(".", ","));
+    const t = cartaNumero * (1 + taxaPadrao / 100);
+    setTotal(cartaNumero > 0 ? moedaNumero(t) : "");
+    setParcelaManual(false);
+    setParcela(cartaNumero > 0 && q ? moedaNumero(t / q) : "");
+  }
   function atualizarParcela(valor: string) { setParcelaManual(true); setParcela(mascararMoedaInput(valor)); }
 
-  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setParcelaManual(false); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); if (d.cliente?.valor_contrato != null) setCarta(moedaNumero(Number(d.cliente.valor_contrato))); if (d.cliente?.taxa_administrativa_percentual != null) setTaxa(String(d.cliente.taxa_administrativa_percentual).replace(".", ",")); if (d.cliente?.custo_total != null) setTotal(moedaNumero(Number(d.cliente.custo_total))); if (lista[0]?.total_parcelas) setQuantidade(Number(lista[0].total_parcelas) as QuantidadeParcelas); if (lista[0]?.valor) { setParcela(moedaNumero(Number(lista[0].valor))); setParcelaManual(true); } else setParcelaManual(false); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
+  async function carregarBoletos() { if (!cliente?.id) { setBoletos([]); setParcelaManual(false); setCarregandoFin(false); return; } setCarregandoFin(true); try { const r = await fetch(`/api/admin/clientes/${cliente.id}/boletos`, { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.erro ?? "Não foi possível carregar os boletos."); const lista = d.boletos ?? []; setBoletos(lista); const qtdCarregada = Number(lista[0]?.total_parcelas ?? d.cliente?.quantidade_parcelas ?? quantidadeInicial) as QuantidadeParcelas; const taxaCarregada = Number(d.cliente?.taxa_administrativa_percentual ?? 0); const taxaEfetiva = taxaCarregada > 0 ? taxaCarregada : (TAXA_ADMINISTRATIVA_PADRAO[qtdCarregada] ?? 0); const cartaCarregada = Number(d.cliente?.valor_contrato ?? 0); if (d.cliente?.valor_contrato != null) setCarta(moedaNumero(cartaCarregada)); setTaxa(String(taxaEfetiva).replace(".", ",")); if (qtdCarregada) setQuantidade(qtdCarregada); if (d.cliente?.custo_total != null && taxaCarregada > 0) setTotal(moedaNumero(Number(d.cliente.custo_total))); else if (cartaCarregada > 0) setTotal(moedaNumero(cartaCarregada * (1 + taxaEfetiva / 100))); if (lista[0]?.valor) { setParcela(moedaNumero(Number(lista[0].valor))); setParcelaManual(true); } else if (cartaCarregada > 0 && qtdCarregada) { setParcela(moedaNumero((cartaCarregada * (1 + taxaEfetiva / 100)) / qtdCarregada)); setParcelaManual(false); } else setParcelaManual(false); } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao carregar parcelas."); } finally { setCarregandoFin(false); } }
   useEffect(() => { void carregarBoletos(); }, [cliente?.id]);
 
   async function carregarPerfilExtra() {
@@ -108,18 +142,37 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
     e.preventDefault();
     if (!nome || !nascimento) return toast.error("Preencha nome e data de nascimento.");
     if (!dataNascimentoValida(nascimento)) return toast.error("Informe uma data de nascimento válida.");
+    const cpfLimpo = cpf.replace(/\D/g, "");
+    if (!editando && cpfLimpo.length !== 11) return toast.error("Informe um CPF válido para concluir o cadastro.");
     setSalvandoPerfil(true);
     try {
-      const r = await fetch(editando ? `/api/admin/clientes/${cliente!.id}` : "/api/admin/clientes", {
+      const origemCrm = Boolean(preCadastro && !editando);
+      const url = editando
+        ? `/api/admin/clientes/${cliente!.id}`
+        : origemCrm
+          ? `/api/admin/novas-vendas/${encodeURIComponent(preCadastro!.id)}/cadastrar`
+          : "/api/admin/clientes";
+      const r = await fetch(url, {
         method: editando ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nomeCompleto: nome, cpf, dataNascimento: nascimento, telefone, email, procedimento, consultora: consultora.trim() || null, observacoes, valorContrato: cartaNumero || undefined, taxaAdministrativaPercentual: taxaNumero || undefined }),
+        body: JSON.stringify({
+          nomeCompleto: nome,
+          cpf,
+          dataNascimento: nascimento,
+          telefone,
+          email,
+          procedimento,
+          consultora: consultora.trim() || null,
+          observacoes,
+          valorContrato: cartaNumero || undefined,
+          taxaAdministrativaPercentual: taxaNumero || undefined,
+          quantidadeParcelas: quantidade || undefined,
+        }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível salvar.");
-      toast.success(editando ? "Perfil atualizado." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
+      toast.success(editando ? "Perfil atualizado." : origemCrm ? "Pré-cadastro concluído. Cliente vinculada ao CRM." : "Cliente cadastrada. Configure o financeiro na aba Financeiro.");
       onSalvo(d.cliente ?? undefined);
-      if (!editando) onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar.");
     } finally {
@@ -184,18 +237,89 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
 
   async function criarCarne(e: FormEvent) {
     e.preventDefault();
-    if (!cliente?.id) return;
-    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) return toast.error("Preencha instituição, identificador e data do carnê.");
+    if (!cliente?.id) return false;
+    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) {
+      toast.error("Preencha instituição, identificador e data do carnê.");
+      return false;
+    }
     setCriandoCarne(true);
     try {
-      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instituicaoFinanceira: novoCarneBanco, identificadorExterno: novoCarneIdentificador, dataGeracao: novoCarneData, quantidadeParcelas: quantidade, valorParcela: parcelaNumero, valorTotal: totalNumero }) });
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instituicaoFinanceira: novoCarneBanco,
+          identificadorExterno: novoCarneIdentificador,
+          dataGeracao: novoCarneData,
+          quantidadeParcelas: novoCarneQuantidade || quantidade,
+          valorParcela: parcelaNumero,
+          valorTotal: totalNumero,
+        }),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erro ?? "Não foi possível registrar o carnê.");
-      toast.success("Carnê registrado.");
-      setNovoCarneBanco(""); setNovoCarneIdentificador(""); setNovoCarneData("");
-      void carregarPerfilExtra();
+      toast.success(`Carnê de ${d.carne?.quantidade_parcelas ?? novoCarneQuantidade ?? quantidade} parcelas registrado.`);
+      setNovoCarneBanco("");
+      setNovoCarneIdentificador("");
+      setNovoCarneData("");
+      setNovoCarneQuantidade(quantidade);
+      await carregarPerfilExtra();
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao registrar carnê.");
+      return false;
+    } finally {
+      setCriandoCarne(false);
+    }
+  }
+
+  async function editarCarne(carneId: string) {
+    if (!cliente?.id) return false;
+    if (!novoCarneBanco || !novoCarneIdentificador || !novoCarneData) {
+      toast.error("Preencha instituição, identificador e data do carnê.");
+      return false;
+    }
+    setCriandoCarne(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes/${encodeURIComponent(carneId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instituicaoFinanceira: novoCarneBanco,
+          identificadorExterno: novoCarneIdentificador,
+          dataGeracao: novoCarneData,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível atualizar o carnê.");
+      toast.success("Carnê atualizado.");
+      setNovoCarneBanco("");
+      setNovoCarneIdentificador("");
+      setNovoCarneData("");
+      setNovoCarneQuantidade(quantidade);
+      await carregarPerfilExtra();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao atualizar carnê.");
+      return false;
+    } finally {
+      setCriandoCarne(false);
+    }
+  }
+
+  async function excluirCarne(carneId: string) {
+    if (!cliente?.id) return false;
+    setCriandoCarne(true);
+    try {
+      const r = await fetch(`/api/admin/clientes/${cliente.id}/carnes/${encodeURIComponent(carneId)}`, { method: "DELETE" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível excluir o carnê.");
+      toast.success("Carnê excluído.");
+      await carregarPerfilExtra();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir carnê.");
+      return false;
     } finally {
       setCriandoCarne(false);
     }
@@ -358,7 +482,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
   const statusKind = statusContrato === "ativo" ? "ok" as const : statusContrato === "suspenso" ? "warn" as const : "bad" as const;
 
   return {
-    cliente, editando,
+    cliente, preCadastro, editando,
     consultora, setConsultora, acessoLiberado, acessoLiberadoEm, liberandoAcesso, liberarAcessoApp,
     alterandoParcela, alterarParcela, anexarComprovante, comprovanteHref, carregarPerfilExtra,
     nome, setNome, cpf, setCpf, nascimento, setNascimento, telefone, setTelefone, email, setEmail, procedimento, setProcedimento, observacoes, setObservacoes,
@@ -368,7 +492,7 @@ export function useClienteCadastro(cliente: Cliente | null, { onSalvo, onClose }
     historico, historicoAberto, setHistoricoAberto,
     carta, atualizarCarta, taxa, atualizarTaxa, quantidade, atualizarQuantidade, parcela, atualizarParcela, vencimento, setVencimento,
     boletos, visiveis, pagas, mostrarTodas, setMostrarTodas, carregandoFin, salvandoFin, gerarOuAjustarParcelas, carregarBoletos,
-    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, criandoCarne, criarCarne, importando, importarCarne, vincularImportacao, ignorarImportacao,
+    carnes, importacoes, pendentesRevisao, novoCarneBanco, setNovoCarneBanco, novoCarneIdentificador, setNovoCarneIdentificador, novoCarneData, setNovoCarneData, novoCarneQuantidade, setNovoCarneQuantidade, criandoCarne, criarCarne, editarCarne, excluirCarne, importando, importarCarne, vincularImportacao, ignorarImportacao,
     proximaLiberacao, aguardandoConferencia, validando, confirmarPagamento, rejeitarComprovante,
     baixaAlvo, setBaixaAlvo, baixaData, setBaixaData, baixaJuros, setBaixaJuros, baixaMulta, setBaixaMulta, baixaForma, setBaixaForma, baixaBanco, setBaixaBanco, baixaObs, setBaixaObs, baixaArquivo, setBaixaArquivo, salvandoBaixa, abrirBaixaManual, confirmarBaixaManual,
     vencidas, situacao, situacaoKind, totalParcelasReal, percentualMeta, metaParcelas, elegivel,

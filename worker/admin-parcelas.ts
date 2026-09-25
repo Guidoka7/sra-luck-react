@@ -288,7 +288,7 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
 
     const { data: atual } = await db.from("boletos").select("*").eq("id", boletoId).eq("cliente_id", clienteId).maybeSingle();
     if (!atual) return json({ erro: "Parcela não encontrada." }, 404);
-    if (atual.status === "pago") return json({ erro: "Parcelas pagas não podem ser alteradas." }, 400);
+    if (atual.status === "pago" && acao !== "reabrir") return json({ erro: "Parcelas pagas não podem ser alteradas. Use \"Voltar para em aberto\" antes de editar ou excluir." }, 400);
 
     if (acao === "excluir") {
       // Vínculo permanente com a Conta Azul (migration_091): a parcela não some sem resolver lá.
@@ -310,6 +310,33 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
     }
 
     if (acao === "reabrir") {
+      const motivoReabertura = String(body.observacoes ?? "").trim() || "Pagamento estornado por reabertura manual da parcela.";
+      let recebimentoValidado: any = null;
+
+      if (atual.status === "pago") {
+        const { data: recebimento, error: recebimentoError } = await db
+          .from("financeiro_recebimentos")
+          .select("id,origem,status_validacao,motivo_rejeicao")
+          .eq("boleto_id", boletoId)
+          .eq("status_validacao", "validado")
+          .maybeSingle();
+        if (recebimentoError) return json({ erro: publicError(recebimentoError, "Não foi possível localizar o recebimento da parcela.") }, 500);
+        recebimentoValidado = recebimento;
+
+        const origem = String(recebimento?.origem ?? "");
+        if (["mercado_pago", "conta_azul", "banco"].includes(origem)) {
+          return json({ erro: "Este pagamento veio de uma integração externa. Faça o estorno na origem antes de voltar a parcela para em aberto." }, 409);
+        }
+
+        if (recebimento) {
+          const { error: estornoError } = await db.from("financeiro_recebimentos").update({
+            status_validacao: "rejeitado",
+            motivo_rejeicao: motivoReabertura,
+          }).eq("id", recebimento.id).eq("status_validacao", "validado");
+          if (estornoError) return json({ erro: publicError(estornoError, "Não foi possível estornar o recebimento da parcela.") }, 500);
+        }
+      }
+
       const { data, error } = await db.from("boletos").update({
         status: "nao_pago",
         data_pagamento: null,
@@ -318,8 +345,30 @@ export async function adminParcelas(request: Request, env: Env): Promise<Respons
         suspensa_por: null,
         observacoes: body.observacoes ?? atual.observacoes,
       }).eq("id", boletoId).eq("cliente_id", clienteId).select("*").single();
-      if (error) return json({ erro: publicError(error) }, 500);
-      await db.from("logs_alteracoes").insert({ usuario, acao: "reabriu_parcela", entidade: "clientes", entidade_id: clienteId, detalhes: { parcela: atual.numero_parcela, status_anterior: atual.status, estava_suspensa: Boolean(atual.suspensa), vencimento: atual.data_vencimento } });
+
+      if (error) {
+        if (recebimentoValidado) {
+          await db.from("financeiro_recebimentos").update({
+            status_validacao: "validado",
+            motivo_rejeicao: null,
+          }).eq("id", recebimentoValidado.id).eq("status_validacao", "rejeitado");
+        }
+        return json({ erro: publicError(error) }, 500);
+      }
+
+      await db.from("logs_alteracoes").insert({
+        usuario,
+        acao: atual.status === "pago" ? "estornou_pagamento_reabriu_parcela" : "reabriu_parcela",
+        entidade: "clientes",
+        entidade_id: clienteId,
+        detalhes: {
+          parcela: atual.numero_parcela,
+          status_anterior: atual.status,
+          estava_suspensa: Boolean(atual.suspensa),
+          vencimento: atual.data_vencimento,
+          recebimento_estornado_id: recebimentoValidado?.id ?? null,
+        },
+      });
       await avisarCliente(db, clienteId, { tipo: "parcela_atualizada", parcela: data.numero_parcela });
       return json({ boleto: { ...data, valor: Number(data.valor) } });
     }

@@ -347,7 +347,7 @@ async function loginAdmin(request: Request, env: Env) {
   }
 }
 
-async function handleRequest(request: Request, env: Env): Promise<Response> {
+async function handleRequest(request: Request, env: Env, ctx?: { waitUntil?: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url);
   const secure = url.protocol === "https:";
 
@@ -469,7 +469,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (homeCampanhas) return homeCampanhas;
   const push = await clientPushApi(request, env);
   if (push) return push;
-  const integrations = await integrationsApi(request, env);
+  const integrations = await integrationsApi(request, env, ctx);
   if (integrations) return integrations;
   const staff = await staffApi(request, env);
   if (staff) return staff;
@@ -574,7 +574,7 @@ export default {
         observedRequest = protectedRequest;
         beginRequest(protectedRequest, requestId);
       }
-      const response = protectedRequest instanceof Response ? protectedRequest : await handleRequest(protectedRequest, env);
+      const response = protectedRequest instanceof Response ? protectedRequest : await handleRequest(protectedRequest, env, ctx);
       // Avisos gravados pelo banco (agenda, pagamentos, clube) saem como Web Push
       // na próxima ação do painel ou do app, em segundo plano.
       if (response.status < 400 && deveDespacharPush(request)) agendarDespacho(env, ctx);

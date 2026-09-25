@@ -1,17 +1,18 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { QUANTIDADE_PARCELAS_OPCOES, type Boleto } from "@/types/database";
+import { QUANTIDADE_PARCELAS_OPCOES, type Boleto, type Carne } from "@/types/database";
 import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { PARCELA_LABEL, descreverHistorico, ehHistoricoFinanceiro, formatCurrency, formatDate, hojeSaoPaulo, statusParcela, type ParcelaStatus } from "./drawerFormat";
 import styles from "./ClienteDrawer.module.css";
-import { LeitorCarneModal } from "@/features/leitor-carne/LeitorCarneModal";
+import { LeitorCarneModal, type LeituraCarneConcluida } from "@/features/leitor-carne/LeitorCarneModal";
 
 export interface FinanceiroPanelHandle { salvar: () => Promise<void>; editando: () => boolean }
 
 type Modal =
-  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar"; b: Boleto }
+  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar" | "reabrir"; b: Boleto }
+  | { tipo: "excluir-carne"; carne: Carne }
   | { tipo: "ajuste" }
   | null;
 
@@ -38,6 +39,8 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
   const [anexoAlvo, setAnexoAlvo] = useState<Boleto | null>(null);
   const qtdOriginal = useRef(cad.quantidade);
   const [leitorAberto, setLeitorAberto] = useState(false);
+  const [carneLidoAguardandoCadastro, setCarneLidoAguardandoCadastro] = useState(false);
+  const [carneEditandoId, setCarneEditandoId] = useState<string | null>(null);
 
   const boletos = cad.boletos;
   const pagos = boletos.filter((b) => b.status === "pago");
@@ -71,7 +74,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
   function abrirMenu(e: MouseEvent<HTMLButtonElement>, b: Boleto) {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    const largura = 180, altura = 240;
+    const largura = 190, altura = 286;
     const left = Math.max(8, Math.min(r.right - largura, window.innerWidth - largura - 8));
     const top = r.bottom + 4 + altura > window.innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4;
     setMenu({ b, left, top });
@@ -90,6 +93,10 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     if (a === "anexar") { setAnexoAlvo(b); requestAnimationFrame(() => anexoRef.current?.click()); }
     if (a === "confirmar") setModal({ tipo: "confirmar", b });
     if (a === "rejeitar") { setMotivo(""); setModal({ tipo: "rejeitar", b }); }
+    if (a === "reabrir") {
+      if (b.status === "nao_pago" && !b.suspensa) { toast.info("Esta parcela já está em aberto."); return; }
+      setModal({ tipo: "reabrir", b });
+    }
   }
 
   async function salvarEdicao(b: Boleto) {
@@ -102,6 +109,55 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     if (editStatus !== "suspended" && estava) await cad.alterarParcela(b, { acao: "reabrir" }, "Parcela reaberta.");
     setModal(null);
   }
+  function limparFormularioCarne() {
+    cad.setNovoCarneBanco("");
+    cad.setNovoCarneIdentificador("");
+    cad.setNovoCarneData("");
+    cad.setNovoCarneQuantidade(cad.quantidade);
+  }
+
+  function iniciarLeituraCarne() {
+    limparFormularioCarne();
+    setCarneEditandoId(null);
+    setCarneLidoAguardandoCadastro(false);
+    setLeitorAberto(true);
+  }
+
+  function concluirLeituraCarne(dados?: LeituraCarneConcluida) {
+    cad.setNovoCarneBanco(dados?.instituicao ?? "");
+    cad.setNovoCarneIdentificador("");
+    cad.setNovoCarneData("");
+    cad.setNovoCarneQuantidade(dados?.quantidadeParcelas && dados.quantidadeParcelas > 0 ? dados.quantidadeParcelas : cad.quantidade);
+    setCarneEditandoId(null);
+    setCarneLidoAguardandoCadastro(true);
+    void cad.carregarBoletos();
+    void cad.carregarPerfilExtra();
+  }
+
+  function iniciarEdicaoCarne(carne: Carne) {
+    cad.setNovoCarneBanco(carne.instituicao_financeira);
+    cad.setNovoCarneIdentificador(carne.identificador_externo);
+    cad.setNovoCarneData(carne.data_geracao?.slice(0, 10) ?? "");
+    cad.setNovoCarneQuantidade(carne.quantidade_parcelas);
+    setCarneLidoAguardandoCadastro(false);
+    setCarneEditandoId(carne.id);
+  }
+
+  async function salvarCadastroCarne(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const ok = carneEditandoId ? await cad.editarCarne(carneEditandoId) : await cad.criarCarne(e);
+    if (!ok) return;
+    setCarneEditandoId(null);
+    setCarneLidoAguardandoCadastro(false);
+    limparFormularioCarne();
+  }
+
+  function cancelarCadastroCarne() {
+    setCarneEditandoId(null);
+    setCarneLidoAguardandoCadastro(false);
+    limparFormularioCarne();
+  }
+
 
   if (cad.carregandoFin && boletos.length === 0) return <div className={styles.stack}><div className={styles.loading} aria-busy="true"><div className={styles.skeleton} /><div className={styles.skeleton} /><div className={styles.skeleton} /></div><div className={styles.loading}><div className={styles.skeleton} /><div className={styles.skeleton} /></div></div>;
 
@@ -199,33 +255,52 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     </article>
 
     {completo && <article className={`${styles.card} ${styles.financeCard}`}>
-      <div className={styles.cardHead}><div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="bank" aria-hidden="true" />Carnês e importações</div></div>
-      <div className={styles.cardBody}>
-        {cad.carnes.length === 0 ? <div className={styles.muted}>Nenhum carnê registrado ainda.</div> : <div className={styles.miniList}>{cad.carnes.map((c) => <div key={c.id} className={styles.miniRow}><span><b>{c.instituicao_financeira}</b> · {c.identificador_externo}</span><span>{c.quantidade_parcelas}x · {formatCurrency(c.valor_total)}</span></div>)}</div>}
-        <form className={styles.formGrid} style={{ marginTop: 10 }} onSubmit={cad.criarCarne}>
-          <Field label="Instituição" id="carne-inst"><input id="carne-inst" className={styles.input} placeholder="Ex.: BRB" value={cad.novoCarneBanco} onChange={(e) => cad.setNovoCarneBanco(e.target.value)} /></Field>
-          <Field label="Identificador" id="carne-id"><input id="carne-id" className={styles.input} value={cad.novoCarneIdentificador} onChange={(e) => cad.setNovoCarneIdentificador(e.target.value)} /></Field>
-          <Field label="Data de geração" id="carne-data"><input id="carne-data" className={styles.input} type="date" value={cad.novoCarneData} onChange={(e) => cad.setNovoCarneData(e.target.value)} /></Field>
-          <div className={styles.field} style={{ alignSelf: "end" }}><button type="submit" className={`${styles.modalBtn} ${styles.secondary}`} style={{ width: "100%" }} disabled={cad.criandoCarne}>{cad.criandoCarne ? "Registrando..." : "Registrar carnê"}</button></div>
-        </form>
-        <button type="button" className={styles.dropzone} style={{ marginTop: 10, width: "100%" }} onClick={() => setLeitorAberto(true)} disabled={!cad.cliente?.id}>
-          <DrawerIcon name="upload" width={16} height={16} aria-hidden="true" />Ler carnê (PDF ou foto)
-        </button>
-        <p className={styles.muted} style={{ margin: "6px 0 0" }}>Lê o carnê neste computador, mostra cada parcela para conferência e só grava depois da sua confirmação.</p>
-        {cad.pendentesRevisao.length > 0 && <div className={styles.miniList} style={{ marginTop: 10 }}>
-          <span className={styles.appAccessKicker}>Páginas para confirmar/revisar</span>
-          {cad.pendentesRevisao.map((i) => <div key={i.id} className={styles.miniRow}>
-            <span>{i.numero_parcela ? `Parcela ${i.numero_parcela}` : "Não identificada"} · {i.status_vinculacao === "revisar" ? "revisar manualmente" : `confiança ${i.nivel_confianca ?? "—"}`}</span>
-            <span style={{ display: "flex", gap: 5 }}>
-              {i.boleto_sugerido_id && <button type="button" className={styles.linkBtn} onClick={() => void cad.vincularImportacao(i)}>Vincular</button>}
-              <button type="button" className={styles.cancel} onClick={() => void cad.ignorarImportacao(i.id)}>Ignorar</button>
-            </span>
-          </div>)}
+      <div className={styles.cardHead}>
+        <div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="bank" aria-hidden="true" />Carnês e importações</div>
+      </div>
+      <div className={`${styles.cardBody} ${styles.carneCardBody}`}>
+        {carneEditandoId || carneLidoAguardandoCadastro ? <div className={styles.carneFormWrap}>
+          <div className={styles.carneStep}>
+            <span className={styles.carneStepIcon}><DrawerIcon name={carneEditandoId ? "edit" : "check"} aria-hidden="true" /></span>
+            <div>
+              <strong>{carneEditandoId ? "Editar identificação do carnê" : "Leitura concluída"}</strong>
+              <span>{carneEditandoId ? "Atualize os dados de identificação sem alterar as parcelas já importadas." : `${cad.novoCarneQuantidade || cad.quantidade} parcelas identificadas. Complete os dados para salvar este carnê.`}</span>
+            </div>
+          </div>
+          <form className={styles.carneForm} onSubmit={(e) => void salvarCadastroCarne(e)}>
+            <Field label="Instituição" id="carne-inst"><input id="carne-inst" className={styles.input} placeholder="Ex.: BRB" value={cad.novoCarneBanco} onChange={(e) => cad.setNovoCarneBanco(e.target.value)} autoFocus /></Field>
+            <Field label="Identificador" id="carne-id"><input id="carne-id" className={styles.input} placeholder="Número ou referência do carnê" value={cad.novoCarneIdentificador} onChange={(e) => cad.setNovoCarneIdentificador(e.target.value)} /></Field>
+            <Field label="Data de geração" id="carne-data" wide><input id="carne-data" className={styles.input} type="date" value={cad.novoCarneData} onChange={(e) => cad.setNovoCarneData(e.target.value)} /></Field>
+            <div className={styles.carneFormActions}>
+              <button type="button" className={`${styles.modalBtn} ${styles.secondary}`} onClick={cancelarCadastroCarne} disabled={cad.criandoCarne}>Cancelar</button>
+              <button type="submit" className={`${styles.modalBtn} ${styles.primary}`} disabled={cad.criandoCarne}>{cad.criandoCarne ? "Salvando..." : carneEditandoId ? "Salvar alterações" : "Registrar carnê"}</button>
+            </div>
+          </form>
+        </div> : cad.carnes.length === 0 ? <button type="button" className={`${styles.dropzone} ${styles.carnePrimaryAction}`} onClick={iniciarLeituraCarne} disabled={!cad.cliente?.id}>
+          <DrawerIcon name="upload" width={17} height={17} aria-hidden="true" />Ler carnê (PDF ou foto)
+        </button> : <div className={styles.carneSavedArea}>
+          <div className={styles.carneList}>
+            {cad.carnes.map((carne) => <div key={carne.id} className={styles.carneSaved}>
+              <div className={styles.carneSavedIcon}><DrawerIcon name="document" aria-hidden="true" /></div>
+              <div className={styles.carneSavedMain}>
+                <strong>Carnê de {carne.quantidade_parcelas} parcelas anexado</strong>
+                <span>{carne.instituicao_financeira} · {carne.identificador_externo}</span>
+                <small>Gerado em {formatDate(carne.data_geracao)}</small>
+              </div>
+              <div className={styles.carneSavedActions}>
+                <button type="button" className={styles.edit} onClick={() => iniciarEdicaoCarne(carne)}><DrawerIcon name="edit" aria-hidden="true" />Editar</button>
+                <button type="button" className={styles.cancel} onClick={() => setModal({ tipo: "excluir-carne", carne })}>Excluir</button>
+              </div>
+            </div>)}
+          </div>
+          <button type="button" className={styles.carneAdd} onClick={iniciarLeituraCarne} disabled={!cad.cliente?.id}>
+            <DrawerIcon name="upload" width={15} height={15} aria-hidden="true" />Adicionar outro carnê
+          </button>
         </div>}
       </div>
     </article>}
 
-    {leitorAberto && cad.cliente?.id && <LeitorCarneModal clienteId={cad.cliente.id} onClose={() => setLeitorAberto(false)} onImportado={() => { void cad.carregarBoletos(); }} />}
+    {leitorAberto && cad.cliente?.id && <LeitorCarneModal clienteId={cad.cliente.id} onClose={() => setLeitorAberto(false)} onImportado={concluirLeituraCarne} />}
 
     {completo && <article className={`${styles.card} ${styles.financeCard}`}>
       <div className={styles.cardHead}><div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="history" aria-hidden="true" />Histórico financeiro</div>{financeiroHistorico.length > 4 ? <button className={styles.linkBtn} type="button" onClick={() => setHistoricoTodo((v) => !v)}>{historicoTodo ? "Mostrar menos" : "Ver todos"}</button> : null}</div>
@@ -248,6 +323,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         <button type="button" role="menuitem" onClick={() => acao("baixa", menu.b)}>Registrar pagamento</button>
         {menu.b.comprovante_url ? <a role="menuitem" className={styles.menuLink} href={cad.comprovanteHref(menu.b)} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>Ver comprovante</a> : <button type="button" role="menuitem" onClick={() => acao("anexar", menu.b)}>Anexar comprovante</button>}
       </>}
+      {(menu.b.status !== "nao_pago" || menu.b.suspensa) && <button type="button" role="menuitem" onClick={() => acao("reabrir", menu.b)}>Voltar para em aberto</button>}
       <div className={styles.separator} /><button className={styles.danger} type="button" role="menuitem" onClick={() => acao("excluir", menu.b)}>Excluir parcela</button>
     </div></div>, document.body)}
 
@@ -274,6 +350,33 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         </div>
         <Acoes busy={cad.alterandoParcela} rotulo="Salvar parcela" onCancel={() => setModal(null)} />
       </form>
+    </Shell>}
+
+    {modal?.tipo === "reabrir" && <Shell titulo="Voltar parcela para em aberto" onClose={() => !cad.alterandoParcela && setModal(null)}>
+      <div className={styles.warning}>
+        <strong>Parcela {modal.b.numero_parcela}/{modal.b.total_parcelas || total} voltará para em aberto.</strong><br />
+        {modal.b.status === "pago"
+          ? "O pagamento será estornado no controle interno, sairá do total pago e o progresso/elegibilidade será recalculado. O histórico financeiro será preservado para auditoria."
+          : modal.b.status === "pendente_confirmacao"
+            ? "A conferência atual será cancelada e a parcela ficará novamente disponível para pagamento."
+            : "A suspensão ou estado atual será removido e a parcela voltará ao fluxo normal de cobrança."}
+      </div>
+      <div className={styles.modalActions}>
+        <button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => setModal(null)}>Cancelar</button>
+        <button className={`${styles.modalBtn} ${styles.primary}`} type="button" disabled={cad.alterandoParcela} onClick={async () => { if (await cad.alterarParcela(modal.b, { acao: "reabrir" }, "Parcela voltou para em aberto.")) setModal(null); }}>{cad.alterandoParcela ? "Atualizando..." : "Voltar para em aberto"}</button>
+      </div>
+    </Shell>}
+
+    {modal?.tipo === "excluir-carne" && <Shell titulo="Excluir carnê" onClose={() => !cad.criandoCarne && setModal(null)}>
+      <div className={styles.warning}><strong>Excluir o registro deste carnê?</strong><br />As parcelas e boletos já importados serão preservados. Apenas a identificação do carnê será removida.</div>
+      <div className={styles.modalGrid} style={{ marginTop: 10 }}>
+        <Box label="Carnê" value={`${modal.carne.quantidade_parcelas} parcelas`} />
+        <Box label="Instituição" value={modal.carne.instituicao_financeira} />
+      </div>
+      <div className={styles.modalActions}>
+        <button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => setModal(null)}>Cancelar</button>
+        <button className={`${styles.modalBtn} ${styles.deleteBtn}`} type="button" disabled={cad.criandoCarne} onClick={async () => { if (await cad.excluirCarne(modal.carne.id)) setModal(null); }}>{cad.criandoCarne ? "Excluindo..." : "Excluir carnê"}</button>
+      </div>
     </Shell>}
 
     {modal?.tipo === "excluir" && <Shell titulo="Excluir parcela" onClose={() => !cad.alterandoParcela && setModal(null)}>

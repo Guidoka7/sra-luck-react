@@ -1,5 +1,7 @@
 "use client";
 
+// Deploy guard: mantém o funil CRM alinhado ao HEAD atual da main.
+
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/ui/ThemeProvider";
@@ -19,12 +21,13 @@ import { useAcessoTotalAdmin } from "@/lib/adminAccess";
  * da cliente (Processo/Perfil/Financeiro/Jornada).
  */
 
-type Funil = "novas" | "aguardando" | "cadastradas" | "canceladas";
+type Funil = "aguardando" | "cadastradas" | "canceladas";
 type ViewMode = "list" | "grid";
 type SortMode = "recent" | "old" | "az" | "za";
 type PeriodMode = "all" | "today" | "7" | "30";
+type TotaisClientes = { aguardando: number; cadastradas: number; canceladas: number };
 
-const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
+const TAB_LABEL: Record<Funil, string> = { aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
 const TABS: Funil[] = ["aguardando", "cadastradas", "canceladas"];
 const STATUS_LABEL: Record<StatusContratoCliente, string> = { ativo: "Ativa", suspenso: "Suspensa", negativado: "Negativada", cancelado: "Cancelada" };
 
@@ -95,14 +98,15 @@ export default function ClientesPage() {
   const acessoTotal = useAcessoTotalAdmin();
   const { theme } = useTheme();
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [totais, setTotais] = useState({ aguardando: 0, cadastradas: 0, canceladas: 0 });
+  const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
+  const [totaisClientes, setTotaisClientes] = useState<TotaisClientes | null>(null);
+  const [totalNovasVendas, setTotalNovasVendas] = useState<number | null>(null);
   const [bancosDisponiveis, setBancosDisponiveis] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [maisCarregando, setMaisCarregando] = useState(false);
   const [buscaAplicada, setBuscaAplicada] = useState("");
   const requestSeq = useRef(0);
   const lastRefresh = useRef(0);
-  const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [funil, setFunil] = useState<Funil>("cadastradas");
   const [busca, setBusca] = useState("");
@@ -112,44 +116,70 @@ export default function ClientesPage() {
   const [ordenacao, setOrdenacao] = useState<SortMode>("recent");
   const [view, setView] = useState<ViewMode>("list");
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; aba: AbaDrawer } | null>(null);
-  const [cadastrandoVenda, setCadastrandoVenda] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; venda: NovaVenda | null; aba: AbaDrawer } | null>(null);
 
-  async function carregar(force = false, cursor: string | null = null) {
-    const seq = cursor ? requestSeq.current : ++requestSeq.current;
-    if (cursor) setMaisCarregando(true);
-    else { setCarregando(true); setClientes([]); setNextCursor(null); }
+  async function carregarCrm() {
     try {
-      const params = new URLSearchParams({ funil: funil === "novas" ? "cadastradas" : funil, ordem: ordenacao, limite: "50" });
-      if (buscaAplicada.trim()) params.set("busca", buscaAplicada.trim());
-      if (banco !== "all") params.set("banco", banco);
-      if (status !== "all") params.set("status", status);
-      if (periodo !== "all") {
-        const inicio = new Date(); inicio.setHours(0, 0, 0, 0);
-        inicio.setDate(inicio.getDate() - (periodo === "today" ? 0 : Number(periodo)));
-        params.set("desde", inicio.toISOString());
-      }
-      if (cursor) params.set("cursor", cursor);
-      const response = await fetch(`/api/admin/clientes/pagina?${params}`, { cache: "no-store" });
-      const data = await response.json() as { clientes?: Cliente[]; nextCursor?: string | null; erro?: string };
-      if (!response.ok) throw new Error(data.erro ?? "Falha ao carregar clientes.");
-      if (seq !== requestSeq.current) return;
-      setClientes((previous) => cursor ? [...previous, ...(data.clientes ?? [])] : (data.clientes ?? []));
-      setNextCursor(data.nextCursor ?? null);
-      lastRefresh.current = Date.now();
-      if (force) void carregarCatalogos();
-    } catch (e) { if (seq === requestSeq.current) toast.error(e instanceof Error ? e.message : "Falha ao carregar clientes."); }
-    finally { if (seq === requestSeq.current) { setCarregando(false); setMaisCarregando(false); } }
+      const resposta = await fetch("/api/admin/novas-vendas?status=aguardando_cadastro", { cache: "no-store" });
+      const dados = await resposta.json() as { vendas?: NovaVenda[]; total?: number; erro?: string };
+      if (!resposta.ok) throw new Error(dados.erro ?? "Falha ao carregar clientes recebidas do CRM.");
+      const vendas = dados.vendas ?? [];
+      setNovasVendas(vendas);
+      setTotalNovasVendas(typeof dados.total === "number" ? dados.total : vendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro").length);
+    } catch (error) {
+      if (novasVendas.length === 0) toast.error(error instanceof Error ? error.message : "Falha ao carregar clientes recebidas do CRM.");
+    }
   }
+
   async function carregarCatalogos() {
     try {
       const [rTotais, rBancos] = await Promise.all([
         fetch("/api/admin/clientes/totais", { cache: "no-store" }),
         fetch("/api/admin/clientes/bancos", { cache: "no-store" }),
       ]);
-      if (rTotais.ok) setTotais(await rTotais.json());
-      if (rBancos.ok) setBancosDisponiveis((await rBancos.json()).bancos ?? []);
-    } catch { /* contadores e opções não impedem a lista */ }
+      if (rTotais.ok) {
+        const dados = await rTotais.json() as Partial<TotaisClientes>;
+        setTotaisClientes({
+          aguardando: Number(dados.aguardando ?? 0),
+          cadastradas: Number(dados.cadastradas ?? 0),
+          canceladas: Number(dados.canceladas ?? 0),
+        });
+      }
+      if (rBancos.ok) setBancosDisponiveis(((await rBancos.json()) as { bancos?: string[] }).bancos ?? []);
+    } catch {
+      // Contadores e opções não impedem o uso da lista paginada.
+    }
+  }
+
+  async function carregar(force = false, cursor: string | null = null) {
+    const seq = cursor ? requestSeq.current : ++requestSeq.current;
+    if (cursor) setMaisCarregando(true);
+    else { setCarregando(true); setClientes([]); setNextCursor(null); }
+    try {
+      const params = new URLSearchParams({ funil, ordem: ordenacao, limite: "50" });
+      if (buscaAplicada.trim()) params.set("busca", buscaAplicada.trim());
+      if (funil !== "aguardando" && banco !== "all") params.set("banco", banco);
+      if (funil === "cadastradas" && status !== "all") params.set("status", status);
+      if (periodo !== "all") {
+        const inicio = new Date();
+        inicio.setHours(0, 0, 0, 0);
+        inicio.setDate(inicio.getDate() - (periodo === "today" ? 0 : Number(periodo)));
+        params.set("desde", inicio.toISOString());
+      }
+      if (cursor) params.set("cursor", cursor);
+      const resposta = await fetch(`/api/admin/clientes/pagina?${params}`, { cache: "no-store" });
+      const dados = await resposta.json() as { clientes?: Cliente[]; nextCursor?: string | null; erro?: string };
+      if (!resposta.ok) throw new Error(dados.erro ?? "Falha ao carregar clientes.");
+      if (seq !== requestSeq.current) return;
+      setClientes((anteriores) => cursor ? [...anteriores, ...(dados.clientes ?? [])] : (dados.clientes ?? []));
+      setNextCursor(dados.nextCursor ?? null);
+      lastRefresh.current = Date.now();
+      if (force) await Promise.allSettled([carregarCatalogos(), carregarCrm()]);
+    } catch (error) {
+      if (seq === requestSeq.current) toast.error(error instanceof Error ? error.message : "Falha ao carregar clientes.");
+    } finally {
+      if (seq === requestSeq.current) { setCarregando(false); setMaisCarregando(false); }
+    }
   }
   useEffect(() => {
     const termoInicial = new URLSearchParams(window.location.search).get("busca")?.trim();
@@ -158,7 +188,7 @@ export default function ClientesPage() {
 
   useEffect(() => { const timer = window.setTimeout(() => setBuscaAplicada(busca), 300); return () => window.clearTimeout(timer); }, [busca]);
   useEffect(() => { void carregar(); }, [funil, buscaAplicada, banco, status, periodo, ordenacao]);
-  useEffect(() => { void carregarCatalogos(); }, []);
+  useEffect(() => { void carregarCatalogos(); void carregarCrm(); }, []);
   useEffect(() => {
     const aoFoco = () => { if (document.visibilityState === "visible" && Date.now() - lastRefresh.current > 300_000) void carregar(true); };
     document.addEventListener("visibilitychange", aoFoco);
@@ -175,17 +205,10 @@ export default function ClientesPage() {
   }, [menuId]);
 
   const novas = useMemo(() => novasVendas.filter((v) => !v.cliente_id && v.status === "aguardando_cadastro"), [novasVendas]);
-  // Perfis arquivados por "Excluir perfil" ficam preservados no banco para
-  // auditoria, mas não pertencem mais à área operacional de Clientes.
   const clientesVisiveis = useMemo(() => clientes.filter((c) => c.ativo !== false), [clientes]);
-  // Fonte de verdade do funil "Aguardando cadastro": perfil já persistido,
-  // porém SEM nenhuma parcela real. Não depende da origem (CRM ou cadastro manual).
-  const aguardandoCadastro = useMemo(() => clientesVisiveis.filter(clienteAguardandoCadastroFinanceiro), [clientesVisiveis]);
-  const cadastradas = useMemo(() => clientesVisiveis.filter(clienteComCadastroCompleto), [clientesVisiveis]);
-  const canceladas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato === "cancelado"), [clientesVisiveis]);
-  const ehVenda = funil === "novas";
-
+  const ehAguardando = funil === "aguardando";
   const bancos = bancosDisponiveis;
+  useEffect(() => { if (banco !== "all" && !bancos.includes(banco)) setBanco("all"); }, [banco, bancos]);
 
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
   const filtradas = clientesVisiveis;
@@ -194,27 +217,17 @@ export default function ClientesPage() {
     return noPeriodo(v.created_at, periodo);
   }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
-  const counts: Record<Funil, number> = { novas: novas.length, ...totais };
-  const total = ehVenda ? vendasFiltradas.length : filtradas.length;
+  const counts: Record<Funil, number | null> = {
+    aguardando: totalNovasVendas != null && totaisClientes ? totalNovasVendas + totaisClientes.aguardando : null,
+    cadastradas: totaisClientes?.cadastradas ?? null,
+    canceladas: totaisClientes?.canceladas ?? null,
+  };
+  const countAtual = counts[funil];
+  const total = ehAguardando ? vendasFiltradas.length + filtradas.length : filtradas.length;
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
-  function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, aba }); }
-
-  /** Conversão de uma venda do CRM em cliente — `POST /api/admin/novas-vendas/:id/cadastrar`. */
-  async function cadastrarVenda(v: NovaVenda) {
-    const cpf = window.prompt("CPF da cliente (11 dígitos):", v.cpf ?? "");
-    const nascimento = cpf ? window.prompt("Data de nascimento (AAAA-MM-DD):") : null;
-    if (!cpf || !nascimento) return;
-    setCadastrandoVenda(v.id);
-    try {
-      const r = await fetch(`/api/admin/novas-vendas/${encodeURIComponent(v.id)}/cadastrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cpf, dataNascimento: nascimento }) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.erro ?? "Não foi possível cadastrar a cliente.");
-      toast.success("Cliente cadastrada. Gere as parcelas no Financeiro.");
-      await carregar(true);
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível cadastrar a cliente."); }
-    finally { setCadastrandoVenda(null); }
-  }
+  function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, venda: null, aba }); }
+  function abrirVenda(venda: NovaVenda) { setMenuId(null); setDrawer({ id: null, cliente: null, venda, aba: "profile" }); }
 
   function RowMenu({ cliente }: { cliente: Cliente }) {
     const aberto = menuId === cliente.id;
@@ -248,13 +261,13 @@ export default function ClientesPage() {
       {TABS.map((t) => <button key={t} className={`${styles.tab} ${funil === t ? styles.tabActive : ""}`} type="button" role="tab" aria-selected={funil === t} onClick={() => { setFunil(t); setMenuId(null); }}>
         <span className={styles.tabIcon}><Svg d={ICON[t]} fill={t === "cadastradas"} /></span>
         <span className={styles.tabLabel}>{TAB_LABEL[t]}</span>
-        <span className={styles.countPill}>{counts[t]}</span>
+        <span className={styles.countPill}>{counts[t] ?? "—"}</span>
       </button>)}
     </nav>
 
     <section className={styles.filters} aria-label="Filtros de clientes">
       <label className={styles.field}><Svg d={ICON.search} /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou vendedora..." aria-label="Buscar clientes" /></label>
-      {!ehVenda && <label className={styles.selectWrap}>
+      {!ehAguardando && <label className={styles.selectWrap}>
         <span className={styles.leftIco}><Svg d={ICON.bank} /></span>
         <select value={banco} onChange={(e) => setBanco(e.target.value)} aria-label="Filtrar por banco">
           <option value="all">Todos os bancos</option>
@@ -283,8 +296,8 @@ export default function ClientesPage() {
     <section className={styles.listCard}>
       <header className={styles.cardHead}>
         <div>
-          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{counts[funil]} {counts[funil] === 1 ? "cliente" : "clientes"}</span></div>
-        <div className={styles.cardSub}>{total} {total === 1 ? "registro carregado" : "registros carregados"}{nextCursor ? " · há mais clientes" : ""}</div>
+          <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{countAtual ?? "—"} {countAtual === 1 ? "cliente" : "clientes"}</span></div>
+          <div className={styles.cardSub}>{total} {total === 1 ? "registro carregado" : "registros carregados"}{nextCursor ? " · há mais clientes" : ""}</div>
         </div>
         <div className={styles.cardTools}>
           <span className={styles.orderLabel}>Ordenar por</span>
@@ -294,62 +307,69 @@ export default function ClientesPage() {
             </select>
             <Svg d={ICON.chevron} />
           </label>
-          {!ehVenda && <div className={styles.viewButtons}>
+          {!ehAguardando && <div className={styles.viewButtons}>
             <button className={`${styles.viewBtn} ${view === "list" ? styles.viewBtnActive : ""}`} type="button" aria-label="Lista" aria-pressed={view === "list"} onClick={() => setView("list")}><Svg d={ICON.list} /></button>
             <button className={`${styles.viewBtn} ${view === "grid" ? styles.viewBtnActive : ""}`} type="button" aria-label="Grade" aria-pressed={view === "grid"} onClick={() => setView("grid")}><Svg d={ICON.grid} /></button>
           </div>}
         </div>
       </header>
 
-      {carregando && clientes.length === 0 ? <div className={styles.loadingState}>Carregando clientes...</div>
-        : total === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>{ehVenda ? "Nenhuma venda encontrada." : "Nenhuma cliente encontrada."}</strong><span>{funil === "novas" ? "Nenhuma venda nova aguardando conferência." : funil === "aguardando" ? "Nenhuma cliente aguardando geração de parcelas." : "Ajuste a busca ou os filtros desta lista."}</span></div>
-        : ehVenda ? <div className={styles.tableWrap}>
+      {carregando && clientes.length === 0 && novasVendas.length === 0 ? <div className={styles.loadingState}>Carregando clientes...</div>
+        : total === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>Nenhuma cliente encontrada.</strong><span>{ehAguardando ? "Nenhuma cliente recebida do CRM ou aguardando geração do financeiro." : "Ajuste a busca ou os filtros desta lista."}</span></div>
+        : ehAguardando ? <div className={styles.tableWrap}>
             <table className={styles.table}>
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
-              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Valor</th><th>Ação</th></tr></thead>
-              <tbody>{vendasFiltradas.map((v) => <tr key={v.id} style={{ cursor: "default" }}>
-                <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
-                <td>{v.vendedora_responsavel || <Dash />}</td>
-                <td>{v.origem_venda || <Dash />}</td>
-                <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
-                <td><button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button></td>
-              </tr>)}</tbody>
+              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Origem</th><th>Valor</th><th>Status</th></tr></thead>
+              <tbody>
+                {filtradas.map((c) => <tr key={`cliente-${c.id}`} style={{ cursor: "pointer" }} onClick={() => abrir(c, "profile")}>
+                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
+                  <td>{c.consultora || <Dash />}</td>
+                  <td>{c.origem_venda || <Dash />}</td>
+                  <td>{formatarMoeda(Number(c.valor_contrato ?? 0))}</td>
+                  <td><span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span></td>
+                </tr>)}
+                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "pointer" }} onClick={() => abrirVenda(v)}>
+                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
+                  <td>{v.vendedora_responsavel || <Dash />}</td>
+                  <td>{v.origem_venda || <Dash />}</td>
+                  <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
+                  <td><span className={styles.statusPill}><span className={styles.statusDot} />Recebida do CRM</span></td>
+                </tr>)}
+              </tbody>
             </table>
           </div>
         : view === "list" ? <div className={styles.tableWrap}>
             <table className={styles.table}>
               <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
               <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Banco</th><th>Status</th><th className={styles.center}>Ações</th></tr></thead>
-              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
+              <tbody>{filtradas.map((c) => <tr key={c.id} onClick={() => abrir(c, "profile")}>
                 <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
                 <td>{c.consultora || <Dash />}</td>
                 <td>{c.origem_venda || <Dash />}</td>
                 <td>{c.banco ? <span className={styles.bankPill}>{c.banco}</span> : <Dash />}</td>
-                <td>{funil === "aguardando"
-                  ? <span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span>
-                  : <span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span>}</td>
+                <td><span className={`${styles.statusPill} ${statusClass(c.status_contrato)}`}><span className={styles.statusDot} />{STATUS_LABEL[c.status_contrato ?? "ativo"]}</span></td>
                 <td className={styles.center}><RowMenu cliente={c} /></td>
               </tr>)}</tbody>
             </table>
           </div>
-        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, funil === "aguardando" ? "finance" : "profile")}>
+        : <div className={styles.gridView}>{filtradas.map((c) => <article key={c.id} className={styles.clientCard} onClick={() => abrir(c, "profile")}>
             <RowMenu cliente={c} />
             <div className={styles.clientCardTop}><Avatar nome={c.nome_completo} /><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div>
             <div className={styles.gridDetails}>
               <div><div className={styles.gridLabel}>Banco</div><div className={styles.gridValue}>{c.banco || "—"}</div></div>
-              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{funil === "aguardando" ? "Falta gerar financeiro" : STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
+              <div><div className={styles.gridLabel}>Status</div><div className={styles.gridValue}>{STATUS_LABEL[c.status_contrato ?? "ativo"]}</div></div>
               <div><div className={styles.gridLabel}>Vendedora</div><div className={styles.gridValue}>{c.consultora || "—"}</div></div>
               <div><div className={styles.gridLabel}>Campanha</div><div className={styles.gridValue}>{c.origem_venda || "—"}</div></div>
             </div>
           </article>)}</div>}
-      {!ehVenda && nextCursor && <div style={{ display: "flex", justifyContent: "center", padding: "20px" }}>
+      {nextCursor && <div style={{ display: "flex", justifyContent: "center", padding: "20px" }}>
         <button className={styles.primaryBtn} type="button" disabled={maisCarregando} onClick={() => void carregar(false, nextCursor)}>
           {maisCarregando ? "Carregando…" : "Carregar mais clientes"}
         </button>
       </div>}
     </section>
 
-    {drawer && <ClienteDrawer key={drawer.id ?? "nova"} clienteId={drawer.id} cliente={drawer.cliente} abaInicial={drawer.aba}
+    {drawer && <ClienteDrawer key={drawer.id ?? drawer.venda?.id ?? "nova"} clienteId={drawer.id} cliente={drawer.cliente} preCadastro={drawer.venda} abaInicial={drawer.aba}
       onClose={() => setDrawer(null)} onChanged={() => carregar(true)} />}
   </div>;
 }

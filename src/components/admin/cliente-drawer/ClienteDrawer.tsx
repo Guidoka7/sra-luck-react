@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import type { Cliente, StatusContratoCliente } from "@/types/database";
+import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
 import { centralApi, type FormaCusteio } from "@/features/scheduling/api";
 import type { CartaoCliente, EstagioCentral, EstagioDrawer } from "@/features/scheduling/types";
 import { ProcessoTab, ordemEstagio, eventosDoProcesso, type ModalDrawer, type FormLevantamento } from "@/features/scheduling/ProcessoTab";
@@ -22,12 +22,15 @@ import styles from "./ClienteDrawer.module.css";
 
 export type AbaDrawer = "process" | "profile" | "finance" | "journey";
 type Central = { estagio: EstagioDrawer; cartao: CartaoCliente };
+type OrigemCrmBadge = { funil: string | null; etapa: string | null };
 
 export interface ClienteDrawerProps {
   /** `null` abre o cadastro de uma nova cliente (somente Perfil). */
   clienteId: string | null;
   /** Cadastro já carregado pela lista (evita uma ida extra à API). */
   cliente?: Cliente | null;
+  /** Venda do RD ainda em pré-cadastro; preenche o drawer sem criar cliente antes da confirmação. */
+  preCadastro?: NovaVenda | null;
   abaInicial?: AbaDrawer;
   /** Etapa do quadro que originou a abertura (Central); nunca passa da etapa real. */
   estagioOrigem?: EstagioCentral | null;
@@ -49,8 +52,9 @@ export interface ClienteDrawerProps {
  */
 export function ClienteDrawer(props: ClienteDrawerProps) {
   const { clienteId, onClose } = props;
-  const criando = !clienteId;
   const [cadastro, setCadastro] = useState<Cliente | null>(props.cliente ?? null);
+  const clienteIdAtual = clienteId ?? cadastro?.id ?? null;
+  const criando = !clienteIdAtual;
   const [erroCadastro, setErroCadastro] = useState<string | null>(null);
   const [central, setCentral] = useState<Central | null>(null);
   const [erroCentral, setErroCentral] = useState<string | null>(null);
@@ -61,27 +65,27 @@ export function ClienteDrawer(props: ClienteDrawerProps) {
   const escBloqueado = useRef<() => boolean>(() => false);
 
   const carregarCadastro = useCallback(async () => {
-    if (!clienteId) return null;
+    if (!clienteIdAtual) return null;
     try {
-      const c = await centralApi.clienteCadastro(clienteId);
+      const c = await centralApi.clienteCadastro(clienteIdAtual);
       if (!c) throw new Error("Cadastro da cliente não encontrado.");
       setCadastro(c); setErroCadastro(null);
       return c;
     } catch (e) { setErroCadastro(e instanceof Error ? e.message : "Não foi possível carregar a cliente."); return null; }
-  }, [clienteId]);
+  }, [clienteIdAtual]);
 
   const carregarCentral = useCallback(async () => {
-    if (!clienteId) return null;
-    try { const r = await centralApi.cliente(clienteId); setCentral(r); setErroCentral(null); return r; }
+    if (!clienteIdAtual) return null;
+    try { const r = await centralApi.cliente(clienteIdAtual); setCentral(r); setErroCentral(null); return r; }
     catch (e) { setErroCentral(e instanceof Error ? e.message : "Não foi possível carregar o processo."); return null; }
-  }, [clienteId]);
+  }, [clienteIdAtual]);
 
   useEffect(() => {
-    if (!clienteId) return;
+    if (!clienteIdAtual) return;
     if (!props.cliente) void carregarCadastro();
     void carregarCentral();
     // Carrega uma vez por cliente; `props.cliente` é só o valor inicial.
-  }, [clienteId, carregarCadastro, carregarCentral]);
+  }, [clienteIdAtual, carregarCadastro, carregarCentral]);
 
   useEffect(() => {
     lastFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -108,7 +112,7 @@ export function ClienteDrawer(props: ClienteDrawerProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [requestClose]);
 
-  const titulo = criando ? "Nova cliente" : cadastro?.nome_completo || central?.cartao.nome || "Cliente";
+  const titulo = criando ? props.preCadastro?.nome_completo || "Nova cliente" : cadastro?.nome_completo || central?.cartao.nome || "Cliente";
   const carregando = !criando && !cadastro;
 
   return createPortal(<div className={styles.root}>
@@ -174,7 +178,25 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [statusAberto, setStatusAberto] = useState(false);
   const [suspensao, setSuspensao] = useState(false);
+  const [origemCrm, setOrigemCrm] = useState<OrigemCrmBadge | null>(null);
   const ocupadoRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const vendaId = props.preCadastro?.id ?? null;
+    const clienteId = cadastro?.id ?? null;
+    if (!vendaId && !clienteId) { setOrigemCrm(null); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams(vendaId ? { vendaId } : { clienteId: clienteId! });
+    fetch(`/api/admin/novas-vendas/origem?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const data = await response.json().catch(() => ({})) as { origem?: OrigemCrmBadge | null };
+        return data.origem ?? null;
+      })
+      .then((origem) => { if (!controller.signal.aborted) setOrigemCrm(origem); })
+      .catch(() => { if (!controller.signal.aborted) setOrigemCrm(null); });
+    return () => controller.abort();
+  }, [props.preCadastro?.id, cadastro?.id]);
   const contentRef = useRef<HTMLElement>(null);
   const financeRef = useRef<FinanceiroPanelHandle>(null);
   const formId = "cliente-drawer-perfil";
@@ -187,8 +209,17 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   }, [cadastro, setCadastro, carregarCentral, onChanged]);
 
   const cad = useClienteCadastro(cadastro, {
-    onSalvo: (c) => { if (criando) void onChanged?.(); else void recarregar(c); },
+    onSalvo: (c) => {
+      if (criando && c) {
+        setCadastro(c);
+        void onChanged?.();
+        return;
+      }
+      if (criando) { void onChanged?.(); return; }
+      void recarregar(c);
+    },
     onClose: requestClose,
+    preCadastro: props.preCadastro ?? null,
   });
 
   const c = central?.cartao ?? null;
@@ -298,7 +329,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
 
   function botoesRodape(): Botao[] {
     const fechar: Botao = { rotulo: "Fechar", onClick: requestClose, tipo: "secondary" };
-    if (aba === "profile") return [fechar, { rotulo: cad.salvandoPerfil ? "Salvando…" : criando ? "Cadastrar cliente" : "Salvar alterações", onClick: () => undefined, submit: formId, tipo: "primary", disabled: cad.salvandoPerfil || cad.salvandoStatus }];
+    if (aba === "profile") return [fechar, { rotulo: cad.salvandoPerfil ? "Salvando…" : criando ? (props.preCadastro ? "Concluir cadastro" : "Cadastrar cliente") : "Salvar alterações", onClick: () => undefined, submit: formId, tipo: "primary", disabled: cad.salvandoPerfil || cad.salvandoStatus }];
     if (aba === "journey") return [fechar];
     if (aba === "finance") {
       // Na etapa operacional, o atalho do processo continua disponível no Financeiro.
@@ -319,8 +350,15 @@ function DrawerConteudo(props: ClienteDrawerProps & {
   return <>
     <header className={styles.header}>
       <div className={styles.clientHead}>
-        <h2 className={styles.title} id="client-drawer-title">{criando ? "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
-        {!criando && <div className={styles.subtitle}>
+        <h2 className={styles.title} id="client-drawer-title">{criando ? cad.nome || "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
+        {props.preCadastro ? <div className={styles.subtitle}>
+          <span className={styles.chip}>Pré-cadastro · RD Station</span>
+          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
+          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
+        </div> : !criando && <div className={styles.subtitle}>
+          {origemCrm && <span className={styles.chip}>RD Station</span>}
+          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
+          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}

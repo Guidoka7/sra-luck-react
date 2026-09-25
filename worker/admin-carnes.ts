@@ -108,6 +108,66 @@ export async function adminCarnes(request: Request, env: Env): Promise<Response 
     }
   }
 
+  const carneCliente = path.match(/^\/api\/admin\/clientes\/([^/]+)\/carnes\/([^/]+)$/);
+  if (carneCliente) {
+    const clienteId = decodeURIComponent(carneCliente[1]);
+    const carneId = decodeURIComponent(carneCliente[2]);
+
+    const { data: existente, error: erroBusca } = await db.from("carnes").select("*").eq("id", carneId).eq("cliente_id", clienteId).maybeSingle();
+    if (erroBusca) return json({ erro: publicError(erroBusca) }, 500);
+    if (!existente) return json({ erro: "Carnê não encontrado para esta cliente." }, 404);
+
+    if (request.method === "PATCH") {
+      const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+      const instituicao = String(body.instituicaoFinanceira ?? existente.instituicao_financeira ?? "").trim();
+      const identificador = String(body.identificadorExterno ?? existente.identificador_externo ?? "").trim();
+      const dataGeracao = String(body.dataGeracao ?? existente.data_geracao ?? "");
+      if (!instituicao || !identificador) return json({ erro: "Informe a instituição financeira e o identificador do carnê." }, 400);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataGeracao)) return json({ erro: "Informe a data de geração do carnê." }, 400);
+
+      const { data, error } = await db.from("carnes").update({
+        instituicao_financeira: instituicao,
+        identificador_externo: identificador,
+        data_geracao: dataGeracao,
+      }).eq("id", carneId).eq("cliente_id", clienteId).select("*").single();
+      if (error) return json({ erro: error.code === "23505" ? "Já existe um carnê com esse identificador para esta instituição." : publicError(error) }, 400);
+
+      await Promise.all([
+        db.from("boletos").update({ instituicao_financeira: instituicao }).eq("carne_id", carneId),
+        db.from("importacoes_boletos").update({ instituicao_financeira: instituicao }).eq("carne_id", carneId),
+      ]);
+
+      await db.from("logs_alteracoes").insert({
+        usuario: atorFinanceiro ?? session.adminId,
+        acao: "editou_carne",
+        entidade: "clientes",
+        entidade_id: clienteId,
+        detalhes: { carneId, instituicao, identificador, dataGeracao },
+      });
+      return json({ carne: data });
+    }
+
+    if (request.method === "DELETE") {
+      await Promise.all([
+        db.from("boletos").update({ carne_id: null }).eq("carne_id", carneId),
+        db.from("importacoes_boletos").update({ carne_id: null }).eq("carne_id", carneId),
+        db.from("importacoes_boletos").update({ carne_sugerido_id: null }).eq("carne_sugerido_id", carneId),
+        db.from("importacoes_boletos").update({ carne_vinculado_id: null }).eq("carne_vinculado_id", carneId),
+      ]);
+      const { error } = await db.from("carnes").delete().eq("id", carneId).eq("cliente_id", clienteId);
+      if (error) return json({ erro: publicError(error) }, 400);
+
+      await db.from("logs_alteracoes").insert({
+        usuario: atorFinanceiro ?? session.adminId,
+        acao: "excluiu_carne",
+        entidade: "clientes",
+        entidade_id: clienteId,
+        detalhes: { carneId, instituicao: existente.instituicao_financeira, identificador: existente.identificador_externo },
+      });
+      return json({ ok: true });
+    }
+  }
+
   const importacoesCliente = path.match(/^\/api\/admin\/clientes\/([^/]+)\/importacoes-boletos$/);
   if (importacoesCliente) {
     const clienteId = decodeURIComponent(importacoesCliente[1]);
