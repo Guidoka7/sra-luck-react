@@ -142,12 +142,18 @@ export function setup() {
     throw new Error("Hard-stop: alvo, perfil ou shard fora do ambiente isolado aprovado.");
   }
   // Este é o único hard-stop do cenário: nunca gerar carga contra outro deployment.
-  const identityUrl = `${BASE}/api/loadtest/identity${SHARE ? `?_vercel_share=${encodeURIComponent(SHARE)}` : ""}`;
-  const identity = http.get(identityUrl, { responseType: "text", tags: { name: "isolated_identity" } });
+  if (SHARE) {
+    http.get(`${BASE}/?_vercel_share=${encodeURIComponent(SHARE)}`, {
+      tags: { name: "isolated_share_setup" },
+    });
+  }
+  const identity = http.get(`${BASE}/api/loadtest/identity`, {
+    responseType: "text", tags: { name: "isolated_identity" },
+  });
   let marker = null;
   try { marker = JSON.parse(identity.body || "null"); } catch { /* identificação inválida */ }
   if (identity.status !== 200 || marker?.projectRef !== "xqlxzdmleekbrietejoq" || marker?.isolated !== true || marker?.externalIntegrationsDisabled !== true) {
-    throw new Error(`Hard-stop: Preview não confirmou o Supabase isolado (HTTP ${identity.status}).`);
+    throw new Error(`Hard-stop: Preview não confirmou o Supabase isolado (HTTP ${identity.status}, tipo ${identity.headers["Content-Type"] || "desconhecido"}).`);
   }
 
   const first = 80000000001 + SHARD * 1000;
