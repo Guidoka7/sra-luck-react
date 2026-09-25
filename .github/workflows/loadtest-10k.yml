@@ -18,7 +18,7 @@ concurrency:
 
 env:
   TARGET_BASE: "https://sra-luck-react-msb237v3l-guidoka7.vercel.app"
-  VERCEL_SHARE: "BFFAVLbamtpJm7cG2jVMRCRfI6akVGj4"
+  VERCEL_SHARE: "w0JYp2ucAMMHOWRa1XPmGoghVIgtb8Qg"
 
 jobs:
   preflight:
