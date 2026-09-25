@@ -20,12 +20,12 @@ import { useAcessoTotalAdmin } from "@/lib/adminAccess";
  * da cliente (Processo/Perfil/Financeiro/Jornada).
  */
 
-type Funil = "novas" | "aguardando" | "cadastradas" | "canceladas";
+type Funil = "aguardando" | "cadastradas" | "canceladas";
 type ViewMode = "list" | "grid";
 type SortMode = "recent" | "old" | "az" | "za";
 type PeriodMode = "all" | "today" | "7" | "30";
 
-const TAB_LABEL: Record<Funil, string> = { novas: "Novas", aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
+const TAB_LABEL: Record<Funil, string> = { aguardando: "Aguardando cadastro", cadastradas: "Cadastradas", canceladas: "Canceladas" };
 const TABS: Funil[] = ["aguardando", "cadastradas", "canceladas"];
 const STATUS_LABEL: Record<StatusContratoCliente, string> = { ativo: "Ativa", suspenso: "Suspensa", negativado: "Negativada", cancelado: "Cancelada" };
 
@@ -139,12 +139,12 @@ export default function ClientesPage() {
   // Perfis arquivados por "Excluir perfil" ficam preservados no banco para
   // auditoria, mas não pertencem mais à área operacional de Clientes.
   const clientesVisiveis = useMemo(() => clientes.filter((c) => c.ativo !== false), [clientes]);
-  // Fonte de verdade do funil "Aguardando cadastro": perfil já persistido,
-  // porém SEM nenhuma parcela real. Não depende da origem (CRM ou cadastro manual).
+  // O funil "Aguardando cadastro" reúne as duas fases anteriores ao cadastro completo:
+  // 1) venda recebida do CRM ainda sem perfil; 2) perfil já criado, mas ainda sem parcelas.
   const aguardandoCadastro = useMemo(() => clientesVisiveis.filter(clienteAguardandoCadastroFinanceiro), [clientesVisiveis]);
   const cadastradas = useMemo(() => clientesVisiveis.filter(clienteComCadastroCompleto), [clientesVisiveis]);
   const canceladas = useMemo(() => clientesVisiveis.filter((c) => c.status_contrato === "cancelado"), [clientesVisiveis]);
-  const ehVenda = funil === "novas";
+  const ehAguardando = funil === "aguardando";
 
   const baseClientes = funil === "aguardando" ? aguardandoCadastro : funil === "canceladas" ? canceladas : cadastradas;
   const bancos = useMemo(() => Array.from(new Set(baseClientes.map((c) => c.banco?.trim()).filter((b): b is string => Boolean(b)))).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [baseClientes]);
@@ -162,8 +162,8 @@ export default function ClientesPage() {
     return noPeriodo(v.created_at, periodo);
   }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
-  const counts: Record<Funil, number> = { novas: novas.length, aguardando: aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
-  const total = ehVenda ? vendasFiltradas.length : filtradas.length;
+  const counts: Record<Funil, number> = { aguardando: novas.length + aguardandoCadastro.length, cadastradas: cadastradas.length, canceladas: canceladas.length };
+  const total = ehAguardando ? vendasFiltradas.length + filtradas.length : filtradas.length;
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
   function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, aba }); }
@@ -222,7 +222,7 @@ export default function ClientesPage() {
 
     <section className={styles.filters} aria-label="Filtros de clientes">
       <label className={styles.field}><Svg d={ICON.search} /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou vendedora..." aria-label="Buscar clientes" /></label>
-      {!ehVenda && <label className={styles.selectWrap}>
+      {!ehAguardando && <label className={styles.selectWrap}>
         <span className={styles.leftIco}><Svg d={ICON.bank} /></span>
         <select value={banco} onChange={(e) => setBanco(e.target.value)} aria-label="Filtrar por banco">
           <option value="all">Todos os bancos</option>
@@ -262,26 +262,37 @@ export default function ClientesPage() {
             </select>
             <Svg d={ICON.chevron} />
           </label>
-          {!ehVenda && <div className={styles.viewButtons}>
+          {!ehAguardando && <div className={styles.viewButtons}>
             <button className={`${styles.viewBtn} ${view === "list" ? styles.viewBtnActive : ""}`} type="button" aria-label="Lista" aria-pressed={view === "list"} onClick={() => setView("list")}><Svg d={ICON.list} /></button>
             <button className={`${styles.viewBtn} ${view === "grid" ? styles.viewBtnActive : ""}`} type="button" aria-label="Grade" aria-pressed={view === "grid"} onClick={() => setView("grid")}><Svg d={ICON.grid} /></button>
           </div>}
         </div>
       </header>
 
-      {carregando && clientes.length === 0 ? <div className={styles.loadingState}>Carregando clientes...</div>
-        : total === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>{ehVenda ? "Nenhuma venda encontrada." : "Nenhuma cliente encontrada."}</strong><span>{funil === "novas" ? "Nenhuma venda nova aguardando conferência." : funil === "aguardando" ? "Nenhuma cliente aguardando geração de parcelas." : "Ajuste a busca ou os filtros desta lista."}</span></div>
-        : ehVenda ? <div className={styles.tableWrap}>
+      {carregando && clientes.length === 0 && novasVendas.length === 0 ? <div className={styles.loadingState}>Carregando clientes...</div>
+        : total === 0 ? <div className={styles.emptyState}><Svg d={ICON.empty} /><strong>Nenhuma cliente encontrada.</strong><span>{ehAguardando ? "Nenhuma cliente recebida do CRM ou aguardando geração do financeiro." : "Ajuste a busca ou os filtros desta lista."}</span></div>
+        : ehAguardando ? <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /></colgroup>
-              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Campanha</th><th>Valor</th><th>Ação</th></tr></thead>
-              <tbody>{vendasFiltradas.map((v) => <tr key={v.id} style={{ cursor: "default" }}>
-                <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
-                <td>{v.vendedora_responsavel || <Dash />}</td>
-                <td>{v.origem_venda || <Dash />}</td>
-                <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
-                <td><button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button></td>
-              </tr>)}</tbody>
+              <colgroup><col className={styles.clientCol} /><col className={styles.sellerCol} /><col className={styles.campaignCol} /><col className={styles.bankCol} /><col className={styles.statusCol} /><col className={styles.actionsCol} /></colgroup>
+              <thead><tr><th><span className={styles.thSort}>Cliente</span></th><th>Vendedora</th><th>Origem</th><th>Valor</th><th>Status</th><th className={styles.center}>Ação</th></tr></thead>
+              <tbody>
+                {vendasFiltradas.map((v) => <tr key={`crm-${v.id}`} style={{ cursor: "default" }}>
+                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{v.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{v.cpf ? formatarCpf(v.cpf) : "CPF não informado"}</div></div></div></td>
+                  <td>{v.vendedora_responsavel || <Dash />}</td>
+                  <td>{v.origem_venda || <Dash />}</td>
+                  <td>{formatarMoeda(Number(v.valor_contrato ?? 0))}</td>
+                  <td><span className={styles.statusPill}><span className={styles.statusDot} />Recebida do CRM</span></td>
+                  <td className={styles.center}><button className={styles.primaryBtn} style={{ height: 30, padding: "0 12px", fontSize: 11.5 }} type="button" disabled={cadastrandoVenda === v.id} onClick={(e) => { e.stopPropagation(); void cadastrarVenda(v); }}>{cadastrandoVenda === v.id ? "Cadastrando…" : "Conferir e cadastrar"}</button></td>
+                </tr>)}
+                {filtradas.map((c) => <tr key={`cliente-${c.id}`} onClick={() => abrir(c, "finance")}>
+                  <td><div className={styles.clientCell}><div className={styles.clientMeta}><div className={styles.clientName}>{c.nome_completo || "Sem nome"}</div><div className={styles.clientCpf}>{c.cpf ? formatarCpf(c.cpf) : "CPF não informado"}</div></div></div></td>
+                  <td>{c.consultora || <Dash />}</td>
+                  <td>{c.origem_venda || <Dash />}</td>
+                  <td>{formatarMoeda(Number(c.valor_contrato ?? 0))}</td>
+                  <td><span className={`${styles.statusPill} ${styles.statusSuspensa}`}><span className={styles.statusDot} />Falta gerar financeiro</span></td>
+                  <td className={styles.center}><RowMenu cliente={c} /></td>
+                </tr>)}
+              </tbody>
             </table>
           </div>
         : view === "list" ? <div className={styles.tableWrap}>
