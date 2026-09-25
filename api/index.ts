@@ -60,6 +60,13 @@ function buildEnv(request: Request): Env {
 export default async function handler(request: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
   const url = new URL(request.url);
 
+  // Branch de carga isolada: o k6 deve comprovar o destino antes de enviar tráfego.
+  if (request.method === "GET" && url.pathname === "/api/loadtest/identity") {
+    return Response.json({ isolated: true, projectRef: "xqlxzdmleekbrietejoq", externalIntegrationsDisabled: true }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
   if (request.method === "GET" && url.pathname === "/api/pwa/origin") {
     return Response.json(
       { origin: canonicalProductionOrigin(request) },

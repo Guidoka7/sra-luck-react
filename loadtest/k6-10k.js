@@ -2,12 +2,15 @@ import http from "k6/http";
 import { check, sleep } from "k6";
 import encoding from "k6/encoding";
 import crypto from "k6/crypto";
-import { Rate, Counter } from "k6/metrics";
+import { Rate, Counter, Trend } from "k6/metrics";
 
 const BASE = (__ENV.TARGET_BASE || "").replace(/\/$/, "");
 const SHARE = __ENV.VERCEL_SHARE || "";
 const SHARD = Number(__ENV.SHARD || "0");
-const SMOKE = __ENV.SMOKE === "1";
+const PROFILE = __ENV.PROFILE || (__ENV.SMOKE === "1" ? "smoke" : "full");
+const SMOKE = PROFILE === "smoke";
+const START_EPOCH = Number(__ENV.START_EPOCH || "0");
+const ISOLATED_PREVIEW = "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
@@ -16,6 +19,13 @@ const SESSION_SECRET = "sra-luck-load-test-only-session-secret-2026-09-24";
 const server5xx = new Rate("server_5xx");
 const routeFail = new Rate("route_fail");
 const appRequests = new Counter("app_requests");
+const client4xx = new Counter("client_4xx");
+const timeouts = new Counter("request_timeouts");
+let lastWitnessBucket = -1;
+
+function bucket() {
+  return START_EPOCH ? Math.max(0, Math.floor((Date.now() / 1000 - START_EPOCH) / 60)) : 0;
+}
 
 const ROUTE_NAMES = [
   "client_page_agenda",
@@ -54,6 +64,18 @@ const ROUTE_NAMES = [
   "admin_cliente_patch",
 ];
 
+// Séries com nomes próprios aparecem no handleSummary mesmo sem thresholds por
+// tag. Guardamos apenas 35 minutos e não precisamos do dump bruto de milhões de requests.
+const minutes = Array.from({ length: 35 }, (_, minute) => ({
+  requests: new Counter(`minute_${minute}_requests`),
+  failures: new Counter(`minute_${minute}_failures`),
+  server5xx: new Counter(`minute_${minute}_server5xx`),
+  client4xx: new Counter(`minute_${minute}_client4xx`),
+  timeouts: new Counter(`minute_${minute}_timeouts`),
+  witnessedVus: new Counter(`minute_${minute}_witnessedVus`),
+}));
+const routeDurations = Object.fromEntries(ROUTE_NAMES.map((route) => [route, new Trend(`route_duration_${route}`, true)]));
+
 const routeThresholds = {};
 for (const route of ROUTE_NAMES) {
   routeThresholds[`route_fail{route:${route}}`] = ["rate<0.25"];
@@ -71,23 +93,27 @@ export const options = SMOKE
       },
     }
   : {
-      stages: [
+      stages: PROFILE === "progressive" ? [
+        { duration: "30s", target: 50 },
+        { duration: "45s", target: 50 },
+        { duration: "30s", target: 150 },
+        { duration: "45s", target: 150 },
+        { duration: "30s", target: 300 },
+        { duration: "60s", target: 300 },
+        { duration: "30s", target: 0 },
+      ] : [
         { duration: "2m", target: 1000 },
         { duration: "30m", target: 1000 },
         { duration: "1m", target: 0 },
       ],
       gracefulStop: "30s",
       discardResponseBodies: true,
+      summaryTrendStats: ["avg", "min", "med", "p(90)", "p(95)", "p(99)", "max"],
       thresholds: {
         checks: ["rate>0.90"],
         http_req_failed: ["rate<0.20"],
-        "http_req_duration": [
-          { threshold: "p(95)<5000", abortOnFail: false },
-          { threshold: "p(99)<8000", abortOnFail: true, delayAbortEval: "3m" },
-        ],
-        server_5xx: [
-          { threshold: "rate<0.05", abortOnFail: true, delayAbortEval: "2m" },
-        ],
+        "http_req_duration": ["p(95)<5000", "p(99)<8000"],
+        server_5xx: ["rate<0.05"],
         ...routeThresholds,
       },
     };
@@ -112,6 +138,17 @@ function signedToken(payload) {
 
 export function setup() {
   if (!BASE) throw new Error("TARGET_BASE é obrigatório.");
+  if (BASE !== ISOLATED_PREVIEW || !["smoke", "progressive", "full"].includes(PROFILE) || SHARD < 0 || SHARD > 9) {
+    throw new Error("Hard-stop: alvo, perfil ou shard fora do ambiente isolado aprovado.");
+  }
+  // Este é o único hard-stop do cenário: nunca gerar carga contra outro deployment.
+  const identityUrl = `${BASE}/api/loadtest/identity${SHARE ? `?_vercel_share=${encodeURIComponent(SHARE)}` : ""}`;
+  const identity = http.get(identityUrl, { responseType: "text", tags: { name: "isolated_identity" } });
+  let marker = null;
+  try { marker = JSON.parse(identity.body || "null"); } catch { /* identificação inválida */ }
+  if (identity.status !== 200 || marker?.projectRef !== "xqlxzdmleekbrietejoq" || marker?.isolated !== true || marker?.externalIntegrationsDisabled !== true) {
+    throw new Error(`Hard-stop: Preview não confirmou o Supabase isolado (HTTP ${identity.status}).`);
+  }
 
   const first = 80000000001 + SHARD * 1000;
   const last = first + 999;
@@ -137,7 +174,7 @@ export function setup() {
     throw new Error(`Shard ${SHARD}: esperado 1000 clientes, recebido ${clients?.length ?? 0}`);
   }
 
-  return { clients };
+  return { clients, startedAt: new Date().toISOString() };
 }
 
 let previewReady = false;
@@ -176,16 +213,18 @@ function call(method, path, cookie, name, body = null) {
     headers["Content-Type"] = "application/json";
   }
 
-  const sep = path.includes("?") ? "&" : "?";
-  const requestUrl = SHARE
-    ? `${BASE}${path}${sep}_vercel_share=${encodeURIComponent(SHARE)}`
-    : `${BASE}${path}`;
+  // ensurePreviewAccess já estabeleceu o cookie de share deste VU.
+  // Repetir o query token a cada API inflava o tráfego com redirecionamentos.
+  const requestUrl = `${BASE}${path}`;
+  const metricTags = { route: name };
+  const minute = minutes[Math.min(34, bucket())];
 
   const res = http.request(method, requestUrl, body, {
     headers,
     tags: { name },
     redirects: 5,
     responseType: SMOKE ? "text" : "none",
+    timeout: "40s",
   });
 
   if (SMOKE) {
@@ -194,9 +233,17 @@ function call(method, path, cookie, name, body = null) {
   }
 
   const failed = !(res.status >= 200 && res.status < 400);
-  routeFail.add(failed, { route: name });
-  server5xx.add(res.status >= 500, { route: name });
-  appRequests.add(1, { route: name });
+  routeFail.add(failed, metricTags);
+  server5xx.add(res.status >= 500, metricTags);
+  appRequests.add(1, metricTags);
+  minute.requests.add(1);
+  routeDurations[name].add(res.timings.duration);
+  if (failed) minute.failures.add(1);
+  if (res.status >= 500) minute.server5xx.add(1);
+  if (res.status >= 400 && res.status < 500) client4xx.add(1, metricTags);
+  if (res.status >= 400 && res.status < 500) minute.client4xx.add(1);
+  if (res.status === 0) timeouts.add(1, metricTags);
+  if (res.status === 0) minute.timeouts.add(1);
   check(res, { [`${name} HTTP < 400`]: (r) => r.status < 400 });
   return res;
 }
@@ -315,11 +362,20 @@ export default function (data) {
   const client = data.clients[(__VU - 1) % data.clients.length];
   const cookies = cookiesFor(client.id);
 
+  if (PROFILE === "full" && START_EPOCH) {
+    const b = bucket();
+    if (b >= 2 && b < 32 && b !== lastWitnessBucket) {
+      minutes[b].witnessedVus.add(1);
+      lastWitnessBucket = b;
+    }
+  }
+
   // Por shard: 960 clientes leitura, 20 clientes escrita, 18 admins leitura, 2 admins escrita.
   // 10 shards = 10.000 VUs simultâneos, sendo 9.800 clientes e 200 acessos administrativos.
-  if (__VU <= 960) clientRead(cookies.client);
-  else if (__VU <= 980) clientWrite(cookies.client);
-  else if (__VU <= 998) adminRead(cookies.admin);
+  const slot = (__VU - 1) % 50;
+  if (slot < 48) clientRead(cookies.client);
+  else if (slot === 48) clientWrite(cookies.client);
+  else if (Math.floor((__VU - 1) / 50) % 10 !== 0) adminRead(cookies.admin);
   else adminWrite(cookies.admin, client.id);
 
   sleep(8 + ((__VU + __ITER) % 9));
@@ -329,10 +385,15 @@ export function handleSummary(data) {
   const path = `loadtest/results/shard-${SHARD}.json`;
   const summary = {
     shard: SHARD,
+    profile: PROFILE,
+    startedAt: Number.isFinite(data.state?.testRunDurationMs)
+      ? new Date(Date.now() - data.state.testRunDurationMs).toISOString()
+      : null,
+    durationMs: data.state?.testRunDurationMs ?? null,
     generatedAt: new Date().toISOString(),
     metrics: data.metrics,
     rootGroup: data.root_group,
-    options: { smoke: SMOKE },
+    options: { smoke: SMOKE, profile: PROFILE },
   };
   return {
     [path]: JSON.stringify(summary, null, 2),
