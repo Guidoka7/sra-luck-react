@@ -46,7 +46,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
   const head = (s: Secao, titulo: string, icone: "usercard" | "procedure" | "tag" | "document") => <SectionHead titulo={titulo} icone={icone} editavel={!criando} editando={editando[s]} onEditar={() => editar(s)} onCancelar={() => cancelar(s)} onConcluir={() => concluir(s)} />;
 
   const parcelas = cad.boletos.length || cad.quantidade || 0;
-  const valorParcela = cad.boletos[0]?.valor ?? null;
+  const valorParcela = cad.boletos[0]?.valor ?? cad.preCadastro?.valor_parcela ?? null;
   const previsaoElegibilidade = calcularPrevisaoElegibilidade(
     cad.boletos,
     cad.cliente?.data_atingiu_percentual ?? null,
@@ -73,7 +73,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
       </div>
     </article>
 
-    {!criando && <article className={styles.card}>
+    {(!criando || cad.preCadastro) && <article className={styles.card}>
       <SectionHead titulo="Acesso ao aplicativo" icone="usercard" />
       <div className={styles.cardBody}>
         <div className={styles.appAccessHeader}>
@@ -125,14 +125,14 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
       <div className={styles.cardBody}>
         {editando.sale ? <div className={styles.formGrid}>
           <Field label="Vendedora" id="perfil-vend"><input id="perfil-vend" className={styles.input} value={cad.consultora} onChange={(e) => cad.setConsultora(e.target.value)} /></Field>
-          <Field label="Campanha / Origem"><div className={styles.modalValue}>{cad.cliente?.origem_venda || "—"}</div></Field>
+          <Field label="Campanha / Origem"><div className={styles.modalValue}>{cad.cliente?.origem_venda || cad.preCadastro?.origem_venda || "—"}</div></Field>
           <Field label="Banco"><div className={styles.modalValue}>{cad.cliente?.banco || "—"}</div></Field>
         </div> : <div className={styles.saleGrid}>
           <Info label="Vendedora" value={cad.consultora} />
-          <Info label="Campanha / Origem" value={cad.cliente?.origem_venda ?? ""} />
+          <Info label="Campanha / Origem" value={cad.cliente?.origem_venda ?? cad.preCadastro?.origem_venda ?? ""} />
           <div><span className={styles.label}>Banco</span><div className={`${styles.value} ${styles.inline}`}><DrawerIcon name="bank" className={styles.bank} aria-hidden="true" />{cad.cliente?.banco || "—"}</div></div>
         </div>}
-        <p className={styles.readOnlyNote}>Campanha vem da venda recebida do CRM e o banco vem do carnê registrado no Financeiro.</p>
+        <p className={styles.readOnlyNote}>{cad.preCadastro ? "Dados carregados do RD Station. Ajustes feitos aqui ficam somente na Sra. Luck." : "Campanha vem da venda recebida do CRM e o banco vem do carnê registrado no Financeiro."}</p>
       </div>
     </article>}
 
