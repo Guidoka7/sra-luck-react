@@ -10,7 +10,8 @@ const SHARD = Number(__ENV.SHARD || "0");
 const PROFILE = __ENV.PROFILE || (__ENV.SMOKE === "1" ? "smoke" : "full");
 const SMOKE = PROFILE === "smoke";
 const START_EPOCH = Number(__ENV.START_EPOCH || "0");
-const ISOLATED_PREVIEW = "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app";
+// Deployment imutável da branch; o cookie de share é vinculado a esta URL.
+const ISOLATED_PREVIEW = "https://sra-luck-react-9a0xy2dn1-guidoka7.vercel.app";
 
 const SUPABASE_URL = "https://xqlxzdmleekbrietejoq.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbHh6ZG1sZWVrYnJpZXRlam9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODg1NzIsImV4cCI6MjEwNTg2NDU3Mn0.8xeWOMtFhdivO3NJTpCsUtwbvr74t56LmghYVLK1YFk";
@@ -106,7 +107,6 @@ export const options = SMOKE
         { duration: "30m", target: 1000 },
         { duration: "1m", target: 0 },
       ],
-      gracefulStop: "30s",
       discardResponseBodies: true,
       summaryTrendStats: ["avg", "min", "med", "p(90)", "p(95)", "p(99)", "max"],
       thresholds: {
