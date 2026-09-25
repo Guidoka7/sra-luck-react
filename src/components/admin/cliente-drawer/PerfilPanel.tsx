@@ -73,7 +73,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
       </div>
     </article>
 
-    {(!criando || cad.preCadastro) && <article className={styles.card}>
+    {!criando && <article className={styles.card}>
       <SectionHead titulo="Acesso ao aplicativo" icone="usercard" />
       <div className={styles.cardBody}>
         <div className={styles.appAccessHeader}>
@@ -120,7 +120,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
       </div>
     </article>
 
-    {!criando && <article className={styles.card}>
+    {(!criando || cad.preCadastro) && <article className={styles.card}>
       {head("sale", "Informações da venda", "tag")}
       <div className={styles.cardBody}>
         {editando.sale ? <div className={styles.formGrid}>
