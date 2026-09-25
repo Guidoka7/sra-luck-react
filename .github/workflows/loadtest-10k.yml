@@ -54,11 +54,11 @@ jobs:
           from pathlib import Path
           p = Path("loadtest/k6-10k.js")
           s = p.read_text()
-          old = '  const res = http.get(url, {\\n    redirects: 10,'
-          new = '  const res = http.get(url, {\\n    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
-          if old not in s:
+          needle = '    redirects: 10,'
+          replacement = '    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
+          if needle not in s:
               raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(old, new, 1))
+          p.write_text(s.replace(needle, replacement, 1))
           PY
 
       - name: Mint GitHub OIDC token
@@ -124,11 +124,11 @@ jobs:
           from pathlib import Path
           p = Path("loadtest/k6-10k.js")
           s = p.read_text()
-          old = '  const res = http.get(url, {\\n    redirects: 10,'
-          new = '  const res = http.get(url, {\\n    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
-          if old not in s:
+          needle = '    redirects: 10,'
+          replacement = '    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
+          if needle not in s:
               raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(old, new, 1))
+          p.write_text(s.replace(needle, replacement, 1))
           PY
 
       - name: Wait for synchronized start
