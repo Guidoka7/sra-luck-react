@@ -54,21 +54,11 @@ jobs:
           from pathlib import Path
           p = Path("loadtest/k6-10k.js")
           s = p.read_text()
-          old = '''  const res = http.get(url, {
-            redirects: 10,
-            tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
-          });'''
-          new = '''  const res = http.get(url, {
-            headers: {
-              "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
-              "x-vercel-set-bypass-cookie": "true",
-            },
-            redirects: 10,
-            tags: { name: "vercel_trusted_oidc" },
-          });'''
+          old = '  const res = http.get(url, {\\n    redirects: 10,'
+          new = '  const res = http.get(url, {\\n    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
           if old not in s:
               raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(old, new))
+          p.write_text(s.replace(old, new, 1))
           PY
 
       - name: Mint GitHub OIDC token
@@ -134,21 +124,11 @@ jobs:
           from pathlib import Path
           p = Path("loadtest/k6-10k.js")
           s = p.read_text()
-          old = '''  const res = http.get(url, {
-            redirects: 10,
-            tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
-          });'''
-          new = '''  const res = http.get(url, {
-            headers: {
-              "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
-              "x-vercel-set-bypass-cookie": "true",
-            },
-            redirects: 10,
-            tags: { name: "vercel_trusted_oidc" },
-          });'''
+          old = '  const res = http.get(url, {\\n    redirects: 10,'
+          new = '  const res = http.get(url, {\\n    headers: {\\n      "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",\\n      "x-vercel-set-bypass-cookie": "true",\\n    },\\n    redirects: 10,'
           if old not in s:
               raise SystemExit("OIDC patch point not found")
-          p.write_text(s.replace(old, new))
+          p.write_text(s.replace(old, new, 1))
           PY
 
       - name: Wait for synchronized start
