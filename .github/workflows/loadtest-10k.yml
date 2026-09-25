@@ -10,9 +10,10 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
-  TARGET_BASE: "https://31bfe3f0.sra-luck-react.pages.dev"
+  TARGET_BASE: "https://sra-luck-react-git-load-test-10k-isolated-guidoka7.vercel.app"
   VERCEL_SHARE: ""
 
 jobs:
@@ -46,10 +47,44 @@ jobs:
       - name: Pull k6
         run: docker pull grafana/k6:latest
 
+      - name: Prepare k6 for protected Vercel Preview
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          p = Path("loadtest/k6-10k.js")
+          s = p.read_text()
+          old = '''  const res = http.get(url, {
+            redirects: 10,
+            tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
+          });'''
+          new = '''  const res = http.get(url, {
+            headers: {
+              "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
+              "x-vercel-set-bypass-cookie": "true",
+            },
+            redirects: 10,
+            tags: { name: "vercel_trusted_oidc" },
+          });'''
+          if old not in s:
+              raise SystemExit("OIDC patch point not found")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Mint GitHub OIDC token
+        uses: actions/github-script@v7
+        id: oidc
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            core.setOutput('token', token);
+
       - name: Runtime smoke against isolated Preview
         env:
           SHARD: "0"
           SMOKE: "1"
+          VERCEL_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           mkdir -p loadtest/results
           chmod 777 loadtest/results
@@ -60,13 +95,14 @@ jobs:
             -e VERCEL_SHARE \
             -e SHARD \
             -e SMOKE \
+            -e VERCEL_OIDC_TOKEN \
             grafana/k6:latest run /work/loadtest/k6-10k.js
 
       - name: Synchronize shard start
         id: clock
         shell: bash
         run: |
-          START_EPOCH=$(( $(date +%s) + 240 ))
+          START_EPOCH=$(( $(date +%s) + 120 ))
           echo "start_epoch=$START_EPOCH" >> "$GITHUB_OUTPUT"
           echo "Load shards will target epoch $START_EPOCH"
 
@@ -91,6 +127,30 @@ jobs:
       - name: Pull k6
         run: docker pull grafana/k6:latest
 
+      - name: Prepare k6 for protected Vercel Preview
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          p = Path("loadtest/k6-10k.js")
+          s = p.read_text()
+          old = '''  const res = http.get(url, {
+            redirects: 10,
+            tags: { name: SHARE ? "vercel_sso" : "test_host_health" },
+          });'''
+          new = '''  const res = http.get(url, {
+            headers: {
+              "x-vercel-trusted-oidc-idp-token": __ENV.VERCEL_OIDC_TOKEN || "",
+              "x-vercel-set-bypass-cookie": "true",
+            },
+            redirects: 10,
+            tags: { name: "vercel_trusted_oidc" },
+          });'''
+          if old not in s:
+              raise SystemExit("OIDC patch point not found")
+          p.write_text(s.replace(old, new))
+          PY
+
       - name: Wait for synchronized start
         shell: bash
         run: |
@@ -101,7 +161,18 @@ jobs:
             sleep "$WAIT"
           fi
 
+      - name: Mint GitHub OIDC token
+        uses: actions/github-script@v7
+        id: oidc
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            core.setOutput('token', token);
+
       - name: Run 1000 virtual users for 30-minute plateau
+        env:
+          VERCEL_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
           mkdir -p loadtest/results
           chmod 777 loadtest/results
@@ -111,6 +182,7 @@ jobs:
             -e TARGET_BASE \
             -e VERCEL_SHARE \
             -e SHARD \
+            -e VERCEL_OIDC_TOKEN \
             grafana/k6:latest run /work/loadtest/k6-10k.js
 
       - name: Upload shard result
