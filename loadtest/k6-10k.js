@@ -43,6 +43,8 @@ const ROUTE_NAMES = [
   "admin_visao_geral",
   "admin_central_visao_geral",
   "admin_clientes",
+  "admin_clientes_pagina",
+  "admin_clientes_totais",
   "admin_financeiro_clientes",
   "admin_financeiro_resumo",
   "admin_financeiro_recebiveis",
@@ -234,7 +236,9 @@ function call(method, path, cookie, name, body = null) {
 
   if (SMOKE) {
     const snippet = res.status >= 400 ? String(res.body || "").replace(/\s+/g, " ").slice(0, 300) : "";
-    console.log(`[SMOKE] ${name} HTTP ${res.status}${snippet ? ` :: ${snippet}` : ""}`);
+    const encoded = typeof res.body === "string" ? encoding.b64encode(res.body) : "";
+    const measuredBytes = encoded.length * 3 / 4 - (encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0);
+    console.log(`[SMOKE] ${name} HTTP ${res.status} db=${res.headers["X-Loadtest-Db-Calls"] ?? "?"} rpc=${res.headers["X-Loadtest-Rpc-Calls"] ?? "?"} dbMs=${res.headers["Server-Timing"] ?? "?"} payload=${measuredBytes}B total=${Math.round(res.timings.duration)}ms${snippet ? ` :: ${snippet}` : ""}`);
   }
 
   const unexpectedHtml = path.startsWith("/api/") && res.status >= 200 && res.status < 400
@@ -303,7 +307,7 @@ const ADMIN_READS = [
   ["/api/admin/session", "admin_session"],
   ["/api/admin/visao-geral", "admin_visao_geral"],
   ["/api/admin/central/visao-geral", "admin_central_visao_geral"],
-  ["/api/admin/clientes", "admin_clientes"],
+  ["/api/admin/clientes/pagina?limite=50", "admin_clientes_pagina"],
   ["/api/admin/financeiro/clientes", "admin_financeiro_clientes"],
   ["/api/admin/financeiro/resumo?inicio=2026-01-01&fim=2026-12-31", "admin_financeiro_resumo"],
   ["/api/admin/financeiro/recebiveis?inicio=2026-01-01&fim=2026-12-31&pagina=1&limite=50", "admin_financeiro_recebiveis"],
@@ -364,6 +368,8 @@ function smoke(data) {
     () => call("GET", "/api/admin/session", cookies.admin, "admin_session"),
     () => call("GET", "/api/admin/notificacoes/automacao", cookies.admin, "admin_notificacoes"),
     () => call("GET", "/api/admin/visao-geral", cookies.admin, "admin_visao_geral"),
+    () => call("GET", "/api/admin/clientes/pagina?limite=50", cookies.admin, "admin_clientes_pagina"),
+    () => call("GET", "/api/admin/clientes/totais", cookies.admin, "admin_clientes_totais"),
     () => call("GET", `/api/admin/clientes/${client.id}/boletos`, cookies.admin, "admin_cliente_boletos"),
     () => call("GET", `/api/admin/central/cliente/${client.id}`, cookies.admin, "admin_central_cliente"),
   ];

@@ -100,6 +100,18 @@ describe("HTTP ingress and real router", () => {
     expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(2);
     expect(state.queries.filter(q => q.table === "clientes")).toHaveLength(0);
   });
+  it("builds the admin overview from two bounded domain snapshots", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ data: name === "loadtest_admin_dashboard_stats"
+      ? { clientes: { ativas: 2, valor_ativo: 100 }, boletos: { total: 12 }, financeiroMensal: [],
+          dispositivos: {}, novasClientesRecentes: [], comprovantesPendentes: [], clientesAguardandoLiberacao: [] }
+      : { termosMes: [], termosProximos: [], cirurgiasMes: [], cirurgiasProximas: [] }, error: null }));
+    const response = await worker.fetch(req("/api/admin/visao-geral", "GET", undefined, await adminCookie()), env);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as any).carteira.totalParcelas).toBe(12);
+    expect(state.rpc.mock.calls.map(c => c[0]).sort()).toEqual(["loadtest_admin_dashboard_agenda", "loadtest_admin_dashboard_stats"]);
+    expect(state.queries.filter(q => q.table === "colaboradores")).toHaveLength(1);
+    expect(state.queries.filter(q => q.table === "boletos" || q.table === "clientes")).toHaveLength(0);
+  });
   it("rejects an invalid admin page cursor without querying client data", async () => {
     const response = await worker.fetch(req("/api/admin/clientes/pagina?cursor=not-a-valid-cursor", "GET", undefined, await adminCookie()), env);
     expect(response.status).toBe(400);

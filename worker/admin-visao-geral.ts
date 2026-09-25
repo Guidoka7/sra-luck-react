@@ -1,7 +1,6 @@
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
-const LIMITE_ITENS = 8;
 const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 function json(data: unknown, status = 200) {
@@ -84,81 +83,43 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const diaSemanaUtc = new Date(`${agoraBrasil}T12:00:00.000Z`).getUTCDay();
     const inicioSemana = addDias(agoraBrasil, -((diaSemanaUtc + 6) % 7));
     const fimSemana = addDias(inicioSemana, 7);
-    const inicioPushUtc = `${agoraBrasil}T03:00:00.000Z`;
-    const fimPushUtc = `${addDias(agoraBrasil, 1)}T03:00:00.000Z`;
+    const graficoInicio = `${chaveMes(ano, mes, -2)}-01`;
+    const graficoFim = `${chaveMes(ano, mes, 4)}-01`;
 
-    const [
-      clientesRes,
-      boletosRes,
-      novasVendasRes,
-      termosMesRes,
-      cirurgiasMesRes,
-      termosProximosRes,
-      cirurgiasProximasRes,
-      devicesRes,
-      notifHojeRes,
-      credenciaisRes,
-      atividadeRes,
-    ] = await Promise.all([
-      supabase.from("clientes")
-        .select("id,nome_completo,cpf,data_nascimento,acesso_app_liberado,status_contrato,status_revisao_financeira,valor_contrato,quantidade_parcelas,created_at,ativo")
-        .order("created_at", { ascending: false }),
-      supabase.from("boletos")
-        .select("id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,comprovante_url,suspensa,clientes(id,nome_completo,cpf)")
-        .order("data_vencimento", { ascending: true })
-        .limit(5000),
-      supabase.from("novas_vendas").select("id", { count: "exact", head: true }).eq("status", "aguardando_cadastro"),
-      supabase.from("agendamentos")
-        .select("id,cliente_id,status,horario_termos,termos_assinados_em,clientes(id,nome_completo,status_financeiro,status_cirurgia),datas!inner(data)")
-        .in("status", ["confirmado", "realizado"])
-        .gte("datas.data", inicio)
-        .lt("datas.data", fimExclusivo)
-        .order("created_at", { ascending: true }),
-      supabase.from("agendamentos")
-        .select("id,cliente_id,status,data_cirurgia,clientes(id,nome_completo,status_financeiro,status_cirurgia)")
-        .in("status", ["confirmado", "realizado"])
-        .gte("data_cirurgia", inicio)
-        .lt("data_cirurgia", fimExclusivo)
-        .order("data_cirurgia", { ascending: true }),
-      supabase.from("agendamentos")
-        .select("id,cliente_id,status,horario_termos,termos_assinados_em,clientes(id,nome_completo,status_financeiro,status_cirurgia),datas!inner(data)")
-        .in("status", ["confirmado", "realizado"])
-        .gte("datas.data", agoraBrasil)
-        .lt("datas.data", fimProximos7)
-        .order("created_at", { ascending: true }),
-      supabase.from("agendamentos")
-        .select("id,cliente_id,status,data_cirurgia,clientes(id,nome_completo,status_financeiro,status_cirurgia)")
-        .in("status", ["confirmado", "realizado"])
-        .gte("data_cirurgia", agoraBrasil)
-        .lt("data_cirurgia", fimProximos7)
-        .order("data_cirurgia", { ascending: true }),
-      supabase.from("cliente_app_devices").select("id,is_pwa_installed,last_access_at"),
-      supabase.from("notificacao_logs").select("id,push_enviadas", { count: "exact", head: true }).gte("created_at", inicioPushUtc).lt("created_at", fimPushUtc).gt("push_enviadas", 0),
-      supabase.from("integracoes_credenciais").select("chave,ativo").eq("provedor", "web_push").eq("ativo", true),
-      supabase.from("logs_alteracoes").select("usuario,acao,entidade,created_at").order("created_at", { ascending: false }).limit(8),
+    const [snapshotRes, agendaRes] = await Promise.all([
+      supabase.rpc("loadtest_admin_dashboard_stats", {
+        p_hoje: agoraBrasil, p_inicio: inicio, p_fim: fimExclusivo,
+        p_semana_inicio: inicioSemana, p_semana_fim: fimSemana,
+        p_grafico_inicio: graficoInicio, p_grafico_fim: graficoFim,
+      }),
+      supabase.rpc("loadtest_admin_dashboard_agenda", {
+        p_inicio: inicio, p_fim: fimExclusivo,
+        p_hoje: agoraBrasil, p_proximos_fim: fimProximos7,
+      }),
     ]);
 
-    for (const result of [clientesRes, boletosRes, termosMesRes, cirurgiasMesRes, termosProximosRes, cirurgiasProximasRes]) {
+    for (const result of [snapshotRes, agendaRes]) {
       if (result.error) return json({ erro: publicError(result.error) }, 500);
     }
 
-    const clientes = (clientesRes.data ?? []) as any[];
-    const boletos = (boletosRes.data ?? []) as any[];
-    const termosMes = (termosMesRes.data ?? []) as any[];
-    const cirurgiasMes = (cirurgiasMesRes.data ?? []) as any[];
-    const termosProximos = (termosProximosRes.data ?? []) as any[];
-    const cirurgiasProximas = (cirurgiasProximasRes.data ?? []) as any[];
+    const snapshot = (snapshotRes.data ?? {}) as any;
+    const billStats = snapshot.boletos ?? {};
+    const agendaSnapshot = (agendaRes.data ?? {}) as any;
+    const termosMes = (agendaSnapshot.termosMes ?? []) as any[];
+    const cirurgiasMes = (agendaSnapshot.cirurgiasMes ?? []) as any[];
+    const termosProximos = (agendaSnapshot.termosProximos ?? []) as any[];
+    const cirurgiasProximas = (agendaSnapshot.cirurgiasProximas ?? []) as any[];
 
     const clientStats = {
-      ativas: clientes.filter((c) => statusContrato(c.status_contrato) === "ativo").length,
-      suspensas: clientes.filter((c) => statusContrato(c.status_contrato) === "suspenso").length,
-      negativadas: clientes.filter((c) => statusContrato(c.status_contrato) === "negativado").length,
-      canceladas: clientes.filter((c) => statusContrato(c.status_contrato) === "cancelado").length,
+      ativas: Number(snapshot.clientes?.ativas ?? 0),
+      suspensas: Number(snapshot.clientes?.suspensas ?? 0),
+      negativadas: Number(snapshot.clientes?.negativadas ?? 0),
+      canceladas: Number(snapshot.clientes?.canceladas ?? 0),
     };
     // Canceladas (incluindo perfis arquivados) não fazem parte do funil operacional V46.
     const totalClientes = clientStats.ativas + clientStats.suspensas + clientStats.negativadas;
-    const novasClientesHoje = clientes.filter((c) => dataBrasil(String(c.created_at ?? "")) === agoraBrasil).length;
-    const novasClientesRecentes = clientes.slice(0, 6).map((c) => ({
+    const novasClientesHoje = Number(snapshot.clientes?.novas_hoje ?? 0);
+    const novasClientesRecentes = (snapshot.novasClientesRecentes ?? []).map((c: any) => ({
       clienteId: c.id,
       nome: c.nome_completo ?? "Cliente",
       cpf: c.cpf ?? "—",
@@ -166,29 +127,13 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       status: statusContrato(c.status_contrato),
     }));
 
-    const abertos = boletos.filter((b) => b.status !== "pago");
-    const vencidos = abertos.filter((b) => !b.suspensa && b.data_vencimento && String(b.data_vencimento).slice(0, 10) < agoraBrasil);
-    const aguardandoConferencia = boletos.filter((b) => b.status === "pendente_confirmacao");
-    const semVencimento = abertos.filter((b) => !b.data_vencimento);
-    const pagosNoMes = boletos.filter((b) => b.status === "pago" && b.data_pagamento && String(b.data_pagamento).slice(0, 10) >= inicio && String(b.data_pagamento).slice(0, 10) < fimExclusivo);
-    const pagosNaSemana = boletos.filter((b) => b.status === "pago" && b.data_pagamento && String(b.data_pagamento).slice(0, 10) >= inicioSemana && String(b.data_pagamento).slice(0, 10) < fimSemana);
-    const clientesInadimplentes = new Set(vencidos.map((b) => String(b.cliente_id ?? "")).filter(Boolean)).size;
-    const clientesComParcela = new Set(boletos.map((b) => String(b.cliente_id ?? "")).filter(Boolean));
-    const clientesProntasAcessoApp = clientes.filter((c) =>
-      !c.acesso_app_liberado
-      && Boolean(c.nome_completo)
-      && /^\d{11}$/.test(String(c.cpf ?? "").replace(/\D/g, ""))
-      && Boolean(c.data_nascimento)
-      && clientesComParcela.has(String(c.id))
-    ).length;
+    const clientesInadimplentes = Number(billStats.inadimplentes ?? 0);
+    const clientesProntasAcessoApp = Number(snapshot.clientesProntasAcessoApp ?? 0);
 
-    const janelaMeses = Array.from({ length: 6 }, (_, i) => chaveMes(ano, mes, i - 2));
-    const financeiroMensal = janelaMeses.map((chave) => {
-      const previsto = boletos.filter((b) => String(b.data_vencimento ?? "").startsWith(chave)).reduce((s, b) => s + dinheiro(b.valor), 0);
-      const recebido = boletos.filter((b) => b.status === "pago" && String(b.data_pagamento ?? "").startsWith(chave)).reduce((s, b) => s + dinheiro(b.valor), 0);
-      const vencido = boletos.filter((b) => b.status !== "pago" && !b.suspensa && String(b.data_vencimento ?? "").startsWith(chave) && String(b.data_vencimento).slice(0, 10) < agoraBrasil).reduce((s, b) => s + dinheiro(b.valor), 0);
-      return { mes: chave, label: labelMes(chave), previsto: dinheiro(previsto), recebido: dinheiro(recebido), vencido: dinheiro(vencido) };
-    });
+    const financeiroMensal = (snapshot.financeiroMensal ?? []).map((item: any) => ({
+      mes: item.mes, label: labelMes(item.mes),
+      previsto: dinheiro(item.previsto), recebido: dinheiro(item.recebido), vencido: dinheiro(item.vencido),
+    }));
 
     type EventoAgenda = {
       id: string;
@@ -264,41 +209,33 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
     const cirurgiasHojeLista = eventosProximos.filter((e) => e.tipo === "cirurgia" && e.data === agoraBrasil);
     const termosPendentesMes = eventosAgenda.filter((e) => e.tipo === "termos" && e.status !== "assinado").length;
 
-    const dispositivos = (devicesRes.data ?? []) as any[];
-    const totalDispositivos = dispositivos.length;
-    const pwaInstalados = dispositivos.filter((d) => d.is_pwa_installed === true).length;
-    const limiteSemAcesso = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const semAcessoRecente = dispositivos.filter((d) => !d.last_access_at || new Date(d.last_access_at).getTime() < limiteSemAcesso).length;
-    const chavesPainel = new Set(((credenciaisRes.data ?? []) as any[]).map((c) => c.chave));
+    const totalDispositivos = Number(snapshot.dispositivos?.total ?? 0);
+    const pwaInstalados = Number(snapshot.dispositivos?.instalados ?? 0);
+    const semAcessoRecente = Number(snapshot.dispositivos?.sem_acesso ?? 0);
     const webPushConfigurado = Boolean(
-      (chavesPainel.has("vapid_public_key") && chavesPainel.has("vapid_private_key") && chavesPainel.has("vapid_subject"))
+      snapshot.webPushConfigurado
       || (env.WEB_PUSH_VAPID_PUBLIC_KEY && env.WEB_PUSH_VAPID_PRIVATE_KEY && env.WEB_PUSH_VAPID_SUBJECT)
     );
 
-    const comprovantesPendentes = aguardandoConferencia.slice(0, LIMITE_ITENS).map((b) => {
-      const cliente = one<any>(b.clientes);
-      return {
+    const comprovantesPendentes = (snapshot.comprovantesPendentes ?? []).map((b: any) => ({
         boletoId: b.id,
         clienteId: b.cliente_id,
-        nome: cliente?.nome_completo ?? "Cliente",
+        nome: b.nome_completo ?? "Cliente",
         numeroParcela: Number(b.numero_parcela ?? 0),
         totalParcelas: Number(b.total_parcelas ?? 0),
         valor: dinheiro(b.valor),
         dataPagamento: b.data_pagamento ?? null,
-      };
-    });
+    }));
 
-    const clientesAguardandoLiberacao = clientes.filter((c) => c.status_revisao_financeira === "pendente").slice(0, LIMITE_ITENS).map((c) => {
-      const daCliente = boletos.filter((b) => b.cliente_id === c.id);
-      const pagas = daCliente.filter((b) => b.status === "pago").length;
-      const total = Math.max(Number(c.quantidade_parcelas ?? 0), daCliente.length);
+    const clientesAguardandoLiberacao = (snapshot.clientesAguardandoLiberacao ?? []).map((c: any) => {
+      const total = Math.max(Number(c.quantidade_parcelas ?? 0), Number(c.parcelas_total ?? 0));
       return {
         clienteId: c.id,
         nome: c.nome_completo,
         valor: dinheiro(c.valor_contrato),
         valorContrato: dinheiro(c.valor_contrato),
         quantidadeParcelas: total || null,
-        porcentagemPagamento: total > 0 ? Math.round((pagas / total) * 1000) / 10 : 0,
+        porcentagemPagamento: total > 0 ? Math.round((Number(c.parcelas_pagas ?? 0) / total) * 1000) / 10 : 0,
       };
     });
 
@@ -307,8 +244,8 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       periodo: { ano, mes, inicio, fimExclusivo, hoje: agoraBrasil },
       kpis: {
         novasClientesHoje,
-        aguardandoCadastro: novasVendasRes.count ?? 0,
-        aguardandoConferencia: aguardandoConferencia.length,
+        aguardandoCadastro: Number(snapshot.novasVendas ?? 0),
+        aguardandoConferencia: Number(billStats.conferencia ?? 0),
         clientesAtivas: clientStats.ativas,
         termosHoje: termosHojeLista.length,
         cirurgiasHoje: cirurgiasHojeLista.length,
@@ -316,18 +253,18 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       clientStats,
       novasClientesRecentes,
       financeiro: {
-        parcelasAbertas: abertos.length,
-        parcelasVencidas: vencidos.length,
-        aguardandoConferencia: aguardandoConferencia.length,
-        recebidasNoMes: pagosNoMes.length,
-        recebidasSemana: pagosNaSemana.length,
+        parcelasAbertas: Number(billStats.abertos ?? 0),
+        parcelasVencidas: Number(billStats.vencidos ?? 0),
+        aguardandoConferencia: Number(billStats.conferencia ?? 0),
+        recebidasNoMes: Number(billStats.pagos_mes ?? 0),
+        recebidasSemana: Number(billStats.pagos_semana ?? 0),
         clientesInadimplentes,
         clientesProntasAcessoApp,
-        semVencimento: semVencimento.length,
-        valorAberto: dinheiro(abertos.reduce((s, b) => s + dinheiro(b.valor), 0)),
-        valorVencido: dinheiro(vencidos.reduce((s, b) => s + dinheiro(b.valor), 0)),
-        valorRecebidoMes: dinheiro(pagosNoMes.reduce((s, b) => s + dinheiro(b.valor), 0)),
-        valorRecebidoSemana: dinheiro(pagosNaSemana.reduce((s, b) => s + dinheiro(b.valor), 0)),
+        semVencimento: Number(billStats.sem_vencimento ?? 0),
+        valorAberto: dinheiro(billStats.valor_aberto),
+        valorVencido: dinheiro(billStats.valor_vencido),
+        valorRecebidoMes: dinheiro(billStats.valor_mes),
+        valorRecebidoSemana: dinheiro(billStats.valor_semana),
       },
       agenda: {
         resumo: {
@@ -358,21 +295,21 @@ export async function adminVisaoGeral(request: Request, env: Env): Promise<Respo
       clientesAguardandoLiberacao,
       monitoramento: {
         webPushConfigurado,
-        notificacoesHoje: notifHojeRes.count ?? 0,
+        notificacoesHoje: Number(snapshot.notificacoesHoje ?? 0),
         totalDispositivos,
         pwaInstalados,
         pwaInstaladoPercentual: totalDispositivos > 0 ? Math.round((pwaInstalados / totalDispositivos) * 100) : 0,
         semAcessoRecente,
       },
-      atividadeRecente: ((atividadeRes.data ?? []) as any[]).map((a) => ({ texto: `${a.acao ?? "Ação"} · ${a.entidade ?? "sistema"}`, usuario: a.usuario ?? null, quando: a.created_at })),
+      atividadeRecente: (snapshot.atividadeRecente ?? []).map((a: any) => ({ texto: `${a.acao ?? "Ação"} · ${a.entidade ?? "sistema"}`, usuario: a.usuario ?? null, quando: a.created_at })),
       carteira: {
         clientesAtivos: clientStats.ativas,
-        valorContratadoAtivo: dinheiro(clientes.filter((c) => statusContrato(c.status_contrato) === "ativo").reduce((s, c) => s + dinheiro(c.valor_contrato), 0)),
-        ticketMedio: clientStats.ativas > 0 ? dinheiro(clientes.filter((c) => statusContrato(c.status_contrato) === "ativo").reduce((s, c) => s + dinheiro(c.valor_contrato), 0) / clientStats.ativas) : 0,
+        valorContratadoAtivo: dinheiro(snapshot.clientes?.valor_ativo),
+        ticketMedio: clientStats.ativas > 0 ? dinheiro(dinheiro(snapshot.clientes?.valor_ativo) / clientStats.ativas) : 0,
         taxaAdministrativaMedia: 0,
-        taxaInadimplencia: boletos.length > 0 ? Math.round((vencidos.length / boletos.length) * 1000) / 10 : 0,
-        parcelasVencidas: vencidos.length,
-        totalParcelas: boletos.length,
+        taxaInadimplencia: Number(billStats.total ?? 0) > 0 ? Math.round((Number(billStats.vencidos ?? 0) / Number(billStats.total)) * 1000) / 10 : 0,
+        parcelasVencidas: Number(billStats.vencidos ?? 0),
+        totalParcelas: Number(billStats.total ?? 0),
       },
       resumoClientes: { total: totalClientes },
     });

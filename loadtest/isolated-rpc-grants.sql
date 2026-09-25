@@ -7,3 +7,5 @@ GRANT EXECUTE ON FUNCTION public.loadtest_admin_clientes_pagina(integer,timestam
 GRANT EXECUTE ON FUNCTION public.loadtest_admin_clientes_pagina_recent(integer,timestamptz,uuid,text,text,text,timestamptz,text,text,text) TO anon;
 GRANT EXECUTE ON FUNCTION public.loadtest_admin_clientes_totais() TO anon;
 GRANT EXECUTE ON FUNCTION public.loadtest_admin_clientes_bancos() TO anon;
+GRANT EXECUTE ON FUNCTION public.loadtest_admin_dashboard_stats(date,date,date,date,date,date,date) TO anon;
+GRANT EXECUTE ON FUNCTION public.loadtest_admin_dashboard_agenda(date,date,date,date) TO anon;
