@@ -1,0 +1,12 @@
+.git
+.github
+.agents
+.vercel
+.wrangler
+.env
+.env.*
+!.env.local.example
+node_modules
+dist
+coverage
+*.log

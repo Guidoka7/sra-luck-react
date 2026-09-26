@@ -4,7 +4,13 @@
  * tela de falha, recarrega uma única vez para buscar a versão nova.
  */
 const CHAVE = "sra-luck-recarga-versao";
-const INTERVALO_MS = 60_000;
+let recarregouSemStorage = false;
+
+function versaoDoDocumento(): string {
+  // O script de entrada recebe um hash novo a cada build do Vite. Uma aba que
+  // continua presa no mesmo build não deve entrar em um ciclo de recargas.
+  return document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src ?? "sem-script";
+}
 
 const PADROES = [
   /Failed to fetch dynamically imported module/i,
@@ -21,14 +27,15 @@ export function ehFalhaDeVersao(erro: unknown) {
   return PADROES.some((re) => re.test(texto));
 }
 
-/** Recarrega a página no máximo uma vez por minuto. Devolve true se recarregou. */
+/** Tenta recuperar apenas uma vez por versão de build nesta aba. */
 export function recarregarParaVersaoNova(): boolean {
   try {
-    const ultima = Number(sessionStorage.getItem(CHAVE) || 0);
-    if (Date.now() - ultima < INTERVALO_MS) return false;
-    sessionStorage.setItem(CHAVE, String(Date.now()));
+    const versao = versaoDoDocumento();
+    if (sessionStorage.getItem(CHAVE) === versao) return false;
+    sessionStorage.setItem(CHAVE, versao);
   } catch {
-    // Sem sessionStorage: recarrega mesmo assim (o navegador já traz a versão nova).
+    if (recarregouSemStorage) return false;
+    recarregouSemStorage = true;
   }
   window.location.reload();
   return true;

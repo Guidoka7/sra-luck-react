@@ -61,7 +61,9 @@ export function useNotificacoesCliente() {
 
   useEffect(() => {
     void carregar();
-    const intervalo = window.setInterval(() => void carregar(), 15_000);
+    const intervalo = window.setInterval(() => {
+      if (document.visibilityState === "visible") void carregar();
+    }, 15_000);
     function aoFocar() {
       if (document.visibilityState === "visible") void carregar();
     }

@@ -146,8 +146,15 @@ export function AdminVisaoGeralPage() {
 
   useEffect(() => {
     void atualizar();
-    const timer = window.setInterval(() => void atualizar(true), 15000);
-    return () => window.clearInterval(timer);
+    const atualizarSeVisivel = () => {
+      if (document.visibilityState === "visible") void atualizar(true);
+    };
+    const timer = window.setInterval(atualizarSeVisivel, 15000);
+    document.addEventListener("visibilitychange", atualizarSeVisivel);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", atualizarSeVisivel);
+    };
   }, [atualizar]);
 
   async function sair() {

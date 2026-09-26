@@ -104,7 +104,7 @@ export function AgendaPage() {
     // Só consulta enquanto o app está visível para evitar tráfego inútil.
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void carregar(true);
-    }, 5000);
+    }, 30_000);
 
     const aoVoltar = () => {
       if (document.visibilityState === "visible") void carregar(true);
