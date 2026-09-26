@@ -138,7 +138,16 @@ async function authorizeDevConsoleRequest(request: Request, env: Env): Promise<R
 
 async function loadWorker(): Promise<WorkerLike> {
   if (!workerPromise) {
-    workerPromise = import(/* @vite-ignore */ BUILT_WORKER_PATH).then((mod) => mod.default as WorkerLike);
+    workerPromise = (async () => {
+      // Em testes não existe dist/. Usamos o Worker fonte para preservar a suíte
+      // sem fazer a Vercel empacotar toda a árvore TypeScript em produção.
+      if (process.env.VITEST || process.env.NODE_ENV === "test") {
+        const source = await import("../worker/index");
+        return source.default as WorkerLike;
+      }
+      const built = await import(/* @vite-ignore */ BUILT_WORKER_PATH);
+      return built.default as WorkerLike;
+    })();
   }
   return workerPromise;
 }
@@ -161,4 +170,6 @@ async function handleRequest(request: Request, context?: ExecutionContextLike) {
   return worker.fetch(authorizedRequest, env, context);
 }
 
-export default { fetch: handleRequest };
+export default async function handler(request: Request, context?: ExecutionContextLike) {
+  return handleRequest(request, context);
+}
