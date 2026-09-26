@@ -2,6 +2,8 @@ import worker from "../worker/index";
 import type { Env } from "../worker/supabase";
 import { authorizeDevConsoleRequest } from "../worker/dev-console-auth";
 
+export const config = { runtime: "nodejs" as const };
+
 const LOADTEST_BRANCH = "load-test-10k-isolated";
 
 function firstEnv(...names: string[]): string | undefined {
