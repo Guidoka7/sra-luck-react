@@ -2,7 +2,6 @@
   "name": "sra-luck-agenda",
   "version": "2.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:auto": "node scripts/dev-sync.mjs",
