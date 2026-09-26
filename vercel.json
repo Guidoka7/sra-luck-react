@@ -4,6 +4,11 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist/client",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist/sra_luck_api/**"
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/mensagem-do-dia",
