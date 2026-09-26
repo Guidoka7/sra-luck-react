@@ -2,8 +2,6 @@ import worker from "../worker/index";
 import type { Env } from "../worker/supabase";
 import { authorizeDevConsoleRequest } from "../worker/dev-console-auth";
 
-export const config = { runtime: "edge" };
-
 function firstEnv(...names: string[]): string | undefined {
   for (const name of names) {
     const value = process.env[name]?.trim();
