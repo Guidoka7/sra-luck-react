@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - main
+      - load-test-10k-isolated
   pull_request:
     branches:
       - main
