@@ -148,8 +148,15 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
   const pushValidacao = pushCredenciais
     ? await validarConfiguracaoVapid({ subject: pushSubject!, publicKey: pushPublicKey!, privateKey: pushPrivateKey! })
     : { valido: false, detalhe: "As três credenciais VAPID ainda não estão configuradas." };
-  const { data: testePush } = await db.from("logs_alteracoes").select("created_at,detalhes")
-    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "web_push").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const provedoresTeste = ["web_push", "mercado_pago", "conta_azul", "rd_station", "gemini", "brb", "bb", "santander", "sicredi", "efi"];
+  const { data: testesRecentes } = await db.from("logs_alteracoes").select("created_at,detalhes")
+    .eq("acao", "testou_conexao_integracao").order("created_at", { ascending: false }).limit(100);
+  const testes = new Map<string, any>();
+  for (const teste of testesRecentes ?? []) {
+    const provedor = String((teste.detalhes as any)?.provedor || "");
+    if (provedoresTeste.includes(provedor) && !testes.has(provedor)) testes.set(provedor, teste);
+  }
+  const testePush = testes.get("web_push");
   const mpCredenciais = Boolean(mpAccessToken && mpWebhookSecret);
   const contaAzulCredenciais = Boolean(caClientId && caClientSecret && caAccessToken && caRefreshToken);
   const rdOauthConfigurado = Boolean(rdClientId && rdClientSecret);
@@ -174,21 +181,12 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     const { data: webhook } = await db.from("crm_vendas_entrada").select("created_at").eq("provedor", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
     rdUltimoWebhook = webhook?.created_at ?? null;
   }
-  const { data: testeRd } = await db.from("logs_alteracoes").select("detalhes,created_at")
-    .eq("acao", "testou_conexao_integracao").eq("entidade_id", "rd_station").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const testeRd = testes.get("rd_station");
   if (testeRd) {
     rdUltimaVerificacao = testeRd.created_at;
     rdConectado = Boolean((testeRd.detalhes as any)?.conectado);
   }
 
-  const provedoresTeste = ["web_push", "mercado_pago", "conta_azul", "rd_station", "gemini", "brb", "bb", "santander", "sicredi", "efi"];
-  const testes = new Map<string, any>();
-  for (const provedor of provedoresTeste) {
-    const { data } = await db.from("logs_alteracoes").select("created_at,detalhes")
-      .eq("acao", "testou_conexao_integracao").eq("entidade_id", provedor)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    testes.set(provedor, data ?? null);
-  }
   const estadoAtivo = (provedor: string) => ({
     ativo: estados.get(provedor)?.ativo === true,
     ativacaoConfigurada: estados.has(provedor),
@@ -257,12 +255,12 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     },
   ];
 
-  const [geminiChave, frasesTabela, { data: testeGemini }, { count: frasesIa }] = await Promise.all([
+  const [geminiChave, frasesTabela, { count: frasesIa }] = await Promise.all([
     obterCredencialParaValidacao(env, "gemini", "api_key"),
     tabelaDisponivel(db, "mensagens_do_dia", "data"),
-    db.from("logs_alteracoes").select("created_at,detalhes").eq("acao", "testou_conexao_integracao").eq("entidade_id", "gemini").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("mensagens_do_dia").select("data", { count: "exact", head: true }).eq("origem", "ia"),
   ]);
+  const testeGemini = testes.get("gemini");
   const geminiConectado = Boolean(geminiChave && estadoAtivo("gemini").ativo && (testeGemini?.detalhes as any)?.conectado);
   integracoes.push({
     id: "gemini", nome: "Gemini (frase do dia)", grupo: "comunicacao", estado: estadoBase(frasesTabela, Boolean(geminiChave)),

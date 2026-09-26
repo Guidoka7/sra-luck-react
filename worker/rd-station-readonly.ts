@@ -368,8 +368,8 @@ export async function garantirWebhooksRd(env: Env, actor = "sistema:rd_station_w
     usuario: actor,
     acao: "configurou_webhooks_rd_station",
     entidade: "integracoes",
-    entidade_id: "rd_station",
     detalhes: {
+      provedor: "rd_station",
       callbackUrl,
       authHeader: RD_WEBHOOK_HEADER,
       segredoCriado,
@@ -582,8 +582,7 @@ async function sincronizar(request: Request, env: Env, adminId: string, ctx?: Ba
         usuario: ator,
         acao: "sincronizou_rd_station_somente_leitura",
         entidade: "integracoes",
-        entidade_id: "rd_station",
-        detalhes: r,
+        detalhes: { ...r, provedor: "rd_station" },
       });
     }
     return r;
@@ -624,12 +623,13 @@ async function testar(env: Env, adminId: string) {
     const resposta = await rdGet(env, "/users?page[number]=1&page[size]=1");
     const conectado = Array.isArray(resposta.data);
     const resultado = { conectado, detalhe: conectado ? "OAuth/API v2 respondeu em modo somente leitura." : "Resposta inesperada do RD Station." };
-    await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: "rd_station", detalhes: resultado });
+    const { error } = await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", detalhes: { ...resultado, provedor: "rd_station" } });
+    if (error) return json({ erro: "Não foi possível registrar o teste RD Station." }, 503);
     return json(resultado, conectado ? 200 : 502);
   } catch (error) {
     console.error("Falha ao testar conexão com RD Station:", error);
     const resultado = { conectado: false, detalhe: "Não foi possível validar a conexão com o RD Station agora." };
-    await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", entidade_id: "rd_station", detalhes: resultado });
+    await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "testou_conexao_integracao", entidade: "integracoes", detalhes: { ...resultado, provedor: "rd_station" } });
     return json(resultado, 502);
   }
 }
@@ -670,7 +670,7 @@ async function oauthCallback(request: Request, env: Env) {
     const token = await tokenRequest(env, { code, redirect_uri: redirectUri, grant_type: "authorization_code" });
     await persistirTokens(env, ator, token);
     const db = createServiceSupabaseClient(env);
-    await db.from("logs_alteracoes").insert({ usuario: ator, acao: "autorizou_oauth_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { somenteLeitura: true, origem: ehDev ? "dev_console" : "admin" } });
+    await db.from("logs_alteracoes").insert({ usuario: ator, acao: "autorizou_oauth_rd_station", entidade: "integracoes", detalhes: { provedor: "rd_station", somenteLeitura: true, origem: ehDev ? "dev_console" : "admin" } });
     if (ehDev) return new Response("<!doctype html><meta charset='utf-8'><title>RD Station conectado</title><body style='font-family:system-ui;padding:32px'><h2>RD Station autorizado</h2><p>As credenciais OAuth foram salvas. Volte ao Dev Console e clique em Validar e ativar.</p><script>setTimeout(()=>window.close(),1800)</script></body>", { headers: { "Content-Type": "text/html; charset=utf-8" } });
     const destino = `${(env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, "")}/admin/integracoes?rd=conectado`;
     return Response.redirect(destino, 302);

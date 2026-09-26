@@ -310,13 +310,13 @@ async function testarProvedorReal(env: Env, provedor: string): Promise<Resultado
 
 async function registrarTesteIntegracao(env: Env, usuario: string, provedor: string, resultado: ResultadoTesteIntegracao) {
   const db = createServiceSupabaseClient(env);
-  await db.from("logs_alteracoes").insert({
+  const { error } = await db.from("logs_alteracoes").insert({
     usuario,
     acao: "testou_conexao_integracao",
     entidade: "integracoes",
-    entidade_id: provedor,
-    detalhes: resultado,
+    detalhes: { ...resultado, provedor },
   });
+  if (error) throw new Error("Não foi possível registrar o teste de integração.");
 }
 
 async function testarConexao(request: Request, env: Env) {
@@ -326,7 +326,8 @@ async function testarConexao(request: Request, env: Env) {
   const body = await request.json().catch(() => ({})) as { provedor?: string };
   const provedor = String(body.provedor || "");
   const resultado = await testarProvedorReal(env, provedor);
-  await registrarTesteIntegracao(env, authorization.colaboradorId, provedor, resultado);
+  try { await registrarTesteIntegracao(env, authorization.colaboradorId, provedor, resultado); }
+  catch { return json({ erro: "Não foi possível registrar o teste de integração." }, 503); }
   requestLogger(request).info("Teste real de integração concluído", { eventCode: "INTEGRATION_REAL_TEST_COMPLETED", provider: provedor, connected: resultado.conectado, latencyMs: resultado.latenciaMs, code: resultado.codigo });
   return json(resultado, resultado.conectado ? 200 : 422);
 }
@@ -343,7 +344,7 @@ async function alterarEstadoIntegracao(request: Request, env: Env) {
   if (!body.ativo) {
     const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
     if (error) return json({ erro: "Não foi possível desativar a integração." }, 409);
-    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "desativou_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: { validacaoReal: true } });
+    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "desativou_integracao", entidade: "integracoes", detalhes: { provedor, validacaoReal: true } });
     return json({ ok: true, provedor, ativo: false });
   }
 
@@ -351,13 +352,13 @@ async function alterarEstadoIntegracao(request: Request, env: Env) {
   await registrarTesteIntegracao(env, authorization.colaboradorId, provedor, resultado);
   if (!resultado.conectado) {
     await db.from("integracoes_estado").upsert({ provedor, ativo: false, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
-    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "falhou_ativacao_integracao", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
+    await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "falhou_ativacao_integracao", entidade: "integracoes", detalhes: { ...resultado, provedor } });
     return json({ erro: resultado.detalhe, codigo: resultado.codigo || "VALIDACAO_FALHOU", resultado, ativo: false }, 422);
   }
 
   const { error } = await db.from("integracoes_estado").upsert({ provedor, ativo: true, atualizado_por: authorization.colaboradorId, atualizado_em: new Date().toISOString() }, { onConflict: "provedor" });
   if (error) return json({ erro: "A validação passou, mas não foi possível persistir a ativação." }, 409);
-  await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "ativou_integracao_validada", entidade: "integracoes", entidade_id: provedor, detalhes: resultado });
+  await db.from("logs_alteracoes").insert({ usuario: authorization.colaboradorId, acao: "ativou_integracao_validada", entidade: "integracoes", detalhes: { ...resultado, provedor } });
   return json({ ok: true, provedor, ativo: true, resultado });
 }
 
