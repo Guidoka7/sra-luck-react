@@ -49,3 +49,6 @@ jobs:
 
       - name: Node import smoke for built Worker
         run: node --input-type=module -e "const m = await import('./dist/sra_luck_api/index.js'); if (typeof m.default?.fetch !== 'function') throw new Error('Built Worker does not expose default.fetch'); console.log('Built Worker default.fetch OK');"
+
+      - name: Vercel Node adapter smoke
+        run: node --input-type=module -e "process.env.LOAD_TEST_TELEMETRY='1'; process.env.LOADTEST_SUPABASE_URL='https://example.supabase.co'; process.env.LOADTEST_SUPABASE_SERVICE_ROLE_KEY='test-service-role'; process.env.LOADTEST_SESSION_SECRET='test-session-secret'; const m = await import('./api/index.ts'); const r = await m.default.fetch(new Request('https://preview.example/api/health')); const body = await r.json(); if (r.status !== 200 || body.ok !== true) throw new Error('Vercel adapter health smoke failed: '+r.status+' '+JSON.stringify(body)); console.log('Vercel Node adapter -> built Worker health OK');"
