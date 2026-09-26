@@ -404,7 +404,10 @@ import { integrationsApi } from "./integrations-core";
 
 describe("trusted ingress and signed webhook resource", () => {
   it("Vercel ignores forged Cloudflare IP for rate limiting", async () => {
-    for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "load-test-10k-isolated");
+    vi.stubEnv("LOADTEST_SUPABASE_URL", env.SUPABASE_URL);
+    vi.stubEnv("LOADTEST_SUPABASE_SERVICE_ROLE_KEY", env.SUPABASE_SERVICE_ROLE_KEY);
+    vi.stubEnv("LOADTEST_SESSION_SECRET", env.CLIENTE_SESSION_SECRET);
     try {
       state.rpc.mockResolvedValue({ data: false, error: null });
       for (const ip of ["forged-one", "forged-two"]) {
