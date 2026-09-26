@@ -1,9 +1,16 @@
-import worker from "../worker/index";
-import type { Env } from "../worker/supabase";
-import { authorizeDevConsoleRequest } from "../worker/dev-console-auth";
+// O Vite/Cloudflare gera este bundle antes de a Vercel empacotar a função.
+// A função Node importa o artefato único em vez da árvore TypeScript do Worker,
+// evitando tanto o limite Edge de 1 MB quanto imports ESM relativos sem extensão.
+// @ts-ignore -- arquivo gerado em build-time em dist/sra_luck_api/index.js.
+import worker from "../dist/sra_luck_api/index.js";
 
+type Env = Record<string, string | undefined>;
+type ExecutionContextLike = { waitUntil?: (promise: Promise<unknown>) => void };
 
 const LOADTEST_BRANCH = "load-test-10k-isolated";
+const DEV_TOKEN_HEADER = "x-dev-console-token";
+const DEV_ACTOR_HEADER = "x-dev-actor-id";
+const DEV_ROLE_HEADER = "x-dev-actor-role";
 
 function firstEnv(...names: string[]): string | undefined {
   for (const name of names) {
@@ -69,7 +76,32 @@ function missingIsolatedConfig(env: Env) {
   return !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY || !env.CLIENTE_SESSION_SECRET;
 }
 
-async function handleRequest(request: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
+function json(erro: string, codigo: string, status: number) {
+  return Response.json({ erro, codigo }, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+/**
+ * Nesta branch o Dev Console é deliberadamente desativado. Mantemos o mesmo
+ * comportamento seguro do authorizeDevConsoleRequest sem importar a árvore do
+ * Worker: header técnico em /api/admin é recusado; fora do Admin é removido.
+ */
+function protectTechnicalHeaders(request: Request): Request | Response {
+  const presented = request.headers.get(DEV_TOKEN_HEADER);
+  if (!presented) return request;
+
+  const pathname = new URL(request.url).pathname;
+  if (pathname.startsWith("/api/admin/")) {
+    return json("Integração técnica indisponível.", "DEV_CONSOLE_M2M_NOT_CONFIGURED", 503);
+  }
+
+  const headers = new Headers(request.headers);
+  headers.delete(DEV_TOKEN_HEADER);
+  headers.delete(DEV_ACTOR_HEADER);
+  headers.delete(DEV_ROLE_HEADER);
+  return new Request(request, { headers });
+}
+
+async function handleRequest(request: Request, context?: ExecutionContextLike) {
   const url = new URL(request.url);
 
   // Hard-stop: este adaptador pertence exclusivamente à branch isolada.
@@ -113,13 +145,11 @@ async function handleRequest(request: Request, context?: { waitUntil?: (p: Promi
   headers.delete("x-real-ip");
   const trustedRequest = new Request(request, { headers });
 
-  const authorizedRequest = await authorizeDevConsoleRequest(trustedRequest, env);
+  const authorizedRequest = protectTechnicalHeaders(trustedRequest);
   if (authorizedRequest instanceof Response) return authorizedRequest;
 
-  // O contexto waitUntil ainda é suportado pela Vercel para Web Handlers
-  // (embora a API recomende @vercel/functions para código novo).
   return worker.fetch(authorizedRequest, env, context);
 }
 
-// Node.js Web Handler: evita o limite de 1 MB das antigas Edge Functions.
+// Node.js Web Handler. O bundle pesado fica em dist/sra_luck_api e não é Edge.
 export default { fetch: handleRequest };
