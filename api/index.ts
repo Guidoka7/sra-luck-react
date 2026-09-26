@@ -1,16 +1,15 @@
-// O Vite/Cloudflare gera este bundle antes de a Vercel empacotar a função.
-// A função Node importa o artefato único em vez da árvore TypeScript do Worker,
-// evitando tanto o limite Edge de 1 MB quanto imports ESM relativos sem extensão.
-// @ts-ignore -- arquivo gerado em build-time em dist/sra_luck_api/index.js.
-import worker from "../dist/sra_luck_api/index.js";
-
 type Env = Record<string, string | undefined>;
 type ExecutionContextLike = { waitUntil?: (promise: Promise<unknown>) => void };
+type WorkerLike = {
+  fetch: (request: Request, env: Env, context?: ExecutionContextLike) => Response | Promise<Response>;
+};
 
 const LOADTEST_BRANCH = "load-test-10k-isolated";
 const DEV_TOKEN_HEADER = "x-dev-console-token";
 const DEV_ACTOR_HEADER = "x-dev-actor-id";
 const DEV_ROLE_HEADER = "x-dev-actor-role";
+const BUILT_WORKER_PATH = "../dist/sra_luck_api/index.js";
+let workerPromise: Promise<WorkerLike> | null = null;
 
 function firstEnv(...names: string[]): string | undefined {
   for (const name of names) {
@@ -101,6 +100,22 @@ function protectTechnicalHeaders(request: Request): Request | Response {
   return new Request(request, { headers });
 }
 
+async function loadWorker(): Promise<WorkerLike> {
+  if (!workerPromise) {
+    workerPromise = (async () => {
+      // Vitest precisa do código-fonte antes de existir dist/. Em deploy Node,
+      // usamos somente o bundle gerado pelo Vite/Cloudflare durante o build.
+      if (process.env.VITEST || process.env.NODE_ENV === "test") {
+        const source = await import("../worker/index");
+        return source.default as WorkerLike;
+      }
+      const built = await import(/* @vite-ignore */ BUILT_WORKER_PATH);
+      return built.default as WorkerLike;
+    })();
+  }
+  return workerPromise;
+}
+
 async function handleRequest(request: Request, context?: ExecutionContextLike) {
   const url = new URL(request.url);
 
@@ -148,6 +163,7 @@ async function handleRequest(request: Request, context?: ExecutionContextLike) {
   const authorizedRequest = protectTechnicalHeaders(trustedRequest);
   if (authorizedRequest instanceof Response) return authorizedRequest;
 
+  const worker = await loadWorker();
   return worker.fetch(authorizedRequest, env, context);
 }
 
