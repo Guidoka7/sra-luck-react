@@ -264,6 +264,11 @@ import vercelHandler from "../api/index";
 import { integrationsApi } from "./integrations-core";
 
 describe("trusted ingress and signed webhook resource", () => {
+  it("uses Vercel's Web Standard entry point for a route that needs no database", async () => {
+    const response = await vercelHandler.fetch(new Request("https://sraluckapp.vercel.app/api/pwa/origin"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ origin: "https://sraluckapp.vercel.app" });
+  });
   it("Vercel ignores forged Cloudflare IP for rate limiting", async () => {
     for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
     try {
@@ -271,7 +276,7 @@ describe("trusted ingress and signed webhook resource", () => {
       for (const ip of ["forged-one", "forged-two"]) {
         const r = req("/api/admin/auth", "POST", { email: "qa@example.invalid", senha: "test-password" });
         r.headers.set("cf-connecting-ip", ip); r.headers.set("x-real-ip", ip); r.headers.set("x-forwarded-for", "192.0.2.1");
-        expect((await vercelHandler(r)).status).toBe(429);
+        expect((await vercelHandler.fetch(r)).status).toBe(429);
       }
       expect(state.rpc.mock.calls[0][1].p_chave).toBe(state.rpc.mock.calls[2][1].p_chave);
     } finally { vi.unstubAllEnvs(); }

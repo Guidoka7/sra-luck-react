@@ -6,7 +6,7 @@
   "outputDirectory": "dist/client",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "dist/sra_luck_api/**"
+      "includeFiles": "dist/server/**"
     }
   },
   "crons": [

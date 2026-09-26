@@ -9,6 +9,7 @@
     "tema:escuro": "node scripts/tema-escuro-cliente.mjs",
     "prebuild": "node scripts/tema-escuro-cliente.mjs && node scripts/copiar-ocr.mjs",
     "build": "vite build",
+    "postbuild": "node scripts/build-vercel-api.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "lint": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
@@ -47,6 +48,7 @@
     "typescript": "^5.5.2",
     "vite": "^7.1.5",
     "vitest": "^2.1.9",
-    "wrangler": "^4.36.0"
+    "wrangler": "^4.36.0",
+    "esbuild": "0.28.2"
   }
 }
