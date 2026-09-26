@@ -46,3 +46,6 @@ jobs:
 
       - name: Production build validation
         run: npm run build
+
+      - name: Node import smoke for built Worker
+        run: node --input-type=module -e "const m = await import('./dist/sra_luck_api/index.js'); if (typeof m.default?.fetch !== 'function') throw new Error('Built Worker does not expose default.fetch'); console.log('Built Worker default.fetch OK');"
