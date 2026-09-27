@@ -95,7 +95,7 @@ const ERROS_CIRURGIA = {
   VAGAS_ESGOTADAS: "As vagas dessa data acabaram de se esgotar.",
   HORARIO_OCUPADO: "Esse horário acabou de ser ocupado nessa data.",
   HORARIO_INVALIDO: "Escolha um horário válido.",
-  TETO_MENSAL_EXCEDIDO: "O teto mensal de R$ 100.000,00 em carta de crédito para cirurgias já foi atingido nesse mês.",
+  TETO_MENSAL_EXCEDIDO: "O teto mensal em carta de crédito para cirurgias já foi atingido nesse mês. Escolha uma data em outro mês.",
   CIRURGIA_NAO_AGENDADA: "A cirurgia ainda não foi agendada.",
   PREVISAO_INVALIDA: "A previsão precisa ser igual ou posterior à data dos termos e não pode estar no passado.",
   DATA_TERMOS_NAO_ENCONTRADA: "Não foi possível localizar a data dos termos deste agendamento.",
@@ -133,7 +133,8 @@ export function etapaCentral(params: {
 export function prazoCirurgico(comparecimentoEm: string | null, quitacaoEm: string | null, ajusteDias: number): string | null {
   if (!comparecimentoEm || !quitacaoEm) return null;
   const base = comparecimentoEm.slice(0, 10) >= quitacaoEm.slice(0, 10) ? comparecimentoEm.slice(0, 10) : quitacaoEm.slice(0, 10);
-  return adicionarDiasUteis(base, 5 + Math.max(0, ajusteDias || 0));
+  // Mesmo prazo configurável que o banco usa (regras_operacionais, migration_094).
+  return adicionarDiasUteis(base, regrasOperacionais().prazoLiberacaoDiasUteis + Math.max(0, ajusteDias || 0));
 }
 function adicionarDiasUteis(dataIso: string, dias: number): string {
   const [y, m, d] = dataIso.split("-").map(Number);
@@ -201,6 +202,11 @@ async function visaoGeral(env: Env) {
     db.from("solicitacoes_liberacao_financeira").select("cliente_id,status,forma_custeio,saldo_restante,created_at").in("cliente_id", safeIds).order("created_at", { ascending: false }),
   ]);
   if (erroAgendamentos) return json({ erro: publicError(erroAgendamentos) }, 500);
+  // Leituras de apoio (somente exibição): falha aqui não derruba as filas.
+  const [retornos, disponibilidade] = await Promise.all([
+    carregarRetornos(db, safeIds).catch(() => new Map<string, RetornoTermos>()),
+    carregarDisponibilidade(db, hoje).catch(() => null),
+  ]);
   const solicitacaoPorCliente = new Map<string, any>();
   for (const sl of solicitacoes ?? []) if (!solicitacaoPorCliente.has(sl.cliente_id)) solicitacaoPorCliente.set(sl.cliente_id, sl);
 
@@ -273,6 +279,8 @@ async function visaoGeral(env: Env) {
       pagamentoCirurgiaConfirmadoEm: agendamento?.pagamento_cirurgia_confirmado_em ?? null,
       prazoCirurgico: agendamento ? prazoCirurgico(agendamento.comparecimento_em, agendamento.quitacao_em, agendamento.agenda_cirurgica_prazo_ajuste_dias ?? 0) : null,
       ...camposLeitura(cliente, agendamento, parcelas.proxima, solicitacaoPorCliente.get(cliente.id) ?? null, parcelas.total || cliente.quantidade_parcelas || 0),
+      // Só interessa enquanto a cliente não tem novo agendamento de termos.
+      retornoTermos: estagio === "financialReview" ? retornos.get(cliente.id) ?? null : null,
     };
     filas[estagio].push(cartao);
   }
@@ -281,7 +289,69 @@ async function visaoGeral(env: Env) {
   filas.financialRelease.sort((a, b) => `${a.dataTermos ?? "9999"} ${a.horarioTermos ?? ""}`.localeCompare(`${b.dataTermos ?? "9999"} ${b.horarioTermos ?? ""}`));
   filas.surgeryConfirmed.sort((a, b) => `${a.dataCirurgia ?? "9999"}`.localeCompare(`${b.dataCirurgia ?? "9999"}`));
 
-  return json({ hoje, filas });
+  return json({ hoje, filas, disponibilidade });
+}
+
+type RetornoTermos = { motivo: "ausencia" | "sem_quitacao"; em: string; dataTermos: string | null };
+
+/**
+ * Último agendamento de termos cancelado por ausência ou saldo não quitado
+ * (agenda_registrar_comparecimento/agenda_registrar_quitacao cancelam o
+ * agendamento e a cliente volta a escolher uma data no app).
+ */
+async function carregarRetornos(db: ReturnType<typeof createServiceSupabaseClient>, clienteIds: string[]) {
+  const { data, error } = await db.from("agendamentos")
+    .select("cliente_id,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,updated_at,datas(data)")
+    .in("cliente_id", clienteIds)
+    .eq("status", "cancelado")
+    .or("comparecimento_status.eq.nao_compareceu,quitacao_status.eq.nao_realizada")
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  const mapa = new Map<string, RetornoTermos>();
+  for (const a of (data ?? []) as any[]) {
+    if (mapa.has(a.cliente_id)) continue;
+    const ausencia = a.comparecimento_status === "nao_compareceu";
+    mapa.set(a.cliente_id, {
+      motivo: ausencia ? "ausencia" : "sem_quitacao",
+      em: String((ausencia ? a.comparecimento_em : a.quitacao_em) ?? a.updated_at ?? ""),
+      dataTermos: one<any>(a.datas)?.data ?? null,
+    });
+  }
+  return mapa;
+}
+
+/** Datas futuras abertas com vaga livre (termos e cirurgia), para detectar clientes travadas por falta de data. */
+async function carregarDisponibilidade(db: ReturnType<typeof createServiceSupabaseClient>, hoje: string) {
+  const [termosRes, cirurgiaRes] = await Promise.all([
+    db.from("datas").select("id,data,vagas_totais,status,fechamento_manual").gte("data", hoje).eq("status", "disponivel"),
+    db.from("datas_liberacao_financeira").select("data,vagas_totais,status,fechamento_manual").gte("data", hoje).eq("status", "disponivel"),
+  ]);
+  if (termosRes.error) throw termosRes.error;
+  if (cirurgiaRes.error) throw cirurgiaRes.error;
+  const datasTermos = ((termosRes.data ?? []) as any[]).filter((d) => !d.fechamento_manual && Number(d.vagas_totais) > 0);
+  const datasCirurgia = ((cirurgiaRes.data ?? []) as any[]).filter((d) => !d.fechamento_manual && Number(d.vagas_totais) > 0);
+  const [ocupTermosRes, ocupCirurgiaRes] = await Promise.all([
+    datasTermos.length
+      ? db.from("agendamentos").select("data_id").in("data_id", datasTermos.map((d) => d.id)).in("status", ["confirmado", "realizado"])
+      : Promise.resolve({ data: [] as any[], error: null }),
+    datasCirurgia.length
+      ? db.from("agendamentos").select("data_cirurgia").gte("data_cirurgia", hoje).in("status", ["confirmado", "realizado"])
+      : Promise.resolve({ data: [] as any[], error: null }),
+  ]);
+  if (ocupTermosRes.error) throw ocupTermosRes.error;
+  if (ocupCirurgiaRes.error) throw ocupCirurgiaRes.error;
+  const ocupTermos = new Map<string, number>();
+  for (const a of (ocupTermosRes.data ?? []) as any[]) ocupTermos.set(a.data_id, (ocupTermos.get(a.data_id) ?? 0) + 1);
+  const ocupCirurgia = new Map<string, number>();
+  for (const a of (ocupCirurgiaRes.data ?? []) as any[]) ocupCirurgia.set(String(a.data_cirurgia).slice(0, 10), (ocupCirurgia.get(String(a.data_cirurgia).slice(0, 10)) ?? 0) + 1);
+  const resumir = (lista: { data: string; livres: number }[]) => {
+    const comVaga = lista.filter((d) => d.livres > 0).sort((a, b) => a.data.localeCompare(b.data));
+    return { datas: comVaga.length, vagas: comVaga.reduce((s, d) => s + d.livres, 0), proxima: comVaga[0]?.data ?? null };
+  };
+  return {
+    termos: resumir(datasTermos.map((d) => ({ data: String(d.data), livres: Number(d.vagas_totais) - (ocupTermos.get(d.id) ?? 0) }))),
+    cirurgia: resumir(datasCirurgia.map((d) => ({ data: String(d.data), livres: Number(d.vagas_totais) - (ocupCirurgia.get(String(d.data)) ?? 0) }))),
+  };
 }
 
 async function clienteCentral(env: Env, clienteId: string) {

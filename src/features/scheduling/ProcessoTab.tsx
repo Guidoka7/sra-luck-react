@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CalendarCheck2, CircleX, UserCheck, UserCog, UserX } from "lucide-react";
 import type { Cliente } from "@/types/database";
+import { prazoLiberacaoDiasUteis } from "@/lib/regrasOperacionais";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diasEntre, FORMAS_CUSTEIO, horaLocal, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
 import type { CartaoCliente, EstagioCentral } from "./types";
@@ -494,7 +495,7 @@ function OperacaoCirurgia({ c, concluido, abrirModal, ocupado }: Parameters<type
 }
 
 function ProximaEtapa({ c, estagio, concluido }: { c: CartaoCliente; estagio: EstagioCentral; concluido: boolean }) {
-  const totalDias = 5 + Math.max(0, c.prazoAjusteDias || 0);
+  const totalDias = prazoLiberacaoDiasUteis() + Math.max(0, c.prazoAjusteDias || 0);
   const copy: Partial<Record<EstagioCentral, [string, string, string]>> = {
     financialReview: ["Depois desta etapa", "A cliente escolhe a data dos termos no app.", "Após a confirmação"],
     financialRelease: ["Depois desta etapa", `Comparecimento + quitação iniciam ${totalDias} dias úteis. Ao fim do prazo, a Agenda Cirúrgica libera no app; a cliente só vai para Cirurgias confirmadas depois de escolher uma data.`, "Regra automática"],

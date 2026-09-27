@@ -200,7 +200,8 @@ As rotas antigas `/admin/pagamentos` e `/admin/parcelas` são apenas redirects p
 Procurar:
 
 - página de agenda admin (`/admin/agenda`): `src/features/scheduling/CentralAcompanhamento.tsx` com três abas — **Jornada das clientes** (`JornadaBoard.tsx`), **Agenda de termos** (`TermsAgendaTab.tsx`) e **Agenda cirúrgica** (`SurgeryAgendaTab.tsx`); calendário e painel do dia em `AgendaCalendar.tsx`; estilos em `agenda.css` (tokens do shell; o `.v46` interno segue servindo modais e drawer). Parâmetros de endereço: `?etapa=<preEligibility|financialReview|termsConfirmed|financialRelease|surgeryConfirmed>`, `?aba=termos|cirurgia` e `&data=AAAA-MM-DD`;
-- `src/features/scheduling/jornada.ts` — somente exibição (testado em `jornada.test.ts`): o que é cada uma das 5 etapas, como a cliente sai dela, filtros por etapa e a situação de cada cliente com **quem age agora** (Equipe, Cliente ou Automático). A etapa em si vem pronta do Worker (`etapaCentral`); não decidir regra aqui;
+- `src/features/scheduling/jornada.ts` — somente exibição (testado em `jornada.test.ts`): o que é cada uma das 5 etapas e seus passos internos, como a cliente sai dela, filtros por etapa, a situação de cada cliente com **quem age agora** (Equipe, Cliente ou Automático), a ação principal da equipe e os bloqueios por falta de datas. A etapa em si vem pronta do Worker (`etapaCentral`); não decidir regra aqui. Fluxo real e funções do banco: `docs/FLOWS.md` §7.1;
+- `src/features/scheduling/AtendimentoModals.tsx` — fluxos guiados: "Preparar atendimento" (responsável + previsão cirúrgica antes do dia) e "Registrar atendimento" (previsão → comparecimento → quitação), executando as RPCs em ordem e mostrando onde parou;
 - calendário cliente;
 - `worker/client-agenda.ts`;
 - `worker/agendamento-acoes.ts`;

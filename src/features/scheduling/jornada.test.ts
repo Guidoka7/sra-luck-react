@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ETAPAS, contarAcaoEquipe, faseLiberacao, prazoLevantamento, situacao } from "./jornada";
+import { ETAPAS, bloqueios, contarAcaoEquipe, faseLevantamento, faseLiberacao, prazoLevantamento, situacao } from "./jornada";
+import type { VisaoGeralResponse } from "./types";
 import type { CartaoCliente } from "./types";
 
 const HOJE = "2026-09-28"; // segunda-feira
@@ -46,23 +47,39 @@ describe("levantamento financeiro", () => {
     expect(s.prazo).toBe("prazo 21/09/2026 · 7 dias em atraso");
   });
 
-  it("concluído passa a depender da cliente escolher a data", () => {
-    expect(situacao(cartao({ statusRevisaoFinanceira: "aprovada" }), "financialReview", HOJE).responsavel).toBe("cliente");
-    expect(situacao(cartao({ statusRevisaoFinanceira: "recusada" }), "financialReview", HOJE).texto).toContain("Divergência");
+  it("depois do levantamento: forma de pagamento e depois data, ambas com a cliente", () => {
+    const semForma = cartao({ statusRevisaoFinanceira: "aprovada" });
+    expect(faseLevantamento(semForma)).toBe("forma");
+    expect(situacao(semForma, "financialReview", HOJE)).toMatchObject({ responsavel: "cliente", acao: null });
+    const comForma = cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada", custeioForma: "pix" });
+    expect(faseLevantamento(comForma)).toBe("data");
+    expect(situacao(comForma, "financialReview", HOJE)).toMatchObject({ responsavel: "cliente", prazo: "pagamento escolhido: PIX" });
+    expect(situacao(cartao({ statusRevisaoFinanceira: "recusada" }), "financialReview", HOJE)).toMatchObject({ texto: expect.stringContaining("Divergência"), acao: { id: "levantamento", rotulo: "Refazer levantamento" } });
+  });
+
+  it("sem datas de termos abertas, a cliente pronta vira pendência da equipe", () => {
+    const pronta = cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada" });
+    expect(situacao(pronta, "financialReview", HOJE, { vagasTermos: 0, vagasCirurgia: null })).toMatchObject({ responsavel: "equipe", acao: { id: "abrirDatasTermos" } });
+  });
+
+  it("identifica quem voltou por ausência nos termos", () => {
+    const voltou = cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada", retornoTermos: { motivo: "ausencia", em: "2026-09-21T15:00:00Z", dataTermos: "2026-09-21" } });
+    expect(situacao(voltou, "financialReview", HOJE).texto).toBe("Faltou nos termos de 21/09/2026 · aguardando nova data");
   });
 });
 
 describe("termos agendados", () => {
-  it("sem responsável pede ação da equipe; com responsável segue automático", () => {
+  it("preparar = responsável + previsão cirúrgica antes do dia", () => {
     expect(situacao(cartao({ dataTermos: "2026-09-30", horarioTermos: "10:00" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", prazo: "30/09/2026 às 10:00 · em 2 dias" });
-    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Assinatura com Marina" });
+    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", texto: "Preparar atendimento · falta previsão cirúrgica", acao: { id: "preparar" } });
+    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina", previsaoConfirmadaEm: "2026-09-25T10:00:00Z" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Tudo pronto · assinatura com Marina", acao: null });
   });
 });
 
 describe("liberação cirúrgica", () => {
   it("no dia dos termos lista exatamente o que falta registrar", () => {
     const s = situacao(cartao({ dataTermos: HOJE }), "financialRelease", HOJE);
-    expect(s).toMatchObject({ responsavel: "equipe", texto: "Registrar previsão, comparecimento e quitação", prazo: "termos hoje", atrasado: false });
+    expect(s).toMatchObject({ responsavel: "equipe", texto: "Registrar previsão, comparecimento e quitação", prazo: "termos hoje", atrasado: false, acao: { id: "atendimento" } });
   });
 
   it("registro atrasado depois do dia dos termos vira urgente", () => {
@@ -78,7 +95,12 @@ describe("liberação cirúrgica", () => {
 
   it("prazo vencido sem liberação volta para a equipe", () => {
     const c = cartao({ comparecimentoStatus: "compareceu", quitacaoStatus: "paga", comparecimentoEm: "2026-09-10", quitacaoEm: "2026-09-10", prazoCirurgico: "2026-09-17" });
-    expect(situacao(c, "financialRelease", HOJE)).toMatchObject({ responsavel: "equipe", tom: "danger", atrasado: true });
+    expect(situacao(c, "financialRelease", HOJE)).toMatchObject({ responsavel: "equipe", tom: "danger", atrasado: true, acao: { id: "liberar", rotulo: "Liberar agora" } });
+  });
+
+  it("agenda liberada sem datas cirúrgicas abertas trava a cliente", () => {
+    const c = cartao({ comparecimentoStatus: "compareceu", quitacaoStatus: "paga", comparecimentoEm: "2026-09-10", quitacaoEm: "2026-09-10", agendaCirurgicaLiberadaEm: "2026-09-17T03:00:00Z" });
+    expect(situacao(c, "financialRelease", HOJE, { vagasTermos: null, vagasCirurgia: 0 })).toMatchObject({ responsavel: "equipe", acao: { id: "abrirDatasCirurgia" } });
   });
 
   it("não comparecimento é pendência; agenda liberada depende da cliente", () => {
@@ -96,5 +118,16 @@ describe("cirurgia agendada", () => {
   it("conta quantas clientes da etapa dependem da equipe", () => {
     const lista = [cartao({ dataCirurgia: "2026-09-20" }), cartao({ dataCirurgia: "2026-10-01" })];
     expect(contarAcaoEquipe(lista, "surgeryConfirmed", HOJE)).toBe(1);
+  });
+});
+
+describe("bloqueios da operação", () => {
+  const filas = { preEligibility: [], financialReview: [cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada" })], termsConfirmed: [], financialRelease: [], surgeryConfirmed: [] };
+  it("avisa quando clientes prontas não têm data de termos para escolher", () => {
+    const dados: VisaoGeralResponse = { hoje: HOJE, filas, disponibilidade: { termos: { datas: 0, vagas: 0, proxima: null }, cirurgia: { datas: 2, vagas: 3, proxima: "2026-10-06" } } };
+    expect(bloqueios(dados).map((b) => b.id)).toEqual(["termos"]);
+  });
+  it("sem dados de disponibilidade não inventa alerta", () => {
+    expect(bloqueios({ hoje: HOJE, filas, disponibilidade: null })).toEqual([]);
   });
 });

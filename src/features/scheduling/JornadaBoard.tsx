@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, ChevronRight, Info, Search } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronRight, Info, Search } from "lucide-react";
 import { iniciais } from "./api";
-import { ETAPAS, ETAPA_POR_ID, ROTULO_RESPONSAVEL, contarAcaoEquipe, faseLiberacao, situacao } from "./jornada";
+import { ETAPAS, ETAPA_POR_ID, ROTULO_RESPONSAVEL, bloqueios, contarAcaoEquipe, contextoDe, faseLiberacao, situacao, type AcaoJornada } from "./jornada";
 import { estadoLiberacao } from "./v46Cards";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 
@@ -13,17 +13,20 @@ type Ordem = "urgencia" | "nomeAsc" | "nomeDesc";
  * que ela significa, como a cliente sai dela e quem age em cada caso.
  * Filas reais de `/api/admin/central/visao-geral`; aqui só há filtro e ordem.
  */
-export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirCliente }: {
+export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirCliente, onAcao }: {
   dados: VisaoGeralResponse;
   etapa: EstagioCentral;
   onEtapa: (etapa: EstagioCentral) => void;
   selecionadoId: string | null;
   onAbrirCliente: (clienteId: string, estagio: EstagioCentral) => void;
+  onAcao: (cliente: CartaoCliente, etapa: EstagioCentral, acao: AcaoJornada) => void;
 }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState<Ordem>("urgencia");
   const [segmentos, setSegmentos] = useState<Partial<Record<EstagioCentral, string>>>({});
   const hoje = dados.hoje;
+  const ctx = useMemo(() => contextoDe(dados), [dados]);
+  const alertas = useMemo(() => bloqueios(dados), [dados]);
   const info = ETAPA_POR_ID.get(etapa)!;
   const segmentoAtivo = segmentos[etapa] ?? "todas";
 
@@ -32,7 +35,7 @@ export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirClie
 
   const resumo = useMemo(() => ETAPAS.map((e) => {
     const lista = dados.filas[e.id].filter(corresponde);
-    return { id: e.id, total: lista.length, equipe: contarAcaoEquipe(lista, e.id, hoje) };
+    return { id: e.id, total: lista.length, equipe: contarAcaoEquipe(lista, e.id, hoje, ctx) };
   }), [dados, termo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const daEtapa = useMemo(() => dados.filas[etapa].filter(corresponde), [dados, etapa, termo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -40,14 +43,22 @@ export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirClie
 
   const linhas = useMemo(() => {
     const seg = info.segmentos.find((s) => s.id === segmentoAtivo) ?? info.segmentos[0];
-    const itens = daEtapa.filter((c) => seg.filtro(c, hoje)).map((c) => ({ c, s: situacao(c, etapa, hoje) }));
+    const itens = daEtapa.filter((c) => seg.filtro(c, hoje)).map((c) => ({ c, s: situacao(c, etapa, hoje, ctx) }));
     if (ordem === "nomeAsc") itens.sort((a, b) => a.c.nome.localeCompare(b.c.nome, "pt-BR"));
     else if (ordem === "nomeDesc") itens.sort((a, b) => b.c.nome.localeCompare(a.c.nome, "pt-BR"));
     else itens.sort((a, b) => a.s.urgencia - b.s.urgencia || a.c.nome.localeCompare(b.c.nome, "pt-BR"));
     return itens;
-  }, [daEtapa, info, segmentoAtivo, ordem, etapa, hoje]);
+  }, [daEtapa, info, segmentoAtivo, ordem, etapa, hoje, ctx]);
 
   return <div className="ag-jornada">
+    {alertas.map((a) => <div key={a.id} className="ag-alerta" role="alert">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <span>{a.texto}</span>
+      <button type="button" className="ag-btn is-pequeno" onClick={() => {
+        const alvo = a.id === "termos" ? dados.filas.financialReview[0] : dados.filas.financialRelease[0];
+        if (alvo) onAcao(alvo, a.id === "termos" ? "financialReview" : "financialRelease", a.id === "termos" ? "abrirDatasTermos" : "abrirDatasCirurgia");
+      }}>{a.id === "termos" ? "Abrir datas de termos" : "Abrir datas cirúrgicas"}</button>
+    </div>)}
     <ol className="ag-trilha" aria-label="Etapas da jornada">
       {ETAPAS.map((e, i) => {
         const r = resumo[i];
@@ -78,7 +89,10 @@ export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirClie
             <p className="ag-etapa-resumo">{info.resumo}</p>
           </div>
         </div>
-        <div className="ag-etapa-saida"><Info size={14} aria-hidden="true" /><span>{info.saida}</span></div>
+        <div className="ag-etapa-lado">
+          <ol className="ag-etapa-passos" aria-label="Passos desta etapa">{info.passos.map((p, i) => <li key={p}><span>{i + 1}</span>{p}</li>)}</ol>
+          <div className="ag-etapa-saida"><Info size={14} aria-hidden="true" /><span>{info.saida}</span></div>
+        </div>
       </header>
 
       <div className="ag-toolbar">
@@ -101,8 +115,8 @@ export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirClie
       {linhas.length === 0
         ? <div className="ag-vazio"><strong>{termo ? "Nenhuma cliente encontrada" : "Nenhuma cliente neste filtro"}</strong><span>{termo ? "Ajuste a busca ou veja as outras etapas na trilha acima." : "Quando houver clientes nesta situação, elas aparecem aqui."}</span></div>
         : <ul className="ag-lista">
-          {linhas.map(({ c, s }) => <li key={c.id}>
-            <button type="button" className={`ag-linha${selecionadoId === c.id ? " is-selected" : ""}`} onClick={() => onAbrirCliente(c.id, etapa)} aria-label={`Abrir ${c.nome}: ${s.texto}`}>
+          {linhas.map(({ c, s }) => <li key={c.id} className={`ag-linha${selecionadoId === c.id ? " is-selected" : ""}`}>
+            <button type="button" className="ag-linha-main" onClick={() => onAbrirCliente(c.id, etapa)} aria-label={`Abrir ${c.nome}: ${s.texto}`}>
               <span className="ag-avatar" aria-hidden="true">{iniciais(c.nome)}</span>
               <span className="ag-linha-cliente">
                 <strong>{c.nome}</strong>
@@ -114,8 +128,12 @@ export function JornadaBoard({ dados, etapa, onEtapa, selecionadoId, onAbrirClie
                 <span className={`ag-situacao is-${s.tom}`}>{s.texto}</span>
                 {s.prazo && <small className={s.atrasado ? "is-late" : undefined}>{s.prazo}</small>}
               </span>
-              <ChevronRight className="ag-linha-seta" size={16} aria-hidden="true" />
             </button>
+            <span className="ag-linha-acao">
+              {s.acao
+                ? <button type="button" className={`ag-btn is-pequeno${s.responsavel === "equipe" ? " is-primario" : ""}`} onClick={() => onAcao(c, etapa, s.acao!.id)}>{s.acao.rotulo}</button>
+                : <ChevronRight className="ag-linha-seta" size={16} aria-hidden="true" />}
+            </span>
           </li>)}
         </ul>}
 

@@ -12,9 +12,11 @@ import { ConfirmModal } from "./V46Modal";
  * Dados de `/api/admin/central/termos`; abrir/bloquear/vagas via
  * `/termos/data`, responsável via `/termos/responsavel`.
  */
-export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recarregarKey, onAbrirCliente, onMudou }: {
+export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recarregarKey, onAbrirCliente, onMudou, acaoDoCliente }: {
   hoje: string; data: string; onData: (iso: string) => void; sugestoesResponsavel: string[]; recarregarKey: number;
   onAbrirCliente: (clienteId: string) => void; onMudou: () => void | Promise<void>;
+  /** Preparar (antes do dia) ou registrar o atendimento (no dia), conforme a etapa real da cliente. */
+  acaoDoCliente?: (clienteId: string) => { rotulo: string; executar: () => void } | null;
 }) {
   const [dados, setDados] = useState<AgendaTermosResponse | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -60,10 +62,14 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
   const semResponsavel = futuras.filter((a) => !a.responsavel).length;
   const porDia = new Map<string, typeof futuras>();
   for (const a of futuras) porDia.set(a.data, [...(porDia.get(a.data) ?? []), a]);
-  const acoes = (a: (typeof futuras)[number]) => <>
+  const acoes = (a: (typeof futuras)[number]) => {
+    const principal = acaoDoCliente?.(a.clienteId) ?? null;
+    return <>
+    {principal && <button type="button" className="ag-btn is-primario is-pequeno" onClick={principal.executar}>{principal.rotulo}</button>}
     <button type="button" className="ag-link" onClick={() => setResponsavel({ agendamentoId: a.agendamentoId, atual: a.responsavel })} aria-label={`${a.responsavel ? "Alterar" : "Definir"} responsável de ${a.nome}`}>{a.responsavel ? "Responsável" : "Definir responsável"}</button>
-    <button type="button" className="ag-link" onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome, data: a.data, horario: a.horario })} aria-label={`Reagendar assinatura de termos de ${a.nome}`}>Reagendar</button>
+    {a.data >= hoje && <button type="button" className="ag-link" onClick={() => setReagendar({ agendamentoId: a.agendamentoId, nome: a.nome, data: a.data, horario: a.horario })} aria-label={`Reagendar assinatura de termos de ${a.nome}`}>Reagendar</button>}
   </>;
+  };
 
   return <div className="ag-agenda terms-agenda">
     <div className="ag-resumo" aria-label="Resumo da Agenda de Termos">
@@ -85,7 +91,7 @@ export function TermsAgendaTab({ hoje, data, onData, sugestoesResponsavel, recar
         itens={doDia.map((a) => <AppointmentRow key={a.agendamentoId} tipo="terms" horario={a.horario} nome={a.nome}
           detalhe={`${a.procedimento ?? "Procedimento não informado"} · ${a.responsavel ? `com ${a.responsavel}` : "sem responsável"}`}
           badge={<span className="ag-situacao is-success">Confirmada</span>} onAbrir={() => onAbrirCliente(a.clienteId)}
-          acoes={a.data >= hoje ? acoes(a) : undefined} />)} />
+          acoes={acoes(a)} />)} />
     </div>
 
     <section className="ag-panel ag-proximas" aria-labelledby="ag-proximas-titulo">

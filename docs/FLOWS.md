@@ -155,6 +155,25 @@ Admin registra realização/conclusão
 
 A regra antiga de 5 dias úteis não deve governar o novo fluxo.
 
+### 7.1 Fluxo real implementado (Agenda V46, conferido nas funções do banco em 27/09/2026)
+
+| Etapa (Admin → Agenda) | O que acontece | Quem age | Como avança (função) |
+|---|---|---|---|
+| 1 Pagando parcelas | Cliente paga o carnê até o mínimo da política | Cliente | toca "Solicitar liberação financeira" → `cliente_solicitar_liberacao_financeira` (revalida `pode_agendar`) |
+| 2 Levantamento · analisar | Equipe confere contrato, define saldo final e formas permitidas (prazo 5 dias úteis) | Equipe | `/api/admin/clientes/:id/revisao-financeira` (aprovada/recusada) |
+| 2 Levantamento · forma de pagamento | Cliente escolhe como quita o saldo | Cliente | app grava `solicitacoes_liberacao_financeira` (status aprovada) |
+| 2 Levantamento · data | Cliente escolhe data/horário dos termos entre as datas abertas | Cliente | `agendar_data` (vagas, horário, levantamento e forma obrigatórios) |
+| 3 Termos agendados | Preparar: responsável e **previsão cirúrgica** (pode ser confirmada antes do dia; valida o teto do mês) | Equipe | `agenda_definir_responsavel_termos`, `agenda_confirmar_previsao` |
+| 4 Liberação · atendimento | No dia: previsão (se faltar) → comparecimento → quitação | Equipe | `agenda_registrar_comparecimento` (grava status `realizado` e termos assinados), `agenda_registrar_quitacao` (baixa as parcelas abertas) |
+| 4 Liberação · ausência/sem quitação | Cancela o agendamento e devolve a vaga; a cliente volta a escolher data (levantamento e forma continuam valendo) | Cliente | mesma RPC com `false` |
+| 4 Liberação · prazo | Comparecimento + quitação → prazo configurável em dias úteis (`regras_operacionais`) | Automático | cron `agenda_processar_liberacoes_v46` → `agenda_tentar_liberar_cirurgia`; manual: ajustar prazo / liberar agora |
+| 4 Liberação · agenda liberada | Cliente escolhe a data da cirurgia (termos + intervalo mínimo, teto do mês, vagas) | Cliente | `agenda_reservar_cirurgia_cliente` (admin: `agenda_reservar_cirurgia`) |
+| 5 Cirurgia agendada | Após a cirurgia, equipe confirma o pagamento e conclui | Equipe | `agenda_confirmar_pagamento_cirurgia` |
+
+Bloqueios que travam clientes sem ação individual: nenhuma data de termos futura aberta com vaga (etapa 2 · data) e nenhuma data cirúrgica futura aberta com vaga (etapa 4 · agenda liberada). A tela Agenda avisa ambos.
+
+Correção de 27/09/2026 (migration_096): o cron só procurava agendamentos `confirmado`, mas o comparecimento grava `realizado`; por isso nenhuma liberação automática havia ocorrido. O cron passa a considerar os dois status.
+
 ## 8. Financeiro diário
 
 ```text

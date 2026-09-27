@@ -82,6 +82,7 @@ function cenario(): DadosVisaoGeral {
     cliente("g", { acesso_app_liberado: false }), // pronto para liberar app
     cliente("h", { acesso_app_liberado: false, cpf: "123" }), // CPF inválido: não entra
     cliente("i", { created_at: "2026-09-20T12:00:00Z" }), // sem parcelas
+    cliente("j", { liberacao_financeira_solicitada_em: "2026-09-01T13:00:00Z", status_revisao_financeira: "aprovada" }), // levantamento concluído: não é fila da equipe
   ];
   const boletos: BoletoLinha[] = [
     // "a": 8 pagas (jan–ago); a última foi paga em setembro.
@@ -124,7 +125,7 @@ describe("montarVisaoGeral", () => {
 
   it("classifica a jornada com a mesma etapa da Central V46", () => {
     const total = Object.fromEntries(r.jornada.etapas.map((e) => [e.id, e.total]));
-    expect(total).toEqual({ preEligibility: 3, financialReview: 1, termsConfirmed: 0, financialRelease: 3, surgeryConfirmed: 1 });
+    expect(total).toEqual({ preEligibility: 3, financialReview: 2, termsConfirmed: 0, financialRelease: 3, surgeryConfirmed: 1 });
     expect(r.jornada.elegiveisSemSolicitacao).toBe(1);
     expect(p("elegiveis").itens[0].clienteId).toBe("a");
     expect(p("elegiveis").severidade).toBe("info");
@@ -132,7 +133,7 @@ describe("montarVisaoGeral", () => {
 
   it("marca como crítico o levantamento que passou dos 5 dias úteis", () => {
     const lev = p("levantamentos");
-    expect(lev.total).toBe(1);
+    expect(lev.total).toBe(1); // "j" já tem levantamento concluído
     expect(lev.severidade).toBe("critica");
     // 14/09 (seg) + 5 dias úteis = 21/09; hoje 28/09 → 7 dias em atraso.
     expect(lev.itens[0].meta).toBe("prazo 21/09 · 7 dias em atraso");
@@ -184,9 +185,9 @@ describe("montarVisaoGeral", () => {
   });
 
   it("conta cadastros pendentes, acesso ao app pronto e carteira", () => {
-    expect(p("cadastros").total).toBe(4); // 3 vendas + cliente "i" sem parcelas
+    expect(p("cadastros").total).toBe(5); // 3 vendas + clientes "i" e "j" sem parcelas
     expect(p("acesso_app").itens.map((i) => i.clienteId)).toEqual(["g"]);
-    expect(r.carteira).toMatchObject({ ativas: 8, canceladas: 1, novasNoMes: 1, creditoContratadoAtivo: 8000, ticketMedio: 1000 });
+    expect(r.carteira).toMatchObject({ ativas: 9, canceladas: 1, novasNoMes: 1, creditoContratadoAtivo: 9000, ticketMedio: 1000 });
   });
 
   it("monta a agenda dos próximos 7 dias em ordem cronológica", () => {

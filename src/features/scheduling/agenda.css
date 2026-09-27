@@ -135,6 +135,14 @@
 .ag .ag-etapa-id { display: flex; gap: 12px; align-items: flex-start; }
 .ag .ag-etapa-num { width: 40px; height: 40px; font-size: 17px; background: var(--ag-accent); color: var(--ag-on-accent); }
 .ag .ag-etapa-resumo { margin: 4px 0 0; font-size: 13px; color: var(--ag-muted); max-width: 560px; }
+.ag .ag-etapa-lado { display: flex; flex-direction: column; gap: 8px; }
+.ag .ag-etapa-passos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ag-ink); }
+.ag .ag-etapa-passos li { display: inline-flex; align-items: center; gap: 6px; }
+.ag .ag-etapa-passos span { width: 18px; height: 18px; border-radius: 99px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; background: var(--ag-tint); color: var(--ag-accent); }
+.ag .ag-etapa-passos li + li::before { content: "→"; color: var(--ag-muted); margin-right: 8px; }
+.ag .ag-alerta { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 13px; border: 1px solid var(--ag-bad); background: var(--ag-bad-bg); color: var(--ag-ink); font-size: 12.5px; }
+.ag .ag-alerta svg { color: var(--ag-bad); flex: none; }
+.ag .ag-alerta span { flex: 1; }
 .ag .ag-etapa-saida { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--ag-soft); border: 1px solid var(--ag-line-2); font-size: 12px; color: var(--ag-ink); }
 .ag .ag-etapa-saida svg { flex: none; margin-top: 2px; color: var(--ag-accent); }
 .ag .ag-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 0; }
@@ -154,12 +162,14 @@
 
 .ag .ag-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--ag-line-2); border-radius: 14px; overflow: hidden; }
 .ag .ag-lista li + li { border-top: 1px solid var(--ag-line-2); }
-.ag .ag-root .ag-linha {
-  width: 100%; display: grid; grid-template-columns: 36px minmax(160px, 1.1fr) minmax(170px, 1fr) minmax(220px, 1.3fr) 18px;
-  align-items: center; gap: 14px; padding: 12px 14px; border: 0; background: var(--ag-surface); color: var(--ag-ink); text-align: left;
+.ag .ag-linha { display: flex; align-items: center; background: var(--ag-surface); }
+.ag .ag-linha:hover { background: var(--ag-hov); }
+.ag .ag-linha.is-selected { background: var(--ag-hov); box-shadow: inset 3px 0 0 var(--ag-accent); }
+.ag .ag-root .ag-linha-main {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(150px, 1.1fr) minmax(170px, 1fr) minmax(220px, 1.4fr);
+  align-items: center; gap: 14px; padding: 12px 8px 12px 14px; border: 0; background: transparent; color: var(--ag-ink); text-align: left;
 }
-.ag .ag-root .ag-linha:hover { background: var(--ag-hov); }
-.ag .ag-root .ag-linha.is-selected { background: var(--ag-hov); box-shadow: inset 3px 0 0 var(--ag-accent); }
+.ag .ag-linha-acao { flex: none; display: flex; justify-content: flex-end; align-items: center; width: 190px; padding-right: 14px; }
 .ag .ag-avatar { width: 36px; height: 36px; border-radius: 99px; display: grid; place-items: center; background: var(--ag-tint); color: var(--ag-accent); font-size: 12px; font-weight: 700; }
 .ag .ag-linha-cliente { display: flex; flex-direction: column; min-width: 0; }
 .ag .ag-linha-cliente strong { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -298,7 +308,7 @@
 @media (max-width: 1280px) {
   .ag .ag-trilha { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ag .ag-trilha-seta { display: none; }
-  .ag .ag-root .ag-linha { grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.2fr) 18px; }
+  .ag .ag-root .ag-linha-main { grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.3fr); }
   .ag .ag-linha-dado { display: none; }
 }
 @media (max-width: 1100px) {
@@ -313,11 +323,13 @@
   .ag .ag-panel { padding: 14px; }
   .ag .ag-toolbar-direita, .ag .ag-busca { width: 100%; }
   .ag .ag-busca { flex: 1 1 auto; }
-  .ag .ag-root .ag-linha { grid-template-columns: 32px minmax(0, 1fr) 16px; grid-template-areas: "av cli seta" "av sit seta"; row-gap: 6px; }
+  .ag .ag-linha { flex-direction: column; align-items: stretch; }
+  .ag .ag-root .ag-linha-main { grid-template-columns: 32px minmax(0, 1fr); grid-template-areas: "av cli" "av sit"; row-gap: 6px; }
   .ag .ag-avatar { grid-area: av; width: 32px; height: 32px; align-self: start; }
   .ag .ag-linha-cliente { grid-area: cli; }
   .ag .ag-linha-situacao { grid-area: sit; }
-  .ag .ag-linha-seta { grid-area: seta; }
+  .ag .ag-linha-acao { justify-content: flex-start; padding: 0 14px 12px 60px; width: auto; }
+  .ag .ag-linha-acao .ag-linha-seta { display: none; }
   .ag .ag-cal-grade { gap: 3px; }
   .ag .ag-dia { min-height: 56px; padding: 5px; }
   .ag .ag-dia-info { font-size: 9.5px; }
@@ -338,3 +350,24 @@
   .ag .ag-dia-info { display: none; }
   .ag .ag-dia-barra { margin-top: auto; }
 }
+
+/* Fluxos guiados (modais) ------------------------------------------------------ */
+.v46 .ag-modal-atendimento { width: min(620px, 96vw); }
+.v46 .ag-etapas-modal { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.v46 .ag-etapas-modal > li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; }
+.v46 .ag-etapas-modal b { font-size: 13px; }
+.v46 .ag-etapas-modal p { margin: 3px 0 8px; font-size: 12px; color: var(--muted); }
+.v46 .ag-etapas-num { width: 26px; height: 26px; border-radius: 99px; display: grid; place-items: center; background: var(--wine); color: #fff; font-size: 12px; font-weight: 700; }
+.v46 .ag-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+.v46 .ag-opcao { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; }
+.v46 .ag-opcao small { font-size: 11px; color: var(--muted); }
+.v46 .ag-opcao.is-sel { border-color: var(--wine); box-shadow: 0 0 0 2px var(--wine); }
+.v46 .ag-opcao.is-perigo.is-sel { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger); }
+.v46 .ag-feito { color: var(--green) !important; font-weight: 600; }
+.v46 .ag-input { height: 38px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: var(--surface); color: var(--text); }
+.v46 .ag-campo small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.v46 .ag-passos-resultado { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.v46 .ag-passos-resultado li { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 9px; background: var(--surface-soft); }
+.v46 .ag-passos-resultado .is-ok b { color: var(--green); }
+.v46 .ag-passos-resultado .is-erro b, .v46 .ag-passos-resultado .is-erro span { color: var(--danger); }
+.v46 .ag-passos-resultado .is-pendente { color: var(--muted); }

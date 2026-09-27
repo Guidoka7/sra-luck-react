@@ -7,7 +7,12 @@ import "./agenda.css";
 import { centralApi, dataBr, diaSemana } from "./api";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 import { JornadaBoard } from "./JornadaBoard";
-import { ETAPAS, contarAcaoEquipe } from "./jornada";
+import { ETAPAS, contarAcaoEquipe, contextoDe, situacao, type AcaoJornada } from "./jornada";
+import { PrepararAtendimentoModal, RegistrarAtendimentoModal } from "./AtendimentoModals";
+import { LiberacaoModal } from "./DrawerModals";
+import { ConfirmModal } from "./V46Modal";
+import { estadoLiberacao } from "./v46Cards";
+import { toast } from "sonner";
 import { TermsAgendaTab } from "./TermsAgendaTab";
 import { SurgeryAgendaTab } from "./SurgeryAgendaTab";
 import { SystemDateModal } from "./SystemDateModal";
@@ -42,6 +47,7 @@ export function CentralAcompanhamento() {
   const [dataTermos, setDataTermos] = useState<string | null>(abaParam === "termos" ? dataParam : null);
   const [dataCirurgia, setDataCirurgia] = useState<string | null>(abaParam === "cirurgia" ? dataParam : null);
   const [recarregarKey, setRecarregarKey] = useState(0);
+  const [acao, setAcao] = useState<{ cliente: CartaoCliente; tipo: AcaoJornada } | null>(null);
   const etapaParam = searchParams.get("etapa");
   const etapaNoEndereco = Boolean(etapaParam && ETAPAS_VALIDAS.has(etapaParam));
   const [etapa, setEtapa] = useState<EstagioCentral>(etapaNoEndereco ? etapaParam as EstagioCentral : "preEligibility");
@@ -69,7 +75,8 @@ export function CentralAcompanhamento() {
   // Sem etapa no endereço, abre na primeira etapa que tem trabalho para a equipe.
   useEffect(() => {
     if (!dados || etapaDefinida) return;
-    setEtapa(ETAPAS.find((e) => contarAcaoEquipe(dados.filas[e.id], e.id, dados.hoje) > 0)?.id ?? "preEligibility");
+    const ctx = contextoDe(dados);
+    setEtapa(ETAPAS.find((e) => contarAcaoEquipe(dados.filas[e.id], e.id, dados.hoje, ctx) > 0)?.id ?? "preEligibility");
     setEtapaDefinida(true);
   }, [dados, etapaDefinida]);
   useEffect(() => { if (hoje) { setDataTermos((d) => d ?? hoje); setDataCirurgia((d) => d ?? hoje); } }, [hoje]);
@@ -92,6 +99,29 @@ export function CentralAcompanhamento() {
   const diaRef = aba === "surgery" ? dataCirurgia : dataTermos;
   const abaAtual = ABAS.find((a) => a.id === aba)!;
   const abrir = (clienteId: string, estagio: EstagioCentral | null = null) => setDrawer({ clienteId, estagio });
+
+  // Ações rápidas da Jornada: cada uma chama a mesma API/RPC usada no drawer.
+  function executarAcao(cliente: CartaoCliente, etapaCliente: EstagioCentral, tipo: AcaoJornada) {
+    if (tipo === "levantamento") { abrir(cliente.id, etapaCliente); return; }
+    if (tipo === "abrirDatasTermos") { trocarAba("terms"); return; }
+    if (tipo === "abrirDatasCirurgia") { trocarAba("surgery"); return; }
+    setAcao({ cliente, tipo });
+  }
+  /** Ação de preparo/atendimento de uma cliente, para a Agenda de termos. */
+  function acaoTermos(clienteId: string) {
+    if (!dados) return null;
+    for (const etapaId of ["termsConfirmed", "financialRelease"] as const) {
+      const c = dados.filas[etapaId].find((x) => x.id === clienteId);
+      if (!c) continue;
+      const a = situacao(c, etapaId, dados.hoje, contextoDe(dados)).acao;
+      if (a && (a.id === "preparar" || a.id === "atendimento")) return { rotulo: a.rotulo, executar: () => executarAcao(c, etapaId, a.id) };
+    }
+    return null;
+  }
+  async function executarComAviso(_chave: string, fn: () => Promise<unknown>, sucesso: string) {
+    try { await fn(); toast.success(sucesso); await aoMudar(); return true; }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível concluir a ação."); return false; }
+  }
 
   return <div className="ag"><div className="v46 ag-root">
     <header className="ag-head">
@@ -118,8 +148,16 @@ export function CentralAcompanhamento() {
     {erro && !dados && <div className="ag-panel ag-erro" role="alert"><b>Não foi possível carregar a Agenda.</b><span>{erro}</span><button type="button" className="ag-btn" onClick={() => void carregar()}>Tentar novamente</button></div>}
     {!erro && !dados && <div className="ag-panel ag-vazio"><span>Carregando a Agenda…</span></div>}
 
-    {dados && hoje && aba === "overview" && <JornadaBoard dados={dados} etapa={etapa} onEtapa={(e) => trocarAba("overview", e)} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} />}
-    {dados && hoje && aba === "terms" && dataTermos && <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} />}
+    {dados && hoje && aba === "overview" && <JornadaBoard dados={dados} etapa={etapa} onEtapa={(e) => trocarAba("overview", e)} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} onAcao={executarAcao} />}
+
+    {acao?.tipo === "preparar" && hoje && <PrepararAtendimentoModal c={acao.cliente} sugestoes={sugestoesResponsavel} hoje={hoje} onClose={() => setAcao(null)} onDone={aoMudar} />}
+    {acao?.tipo === "atendimento" && hoje && <RegistrarAtendimentoModal c={acao.cliente} hoje={hoje} onClose={() => setAcao(null)} onDone={aoMudar} />}
+    {acao?.tipo === "liberar" && hoje && <LiberacaoModal c={acao.cliente} estado={estadoLiberacao(acao.cliente, hoje)} onClose={() => setAcao(null)} executar={executarComAviso} />}
+    {acao?.tipo === "pagamento" && acao.cliente.agendamentoId && <ConfirmModal titulo="Confirmar pagamento da cirurgia" rotuloConfirmar="Confirmar pagamento"
+      mensagem={`Confirmar o pagamento da cirurgia de ${acao.cliente.nome}? O processo é concluído e fica arquivado na data da cirurgia.`}
+      onConfirmar={() => executarComAviso("pagamento", () => centralApi.confirmarPagamentoCirurgia(acao.cliente.agendamentoId!), "Pagamento confirmado. Processo concluído.")}
+      onClose={() => setAcao(null)} />}
+    {dados && hoje && aba === "terms" && dataTermos && <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} acaoDoCliente={acaoTermos} />}
     {dados && hoje && aba === "surgery" && dataCirurgia && <SurgeryAgendaTab hoje={hoje} data={dataCirurgia} onData={setDataCirurgia} recarregarKey={recarregarKey} liberadas={liberadas} cartoes={cartoes} onAbrirCliente={(id) => abrir(id)} onConsultarProcesso={(id) => abrir(id, "surgeryConfirmed")} onMudou={carregar} />}
 
     {drawer && hoje && <ClienteDrawer key={drawer.clienteId} clienteId={drawer.clienteId} abaInicial="process" estagioOrigem={drawer.estagio} hoje={hoje}
