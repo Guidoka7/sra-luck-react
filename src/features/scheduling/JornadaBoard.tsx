@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, Search } from "lucide-react";
-import { dataBr, iniciais } from "./api";
-import { ETAPAS, ROTULO_RESPONSAVEL, bloqueios, contarAcaoEquipe, contextoDe, faseLiberacao, situacao, type AcaoJornada, type Responsavel } from "./jornada";
-import { estadoLiberacao } from "./v46Cards";
+import { ETAPAS, ROTULO_RESPONSAVEL, bloqueios, contarAcaoEquipe, contextoDe, situacao, type AcaoJornada, type Responsavel } from "./jornada";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 
 type Ordem = "urgencia" | "nomeAsc" | "nomeDesc";
@@ -87,69 +85,27 @@ export function JornadaBoard({ dados, etapa, selecionadoId, onAbrirCliente, onAc
             <div className="ag-coluna-titulo">
               <span className="ag-trilha-num" aria-hidden="true">{e.numero}</span>
               <h2 id={`ag-col-${e.id}`} className="ag-h3">{e.titulo}</h2>
+              <span className="ag-coluna-info" tabIndex={0} role="img" title={`${e.resumo}\n\n${e.saida}`} aria-label={`Sobre esta etapa: ${e.resumo} ${e.saida}`}><Info size={14} aria-hidden="true" /></span>
               <span className="ag-coluna-total" title={`${total} cliente(s) nesta etapa`}>{total}</span>
             </div>
-            <p className="ag-coluna-resumo" title={e.resumo}>{e.resumo}</p>
-            <div className="ag-coluna-meta">
-              {equipe > 0 ? <span className="ag-trilha-acao">{equipe} com a equipe</span> : <span className="ag-coluna-ok">Nada com a equipe</span>}
-              <span className="ag-coluna-info" tabIndex={0} title={e.saida} aria-label={`Como sai desta etapa: ${e.saida}`}><Info size={13} aria-hidden="true" />Como sai</span>
-            </div>
+            <span className={`ag-coluna-equipe${equipe ? "" : " is-vazio"}`}>{equipe ? <><i className="ag-ponto is-equipe" aria-hidden="true" />{equipe} com a equipe</> : "Nada com a equipe"}</span>
           </header>
           <div className="ag-coluna-cartoes">
             {itens.length === 0
               ? <div className="ag-vazio ag-vazio-compacto"><span>{termo || quem !== "todos" ? "Nenhuma cliente neste filtro." : "Nenhuma cliente nesta etapa."}</span></div>
-              : itens.map(({ c, s }) => <article key={c.id} className={`ag-cartao is-${s.tom}${selecionadoId === c.id ? " is-selected" : ""}`}>
-                <button type="button" className="ag-cartao-main" onClick={() => onAbrirCliente(c.id, e.id)} aria-label={`Abrir ${c.nome}: ${s.texto}`}>
-                  <span className="ag-cartao-topo">
-                    <span className="ag-avatar" aria-hidden="true">{iniciais(c.nome)}</span>
-                    <span className="ag-cartao-nome"><strong>{c.nome}</strong><small>{c.procedimento || "Procedimento não informado"}</small></span>
-                  </span>
-                  <DadoDaEtapa c={c} etapa={e.id} hoje={hoje} />
-                  <span className={`ag-quem is-${s.responsavel}`}>{ROTULO_RESPONSAVEL[s.responsavel]}</span>
-                  <span className={`ag-situacao is-${s.tom}`}>{s.texto}</span>
-                  {s.prazo && <small className={`ag-cartao-prazo${s.atrasado ? " is-late" : ""}`}>{s.prazo}</small>}
+              : itens.map(({ c, s }) => <article key={c.id} className={`ag-cartao${s.atrasado ? " is-late" : ""}${selecionadoId === c.id ? " is-selected" : ""}`}>
+                <button type="button" className="ag-cartao-main" onClick={() => onAbrirCliente(c.id, e.id)} aria-label={`Abrir ${c.nome}: ${s.texto}. ${ROTULO_RESPONSAVEL[s.responsavel]}.`}>
+                  <strong className="ag-cartao-nome">{c.nome}</strong>
+                  <span className="ag-cartao-sit"><i className={`ag-ponto is-${s.responsavel}`} title={ROTULO_RESPONSAVEL[s.responsavel]} aria-hidden="true" />{s.texto}</span>
                 </button>
-                {s.acao && <div className="ag-cartao-acao">
-                  <button type="button" className={`ag-btn is-pequeno${s.responsavel === "equipe" ? " is-primario" : ""}`} onClick={() => onAcao(c, e.id, s.acao!.id)}>{s.acao.rotulo}</button>
+                {(s.prazo || s.acao) && <div className="ag-cartao-rodape">
+                  {s.prazo && <small className={`ag-cartao-prazo${s.atrasado ? " is-late" : ""}`}>{s.prazo}</small>}
+                  {s.acao && <button type="button" className={`ag-btn is-pequeno${s.atrasado ? " is-primario" : ""}`} onClick={() => onAcao(c, e.id, s.acao!.id)}>{s.acao.rotulo}</button>}
                 </div>}
               </article>)}
           </div>
         </section>)}
       </div>
     </div>
-
-    <footer className="ag-legenda-quem">
-      <span><i className="ag-quem is-equipe">Equipe</i> precisa de uma ação sua</span>
-      <span><i className="ag-quem is-cliente">Cliente</i> depende da cliente no app</span>
-      <span><i className="ag-quem is-sistema">Automático</i> o sistema avança sozinho</span>
-    </footer>
   </div>;
-}
-
-/** Dado que importa em cada etapa, em formato compacto para o cartão. */
-function DadoDaEtapa({ c, etapa, hoje }: { c: CartaoCliente; etapa: EstagioCentral; hoje: string }) {
-  if (etapa === "preEligibility" || etapa === "financialReview") {
-    const pct = Math.min(100, Math.round((c.parcelasPagas / Math.max(1, c.parcelasNecessarias)) * 100));
-    return <span className="ag-progresso">
-      <span className="ag-progresso-rotulo">{c.parcelasPagas}/{c.totalParcelas} pagas · mínimo {c.parcelasNecessarias}</span>
-      <span className="ag-progresso-barra" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></span>
-    </span>;
-  }
-  if (etapa === "termsConfirmed") {
-    return <span className="ag-cartao-linha">Responsável: <b>{c.termosResponsavel ?? "não definido"}</b>{c.previsaoConfirmadaEm ? <><br />Previsão cirúrgica: <b>{dataBr(c.previsaoCirurgia)}</b></> : null}</span>;
-  }
-  if (etapa === "financialRelease") {
-    const e = estadoLiberacao(c, hoje);
-    const fase = faseLiberacao(c, hoje);
-    const passos: { rotulo: string; estado: "feito" | "atual" | "falhou" | "" }[] = [
-      { rotulo: "Presença", estado: c.comparecimentoStatus === "nao_compareceu" ? "falhou" : e.compareceu ? "feito" : "atual" },
-      { rotulo: "Quitação", estado: c.quitacaoStatus === "nao_realizada" ? "falhou" : e.quitada ? "feito" : e.compareceu ? "atual" : "" },
-      { rotulo: "Prazo", estado: fase === "liberada" ? "feito" : fase === "prazo" ? "atual" : "" },
-      { rotulo: "Liberada", estado: fase === "liberada" ? "feito" : "" },
-    ];
-    return <span className="ag-passos ag-passos-linha" aria-label="Andamento da liberação">
-      {passos.map((p) => <span key={p.rotulo} className={p.estado ? `is-${p.estado}` : undefined}><i aria-hidden="true" />{p.rotulo}</span>)}
-    </span>;
-  }
-  return <span className="ag-cartao-linha">Carta <b>{c.cartaDeCredito.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}</b> · {c.parcelasPagas}/{c.totalParcelas} pagas</span>;
 }

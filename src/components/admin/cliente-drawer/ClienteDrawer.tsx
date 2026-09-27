@@ -365,7 +365,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
           {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
           {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
-          {c && estagio && <span className={styles.chip}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>}
+          {c && estagio && <span className={styles.chip}>{statusDoDrawer(estagio, concluido)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
         </div>}
       </div>

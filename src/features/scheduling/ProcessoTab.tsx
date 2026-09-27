@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Cliente } from "@/types/database";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
-import { centralApi, dataBr, dataHoraBr, diaSemana, diasEntre, FORMAS_CUSTEIO, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
-import { ETAPAS, ETAPA_POR_ID, PRAZO_LEVANTAMENTO_DIAS_UTEIS, ROTULO_RESPONSAVEL, faseLevantamento, faseLiberacao, passosDaEtapa, prazoLevantamento, situacao, type EstadoPasso } from "./jornada";
+import { centralApi, dataBr, dataHoraBr, diaSemana, FORMAS_CUSTEIO, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
+import { ETAPAS, ETAPA_POR_ID, ROTULO_RESPONSAVEL, faseLevantamento, faseLiberacao, prazoLevantamento, situacao } from "./jornada";
 import type { CartaoCliente, EstagioCentral } from "./types";
-import { estadoLiberacao, faltamTexto } from "./v46Cards";
+import { estadoLiberacao } from "./v46Cards";
 import { exigeTaxaCartao, normalizarFormas, validarLevantamento } from "./levantamento";
 import "./processo.css";
 
@@ -94,10 +94,10 @@ type PropsProcesso = {
 };
 
 /**
- * Aba Processo do drawer: segue exatamente o fluxo real da etapa (ver
- * `jornada.ts` e docs/FLOWS.md §7.1). Trilha → "Agora" (passos internos, quem
- * age, situação, próxima ação) → conteúdo da etapa/sub-etapa → o que vem
- * depois → histórico. Toda ação chama as mesmas APIs/RPCs de antes.
+ * Aba Processo do drawer: trilha das 5 etapas e um único cartão "Agora" com a
+ * situação real (mesma `situacao` do quadro), quem age e só os dados e
+ * controles da sub-etapa atual (ver `jornada.ts` e docs/FLOWS.md §7.1). A ação
+ * principal fica no rodapé do drawer. Toda ação chama as mesmas APIs/RPCs.
  */
 export function ProcessoTab(p: PropsProcesso) {
   const { real, estagio } = p;
@@ -107,19 +107,11 @@ export function ProcessoTab(p: PropsProcesso) {
     <ProcessRail real={real} estagio={estagio} concluido={p.concluido} onAbrir={p.irParaEstagio} />
     {historico
       ? <>
-          <div className="pr-revisao"><span aria-hidden="true">↶</span><div><b>Consulta de etapa concluída</b><small>Nada aqui altera a posição atual da cliente, que está em “{TITULO_ETAPA[real]}”.</small></div></div>
+          <p className="pr-revisao">Consultando uma etapa concluída. A cliente está em <b>{TITULO_ETAPA[real]}</b>.</p>
           <EtapaHistorica {...p} />
         </>
-      : <>
-          <Agora {...p} />
-          {estagio === "preEligibility" && <CorpoParcelas {...p} />}
-          {estagio === "financialReview" && <CorpoLevantamento {...p} />}
-          {estagio === "termsConfirmed" && <CorpoTermos {...p} />}
-          {estagio === "financialRelease" && <CorpoLiberacao {...p} />}
-          {estagio === "surgeryConfirmed" && <CorpoCirurgia {...p} />}
-          <Depois {...p} />
-        </>}
-    <Acordeoes c={p.c} cad={p.cad} eventos={p.eventos} />
+      : <Agora {...p} />}
+    <Registros cad={p.cad} eventos={p.eventos} />
   </div>;
 }
 
@@ -139,118 +131,111 @@ function ProcessRail({ real, estagio, concluido, onAbrir }: { real: EstagioCentr
   </nav>;
 }
 
-const ROTULO_ESTADO: Record<EstadoPasso, string> = { feito: "Concluído", atual: "Agora", pendente: "Depois", falhou: "Pendência" };
-
-/** Onde a cliente está dentro da etapa, quem age e qual é a próxima ação. */
+/** Situação atual + dados e controles da sub-etapa. */
 function Agora(p: PropsProcesso) {
   const { c, estagio, hoje, concluido } = p;
   const info = ETAPA_POR_ID.get(estagio)!;
   const s = situacao(c, estagio, hoje);
-  const passos = passosDaEtapa(c, estagio, hoje, concluido);
-  const responsavel = concluido ? "sistema" : s.responsavel;
-  return <section className={`pr-agora is-${concluido ? "success" : s.tom}`} aria-labelledby="pr-agora-titulo">
-    <header className="pr-agora-head">
-      <span className="pr-agora-num" aria-hidden="true">{info.numero}</span>
-      <div className="pr-agora-titulo">
-        <small>Etapa {info.numero} de 5</small>
-        <h3 id="pr-agora-titulo">{info.titulo}</h3>
-      </div>
-      <span className={`pr-quem is-${responsavel}`}>{concluido ? "Concluído" : ROTULO_RESPONSAVEL[s.responsavel]}</span>
-    </header>
-    <div className="pr-agora-situacao">
-      <b>{concluido ? "Processo concluído e arquivado na data da cirurgia" : s.texto}</b>
-      {!concluido && s.prazo && <small className={s.atrasado ? "is-late" : undefined}>{s.prazo}</small>}
-    </div>
-    <ol className="pr-passos">
-      {passos.map((x, i) => <li key={x.rotulo} className={`is-${x.estado}`}>
-        <span className="pr-passo-marca" aria-hidden="true">{x.estado === "feito" ? "✓" : x.estado === "falhou" ? "!" : i + 1}</span>
-        <span className="pr-passo-texto"><b>{x.rotulo}</b><small>{ROTULO_RESPONSAVEL[x.responsavel]}{x.detalhe ? ` · ${x.detalhe}` : ""}</small></span>
-        <span className="pr-passo-estado">{ROTULO_ESTADO[x.estado]}</span>
-      </li>)}
-    </ol>
-  </section>;
+  const fase = estagio === "financialReview" ? faseLevantamento(c) : null;
+  return <>
+    <section className={`pr-agora${!concluido && s.atrasado ? " is-atrasado" : ""}`} aria-labelledby="pr-agora-titulo">
+      <header className="pr-agora-head">
+        <div className="pr-agora-titulo">
+          <small>Etapa {info.numero} · {info.titulo}</small>
+          <h3 id="pr-agora-titulo">{concluido ? "Processo concluído" : s.texto}</h3>
+          {!concluido && s.prazo && <p className={s.atrasado ? "is-late" : undefined}>{s.prazo}</p>}
+        </div>
+        <span className={`pr-quem is-${concluido ? "sistema" : s.responsavel}`}>{concluido ? "Arquivado" : ROTULO_RESPONSAVEL[s.responsavel]}</span>
+      </header>
+      {estagio === "preEligibility" && <CorpoParcelas {...p} />}
+      {estagio === "financialReview" && <CorpoLevantamento {...p} />}
+      {estagio === "termsConfirmed" && <CorpoTermos {...p} />}
+      {estagio === "financialRelease" && <CorpoLiberacao {...p} />}
+      {estagio === "surgeryConfirmed" && <CorpoCirurgia {...p} />}
+    </section>
+    {(fase === "analisar" || fase === "divergencia") && <div id="pr-levantamento"><EditorLevantamento {...p} /></div>}
+    {estagio === "financialReview" && <ParcelasLevantamento {...p} />}
+  </>;
 }
 
-/** Data em destaque (termos/cirurgia) com dia da semana, horário e distância. */
-function DataDestaque({ iso, horario, hoje }: { iso: string | null; horario: string | null; hoje: string }) {
-  if (!iso) return null;
-  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
-  const dias = diasEntre(hoje, iso);
-  const quando = dias === 0 ? "Hoje" : dias === 1 ? "Amanhã" : dias > 1 ? `Em ${dias} dias` : dias === -1 ? "Ontem" : `Há ${-dias} dias`;
-  return <div className="pr-data">
-    <div className="pr-data-dia" aria-hidden="true"><span>{d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "")}</span><strong>{String(d.getDate()).padStart(2, "0")}</strong></div>
-    <div className="pr-data-texto"><b>{diaSemana(iso)}, {dataBr(iso)}</b><small>{horario ? `às ${horario}` : "Horário a definir"} · {quando}</small></div>
-  </div>;
+type Linha = [string, ReactNode] | [string, ReactNode, ReactNode];
+
+/** Lista rótulo → valor (→ ação), uma linha por dado. */
+function Fatos({ itens }: { itens: (Linha | false | null)[] }) {
+  return <dl className="pr-fatos">{(itens.filter(Boolean) as Linha[]).map(([k, v, acao]) => <div key={k}>
+    <dt>{k}</dt><dd>{v}</dd>{acao && <span className="pr-fato-acao">{acao}</span>}
+  </div>)}</dl>;
 }
 
-function Bloco({ id, titulo, subtitulo, selo, children }: { id?: string; titulo: string; subtitulo?: ReactNode; selo?: ReactNode; children: ReactNode }) {
-  return <section id={id} className="pr-bloco">
-    <header className="pr-bloco-head"><div><b>{titulo}</b>{subtitulo && <small>{subtitulo}</small>}</div>{selo}</header>
+function Link({ onClick, children, disabled }: { onClick: () => void; children: ReactNode; disabled?: boolean }) {
+  return <button type="button" className="pr-link" onClick={onClick} disabled={disabled}>{children}</button>;
+}
+
+function Bloco({ titulo, subtitulo, children }: { titulo: string; subtitulo?: ReactNode; children: ReactNode }) {
+  return <section className="pr-bloco">
+    <header className="pr-bloco-head"><b>{titulo}</b>{subtitulo && <small>{subtitulo}</small>}</header>
     <div className="pr-bloco-corpo">{children}</div>
   </section>;
 }
 
-function Dados({ itens }: { itens: [string, ReactNode][] }) {
-  return <dl className="pr-dados">{itens.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>;
+function Nota({ tom, children }: { tom?: "perigo" | "ok"; children: ReactNode }) {
+  return <p className={`pr-nota${tom ? ` is-${tom}` : ""}`}>{children}</p>;
 }
 
-function Aviso({ tom = "info", children }: { tom?: "info" | "atencao" | "perigo" | "ok"; children: ReactNode }) {
-  return <div className={`pr-aviso is-${tom}`}>{children}</div>;
+function dataHora(iso: string | null, hora: string | null) {
+  return iso ? `${diaSemana(iso).slice(0, 3)}, ${dataBr(iso)}${hora ? ` às ${hora}` : ""}` : "—";
 }
 
 // Etapa 1 -------------------------------------------------------------------
 function CorpoParcelas({ c }: PropsProcesso) {
   const pct = Math.min(100, Math.round((c.parcelasPagas / Math.max(1, c.parcelasNecessarias)) * 100));
-  const elegivel = c.parcelasFaltantes === 0;
-  return <Bloco titulo="Progresso para a elegibilidade" subtitulo={`Regra do plano: ${c.percentualRegra}% de ${c.totalParcelas} parcelas = ${c.parcelasNecessarias} pagas`}
-    selo={<span className={`badge ${elegivel ? "success" : "info"}`}>{elegivel ? "Elegível" : faltamTexto(c.parcelasFaltantes)}</span>}>
-    <div className="pr-progresso">
-      <div className="pr-progresso-num"><strong>{c.parcelasPagas}</strong><span>de {c.parcelasNecessarias} necessárias</span></div>
-      <div className="pr-barra" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></div>
-      <Dados itens={[["Parcelas pagas", `${c.parcelasPagas} de ${c.totalParcelas}`], ["Próxima parcela", c.proximaParcelaEm ? dataBr(c.proximaParcelaEm) : "—"]]} />
-    </div>
-    {elegivel
-      ? <Aviso tom="ok"><b>O botão “Solicitar liberação financeira” já aparece no app.</b> A cliente continua nesta etapa até tocar nele; só então entra no levantamento financeiro.</Aviso>
-      : <Aviso>Ao confirmar a {c.parcelasNecessarias}ª parcela paga, o app libera para a cliente o botão “Solicitar liberação financeira”.</Aviso>}
-  </Bloco>;
+  return <>
+    <div className="pr-barra" role="progressbar" aria-label="Parcelas pagas para a elegibilidade" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></div>
+    <Fatos itens={[
+      ["Parcelas pagas", `${c.parcelasPagas} de ${c.totalParcelas}`],
+      ["Mínimo para solicitar", `${c.parcelasNecessarias} (${c.percentualRegra}%)`],
+      c.parcelasFaltantes > 0 && ["Próxima parcela", c.proximaParcelaEm ? dataBr(c.proximaParcelaEm) : "—"],
+    ]} />
+    {c.parcelasFaltantes === 0 && <Nota tom="ok">O botão “Solicitar liberação financeira” já aparece no app.</Nota>}
+  </>;
 }
 
 // Etapa 2 -------------------------------------------------------------------
 function CorpoLevantamento(p: PropsProcesso) {
-  const { c, cadastro, cad, parcelas } = p;
+  const { c, cadastro, form, ocupado } = p;
   const fase = faseLevantamento(c);
-  const prazo = prazoLevantamento(c);
+  const [editando, setEditando] = useState(false);
+  if (fase === "analisar" || fase === "divergencia") {
+    const prazo = prazoLevantamento(c);
+    return <>
+      <Fatos itens={[
+        ["Solicitado em", c.liberacaoFinanceiraSolicitadaEm ? dataHoraBr(c.liberacaoFinanceiraSolicitadaEm) : "—"],
+        ["Prazo da equipe", prazo ? dataBr(prazo) : "—"],
+      ]} />
+      {fase === "divergencia" && <Nota tom="perigo">Divergência registrada: a cliente vê no app que precisa de um ajuste.</Nota>}
+    </>;
+  }
+  if (editando) return <EditorLevantamento {...p} onCancelar={() => setEditando(false)} />;
+  const formas = normalizarFormas((cadastro.financeiro_formas_custeio ?? []) as string[]);
+  const editar = <Link onClick={() => { form.restaurar(); setEditando(true); }} disabled={Boolean(ocupado)}>Editar</Link>;
+  const r = c.retornoTermos;
+  return <Fatos itens={[
+    ["Saldo para quitação", moeda(Number(cadastro.financeiro_saldo_restante ?? 0)), editar],
+    fase === "forma"
+      ? ["Formas liberadas", formas.map(rotuloFormaCusteio).join(" · ") || "—"]
+      : ["Forma escolhida", rotuloFormaCusteio(c.custeioForma)],
+    fase === "forma" && exigeTaxaCartao(formas) && ["Taxa do cartão", `${String(Number(cadastro.financeiro_taxa_cartao ?? 0)).replace(".", ",")}%`],
+    Boolean(r) && ["Últimos termos", `${r!.dataTermos ? dataBr(r!.dataTermos) : "—"} · ${r!.motivo === "ausencia" ? "não compareceu" : "saldo não quitado"}`],
+    fase === "data" && ["Datas de termos", "Escolha no app", <Link onClick={() => p.irParaAgenda("terms", null)}>Ver datas</Link>],
+  ]} />;
+}
+
+function ParcelasLevantamento({ c, cad, parcelas }: PropsProcesso) {
   const pagas = cad.boletos.filter((b) => b.status === "pago").length;
-  return <>
-    {(fase === "analisar" || fase === "divergencia") && <>
-      <Bloco titulo="Solicitação da cliente" selo={prazo && prazo < p.hoje ? <span className="badge danger">Prazo vencido</span> : <span className="badge wait">Em análise</span>}>
-        <Dados itens={[
-          ["Solicitado em", c.liberacaoFinanceiraSolicitadaEm ? dataHoraBr(c.liberacaoFinanceiraSolicitadaEm) : "—"],
-          ["Prazo da equipe", prazo ? `${dataBr(prazo)} · ${PRAZO_LEVANTAMENTO_DIAS_UTEIS} dias úteis` : "—"],
-        ]} />
-        {fase === "divergencia" && <Aviso tom="perigo"><b>Divergência registrada.</b> A cliente vê no app que precisa de um ajuste. Depois de regularizar, confira e conclua o levantamento novamente.</Aviso>}
-      </Bloco>
-      <div id="pr-levantamento"><EditorLevantamento {...p} /></div>
-    </>}
-    {(fase === "forma" || fase === "data") && <>
-      <ResumoLevantamento {...p} />
-      <Bloco titulo="Escolha da cliente no app" selo={<span className="pr-quem is-cliente">Cliente</span>}>
-        {fase === "forma"
-          ? <Aviso>A cliente ainda não escolheu como vai quitar o saldo. No app aparecem só as formas liberadas neste levantamento: <b>{normalizarFormas((cadastro.financeiro_formas_custeio ?? []) as string[]).map(rotuloFormaCusteio).join(", ") || "—"}</b>.</Aviso>
-          : <>
-            <Dados itens={[["Forma escolhida", rotuloFormaCusteio(c.custeioForma)], ["Saldo a quitar", c.custeioSaldo != null ? moeda(c.custeioSaldo) : "—"]]} />
-            {c.retornoTermos
-              ? <Aviso tom="atencao"><b>{c.retornoTermos.motivo === "ausencia" ? "Faltou" : "Saldo não quitado"}{c.retornoTermos.dataTermos ? ` nos termos de ${dataBr(c.retornoTermos.dataTermos)}` : ""}.</b> O agendamento foi cancelado; o levantamento e a forma de pagamento continuam valendo e a cliente escolhe uma nova data.</Aviso>
-              : <Aviso>Pronta para escolher a data da assinatura dos termos entre as datas abertas com vaga.</Aviso>}
-            <div className="pr-acoes"><button type="button" className="secondary-btn tiny-btn" onClick={() => p.irParaAgenda("terms", null)}>Ver datas abertas de termos</button></div>
-          </>}
-      </Bloco>
-    </>}
-    <details className="drawer-accordion pr-parcelas" open={fase === "analisar" || fase === "divergencia"}>
-      <summary>Parcelas e comprovantes <span>{pagas}/{cad.boletos.length || c.totalParcelas} pagas</span></summary>
-      <div className="accordion-body" id="levantamento-parcelas">{parcelas}</div>
-    </details>
-  </>;
+  return <details className="drawer-accordion pr-parcelas">
+    <summary>Parcelas e comprovantes <span>{pagas}/{cad.boletos.length || c.totalParcelas} pagas</span></summary>
+    <div className="accordion-body" id="levantamento-parcelas">{parcelas}</div>
+  </details>;
 }
 
 /**
@@ -270,14 +255,13 @@ function EditorLevantamento({ c, cad, form, ocupado, abrirModal, concluirLevanta
   }
   const pagas = cad.boletos.filter((b) => b.status === "pago").length;
   const aguardando = cad.boletos.filter((b) => b.status === "pendente_confirmacao").length;
-  return <Bloco titulo={editando ? "Editar levantamento" : "Fazer o levantamento financeiro"} subtitulo="A cliente vê no app o saldo e só as formas de pagamento marcadas aqui."
-    selo={<span className="pr-quem is-equipe">Equipe</span>}>
+  return <Bloco titulo={editando ? "Editar levantamento" : "Fazer o levantamento"} subtitulo="A cliente vê no app o saldo e só as formas marcadas aqui.">
     <ol className="lev-steps">
       <li>
         <div className="lev-step-title"><span className="lev-num">1</span>Conferir parcelas e comprovantes</div>
         <div className="lev-check">
           <span>{cad.boletos.length ? `${pagas} de ${cad.boletos.length} parcelas pagas` : "Parcelas e comprovantes"}{aguardando ? ` · ${aguardando} comprovante${aguardando > 1 ? "s" : ""} aguardando conferência` : ""}</span>
-          <button type="button" className="mini-link" onClick={() => document.getElementById("levantamento-parcelas")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Ver parcelas ↓</button>
+          <button type="button" className="mini-link" onClick={() => { const el = document.getElementById("levantamento-parcelas"); el?.closest("details")?.setAttribute("open", ""); el?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Ver parcelas ↓</button>
         </div>
       </li>
       <li>
@@ -313,22 +297,6 @@ function EditorLevantamento({ c, cad, form, ocupado, abrirModal, concluirLevanta
         ? <button type="button" className="ghost-btn tiny-btn" onClick={() => { form.restaurar(); setErro(null); onCancelar(); }} disabled={ocupadoAqui}>Cancelar edição</button>
         : <button type="button" className="ghost-btn tiny-btn" onClick={() => abrirModal({ tipo: "divergencia" })} disabled={Boolean(ocupado)}>Registrar divergência</button>}
     </div>
-    {!editando && <p className="pr-nota">Ao concluir, a cliente é avisada e escolhe no app a forma de pagamento e depois a data dos termos.</p>}
-  </Bloco>;
-}
-
-function ResumoLevantamento(p: PropsProcesso) {
-  const { c, cadastro, form, ocupado } = p;
-  const [editando, setEditando] = useState(false);
-  if (editando) return <EditorLevantamento {...p} onCancelar={() => setEditando(false)} />;
-  const formas = normalizarFormas((cadastro.financeiro_formas_custeio ?? []) as string[]);
-  return <Bloco titulo="Levantamento concluído" subtitulo={c.financeiroConfirmadoEm ? `em ${dataHoraBr(c.financeiroConfirmadoEm)}` : undefined} selo={<span className="badge success">✓ Concluído</span>}>
-    <Dados itens={[
-      ["Saldo para quitação", moeda(Number(cadastro.financeiro_saldo_restante ?? 0))],
-      ["Formas liberadas", formas.map(rotuloFormaCusteio).join(" · ") || "—"],
-      ...(exigeTaxaCartao(formas) ? [["Taxa do cartão", `${String(Number(cadastro.financeiro_taxa_cartao ?? 0)).replace(".", ",")}%`] as [string, ReactNode]] : []),
-    ]} />
-    <div className="pr-acoes"><button type="button" className="ghost-btn tiny-btn" onClick={() => { form.restaurar(); setEditando(true); }} disabled={Boolean(ocupado)}>Editar levantamento</button></div>
   </Bloco>;
 }
 
@@ -337,101 +305,61 @@ function CorpoTermos({ c, hoje, ocupado, executar, abrirModal, irParaAgenda }: P
   const [previsao, setPrevisao] = useState(() => sugerirPrevisaoCirurgica(c));
   useEffect(() => { setPrevisao(sugerirPrevisaoCirurgica(c)); }, [c.id, c.previsaoCirurgia, c.dataTermos]);
   const minimo = c.dataTermos && c.dataTermos > hoje ? c.dataTermos : hoje;
-  return <>
-    <Bloco titulo="Assinatura dos termos" subtitulo="Data escolhida pela cliente no app" selo={<span className="badge success">Confirmada</span>}>
-      <DataDestaque iso={c.dataTermos} horario={c.horarioTermos} hoje={hoje} />
-      <div className="pr-acoes">
-        <button type="button" className="secondary-btn tiny-btn" onClick={() => irParaAgenda("terms", c.dataTermos)}>Ver na agenda de termos</button>
-      </div>
-    </Bloco>
-    <Bloco id="pr-preparar" titulo="Preparar o atendimento" subtitulo="Deixe tudo pronto antes do dia para registrar o atendimento sem espera." selo={<span className="pr-quem is-equipe">Equipe</span>}>
-      <ul className="pr-checklist">
-        <li className={c.termosResponsavel ? "is-feito" : undefined}>
-          <span className="pr-check" aria-hidden="true">{c.termosResponsavel ? "✓" : "1"}</span>
-          <div><b>Responsável pela assinatura</b><small>{c.termosResponsavel ?? "Ainda não definido"}</small></div>
-          <button type="button" className="secondary-btn tiny-btn" onClick={() => abrirModal({ tipo: "responsavel" })} disabled={!c.agendamentoId}>{c.termosResponsavel ? "Alterar" : "Definir"}</button>
-        </li>
-        <li className={c.previsaoConfirmadaEm ? "is-feito" : undefined}>
-          <span className="pr-check" aria-hidden="true">{c.previsaoConfirmadaEm ? "✓" : "2"}</span>
-          <div><b>Previsão cirúrgica</b><small>{c.previsaoConfirmadaEm ? `Confirmada para ${dataBr(c.previsaoCirurgia)}. O valor da carta já está reservado no teto do mês.` : "Data mínima da cirurgia (sugestão: termos + 90 dias). Confirmar agora valida o teto do mês com antecedência."}</small></div>
-          {!c.previsaoConfirmadaEm && c.agendamentoId && <form className="pr-inline-form" onSubmit={(ev) => { ev.preventDefault(); if (previsao) void executar("previsao", () => centralApi.confirmarPrevisao(c.agendamentoId!, previsao), "Previsão cirúrgica confirmada."); }}>
+  return <Fatos itens={[
+    ["Assinatura", dataHora(c.dataTermos, c.horarioTermos), <Link onClick={() => irParaAgenda("terms", c.dataTermos)}>Ver na agenda</Link>],
+    ["Responsável", c.termosResponsavel ?? <span className="pr-falta">Não definido</span>,
+      <Link onClick={() => abrirModal({ tipo: "responsavel" })} disabled={!c.agendamentoId}>{c.termosResponsavel ? "Alterar" : "Definir"}</Link>],
+    ["Previsão cirúrgica", c.previsaoConfirmadaEm
+      ? dataBr(c.previsaoCirurgia)
+      : c.agendamentoId
+        ? <form className="pr-inline-form" onSubmit={(ev) => { ev.preventDefault(); if (previsao) void executar("previsao", () => centralApi.confirmarPrevisao(c.agendamentoId!, previsao), "Previsão cirúrgica confirmada."); }}>
             <input type="date" aria-label="Previsão cirúrgica" value={previsao} min={minimo} onChange={(ev) => setPrevisao(ev.target.value)} disabled={Boolean(ocupado)} />
             <button type="submit" className="primary-btn tiny-btn" disabled={!previsao || Boolean(ocupado)} aria-busy={ocupado === "previsao"}>{ocupado === "previsao" ? "Salvando…" : "Confirmar"}</button>
-          </form>}
-        </li>
-      </ul>
-    </Bloco>
-  </>;
+          </form>
+        : <span className="pr-falta">Não confirmada</span>],
+  ]} />;
 }
 
 // Etapa 4 -------------------------------------------------------------------
 function CorpoLiberacao(p: PropsProcesso) {
-  const { c, hoje, abrirModal } = p;
+  const { c, hoje } = p;
   const fase = faseLiberacao(c, hoje);
   const e = estadoLiberacao(c, hoje);
   if (fase === "registrar" || fase === "pendencia") {
-    const previsao = c.previsaoConfirmadaEm ? `${dataBr(c.previsaoCirurgia)} (confirmada)` : `${dataBr(sugerirPrevisaoCirurgica(c))} (sugestão)`;
-    return <Bloco titulo="Atendimento dos termos" subtitulo="Use “Registrar atendimento” para gravar tudo de uma vez, na ordem exigida."
-      selo={<span className="pr-quem is-equipe">Equipe</span>}>
-      <DataDestaque iso={c.dataTermos} horario={c.horarioTermos} hoje={hoje} />
-      <Dados itens={[
-        ["Responsável", c.termosResponsavel ?? "Não definido"],
-        ["Previsão cirúrgica", previsao],
-        ["Saldo a quitar", c.custeioSaldo != null ? moeda(c.custeioSaldo) : "—"],
-        ["Forma escolhida", rotuloFormaCusteio(c.custeioForma)],
+    return <>
+      <Fatos itens={[
+        ["Termos", dataHora(c.dataTermos, c.horarioTermos)],
+        ["Responsável", c.termosResponsavel ?? <span className="pr-falta">Não definido</span>],
+        ["Previsão cirúrgica", c.previsaoConfirmadaEm ? dataBr(c.previsaoCirurgia) : <span className="pr-falta">{dataBr(sugerirPrevisaoCirurgica(c))} · a confirmar</span>],
+        ["Saldo a quitar", `${c.custeioSaldo != null ? moeda(c.custeioSaldo) : "—"} · ${rotuloFormaCusteio(c.custeioForma)}`],
       ]} />
-      <p className="pr-nota">Com comparecimento e quitação registrados, começa o prazo de {e.totalDias} dias úteis para liberar a agenda cirúrgica. Ausência ou saldo não quitado cancelam este agendamento: a vaga volta para a agenda e a cliente escolhe uma nova data (levantamento e forma de pagamento continuam valendo).</p>
-    </Bloco>;
+      {fase === "pendencia" && <Nota tom="perigo">O agendamento foi cancelado; a cliente escolhe uma nova data no app.</Nota>}
+    </>;
   }
   if (fase === "prazo") {
-    const inicio = e.inicio ? proximoDiaUtil(e.inicio) : null;
     const pct = Math.max(0, Math.min(100, (e.decorridos / e.totalDias) * 100));
-    const vencido = Boolean(e.previsao && e.previsao < hoje);
-    return <Bloco titulo="Prazo de liberação da agenda cirúrgica" subtitulo="Comparecimento e quitação registrados. A liberação no app é automática ao fim do prazo."
-      selo={<span className={`badge ${vencido ? "danger" : "wait"}`}>{vencido ? "Prazo vencido" : `${e.decorridos}/${e.totalDias} dias úteis`}</span>}>
-      <div className="pr-prazo">
-        <div><small>Liberação prevista</small><strong>{dataBr(e.previsao)}</strong></div>
-        <div><small>Contagem desde</small><strong>{dataBr(inicio)}</strong></div>
-        <div><small>Prazo total</small><strong>{e.totalDias} dias úteis</strong></div>
-      </div>
-      <div className="pr-barra" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></div>
-      {vencido && <Aviso tom="perigo">O prazo terminou e a agenda ainda não foi liberada. Libere agora para a cliente conseguir escolher a data.</Aviso>}
-      {!vencido && <p className="pr-nota">Se precisar, “Gerenciar prazo” permite estender (+1, +3 ou +5 dias úteis) ou liberar antes.</p>}
-    </Bloco>;
+    return <>
+      <div className="pr-barra" role="progressbar" aria-label="Prazo de liberação" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${pct}%` }} /></div>
+      <Fatos itens={[
+        ["Liberação prevista", dataBr(e.previsao)],
+        ["Contagem desde", dataBr(e.inicio ? proximoDiaUtil(e.inicio) : null)],
+      ]} />
+    </>;
   }
-  return <Bloco titulo="Agenda cirúrgica liberada" subtitulo={c.agendaCirurgicaLiberadaEm ? `em ${dataHoraBr(c.agendaCirurgicaLiberadaEm)}${c.agendaCirurgicaLiberadaManualmente ? " · liberação manual" : ""}` : undefined}
-    selo={<span className="pr-quem is-cliente">Cliente</span>}>
-    <Aviso>A cliente escolhe no app a data da cirurgia entre as datas cirúrgicas abertas, a partir de <b>{dataBr(c.previsaoCirurgia)}</b> e dentro do teto do mês.</Aviso>
-    <div className="pr-acoes">
-      <button type="button" className="secondary-btn tiny-btn" onClick={() => p.irParaAgenda("surgery", null)}>Ver datas cirúrgicas abertas</button>
-    </div>
-  </Bloco>;
+  return <Fatos itens={[
+    ["Agenda liberada em", `${c.agendaCirurgicaLiberadaEm ? dataBr(c.agendaCirurgicaLiberadaEm) : "—"}${c.agendaCirurgicaLiberadaManualmente ? " · manual" : ""}`],
+    ["Cirurgia a partir de", dataBr(c.previsaoCirurgia), <Link onClick={() => p.irParaAgenda("surgery", null)}>Ver datas</Link>],
+  ]} />;
 }
 
 // Etapa 5 -------------------------------------------------------------------
-function CorpoCirurgia({ c, hoje, concluido }: PropsProcesso) {
-  const realizada = Boolean(c.dataCirurgia && c.dataCirurgia < hoje);
-  return <Bloco titulo={concluido ? "Processo concluído" : "Cirurgia agendada"} subtitulo={c.cirurgiaEscolhidaEm ? `Data escolhida em ${dataHoraBr(c.cirurgiaEscolhidaEm)}` : undefined}
-    selo={<span className={`badge ${concluido ? "success" : realizada ? "wait" : "info"}`}>{concluido ? "Concluído" : realizada ? "Aguardando pagamento" : "Agendada"}</span>}>
-    <DataDestaque iso={c.dataCirurgia} horario={c.horarioCirurgia} hoje={hoje} />
-    <Dados itens={[["Procedimento", c.procedimento || "—"], ["Carta de crédito", moeda(c.cartaDeCredito)], ["Contrato", c.quitacaoStatus === "paga" ? "Quitado" : `${c.parcelasPagas}/${c.totalParcelas} parcelas pagas`]]} />
-    {concluido
-      ? <Aviso tom="ok"><b>Pagamento da cirurgia confirmado{c.pagamentoCirurgiaConfirmadoEm ? ` em ${dataHoraBr(c.pagamentoCirurgiaConfirmadoEm)}` : ""}.</b> O processo saiu das filas e fica arquivado na data da cirurgia.</Aviso>
-      : realizada
-        ? <Aviso tom="atencao">A data da cirurgia já passou. Confirme o pagamento (botão abaixo) para concluir o processo.</Aviso>
-        : <Aviso>Depois da cirurgia, a equipe confirma o pagamento para concluir o processo.</Aviso>}
-  </Bloco>;
-}
-
-/** O que acontece depois desta etapa (critério de saída real). */
-function Depois({ estagio, concluido }: PropsProcesso) {
-  if (concluido) return null;
-  const info = ETAPA_POR_ID.get(estagio)!;
-  const proxima = ETAPAS[info.numero];
-  return <section className="pr-depois">
-    <span aria-hidden="true">→</span>
-    <div><small>Como sai desta etapa</small><b>{info.saida}</b>{proxima && <em>Próxima etapa: {proxima.titulo}</em>}</div>
-  </section>;
+function CorpoCirurgia({ c, concluido }: PropsProcesso) {
+  return <Fatos itens={[
+    ["Cirurgia", dataHora(c.dataCirurgia, c.horarioCirurgia)],
+    ["Procedimento", c.procedimento || "—"],
+    ["Carta de crédito", moeda(c.cartaDeCredito)],
+    concluido && ["Pagamento confirmado", c.pagamentoCirurgiaConfirmadoEm ? dataHoraBr(c.pagamentoCirurgiaConfirmadoEm) : "—"],
+  ]} />;
 }
 
 function Fato({ rotulo, valor }: { rotulo: string; valor: ReactNode }) {
@@ -479,21 +407,21 @@ function EtapaHistorica({ c, cadastro, estagio, eventos }: PropsProcesso) {
   </section>;
 }
 
-function Acordeoes({ cad, eventos }: { c: CartaoCliente; cad: ClienteCadastro; eventos: EventoProcesso[] }) {
+function Registros({ cad, eventos }: { cad: ClienteCadastro; eventos: EventoProcesso[] }) {
   const comprovantes = cad.boletos.filter((b) => b.comprovante_url);
   const financeiros = eventos.filter((e) => e.financeiro);
-  return <>
-    <details className="drawer-accordion"><summary>Histórico operacional <span>{eventos.length}</span></summary><div className="accordion-body"><div className="history-list">
+  return <div className="pr-registros">
+    <details><summary>Histórico <span>{eventos.length}</span></summary><div className="history-list">
       {eventos.length ? eventos.slice(0, 30).map((ev) => <div key={ev.id} className="history-item"><b>{ev.texto}</b><small>{new Date(ev.em).toLocaleString("pt-BR")}</small></div>) : <div className="empty-card">Sem eventos registrados.</div>}
-    </div></div></details>
-    <details className="drawer-accordion"><summary>Documentos <span>{comprovantes.length}</span></summary><div className="accordion-body">
+    </div></details>
+    <details><summary>Histórico financeiro <span>{financeiros.length}</span></summary><div className="history-list">
+      {financeiros.length ? financeiros.slice(0, 12).map((ev) => <div key={ev.id} className="history-item"><b>{ev.texto}</b><small>{new Date(ev.em).toLocaleString("pt-BR")}</small></div>) : <div className="empty-card">Nenhum evento financeiro registrado.</div>}
+    </div></details>
+    <details><summary>Documentos <span>{comprovantes.length}</span></summary><div>
       {comprovantes.length ? comprovantes.map((b) => <div key={b.id} className="document-row">
         <div><b>Comprovante · parcela {b.numero_parcela}/{b.total_parcelas}</b><small>{b.data_pagamento ? `Pago em ${dataBr(b.data_pagamento)}` : "Enviado para conferência"}</small></div>
         <a className="mini-link" href={cad.comprovanteHref(b)} target="_blank" rel="noreferrer">Abrir</a>
       </div>) : <div className="empty-card">Nenhum documento anexado.</div>}
     </div></details>
-    <details className="drawer-accordion"><summary>Histórico financeiro <span>{financeiros.length}</span></summary><div className="accordion-body"><div className="history-list">
-      {financeiros.length ? financeiros.slice(0, 12).map((ev) => <div key={ev.id} className="history-item"><b>{ev.texto}</b><small>{new Date(ev.em).toLocaleString("pt-BR")}</small></div>) : <div className="empty-card">Nenhum evento financeiro registrado.</div>}
-    </div></div></details>
-  </>;
+  </div>;
 }

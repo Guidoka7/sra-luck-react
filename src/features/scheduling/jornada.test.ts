@@ -44,7 +44,7 @@ describe("levantamento financeiro", () => {
   it("prazo vencido é da equipe e fica em destaque", () => {
     const s = situacao(cartao({ liberacaoFinanceiraSolicitadaEm: "2026-09-14T13:00:00Z" }), "financialReview", HOJE);
     expect(s).toMatchObject({ responsavel: "equipe", tom: "danger", atrasado: true, urgencia: 0 });
-    expect(s.prazo).toBe("prazo 21/09/2026 · 7 dias em atraso");
+    expect(s).toMatchObject({ texto: "Levantamento a fazer", prazo: "7 dias em atraso" });
   });
 
   it("depois do levantamento: forma de pagamento e depois data, ambas com a cliente", () => {
@@ -53,8 +53,8 @@ describe("levantamento financeiro", () => {
     expect(situacao(semForma, "financialReview", HOJE)).toMatchObject({ responsavel: "cliente", acao: null });
     const comForma = cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada", custeioForma: "pix" });
     expect(faseLevantamento(comForma)).toBe("data");
-    expect(situacao(comForma, "financialReview", HOJE)).toMatchObject({ responsavel: "cliente", prazo: "pagamento escolhido: PIX" });
-    expect(situacao(cartao({ statusRevisaoFinanceira: "recusada" }), "financialReview", HOJE)).toMatchObject({ texto: expect.stringContaining("Divergência"), acao: { id: "levantamento", rotulo: "Refazer levantamento" } });
+    expect(situacao(comForma, "financialReview", HOJE)).toMatchObject({ responsavel: "cliente", texto: "Escolhendo a data dos termos", prazo: "pagamento: PIX" });
+    expect(situacao(cartao({ statusRevisaoFinanceira: "recusada" }), "financialReview", HOJE)).toMatchObject({ texto: "Divergência no levantamento", acao: { id: "levantamento", rotulo: "Refazer levantamento" } });
   });
 
   it("sem datas de termos abertas, a cliente pronta vira pendência da equipe", () => {
@@ -64,33 +64,33 @@ describe("levantamento financeiro", () => {
 
   it("identifica quem voltou por ausência nos termos", () => {
     const voltou = cartao({ statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada", retornoTermos: { motivo: "ausencia", em: "2026-09-21T15:00:00Z", dataTermos: "2026-09-21" } });
-    expect(situacao(voltou, "financialReview", HOJE).texto).toBe("Faltou nos termos de 21/09/2026 · aguardando nova data");
+    expect(situacao(voltou, "financialReview", HOJE)).toMatchObject({ texto: "Faltou nos termos · nova data", prazo: "termos de 21/09" });
   });
 });
 
 describe("termos agendados", () => {
   it("preparar = responsável + previsão cirúrgica antes do dia", () => {
-    expect(situacao(cartao({ dataTermos: "2026-09-30", horarioTermos: "10:00" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", prazo: "30/09/2026 às 10:00 · em 2 dias" });
-    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", texto: "Preparar atendimento · falta previsão cirúrgica", acao: { id: "preparar" } });
-    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina", previsaoConfirmadaEm: "2026-09-25T10:00:00Z" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Tudo pronto · assinatura com Marina", acao: null });
+    expect(situacao(cartao({ dataTermos: "2026-09-30", horarioTermos: "10:00" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", texto: "Falta responsável e previsão", prazo: "30/09 às 10:00 · em 2 dias" });
+    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "equipe", texto: "Falta previsão", acao: { id: "preparar" } });
+    expect(situacao(cartao({ dataTermos: "2026-09-29", termosResponsavel: "Marina", previsaoConfirmadaEm: "2026-09-25T10:00:00Z" }), "termsConfirmed", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Pronta para a assinatura", acao: null });
   });
 });
 
 describe("liberação cirúrgica", () => {
   it("no dia dos termos lista exatamente o que falta registrar", () => {
     const s = situacao(cartao({ dataTermos: HOJE }), "financialRelease", HOJE);
-    expect(s).toMatchObject({ responsavel: "equipe", texto: "Registrar previsão, comparecimento e quitação", prazo: "termos hoje", atrasado: false, acao: { id: "atendimento" } });
+    expect(s).toMatchObject({ responsavel: "equipe", texto: "Registrar atendimento", prazo: "termos hoje", atrasado: false, acao: { id: "atendimento" } });
   });
 
   it("registro atrasado depois do dia dos termos vira urgente", () => {
     const s = situacao(cartao({ dataTermos: "2026-09-22", previsaoConfirmadaEm: "x", comparecimentoStatus: "compareceu", comparecimentoEm: "2026-09-22" }), "financialRelease", HOJE);
-    expect(s).toMatchObject({ texto: "Registrar quitação", tom: "danger", atrasado: true });
+    expect(s).toMatchObject({ texto: "Falta quitação", prazo: "termos 22/09 · há 6 dias", tom: "danger", atrasado: true });
   });
 
   it("com os dois registros conta o prazo automaticamente", () => {
     const c = cartao({ dataTermos: "2026-09-21", comparecimentoStatus: "compareceu", quitacaoStatus: "paga", comparecimentoEm: "2026-09-21", quitacaoEm: "2026-09-23", prazoCirurgico: "2026-09-30" });
     expect(faseLiberacao(c, HOJE)).toBe("prazo");
-    expect(situacao(c, "financialRelease", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Contando o prazo · 3 de 5 dias úteis", prazo: "libera em 30/09/2026" });
+    expect(situacao(c, "financialRelease", HOJE)).toMatchObject({ responsavel: "sistema", texto: "Prazo: 3 de 5 dias úteis", prazo: "libera 30/09" });
   });
 
   it("prazo vencido sem liberação volta para a equipe", () => {

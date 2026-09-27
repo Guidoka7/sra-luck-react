@@ -203,62 +203,70 @@ export const ETAPAS: EtapaInfo[] = [
 
 export const ETAPA_POR_ID = new Map(ETAPAS.map((e) => [e.id, e]));
 
-function textoRetorno(c: CartaoCliente) {
-  const r = c.retornoTermos;
-  if (!r) return null;
-  const quando = r.dataTermos ? ` nos termos de ${dataBr(r.dataTermos)}` : "";
-  return r.motivo === "ausencia" ? `Faltou${quando}` : `Saldo não quitado${quando}`;
+/** dd/mm — referência curta para cartões e para o drawer. */
+export function diaMes(iso: string | null | undefined) {
+  return iso ? dataBr(iso).slice(0, 5) : "—";
 }
 
+function comHora(iso: string, hora: string | null) {
+  return `${diaMes(iso)}${hora ? ` às ${hora}` : ""}`;
+}
+
+/**
+ * Situação da cliente em uma frase curta (`texto`) e uma referência de tempo
+ * (`prazo`). Mesma leitura no quadro e no drawer.
+ */
 export function situacao(c: CartaoCliente, etapa: EstagioCentral, hoje: string, ctx: ContextoJornada = SEM_CONTEXTO): Situacao {
   if (etapa === "preEligibility") {
     if (c.parcelasFaltantes === 0) {
-      return { responsavel: "cliente", tom: "success", texto: "Elegível · falta a cliente solicitar no app", prazo: null, atrasado: false, urgencia: 0, acao: null };
+      return { responsavel: "cliente", tom: "success", texto: "Pode solicitar no app", prazo: `${c.parcelasPagas} de ${c.parcelasNecessarias} parcelas pagas`, atrasado: false, urgencia: 0, acao: null };
     }
     return {
-      responsavel: "cliente", tom: "info", texto: `${faltamTexto(c.parcelasFaltantes)} para ficar elegível`,
-      prazo: c.proximaParcelaEm ? `próxima vence ${dataBr(c.proximaParcelaEm)}` : null, atrasado: false, urgencia: c.parcelasFaltantes, acao: null,
+      responsavel: "cliente", tom: "info", texto: faltamTexto(c.parcelasFaltantes),
+      prazo: `${c.parcelasPagas} de ${c.parcelasNecessarias} pagas${c.proximaParcelaEm ? ` · próxima ${diaMes(c.proximaParcelaEm)}` : ""}`, atrasado: false, urgencia: c.parcelasFaltantes, acao: null,
     };
   }
 
   if (etapa === "financialReview") {
     const fase = faseLevantamento(c);
     if (fase === "forma") {
-      return { responsavel: "cliente", tom: "info", texto: "Levantamento concluído · falta a cliente escolher a forma de pagamento", prazo: c.financeiroConfirmadoEm ? `concluído em ${dataBr(c.financeiroConfirmadoEm)}` : null, atrasado: false, urgencia: 40, acao: null };
+      return { responsavel: "cliente", tom: "info", texto: "Escolhendo a forma de pagamento", prazo: null, atrasado: false, urgencia: 40, acao: null };
     }
     if (fase === "data") {
-      const retorno = textoRetorno(c);
       if (ctx.vagasTermos === 0) {
-        return { responsavel: "equipe", tom: "danger", texto: "Sem datas de termos abertas · a cliente não consegue escolher", prazo: retorno, atrasado: true, urgencia: 1, acao: { id: "abrirDatasTermos", rotulo: "Abrir datas" } };
+        return { responsavel: "equipe", tom: "danger", texto: "Sem datas de termos abertas", prazo: null, atrasado: true, urgencia: 1, acao: { id: "abrirDatasTermos", rotulo: "Abrir datas" } };
       }
-      return { responsavel: "cliente", tom: retorno ? "wait" : "info", texto: retorno ? `${retorno} · aguardando nova data` : "Pronta · falta a cliente escolher a data dos termos", prazo: c.custeioForma ? `pagamento escolhido: ${rotuloFormaCusteio(c.custeioForma)}` : null, atrasado: false, urgencia: 30, acao: null };
+      const r = c.retornoTermos;
+      if (r) {
+        return { responsavel: "cliente", tom: "wait", texto: r.motivo === "ausencia" ? "Faltou nos termos · nova data" : "Não quitou · nova data", prazo: r.dataTermos ? `termos de ${diaMes(r.dataTermos)}` : null, atrasado: false, urgencia: 30, acao: null };
+      }
+      return { responsavel: "cliente", tom: "info", texto: "Escolhendo a data dos termos", prazo: c.custeioForma ? `pagamento: ${rotuloFormaCusteio(c.custeioForma)}` : null, atrasado: false, urgencia: 30, acao: null };
     }
     const prazo = prazoLevantamento(c);
     const vencido = Boolean(prazo && prazo < hoje);
-    const referencia = prazo ? (vencido ? `prazo ${dataBr(prazo)} · ${atraso(diasEntre(prazo, hoje))}` : `prazo ${dataBr(prazo)} · ${emDias(diasEntre(hoje, prazo))}`) : null;
-    const acao = { id: "levantamento" as const, rotulo: fase === "divergencia" ? "Refazer levantamento" : "Fazer levantamento" };
+    const referencia = prazo ? (vencido ? atraso(diasEntre(prazo, hoje)) : `vence ${emDias(diasEntre(hoje, prazo))}`) : null;
     if (fase === "divergencia") {
-      return { responsavel: "equipe", tom: "danger", texto: "Divergência registrada · resolver e refazer o levantamento", prazo: referencia, atrasado: vencido, urgencia: vencido ? 0 : 10, acao };
+      return { responsavel: "equipe", tom: "danger", texto: "Divergência no levantamento", prazo: referencia, atrasado: vencido, urgencia: vencido ? 0 : 10, acao: { id: "levantamento", rotulo: "Refazer levantamento" } };
     }
-    return { responsavel: "equipe", tom: vencido ? "danger" : "wait", texto: "Conferir o financeiro e concluir o levantamento", prazo: referencia, atrasado: vencido, urgencia: vencido ? 0 : 10 + (prazo ? diasEntre(hoje, prazo) : 0), acao };
+    return { responsavel: "equipe", tom: vencido ? "danger" : "wait", texto: "Levantamento a fazer", prazo: referencia, atrasado: vencido, urgencia: vencido ? 0 : 10 + (prazo ? diasEntre(hoje, prazo) : 0), acao: { id: "levantamento", rotulo: "Fazer levantamento" } };
   }
 
   if (etapa === "termsConfirmed") {
     const dias = c.dataTermos ? diasEntre(hoje, c.dataTermos) : 99;
-    const quando = c.dataTermos ? `${dataBr(c.dataTermos)}${c.horarioTermos ? ` às ${c.horarioTermos}` : ""} · ${emDias(dias)}` : null;
-    const faltas = [!c.termosResponsavel ? "responsável" : null, !c.previsaoConfirmadaEm ? "previsão cirúrgica" : null].filter(Boolean) as string[];
+    const quando = c.dataTermos ? `${comHora(c.dataTermos, c.horarioTermos)} · ${emDias(dias)}` : null;
+    const faltas = [!c.termosResponsavel ? "responsável" : null, !c.previsaoConfirmadaEm ? "previsão" : null].filter(Boolean) as string[];
     if (faltas.length) {
-      return { responsavel: "equipe", tom: dias <= 2 ? "wait" : "info", texto: `Preparar atendimento · falta ${faltas.join(" e ")}`, prazo: quando, atrasado: false, urgencia: dias, acao: { id: "preparar", rotulo: "Preparar" } };
+      return { responsavel: "equipe", tom: dias <= 2 ? "wait" : "info", texto: `Falta ${faltas.join(" e ")}`, prazo: quando, atrasado: false, urgencia: dias, acao: { id: "preparar", rotulo: "Preparar" } };
     }
-    return { responsavel: "sistema", tom: "success", texto: `Tudo pronto · assinatura com ${c.termosResponsavel}`, prazo: quando, atrasado: false, urgencia: 50 + dias, acao: null };
+    return { responsavel: "sistema", tom: "success", texto: "Pronta para a assinatura", prazo: quando, atrasado: false, urgencia: 50 + dias, acao: null };
   }
 
   if (etapa === "financialRelease") {
     const fase = faseLiberacao(c, hoje);
     const e = estadoLiberacao(c, hoje);
     if (fase === "pendencia") {
-      const texto = c.comparecimentoStatus === "nao_compareceu" ? "Não compareceu · reagendar os termos" : "Saldo não quitado · regularizar";
-      return { responsavel: "equipe", tom: "danger", texto, prazo: c.dataTermos ? `termos em ${dataBr(c.dataTermos)}` : null, atrasado: true, urgencia: 0, acao: null };
+      const texto = c.comparecimentoStatus === "nao_compareceu" ? "Não compareceu aos termos" : "Saldo não quitado";
+      return { responsavel: "equipe", tom: "danger", texto, prazo: c.dataTermos ? `termos de ${diaMes(c.dataTermos)}` : null, atrasado: true, urgencia: 0, acao: null };
     }
     if (fase === "registrar") {
       const faltas = [
@@ -269,30 +277,30 @@ export function situacao(c: CartaoCliente, etapa: EstagioCentral, hoje: string, 
       const dias = c.dataTermos ? diasEntre(c.dataTermos, hoje) : 0;
       return {
         responsavel: "equipe", tom: dias > 0 ? "danger" : "wait",
-        texto: `Registrar ${faltas.join(", ").replace(/, ([^,]*)$/, " e $1")}`,
-        prazo: c.dataTermos ? (dias === 0 ? `termos hoje${c.horarioTermos ? ` às ${c.horarioTermos}` : ""}` : `termos em ${dataBr(c.dataTermos)} · ${emDias(-dias)}`) : null,
-        atrasado: dias > 0, urgencia: dias > 0 ? 1 : 2, acao: { id: "atendimento", rotulo: "Registrar atendimento" },
+        texto: faltas.length === 3 ? "Registrar atendimento" : `Falta ${faltas.join(" e ")}`,
+        prazo: c.dataTermos ? (dias === 0 ? `termos hoje${c.horarioTermos ? ` às ${c.horarioTermos}` : ""}` : `termos ${diaMes(c.dataTermos)} · ${emDias(-dias)}`) : null,
+        atrasado: dias > 0, urgencia: dias > 0 ? 1 : 2, acao: { id: "atendimento", rotulo: "Registrar" },
       };
     }
     if (fase === "prazo") {
       const vencido = Boolean(e.previsao && e.previsao < hoje);
       return {
         responsavel: vencido ? "equipe" : "sistema", tom: vencido ? "danger" : "wait",
-        texto: vencido ? "Prazo vencido · agenda ainda não liberada" : `Contando o prazo · ${e.decorridos} de ${e.totalDias} dias úteis`,
-        prazo: e.previsao ? (vencido ? `previsto ${dataBr(e.previsao)}` : `libera em ${dataBr(e.previsao)}`) : null,
+        texto: vencido ? "Prazo vencido sem liberação" : `Prazo: ${e.decorridos} de ${e.totalDias} dias úteis`,
+        prazo: e.previsao ? (vencido ? `venceu ${diaMes(e.previsao)}` : `libera ${diaMes(e.previsao)}`) : null,
         atrasado: vencido, urgencia: vencido ? 0 : 20, acao: { id: "liberar", rotulo: vencido ? "Liberar agora" : "Gerenciar prazo" },
       };
     }
     if (ctx.vagasCirurgia === 0) {
-      return { responsavel: "equipe", tom: "danger", texto: "Agenda liberada, mas não há datas cirúrgicas abertas", prazo: c.agendaCirurgicaLiberadaEm ? `liberada em ${dataBr(c.agendaCirurgicaLiberadaEm)}` : null, atrasado: true, urgencia: 1, acao: { id: "abrirDatasCirurgia", rotulo: "Abrir datas" } };
+      return { responsavel: "equipe", tom: "danger", texto: "Sem datas cirúrgicas abertas", prazo: null, atrasado: true, urgencia: 1, acao: { id: "abrirDatasCirurgia", rotulo: "Abrir datas" } };
     }
-    return { responsavel: "cliente", tom: "success", texto: "Agenda liberada · falta a cliente escolher a data da cirurgia", prazo: c.agendaCirurgicaLiberadaEm ? `liberada em ${dataBr(c.agendaCirurgicaLiberadaEm)}` : null, atrasado: false, urgencia: 40, acao: null };
+    return { responsavel: "cliente", tom: "success", texto: "Escolhendo a data da cirurgia", prazo: c.agendaCirurgicaLiberadaEm ? `liberada ${diaMes(c.agendaCirurgicaLiberadaEm)}` : null, atrasado: false, urgencia: 40, acao: null };
   }
 
   const dias = c.dataCirurgia ? diasEntre(hoje, c.dataCirurgia) : 0;
-  const quando = c.dataCirurgia ? `${dataBr(c.dataCirurgia)}${c.horarioCirurgia ? ` às ${c.horarioCirurgia}` : ""} · ${emDias(dias)}` : null;
-  if (dias < 0) return { responsavel: "equipe", tom: "wait", texto: "Cirurgia realizada? Confirmar o pagamento", prazo: quando, atrasado: false, urgencia: dias, acao: { id: "pagamento", rotulo: "Confirmar pagamento" } };
-  return { responsavel: "sistema", tom: "info", texto: "Cirurgia marcada · aguardando o dia", prazo: quando, atrasado: false, urgencia: dias, acao: null };
+  const quando = c.dataCirurgia ? `${comHora(c.dataCirurgia, c.horarioCirurgia)} · ${emDias(dias)}` : null;
+  if (dias < 0) return { responsavel: "equipe", tom: "wait", texto: "Confirmar pagamento", prazo: quando, atrasado: false, urgencia: dias, acao: { id: "pagamento", rotulo: "Confirmar" } };
+  return { responsavel: "sistema", tom: "info", texto: "Aguardando a cirurgia", prazo: quando, atrasado: false, urgencia: dias, acao: null };
 }
 
 /** Quantas clientes da etapa dependem de uma ação da equipe agora. */
@@ -313,58 +321,4 @@ export function bloqueios(dados: VisaoGeralResponse): { id: "termos" | "cirurgia
     lista.push({ id: "cirurgia", quantidade: esperandoCirurgia, texto: `${esperandoCirurgia} ${esperandoCirurgia === 1 ? "cliente tem" : "clientes têm"} a agenda cirúrgica liberada, mas não há nenhuma data cirúrgica futura aberta com vaga.` });
   }
   return lista;
-}
-
-export type EstadoPasso = "feito" | "atual" | "pendente" | "falhou";
-export interface PassoEtapa { rotulo: string; responsavel: Responsavel; estado: EstadoPasso; detalhe: string | null }
-
-/**
- * Passos internos da etapa com o estado real de cada um (drawer da cliente).
- * Mesma leitura de fase usada no quadro: faseLevantamento/faseLiberacao.
- */
-export function passosDaEtapa(c: CartaoCliente, etapa: EstagioCentral, hoje: string, concluido = false): PassoEtapa[] {
-  const p = (rotulo: string, responsavel: Responsavel, estado: EstadoPasso, detalhe: string | null = null): PassoEtapa => ({ rotulo, responsavel, estado, detalhe });
-  if (etapa === "preEligibility") {
-    const elegivel = c.parcelasFaltantes === 0;
-    return [
-      p("Pagar o mínimo de parcelas", "cliente", elegivel ? "feito" : "atual", `${c.parcelasPagas} de ${c.parcelasNecessarias} necessárias`),
-      p("Solicitar a liberação no app", "cliente", elegivel ? "atual" : "pendente", elegivel ? "Botão já disponível no app" : null),
-    ];
-  }
-  if (etapa === "financialReview") {
-    const fase = faseLevantamento(c);
-    const prazo = prazoLevantamento(c);
-    return [
-      p("Levantamento financeiro", "equipe", fase === "analisar" ? "atual" : fase === "divergencia" ? "falhou" : "feito",
-        fase === "analisar" || fase === "divergencia" ? (prazo ? `prazo ${dataBr(prazo)}` : null) : c.financeiroConfirmadoEm ? `concluído em ${dataBr(c.financeiroConfirmadoEm)}` : null),
-      p("Forma de pagamento do saldo", "cliente", fase === "forma" ? "atual" : fase === "data" ? "feito" : "pendente", fase === "data" && c.custeioForma ? rotuloFormaCusteio(c.custeioForma) : null),
-      p("Data da assinatura dos termos", "cliente", fase === "data" ? "atual" : "pendente", null),
-    ];
-  }
-  if (etapa === "termsConfirmed") {
-    const pronto = Boolean(c.termosResponsavel && c.previsaoConfirmadaEm);
-    return [
-      p("Responsável pela assinatura", "equipe", c.termosResponsavel ? "feito" : "atual", c.termosResponsavel),
-      p("Previsão cirúrgica", "equipe", c.previsaoConfirmadaEm ? "feito" : "atual", c.previsaoConfirmadaEm ? dataBr(c.previsaoCirurgia) : null),
-      p("Dia da assinatura", "sistema", pronto ? "atual" : "pendente", c.dataTermos ? `${dataBr(c.dataTermos)}${c.horarioTermos ? ` às ${c.horarioTermos}` : ""}` : null),
-    ];
-  }
-  if (etapa === "financialRelease") {
-    const e = estadoLiberacao(c, hoje);
-    const fase = faseLiberacao(c, hoje);
-    // Ordem exigida pelo banco: previsão → comparecimento → quitação.
-    const previsaoOk = Boolean(c.previsaoConfirmadaEm);
-    return [
-      p("Previsão cirúrgica", "equipe", previsaoOk ? "feito" : "atual", previsaoOk ? dataBr(c.previsaoCirurgia) : "obrigatória antes do comparecimento"),
-      p("Comparecimento e assinatura", "equipe", c.comparecimentoStatus === "nao_compareceu" ? "falhou" : e.compareceu ? "feito" : previsaoOk ? "atual" : "pendente", null),
-      p("Quitação do saldo", "equipe", c.quitacaoStatus === "nao_realizada" ? "falhou" : e.quitada ? "feito" : previsaoOk && e.compareceu ? "atual" : "pendente", c.custeioForma ? rotuloFormaCusteio(c.custeioForma) : null),
-      p(`Prazo de ${e.totalDias} dias úteis`, "sistema", fase === "liberada" ? "feito" : fase === "prazo" ? "atual" : "pendente", e.previsao ? `libera em ${dataBr(e.previsao)}` : null),
-      p("Data da cirurgia", "cliente", fase === "liberada" ? "atual" : "pendente", null),
-    ];
-  }
-  const realizada = Boolean(c.dataCirurgia && c.dataCirurgia < hoje);
-  return [
-    p("Cirurgia", "sistema", realizada || concluido ? "feito" : "atual", c.dataCirurgia ? `${dataBr(c.dataCirurgia)}${c.horarioCirurgia ? ` às ${c.horarioCirurgia}` : ""}` : null),
-    p("Pagamento da cirurgia", "equipe", concluido ? "feito" : realizada ? "atual" : "pendente", null),
-  ];
 }
