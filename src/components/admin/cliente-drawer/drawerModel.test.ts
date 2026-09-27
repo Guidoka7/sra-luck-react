@@ -16,18 +16,19 @@ describe("cabeçalho do drawer: etapa real persistida", () => {
     expect(statusDoDrawer(base, "preEligibility", false, "2026-10-10")).toBe("Etapa 1 · Falta 1 parcela");
     expect(statusDoDrawer({ ...base, parcelasFaltantes: 0 }, "preEligibility", false, "2026-10-10")).toBe("Etapa 1 · Aguardando solicitação");
   });
-  it("etapa 2 distingue levantamento em andamento de concluído", () => {
-    expect(statusDoDrawer(base, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Levantamento");
-    expect(statusDoDrawer({ ...base, statusRevisaoFinanceira: "aprovada" }, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Aguardando escolha dos termos");
+  it("etapa 2 distingue levantamento, forma de pagamento e data", () => {
+    expect(statusDoDrawer(base, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Levantamento a fazer");
+    expect(statusDoDrawer({ ...base, statusRevisaoFinanceira: "aprovada" }, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Aguardando forma de pagamento");
+    expect(statusDoDrawer({ ...base, statusRevisaoFinanceira: "aprovada", custeioStatus: "aprovada" } as CartaoCliente, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Aguardando data dos termos");
   });
   it("etapa 4 segue o estado de liberação (conferência → prazo → liberada)", () => {
-    expect(statusDoDrawer(base, "financialRelease", false, "2026-10-10")).toBe("Etapa 4 · Conferência presencial");
+    expect(statusDoDrawer(base, "financialRelease", false, "2026-10-10")).toBe("Etapa 4 · Registrar atendimento");
     const ambos = { ...base, comparecimentoStatus: "compareceu", quitacaoStatus: "paga", comparecimentoEm: "2026-10-01T13:00:00Z", quitacaoEm: "2026-10-02T13:00:00Z" } as CartaoCliente;
     expect(statusDoDrawer(ambos, "financialRelease", false, "2026-10-07")).toMatch(/^Etapa 4 · 3 de \d+ dias úteis$/);
     expect(statusDoDrawer({ ...ambos, agendaCirurgicaLiberadaEm: "2026-10-08T10:00:00Z" }, "financialRelease", false, "2026-10-09")).toBe("Etapa 4 · Agenda cirúrgica liberada");
   });
   it("etapa 5 indica processo concluído", () => {
-    expect(statusDoDrawer(base, "surgeryConfirmed", false, "2026-10-10")).toBe("Etapa 5 · Cirurgia confirmada");
+    expect(statusDoDrawer(base, "surgeryConfirmed", false, "2026-10-10")).toBe("Etapa 5 · Cirurgia agendada");
     expect(statusDoDrawer(base, "surgeryConfirmed", true, "2026-10-10")).toBe("Etapa 5 · Processo concluído");
   });
 });

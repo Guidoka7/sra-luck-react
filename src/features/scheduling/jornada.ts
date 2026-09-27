@@ -314,3 +314,57 @@ export function bloqueios(dados: VisaoGeralResponse): { id: "termos" | "cirurgia
   }
   return lista;
 }
+
+export type EstadoPasso = "feito" | "atual" | "pendente" | "falhou";
+export interface PassoEtapa { rotulo: string; responsavel: Responsavel; estado: EstadoPasso; detalhe: string | null }
+
+/**
+ * Passos internos da etapa com o estado real de cada um (drawer da cliente).
+ * Mesma leitura de fase usada no quadro: faseLevantamento/faseLiberacao.
+ */
+export function passosDaEtapa(c: CartaoCliente, etapa: EstagioCentral, hoje: string, concluido = false): PassoEtapa[] {
+  const p = (rotulo: string, responsavel: Responsavel, estado: EstadoPasso, detalhe: string | null = null): PassoEtapa => ({ rotulo, responsavel, estado, detalhe });
+  if (etapa === "preEligibility") {
+    const elegivel = c.parcelasFaltantes === 0;
+    return [
+      p("Pagar o mínimo de parcelas", "cliente", elegivel ? "feito" : "atual", `${c.parcelasPagas} de ${c.parcelasNecessarias} necessárias`),
+      p("Solicitar a liberação no app", "cliente", elegivel ? "atual" : "pendente", elegivel ? "Botão já disponível no app" : null),
+    ];
+  }
+  if (etapa === "financialReview") {
+    const fase = faseLevantamento(c);
+    const prazo = prazoLevantamento(c);
+    return [
+      p("Levantamento financeiro", "equipe", fase === "analisar" ? "atual" : fase === "divergencia" ? "falhou" : "feito",
+        fase === "analisar" || fase === "divergencia" ? (prazo ? `prazo ${dataBr(prazo)}` : null) : c.financeiroConfirmadoEm ? `concluído em ${dataBr(c.financeiroConfirmadoEm)}` : null),
+      p("Forma de pagamento do saldo", "cliente", fase === "forma" ? "atual" : fase === "data" ? "feito" : "pendente", fase === "data" && c.custeioForma ? rotuloFormaCusteio(c.custeioForma) : null),
+      p("Data da assinatura dos termos", "cliente", fase === "data" ? "atual" : "pendente", null),
+    ];
+  }
+  if (etapa === "termsConfirmed") {
+    const pronto = Boolean(c.termosResponsavel && c.previsaoConfirmadaEm);
+    return [
+      p("Responsável pela assinatura", "equipe", c.termosResponsavel ? "feito" : "atual", c.termosResponsavel),
+      p("Previsão cirúrgica", "equipe", c.previsaoConfirmadaEm ? "feito" : "atual", c.previsaoConfirmadaEm ? dataBr(c.previsaoCirurgia) : null),
+      p("Dia da assinatura", "sistema", pronto ? "atual" : "pendente", c.dataTermos ? `${dataBr(c.dataTermos)}${c.horarioTermos ? ` às ${c.horarioTermos}` : ""}` : null),
+    ];
+  }
+  if (etapa === "financialRelease") {
+    const e = estadoLiberacao(c, hoje);
+    const fase = faseLiberacao(c, hoje);
+    // Ordem exigida pelo banco: previsão → comparecimento → quitação.
+    const previsaoOk = Boolean(c.previsaoConfirmadaEm);
+    return [
+      p("Previsão cirúrgica", "equipe", previsaoOk ? "feito" : "atual", previsaoOk ? dataBr(c.previsaoCirurgia) : "obrigatória antes do comparecimento"),
+      p("Comparecimento e assinatura", "equipe", c.comparecimentoStatus === "nao_compareceu" ? "falhou" : e.compareceu ? "feito" : previsaoOk ? "atual" : "pendente", null),
+      p("Quitação do saldo", "equipe", c.quitacaoStatus === "nao_realizada" ? "falhou" : e.quitada ? "feito" : previsaoOk && e.compareceu ? "atual" : "pendente", c.custeioForma ? rotuloFormaCusteio(c.custeioForma) : null),
+      p(`Prazo de ${e.totalDias} dias úteis`, "sistema", fase === "liberada" ? "feito" : fase === "prazo" ? "atual" : "pendente", e.previsao ? `libera em ${dataBr(e.previsao)}` : null),
+      p("Data da cirurgia", "cliente", fase === "liberada" ? "atual" : "pendente", null),
+    ];
+  }
+  const realizada = Boolean(c.dataCirurgia && c.dataCirurgia < hoje);
+  return [
+    p("Cirurgia", "sistema", realizada || concluido ? "feito" : "atual", c.dataCirurgia ? `${dataBr(c.dataCirurgia)}${c.horarioCirurgia ? ` às ${c.horarioCirurgia}` : ""}` : null),
+    p("Pagamento da cirurgia", "equipe", concluido ? "feito" : realizada ? "atual" : "pendente", null),
+  ];
+}
