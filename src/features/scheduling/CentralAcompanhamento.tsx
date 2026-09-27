@@ -7,7 +7,7 @@ import "./agenda.css";
 import { centralApi, dataBr, diaSemana } from "./api";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 import { JornadaBoard } from "./JornadaBoard";
-import { ETAPAS, contarAcaoEquipe, contextoDe, situacao, type AcaoJornada } from "./jornada";
+import { ETAPAS, contextoDe, situacao, type AcaoJornada } from "./jornada";
 import { PrepararAtendimentoModal, RegistrarAtendimentoModal } from "./AtendimentoModals";
 import { LiberacaoModal } from "./DrawerModals";
 import { ConfirmModal } from "./V46Modal";
@@ -49,21 +49,19 @@ export function CentralAcompanhamento() {
   const [recarregarKey, setRecarregarKey] = useState(0);
   const [acao, setAcao] = useState<{ cliente: CartaoCliente; tipo: AcaoJornada } | null>(null);
   const etapaParam = searchParams.get("etapa");
-  const etapaNoEndereco = Boolean(etapaParam && ETAPAS_VALIDAS.has(etapaParam));
-  const [etapa, setEtapa] = useState<EstagioCentral>(etapaNoEndereco ? etapaParam as EstagioCentral : "preEligibility");
-  const [etapaDefinida, setEtapaDefinida] = useState(etapaNoEndereco);
+  // ?etapa= (links da Visão geral) só destaca a coluna no quadro.
+  const etapa: EstagioCentral | null = etapaParam && ETAPAS_VALIDAS.has(etapaParam) ? etapaParam as EstagioCentral : null;
 
-  // Mantém a aba/etapa no endereço para que links (ex.: Visão geral) abram no lugar certo.
-  const trocarAba = useCallback((nova: Aba, novaEtapa?: EstagioCentral) => {
+  // Mantém a aba no endereço para que links abram no lugar certo.
+  const trocarAba = useCallback((nova: Aba) => {
     setAba(nova);
-    if (novaEtapa) { setEtapa(novaEtapa); setEtapaDefinida(true); }
     const url = new URL(window.location.href);
     const param = ABAS.find((a) => a.id === nova)?.param;
     if (param) url.searchParams.set("aba", param); else url.searchParams.delete("aba");
-    if (nova === "overview") url.searchParams.set("etapa", novaEtapa ?? etapa); else url.searchParams.delete("etapa");
+    url.searchParams.delete("etapa");
     url.searchParams.delete("data");
     window.history.replaceState({}, "", `${url.pathname}${url.search}`);
-  }, [etapa]);
+  }, []);
 
   const carregar = useCallback(async () => {
     try { setDados(await centralApi.visaoGeral()); setErro(null); }
@@ -72,13 +70,6 @@ export function CentralAcompanhamento() {
   useEffect(() => { void carregar(); }, [carregar]);
 
   const hoje = dados?.hoje ?? null;
-  // Sem etapa no endereço, abre na primeira etapa que tem trabalho para a equipe.
-  useEffect(() => {
-    if (!dados || etapaDefinida) return;
-    const ctx = contextoDe(dados);
-    setEtapa(ETAPAS.find((e) => contarAcaoEquipe(dados.filas[e.id], e.id, dados.hoje, ctx) > 0)?.id ?? "preEligibility");
-    setEtapaDefinida(true);
-  }, [dados, etapaDefinida]);
   useEffect(() => { if (hoje) { setDataTermos((d) => d ?? hoje); setDataCirurgia((d) => d ?? hoje); } }, [hoje]);
 
   const aoMudar = useCallback(async () => { setRecarregarKey((k) => k + 1); await carregar(); }, [carregar]);
@@ -148,7 +139,7 @@ export function CentralAcompanhamento() {
     {erro && !dados && <div className="ag-panel ag-erro" role="alert"><b>Não foi possível carregar a Agenda.</b><span>{erro}</span><button type="button" className="ag-btn" onClick={() => void carregar()}>Tentar novamente</button></div>}
     {!erro && !dados && <div className="ag-panel ag-vazio"><span>Carregando a Agenda…</span></div>}
 
-    {dados && hoje && aba === "overview" && <JornadaBoard dados={dados} etapa={etapa} onEtapa={(e) => trocarAba("overview", e)} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} onAcao={executarAcao} />}
+    {dados && hoje && aba === "overview" && <JornadaBoard dados={dados} etapa={etapa} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} onAcao={executarAcao} />}
 
     {acao?.tipo === "preparar" && hoje && <PrepararAtendimentoModal c={acao.cliente} sugestoes={sugestoesResponsavel} hoje={hoje} onClose={() => setAcao(null)} onDone={aoMudar} />}
     {acao?.tipo === "atendimento" && hoje && <RegistrarAtendimentoModal c={acao.cliente} hoje={hoje} onClose={() => setAcao(null)} onDone={aoMudar} />}
