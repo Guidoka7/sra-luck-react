@@ -5,6 +5,7 @@ import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPay
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
 import { detectarTipoArquivo as detectarTipoComprovante } from "./arquivos";
 import { hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
+import { dinheiro, indiceRecebimentos, realizacaoDaParcela, receitaAdministrativaDoValor, relacao } from "./financeiro-calculos";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -25,8 +26,6 @@ async function lerBody(request: Request): Promise<Json> {
 
 function hojeIso() { return hojeSaoPaulo(); }
 function dataValida(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value); }
-function dinheiro(value: unknown) { const number = Number(value ?? 0); return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0; }
-function relacao<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
 function texto(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 
 
@@ -47,17 +46,6 @@ function statusCalculado(boleto: any) {
 
 function clienteDo(boleto: any) {
   return relacao<any>(boleto.clientes) ?? {};
-}
-
-function indiceRecebimentos(recebimentos: any[]) {
-  const result = new Map<string, any>();
-  for (const recebimento of recebimentos) {
-    const atual = result.get(recebimento.boleto_id);
-    if (!atual || recebimento.status_validacao === "validado" || new Date(recebimento.created_at) > new Date(atual.created_at)) {
-      result.set(recebimento.boleto_id, recebimento);
-    }
-  }
-  return result;
 }
 
 function apresentarRecebivel(boleto: any, recebimento?: any) {
@@ -119,11 +107,7 @@ async function carregarBase(db: Db) {
 }
 
 function receitaAdministrativa(boleto: any, valor: number) {
-  const cliente = clienteDo(boleto);
-  const base = dinheiro(cliente.valor_contrato);
-  const custo = dinheiro(cliente.custo_total);
-  const taxaTotal = Math.max(0, custo - base) || dinheiro(base * dinheiro(cliente.taxa_administrativa_percentual) / 100);
-  return custo > 0 ? dinheiro(valor * taxaTotal / custo) : 0;
+  return receitaAdministrativaDoValor(clienteDo(boleto), valor);
 }
 
 async function resumo(db: Db, url: URL) {
@@ -139,9 +123,8 @@ async function resumo(db: Db, url: URL) {
   for (const boleto of boletos as any[]) {
     const rec = porBoleto.get(boleto.id);
     const vencimento = boleto.data_vencimento as string | null;
-    const dataRecebida = rec?.status_validacao === "validado" ? rec.data_pagamento : boleto.data_pagamento;
+    const { data: dataRecebida, valor: valorRealizado } = realizacaoDaParcela(boleto, rec);
     const valorPrevisto = dinheiro(boleto.valor);
-    const valorRealizado = rec?.status_validacao === "validado" ? dinheiro(rec.valor_recebido) : boleto.status === "pago" ? valorPrevisto : 0;
     const emPeriodo = Boolean(vencimento && vencimento >= inicio && vencimento <= fim);
     const recebidoNoPeriodo = Boolean(dataRecebida && dataRecebida >= inicio && dataRecebida <= fim);
 

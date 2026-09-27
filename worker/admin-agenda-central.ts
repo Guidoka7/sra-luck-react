@@ -109,7 +109,28 @@ const ERROS_CIRURGIA = {
 };
 
 
-function prazoCirurgico(comparecimentoEm: string | null, quitacaoEm: string | null, ajusteDias: number): string | null {
+export type EtapaCentral = "preEligibility" | "financialReview" | "termsConfirmed" | "financialRelease" | "surgeryConfirmed" | "concluido";
+
+/**
+ * Etapa V46 da cliente — implementação única usada pela Central, pelo drawer
+ * e pela Visão geral. Sem solicitação explícita, mesmo já elegível, a cliente
+ * permanece em preEligibility (ver migration_064).
+ */
+export function etapaCentral(params: {
+  processoConcluidoEm: string | null | undefined;
+  dataCirurgia: string | null | undefined;
+  dataTermos: string | null | undefined;
+  liberacaoFinanceiraSolicitadaEm: string | null | undefined;
+}, hoje: string): EtapaCentral {
+  if (params.processoConcluidoEm) return "concluido";
+  if (params.dataCirurgia) return "surgeryConfirmed";
+  if (params.dataTermos && params.dataTermos <= hoje) return "financialRelease";
+  if (params.dataTermos) return "termsConfirmed";
+  if (params.liberacaoFinanceiraSolicitadaEm != null) return "financialReview";
+  return "preEligibility";
+}
+
+export function prazoCirurgico(comparecimentoEm: string | null, quitacaoEm: string | null, ajusteDias: number): string | null {
   if (!comparecimentoEm || !quitacaoEm) return null;
   const base = comparecimentoEm.slice(0, 10) >= quitacaoEm.slice(0, 10) ? comparecimentoEm.slice(0, 10) : quitacaoEm.slice(0, 10);
   return adicionarDiasUteis(base, 5 + Math.max(0, ajusteDias || 0));
@@ -214,24 +235,16 @@ async function visaoGeral(env: Env) {
       procedure: cliente.procedimento,
     }, undefined, opcoesAcessoApp());
 
-    let estagio: keyof typeof filas;
-    if (agendamento?.processo_concluido_em) {
-      continue; // processo concluído sai das filas operacionais.
-    } else if (agendamento?.data_cirurgia) {
-      estagio = "surgeryConfirmed";
-    } else if (dataTermos && dataTermos <= hoje) {
-      estagio = "financialRelease";
-    } else if (dataTermos) {
-      estagio = "termsConfirmed";
-    } else if (cliente.liberacao_financeira_solicitada_em != null) {
-      // V46: SEM solicitação explícita, mesmo já elegível, a cliente
-      // permanece em preEligibility — status_revisao_financeira/
-      // financeiro_confirmado_em não são usados aqui de propósito (ver
-      // comentário em migration_064 sobre por que são conceitos diferentes).
-      estagio = "financialReview";
-    } else {
-      estagio = "preEligibility";
-    }
+    // status_revisao_financeira/financeiro_confirmado_em não entram aqui de
+    // propósito (ver comentário em migration_064: conceitos diferentes).
+    const etapa = etapaCentral({
+      processoConcluidoEm: agendamento?.processo_concluido_em,
+      dataCirurgia: agendamento?.data_cirurgia,
+      dataTermos,
+      liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em,
+    }, hoje);
+    if (etapa === "concluido") continue; // processo concluído sai das filas operacionais.
+    const estagio: keyof typeof filas = etapa;
 
     const cartao = {
       id: cliente.id,
@@ -305,13 +318,12 @@ async function clienteCentral(env: Env, clienteId: string) {
     procedure: cliente.procedimento,
   }, undefined, opcoesAcessoApp());
 
-  let estagio: string;
-  if (agendamento?.processo_concluido_em) estagio = "concluido";
-  else if (agendamento?.data_cirurgia) estagio = "surgeryConfirmed";
-  else if (dataTermos && dataTermos <= agoraSaoPaulo().data) estagio = "financialRelease";
-  else if (dataTermos) estagio = "termsConfirmed";
-  else if (cliente.liberacao_financeira_solicitada_em != null) estagio = "financialReview";
-  else estagio = "preEligibility";
+  const estagio = etapaCentral({
+    processoConcluidoEm: agendamento?.processo_concluido_em,
+    dataCirurgia: agendamento?.data_cirurgia,
+    dataTermos,
+    liberacaoFinanceiraSolicitadaEm: cliente.liberacao_financeira_solicitada_em,
+  }, agoraSaoPaulo().data);
 
   return json({
     estagio,

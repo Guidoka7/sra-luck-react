@@ -164,9 +164,20 @@ Procurar:
 - `taxa_administrativa_percentual`;
 - `custo_total`;
 - geração/recalculo de parcelas;
-- relatórios de receita.
+- relatórios de receita;
+- `worker/financeiro-calculos.ts` — implementação única da receita administrativa contida em um valor pago/previsto (usada pelo Financeiro e pela Visão geral).
 
 Manter separado valor base/crédito de receita administrativa.
+
+### Visão geral do Admin
+
+Tela inicial do painel (`/admin/visao-geral`). Responde "o que exige ação agora?" — nenhum número é calculado no navegador.
+
+- `src/features/admin/visao-geral/` — `VisaoGeralPage.tsx` (página), `FilaTrabalho.tsx`, `AgendaSemana.tsx`, `GraficoRecebimentos.tsx`; `destinos.ts` traduz cada área em rota + permissão (links só aparecem para quem abre o destino); estilos em `src/styles/admin-visao-geral.css` (apenas tokens do shell `.zip-admin`).
+- `src/lib/visaoGeralContrato.ts` — contrato tipado de `GET /api/admin/visao-geral` (v2), compartilhado por tela e Worker.
+- `worker/admin-visao-geral.ts` — somente carrega dados (leitura); falhas de leituras secundárias viram `avisos`, não zeros.
+- `worker/visao-geral-agregacao.ts` — agregação pura e testada (`visao-geral-agregacao.test.ts`): fila de trabalho com severidade (crítica = prazo operacional vencido), finanças do mês, carteira, jornada V46 e agenda de 7 dias. Reaproveita `etapaCentral`/`prazoCirurgico` (`admin-agenda-central.ts`), `requiredPaid`, `getAppAccessRequirements` e `financeiro-calculos.ts` — não reimplementar essas regras aqui.
+- Permissão: `visao_geral.ver` ou `relatorios.visualizar` (`worker/admin-route-permissions.ts`).
 
 ### Financeiro
 
