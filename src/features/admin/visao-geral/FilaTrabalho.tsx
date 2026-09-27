@@ -27,7 +27,7 @@ function LinhaPendencia({ pendencia, perfil, aberta, alternar }: {
   alternar: () => void;
 }) {
   const Icone = ICONE[pendencia.severidade];
-  const destino = hrefArea(perfil, pendencia.area);
+  const destino = hrefArea(perfil, pendencia.area, pendencia.id);
   const restantes = pendencia.total - pendencia.itens.length;
   const idLista = `vg-fila-${pendencia.id}`;
 
@@ -48,7 +48,7 @@ function LinhaPendencia({ pendencia, perfil, aberta, alternar }: {
     {aberta && <div className="vg-fila-detalhe" id={idLista}>
       <ul className="vg-fila-lista">
         {pendencia.itens.map((item) => {
-          const href = hrefItem(perfil, pendencia.area, item);
+          const href = hrefItem(perfil, pendencia.area, item, pendencia.id);
           const conteudo = <>
             <span className="vg-item-nome">{item.nome}</span>
             <span className="vg-item-detalhe">{item.detalhe}</span>

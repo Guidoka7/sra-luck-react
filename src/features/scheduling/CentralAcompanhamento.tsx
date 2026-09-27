@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { CalendarDays, CalendarRange, Plus, Route, Stethoscope } from "lucide-react";
 import { ClienteDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
 import "./central-v46.css";
+import "./agenda.css";
 import { centralApi, dataBr, diaSemana } from "./api";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
-import { OverviewBoard } from "./OverviewBoard";
+import { JornadaBoard } from "./JornadaBoard";
+import { ETAPAS, contarAcaoEquipe } from "./jornada";
 import { TermsAgendaTab } from "./TermsAgendaTab";
 import { SurgeryAgendaTab } from "./SurgeryAgendaTab";
 import { SystemDateModal } from "./SystemDateModal";
 
 type Aba = "overview" | "terms" | "surgery";
 
-const CABECALHO: Record<Aba, { titulo: string; subtitulo: string }> = {
-  overview: { titulo: "Central de acompanhamento", subtitulo: "Acompanhe todo o fluxo das clientes, desde o progresso financeiro até os termos e a cirurgia." },
-  terms: { titulo: "Agenda de termos", subtitulo: "Controle as datas disponíveis para agendamentos de assinatura de termos." },
-  surgery: { titulo: "Agenda cirúrgica", subtitulo: "Gerencie as datas cirúrgicas, a capacidade e as cirurgias confirmadas." },
-};
+const ABAS: { id: Aba; param: string | null; rotulo: string; descricao: string; icone: typeof Route }[] = [
+  { id: "overview", param: null, rotulo: "Jornada das clientes", descricao: "Onde cada cliente está no processo, o que falta e quem precisa agir.", icone: Route },
+  { id: "terms", param: "termos", rotulo: "Agenda de termos", descricao: "Datas abertas no app para a assinatura dos termos e quem vem em cada dia.", icone: CalendarRange },
+  { id: "surgery", param: "cirurgia", rotulo: "Agenda cirúrgica", descricao: "Datas cirúrgicas, teto financeiro do mês e confirmação de pagamento.", icone: Stethoscope },
+];
+
+const ETAPAS_VALIDAS = new Set<string>(ETAPAS.map((e) => e.id));
 
 /**
  * Central de acompanhamento — reprodução do V46 aprovado
@@ -37,6 +42,22 @@ export function CentralAcompanhamento() {
   const [dataTermos, setDataTermos] = useState<string | null>(abaParam === "termos" ? dataParam : null);
   const [dataCirurgia, setDataCirurgia] = useState<string | null>(abaParam === "cirurgia" ? dataParam : null);
   const [recarregarKey, setRecarregarKey] = useState(0);
+  const etapaParam = searchParams.get("etapa");
+  const etapaNoEndereco = Boolean(etapaParam && ETAPAS_VALIDAS.has(etapaParam));
+  const [etapa, setEtapa] = useState<EstagioCentral>(etapaNoEndereco ? etapaParam as EstagioCentral : "preEligibility");
+  const [etapaDefinida, setEtapaDefinida] = useState(etapaNoEndereco);
+
+  // Mantém a aba/etapa no endereço para que links (ex.: Visão geral) abram no lugar certo.
+  const trocarAba = useCallback((nova: Aba, novaEtapa?: EstagioCentral) => {
+    setAba(nova);
+    if (novaEtapa) { setEtapa(novaEtapa); setEtapaDefinida(true); }
+    const url = new URL(window.location.href);
+    const param = ABAS.find((a) => a.id === nova)?.param;
+    if (param) url.searchParams.set("aba", param); else url.searchParams.delete("aba");
+    if (nova === "overview") url.searchParams.set("etapa", novaEtapa ?? etapa); else url.searchParams.delete("etapa");
+    url.searchParams.delete("data");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+  }, [etapa]);
 
   const carregar = useCallback(async () => {
     try { setDados(await centralApi.visaoGeral()); setErro(null); }
@@ -45,6 +66,12 @@ export function CentralAcompanhamento() {
   useEffect(() => { void carregar(); }, [carregar]);
 
   const hoje = dados?.hoje ?? null;
+  // Sem etapa no endereço, abre na primeira etapa que tem trabalho para a equipe.
+  useEffect(() => {
+    if (!dados || etapaDefinida) return;
+    setEtapa(ETAPAS.find((e) => contarAcaoEquipe(dados.filas[e.id], e.id, dados.hoje) > 0)?.id ?? "preEligibility");
+    setEtapaDefinida(true);
+  }, [dados, etapaDefinida]);
   useEffect(() => { if (hoje) { setDataTermos((d) => d ?? hoje); setDataCirurgia((d) => d ?? hoje); } }, [hoje]);
 
   const aoMudar = useCallback(async () => { setRecarregarKey((k) => k + 1); await carregar(); }, [carregar]);
@@ -63,64 +90,48 @@ export function CentralAcompanhamento() {
   }, [todos]);
 
   const diaRef = aba === "surgery" ? dataCirurgia : dataTermos;
-  const cab = CABECALHO[aba];
+  const abaAtual = ABAS.find((a) => a.id === aba)!;
   const abrir = (clienteId: string, estagio: EstagioCentral | null = null) => setDrawer({ clienteId, estagio });
 
-  return <div className="v46">
-    <div className="page-head">
+  return <div className="ag"><div className="v46 ag-root">
+    <header className="ag-head">
       <div>
-        <h1>{cab.titulo}</h1>
-        <p>{cab.subtitulo}</p>
+        <span className="ag-eyebrow">{hoje ? `${diaSemana(hoje)}, ${dataBr(hoje)}` : "Agenda"}</span>
+        <h1 className="ag-h1">Agenda</h1>
+        <p className="ag-sub">{abaAtual.descricao}</p>
       </div>
-      <div className="head-actions">
-        <button type="button" className="today-card today-picker-btn" aria-label="Escolher dia das agendas" disabled={!hoje} onClick={() => setEscolherDia(true)}>
-          <span className="today-calendar-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-            </svg>
-          </span>
-          <div className="today-copy">
-            <b>{!hoje ? "Carregando…" : !diaRef || diaRef === hoje ? `Hoje é ${dataBr(hoje)}` : `Visualizando ${dataBr(diaRef)}`}</b>
-            <small>{diaSemana(diaRef ?? hoje)}</small>
-          </div>
-          <span className="today-chevron" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m7 10 5 5 5-5" />
-            </svg>
-          </span>
-        </button>
-        <button type="button" className="primary-btn" onClick={() => setNovaCliente(true)}>＋ Nova cliente</button>
+      <div className="ag-head-acoes">
+        {aba !== "overview" && <button type="button" className="ag-btn" aria-label="Ir para uma data nas agendas" disabled={!hoje} onClick={() => setEscolherDia(true)}>
+          <CalendarDays size={15} aria-hidden="true" />
+          {!hoje ? "Carregando…" : !diaRef || diaRef === hoje ? "Ir para data" : `Vendo ${dataBr(diaRef)}`}
+        </button>}
+        <button type="button" className="ag-btn is-primario" onClick={() => setNovaCliente(true)}><Plus size={15} aria-hidden="true" />Nova cliente</button>
       </div>
+    </header>
+
+    <div className="ag-abas" role="tablist" aria-label="Áreas da Agenda">
+      {ABAS.map(({ id, rotulo, icone: Icone }) => <button key={id} type="button" role="tab" aria-selected={aba === id} className="ag-aba" onClick={() => trocarAba(id)}>
+        <Icone size={15} aria-hidden="true" />{rotulo}
+      </button>)}
     </div>
 
-    <div className="main-tabs" role="tablist" aria-label="Áreas da Central">
-      {([["overview", "⌂", "Visão geral"], ["terms", "▤", "Termos"], ["surgery", "⚑", "Cirurgia"]] as [Aba, string, string][]).map(([id, icone, rotulo]) =>
-        <button key={id} type="button" role="tab" aria-selected={aba === id} className={`main-tab${aba === id ? " active" : ""}`} onClick={() => setAba(id)}><span aria-hidden="true">{icone}</span> <span>{rotulo}</span></button>)}
-    </div>
+    {erro && !dados && <div className="ag-panel ag-erro" role="alert"><b>Não foi possível carregar a Agenda.</b><span>{erro}</span><button type="button" className="ag-btn" onClick={() => void carregar()}>Tentar novamente</button></div>}
+    {!erro && !dados && <div className="ag-panel ag-vazio"><span>Carregando a Agenda…</span></div>}
 
-    {erro && !dados && <div className="panel panel-pad" role="alert"><div className="callout danger">{erro}</div><div className="inline-actions" style={{ marginTop: 10 }}><button type="button" className="secondary-btn" onClick={() => void carregar()}>Tentar novamente</button></div></div>}
-    {!erro && !dados && <div className="panel panel-pad"><div className="empty-card">Carregando a Central…</div></div>}
-
-    {dados && hoje && aba === "overview" && <section className="view active v46-overview">
-      <OverviewBoard dados={dados} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} />
-    </section>}
-    {dados && hoje && aba === "terms" && dataTermos && <section className="view active">
-      <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} />
-    </section>}
-    {dados && hoje && aba === "surgery" && dataCirurgia && <section className="view active">
-      <SurgeryAgendaTab hoje={hoje} data={dataCirurgia} onData={setDataCirurgia} recarregarKey={recarregarKey} liberadas={liberadas} cartoes={cartoes} onAbrirCliente={(id) => abrir(id)} onConsultarProcesso={(id) => abrir(id, "surgeryConfirmed")} onMudou={carregar} />
-    </section>}
+    {dados && hoje && aba === "overview" && <JornadaBoard dados={dados} etapa={etapa} onEtapa={(e) => trocarAba("overview", e)} selecionadoId={drawer?.clienteId ?? null} onAbrirCliente={(id, estagio) => abrir(id, estagio)} />}
+    {dados && hoje && aba === "terms" && dataTermos && <TermsAgendaTab hoje={hoje} data={dataTermos} onData={setDataTermos} sugestoesResponsavel={sugestoesResponsavel} recarregarKey={recarregarKey} onAbrirCliente={(id) => abrir(id)} onMudou={carregar} />}
+    {dados && hoje && aba === "surgery" && dataCirurgia && <SurgeryAgendaTab hoje={hoje} data={dataCirurgia} onData={setDataCirurgia} recarregarKey={recarregarKey} liberadas={liberadas} cartoes={cartoes} onAbrirCliente={(id) => abrir(id)} onConsultarProcesso={(id) => abrir(id, "surgeryConfirmed")} onMudou={carregar} />}
 
     {drawer && hoje && <ClienteDrawer key={drawer.clienteId} clienteId={drawer.clienteId} abaInicial="process" estagioOrigem={drawer.estagio} hoje={hoje}
       sugestoesResponsavel={sugestoesResponsavel} onClose={() => setDrawer(null)} onChanged={aoMudar}
       onIrParaAgenda={(tipo, data) => {
-        if (tipo === "terms") { if (data) setDataTermos(data); setAba("terms"); }
-        else { if (data) setDataCirurgia(data); setAba("surgery"); }
+        if (tipo === "terms") { trocarAba("terms"); if (data) setDataTermos(data); }
+        else { trocarAba("surgery"); if (data) setDataCirurgia(data); }
       }} />}
 
     {escolherDia && hoje && <SystemDateModal atual={diaRef ?? hoje} hoje={hoje} contagens={contagens} onClose={() => setEscolherDia(false)}
       onAplicar={(iso) => { setDataTermos(iso); setDataCirurgia(iso); }} />}
 
     {novaCliente && <ClienteDrawer clienteId={null} hoje={hoje} onClose={() => setNovaCliente(false)} onChanged={carregar} />}
-  </div>;
+  </div></div>;
 }

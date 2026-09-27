@@ -175,7 +175,7 @@ export default function VisaoGeralPage() {
               <h2 id="vg-jornada-titulo">Jornada das clientes</h2>
               <p>Onde cada cliente ativa está no fluxo V46.</p>
             </div>
-            {linkAgenda && <Link href={linkAgenda} className="vg-link">Central<ChevronRight size={13} aria-hidden="true" /></Link>}
+            {linkAgenda && <Link href={linkAgenda} className="vg-link">Abrir jornada<ChevronRight size={13} aria-hidden="true" /></Link>}
           </header>
           <ol className="vg-jornada">
             {jornada.etapas.map((etapa, i) => <li key={etapa.id}>

@@ -199,7 +199,8 @@ As rotas antigas `/admin/pagamentos` e `/admin/parcelas` são apenas redirects p
 
 Procurar:
 
-- página de agenda admin;
+- página de agenda admin (`/admin/agenda`): `src/features/scheduling/CentralAcompanhamento.tsx` com três abas — **Jornada das clientes** (`JornadaBoard.tsx`), **Agenda de termos** (`TermsAgendaTab.tsx`) e **Agenda cirúrgica** (`SurgeryAgendaTab.tsx`); calendário e painel do dia em `AgendaCalendar.tsx`; estilos em `agenda.css` (tokens do shell; o `.v46` interno segue servindo modais e drawer). Parâmetros de endereço: `?etapa=<preEligibility|financialReview|termsConfirmed|financialRelease|surgeryConfirmed>`, `?aba=termos|cirurgia` e `&data=AAAA-MM-DD`;
+- `src/features/scheduling/jornada.ts` — somente exibição (testado em `jornada.test.ts`): o que é cada uma das 5 etapas, como a cliente sai dela, filtros por etapa e a situação de cada cliente com **quem age agora** (Equipe, Cliente ou Automático). A etapa em si vem pronta do Worker (`etapaCentral`); não decidir regra aqui;
 - calendário cliente;
 - `worker/client-agenda.ts`;
 - `worker/agendamento-acoes.ts`;
