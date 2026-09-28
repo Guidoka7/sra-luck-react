@@ -1,0 +1,36 @@
+// J10 — cliente liberada (QA-04 Daniela) escolhe a data da cirurgia (≥ termos + 90 dias)
+import { abrir, BASE } from "./lib.mjs";
+import { loginCliente, aba } from "./clientelogin.mjs";
+import { writeFileSync } from "node:fs";
+const T = process.env.SP_TXT || "/tmp";
+const { page, context, shot, fim } = await abrir(process.env.FLOW || "J10-cliente-escolhe-cirurgia", { mobile: true });
+const r = {};
+r.login = await loginCliente(page, process.env.CPF || "90000000418", process.env.NASC || "30/11/1985");
+await shot("apos-login-celebracao");
+await aba(page, "Agenda"); await shot("agenda-liberada");
+writeFileSync(`${T}/j10-agenda.txt`, await page.locator("body").innerText());
+r.botoes = await page.locator("button").evaluateAll(els => els.map(e => (e.innerText || e.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ")).filter(Boolean).filter(t => !/^\d+$/.test(t)));
+r.diasHabilitados = await page.locator("button:not([disabled])").evaluateAll(els => els.map(e => e.innerText.trim()).filter(t => /^\d+$/.test(t)));
+r.mesInicial = (await page.locator("body").innerText()).match(/(Janeiro|Fevereiro|Março|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro) \d{4}/)?.[0];
+await shot("mes-inicial");
+await page.locator("button").filter({ hasText: /^‹$/ }).first().click(); await page.waitForTimeout(800);
+r.dezembro = { mes: (await page.locator("body").innerText()).match(/(Novembro|Dezembro) \d{4}/)?.[0], habilitados: await page.locator("button:not([disabled])").evaluateAll(els => els.map(e => e.innerText.trim()).filter(t => /^\d+$/.test(t))) };
+r.dezembroRotulos = await page.locator("button[disabled]").evaluateAll(els => els.map(e => [e.innerText.trim(), e.getAttribute("aria-label"), e.getAttribute("title")]).filter(x => ["4","11","18","25"].includes(x[0])));
+await shot("dezembro-antes-da-previsao");
+await page.locator("button").filter({ hasText: /^›$/ }).first().click(); await page.waitForTimeout(800);
+await page.locator("button:not([disabled])").filter({ hasText: /^\s*8\s*$/ }).first().click(); await page.waitForTimeout(1000);
+await shot("dia-8-jan");
+writeFileSync(`${T}/j10-dia8.txt`, await page.locator("body").innerText());
+r.horarios = await page.locator("button:not([disabled])").evaluateAll(els => els.map(e => e.innerText.trim()).filter(t => /^\d{2}:\d{2}$/.test(t)));
+if (await page.locator("select").count()) { r.horarios = await page.locator("select option").allInnerTexts(); await page.locator("select").last().selectOption("09:00"); }
+else await page.locator("button").filter({ hasText: /^09:00$/ }).first().click();
+await page.waitForTimeout(600);
+const ag = page.waitForResponse((res) => res.request().method() === "POST" && res.url().includes("/api/cliente/agendar-cirurgia"), { timeout: 20000 });
+await page.locator("button").filter({ hasText: /Confirmar/i }).last().click();
+await page.waitForTimeout(700);
+const rag = await Promise.race([ag, page.waitForTimeout(2500).then(() => null)]) || (await page.locator("button").filter({ hasText: /Confirmar/i }).last().click(), await ag);
+r.agendarCirurgia = { status: rag.status(), body: (await rag.text()).slice(0, 300) };
+await page.waitForTimeout(2000); await shot("cirurgia-agendada");
+writeFileSync(`${T}/j10-final.txt`, await page.locator("body").innerText());
+await fim(r);
+console.log(JSON.stringify(r, null, 1));
