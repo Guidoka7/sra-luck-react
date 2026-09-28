@@ -62,12 +62,18 @@ export function isDevConsoleSyntheticAdminId(value: string) {
     && value.length <= DEV_CONSOLE_ADMIN_PREFIX.length + 128;
 }
 
+/** Papéis do Dev Console que podem ESCREVER via M2M. viewer e ausente = leitura. */
+export const DEV_CONSOLE_WRITE_ROLES = new Set(["owner", "developer", "operator"]);
+
 /**
  * Autenticação do Dev (Dev Console, server-to-server).
  *
- * Decisão do responsável (24/09/2026): todo acesso Dev tem acesso a TUDO no
- * /api/admin/* — leituras, alterações, integrações (chaves e configuração) e
- * monitoramento. A segurança é o token técnico (DEV_CONSOLE_SERVICE_TOKEN,
+ * Leitura (GET/HEAD) em /api/admin/* para qualquer papel do Dev Console.
+ * Escrita somente para papéis com escrita (owner, developer, operator),
+ * informado pelo Console em x-dev-actor-role depois de aplicar o próprio RBAC
+ * por domínio. viewer — ou papel ausente/desconhecido — é somente leitura
+ * (decisão do responsável em 28/09/2026, substitui a de 24/09).
+ * A segurança continua sendo o token técnico (DEV_CONSOLE_SERVICE_TOKEN,
  * comparação em tempo constante) e a sessão efêmera assinada "dev-console:<ator>",
  * que o Worker trata como administrativo e registra na auditoria.
  *
@@ -90,6 +96,11 @@ export async function authorizeDevConsoleRequest(request: Request, env: Env): Pr
   const supplied = presented.trim();
   if (!supplied || !(await safeEqual(supplied, expected))) {
     return json("Credencial técnica inválida.", "DEV_CONSOLE_TOKEN_INVALID", 401);
+  }
+
+  const role = String(request.headers.get(ROLE_HEADER) || "").trim().toLowerCase();
+  if (!["GET", "HEAD"].includes(request.method) && !DEV_CONSOLE_WRITE_ROLES.has(role)) {
+    return json("Seu papel no Dev Console não permite esta alteração.", "DEV_CONSOLE_ROLE_INSUFFICIENT", 403);
   }
 
   const actor = normalizeActor(request.headers.get(ACTOR_HEADER));
