@@ -19,6 +19,7 @@ import {
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
+import { camposDisponiveisDoFunil, type CampoCatalogoCrm } from "./crm-opcoes-por-funil";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -627,20 +628,44 @@ export async function descartarRevisao(db: Db, itemId: string, ator: string) {
   return { ok: true as const };
 }
 
-/** Funis, etapas e campos personalizados lidos do RD (GET) para montar a configuração. */
+/**
+ * Funis, etapas e campos do RD para montar a configuração.
+ * A disponibilidade de origem é específica por funil: o catálogo só fornece o nome/tipo;
+ * um campo entra na lista daquele funil somente quando a chave aparece em uma negociação
+ * do pipeline ou em um contato ligado a ela. Não existe fallback global de campos.
+ */
 export async function opcoesCrm(env: Env) {
-  const funis = await listarTudo(env, "pipelines");
+  const [funis, catalogoBruto, contatos] = await Promise.all([
+    listarTudo(env, "pipelines"),
+    listarSeguro(env, "custom_fields"),
+    listarSeguro(env, "contacts"),
+  ]);
+  const catalogo = catalogoBruto
+    .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
+    .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
+    .filter((c) => /^[a-z0-9_]{1,60}$/.test(c.slug)) as CampoCatalogoCrm[];
+  const contatosPorId = mapById(contatos);
   const comEtapas = await Promise.all(funis.map(async (f) => {
     const id = stringValue(f.id);
     let etapas: Json[] = [];
-    try { etapas = arrayValue((await rdGet(env, `/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)).data).map(objectValue); } catch { etapas = []; }
-    return { id, nome: stringValue(f.name) || id, etapas: etapas.sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0)).map((e) => ({ id: stringValue(e.id), nome: stringValue(e.name) || stringValue(e.id) })) };
+    let deals: Json[] = [];
+    await Promise.all([
+      rdGet(env, `/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)
+        .then((r) => { etapas = arrayValue(r.data).map(objectValue); })
+        .catch(() => { etapas = []; }),
+      listarTudo(env, "deals", `pipeline_id:${id}`)
+        .then((r) => { deals = r; })
+        .catch(() => { deals = []; }),
+    ]);
+    const disponiveis = camposDisponiveisDoFunil(deals, contatosPorId, catalogo);
+    return {
+      id,
+      nome: stringValue(f.name) || id,
+      etapas: etapas.sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0)).map((e) => ({ id: stringValue(e.id), nome: stringValue(e.name) || stringValue(e.id) })),
+      ...disponiveis,
+    };
   }));
-  const campos = (await listarSeguro(env, "custom_fields"))
-    .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
-    .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
-    .filter((c) => /^[a-z0-9_]{1,60}$/.test(c.slug));
-  return { funis: comEtapas, campos, camposNativos: CAMPOS_NATIVOS_CRM };
+  return { funis: comEtapas, campos: [], camposNativos: [], escopoCampos: "por_funil" as const };
 }
 
 /**
