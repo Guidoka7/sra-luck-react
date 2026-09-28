@@ -177,7 +177,7 @@ Resposta: `{ lote_id, recebidos, novos, inalterados, conciliados, divergencias_a
 
 ---
 
-## 5. Modelo de dados proposto (App, migration futura `113`)
+## 5. Modelo de dados proposto (App, migration futura `114`; a `113` passou a ser a fila de pendências do RD)
 
 | Tabela | Chave de idempotência | Conteúdo |
 |---|---|---|
@@ -322,7 +322,7 @@ que fica para a etapa posterior (leitura apenas, sem escrita).
    URL do webhook do Console; confirmar **qual campo do RD guarda o SDR**.
 5. **Lista de vendedoras e SDRs** com o usuário RD de cada uma (para o mapeamento).
 6. **n8n**: URL da instância e quem a administra (recebe só o token de agendamento).
-7. **Aprovação para aplicar em Production**, em etapa própria: migrations 111, 112 e 113.
+7. **Aprovação para aplicar em Production**, em etapa própria: migrations 111, 112, 113 (pendências do RD) e 114 (Conta Azul).
 
 Segredos gerados por nós (sem pedir a você): `INTEGRACAO_INGEST_TOKEN` e o segredo HMAC, configurados
 no Console e no App pela Vercel.

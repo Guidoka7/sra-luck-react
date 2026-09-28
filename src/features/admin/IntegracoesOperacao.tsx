@@ -177,7 +177,7 @@ function ItemImportacao({ it, onAcao }: { it: Json; onAcao?: (id: string, acao: 
   const [r, k] = RESULTADO[it.resultado] ?? [it.resultado, "neutral"];
   return <div style={{ ...caixa, display: "flex", flexDirection: "column", gap: 4 }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong>{it.dados?.nome ?? it.externalId}</strong><span style={chip(k)}>{r}</span></div>
-    <span style={muted}>{[it.dados?.cpf, it.dados?.telefone, it.dados?.email].filter(Boolean).join(" · ") || "Sem contato"}{it.motivo ? ` — ${it.motivo}` : ""}</span>
+    <span style={muted}>{[it.dados?.cpf, it.dados?.telefone, it.dados?.email].filter(Boolean).join(" · ") || "Sem contato"}{it.motivo ? ` — ${it.motivo}` : ""}{it.repeticoes > 1 ? ` · vista em ${it.repeticoes} execuções` : ""}</span>
     {(it.correspondencias ?? []).map((c: Json) => <span key={`${c.tipo}${c.id}`} style={muted}>↳ {c.tipo === "cliente" ? "Cliente" : "Venda pendente"} {c.nome ?? c.id} (mesmo {c.por.join(", ")})</span>)}
     {onAcao && !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado) && <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
       <button style={btn} onClick={() => onAcao(it.id, "descartar")}>É a mesma pessoa</button>
@@ -229,6 +229,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button style={btnPrim} disabled={ocupado} onClick={() => void importar()}>{ocupado ? "Importando…" : "Importar agora"}</button></div>
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
     {revisao.length > 0 && <><div style={titulo}>Aguardando revisão ({revisao.length})</div><div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{revisao.map((it) => <ItemImportacao key={it.id} it={it} onAcao={(id, a) => void revisar(id, a)} />)}</div></>}
+    <ResponsaveisRd onMsg={setMsg} />
     <div style={titulo}>Histórico de importações</div>
     {imps && !imps.disponivel && <div style={{ ...caixa, color: "var(--gold)" }}>Estrutura de histórico ainda não aplicada (migration_091).</div>}
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -267,6 +268,47 @@ const ACOES: Record<string, { rotulo: string; acoes: [string, string][] }> = {
 };
 
 /** modo "equipe": conflitos, fila, vínculos, histórico e sincronização (conexão e configuração são do Dev). */
+/**
+ * Responsável do RD ↔ pessoa da equipe (identificador estável, nunca pelo nome). Sem vínculo,
+ * a venda fica com a pendência "vendedora sem vínculo" e não conta como venda válida no BI.
+ */
+function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | null) => void }) {
+  const [dados, setDados] = useState<Json | null>(null);
+  const [escolha, setEscolha] = useState<Record<string, string>>({});
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const carregar = useCallback(async () => {
+    try { setDados(await api("/api/admin/integrations/rd-station/responsaveis")); } catch { setDados({ indisponivel: true }); }
+  }, []);
+  useEffect(() => { void carregar(); }, [carregar]);
+  if (!dados || dados.indisponivel) return null;
+  const sem = (dados.responsaveis as Json[] ?? []).filter((r) => !r.colaboradorId);
+  const equipe = dados.equipe as Json[] ?? [];
+  const nomeDe = (id: string) => equipe.find((c) => c.id === id)?.nome ?? "—";
+  async function vincular(rdUserId: string) {
+    const colaboradorId = escolha[rdUserId];
+    if (!colaboradorId) { onMsg({ t: "Escolha a vendedora ou SDR.", ok: false }); return; }
+    setSalvando(rdUserId);
+    try {
+      const r = await api("/api/admin/integrations/rd-station/responsaveis", { method: "POST", body: { rdUserId, colaboradorId } });
+      onMsg({ t: `Vínculo gravado com ${nomeDe(colaboradorId)}; ${r.vendasRecalculadas} venda(s) recalculada(s).`, ok: true });
+      await carregar();
+    } catch (e) { onMsg({ t: (e as Error).message, ok: false }); } finally { setSalvando(null); }
+  }
+  return <>
+    <div style={titulo}>Responsáveis do RD sem vínculo ({sem.length})</div>
+    {sem.length === 0 ? <div style={caixa}>Todos os responsáveis do RD estão vinculados a uma pessoa da equipe.</div>
+      : equipe.length === 0 ? <div style={caixa}>Cadastre vendedoras e SDRs em Equipe para vincular os responsáveis do RD.</div>
+      : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{sem.map((r) => <div key={r.rdUserId} style={{ ...caixa, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}><strong>{r.nomeNoRd ?? "Sem nome no RD"}</strong><div style={{ fontSize: 12, opacity: 0.7 }}>{r.vendas} venda(s) · usuário RD …{String(r.rdUserId).slice(-6)}</div></div>
+        <select aria-label="Pessoa da equipe" value={escolha[r.rdUserId] ?? ""} onChange={(e) => setEscolha({ ...escolha, [r.rdUserId]: e.target.value })}>
+          <option value="">Escolher pessoa da equipe…</option>
+          {equipe.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.cargo === "sdr" ? "SDR" : "vendedora"})</option>)}
+        </select>
+        <button style={btnPrim} disabled={salvando === r.rdUserId} onClick={() => void vincular(r.rdUserId)}>{salvando === r.rdUserId ? "Gravando…" : "Vincular"}</button>
+      </div>)}</div>}
+  </>;
+}
+
 export function ContaAzulOperacao({ modo = "completo" }: { modo?: "completo" | "equipe" } = {}) {
   const [painel, setPainel] = useState<Json | null>(null);
   const [aba, setAba] = useState<"conflitos" | "fila" | "vinculos" | "historico" | "enviar">("conflitos");

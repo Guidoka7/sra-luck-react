@@ -46,7 +46,13 @@ As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principa
 
 **Ordem obrigatória:** aplicar a 112 antes de promover o App que chama a RPC; sem ela, "Concluir levantamento" responde erro (e nada é gravado).
 
-- A próxima migration é a `113`.
+### 113: fila de pendências de integração (não aplicada em produção)
+
+`migration_113_integracao_pendencias.sql` cria `integracao_pendencias` (uma linha aberta por negociação + tipo, com ocorrências), `colaborador_vinculos_externos` (responsável do RD ↔ vendedora/SDR por ID estável), as RPCs `integracao_registrar_pendencia`, `integracao_resolver_pendencias`, `rd_recalcular_pendencias_venda` (regra única do que é venda completa) e `rd_recalcular_pendencias_todas` (preenche a fila a partir das vendas existentes, sem reimportar), e a view `vw_vendas_validas_bi`. Tudo só para `service_role`. Rollback: `supabase/rollback/migration_113_rollback.sql` (remove só esses objetos; vendas e importações ficam). Diagnóstico e motivo: `docs/DIAGNOSTICO-RD-2026-09-28.md`.
+
+**Ordem obrigatória:** aplicar a 113 antes de promover o App que grava pendências; sem ela, a importação termina em erro `PENDENCIA_NAO_REGISTRADA` (visível no histórico) em vez de gravar em silêncio. Depois de aplicada, rodar `select public.rd_recalcular_pendencias_todas('dev:<ator>')` **só com aprovação**: ela não altera vendas além de preencher `vendedora_id` pelos vínculos cadastrados.
+
+- A próxima migration é a `114`.
 
 ## Campos históricos importantes
 

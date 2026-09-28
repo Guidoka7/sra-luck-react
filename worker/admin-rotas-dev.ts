@@ -7,6 +7,7 @@
  * (decisão do responsável, 24/09/2026):
  *   - status das conexões (leitura, usado por Notificações e Configurações);
  *   - revisão das vendas importadas do RD Station e "Importar agora";
+ *   - vínculo responsável do RD ↔ vendedora/SDR (equipe.gerenciar; 28/09/2026);
  *   - conflitos, fila, vínculos, histórico, sincronização e envio/vínculo
  *     de parcelas da Conta Azul.
  * Callbacks OAuth (/api/integrations/...) e webhooks não passam por aqui.
@@ -19,6 +20,9 @@ const OPERACAO_EQUIPE: readonly { metodo: "GET" | "POST"; rota: RegExp }[] = [
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/[0-9a-f-]{36}\/itens$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/itens\/[0-9a-f-]{36}\/(importar|descartar)$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/importar$/ },
+  // Vínculo responsável do RD ↔ pessoa da equipe (cadastro de equipe, não conexão).
+  { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/responsaveis$/ },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/responsaveis$/ },
   // Conta Azul: operação financeira (conexão e configuração são do Dev).
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/conta-azul\/(painel|conflitos|fila|vinculos|historico)$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/conflitos\/[0-9a-f-]{36}\/resolver$/ },
