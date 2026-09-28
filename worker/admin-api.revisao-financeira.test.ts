@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { montarPatchRevisaoFinanceira } from "./admin-api";
+import { montarAuditoriaLevantamento, montarPatchRevisaoFinanceira } from "./admin-api";
 
 const AGORA = "2026-10-10T12:00:00.000Z";
 const valido = { decisao: "aprovada", saldoRestante: 4000, formasCusteio: ["pix", "boleto_100"] };
@@ -34,5 +34,28 @@ describe("montarPatchRevisaoFinanceira (Etapa 2 — levantamento)", () => {
     const r = montarPatchRevisaoFinanceira({ decisao: "recusada", observacao: "Comprovante ilegível" }, "pendente", AGORA);
     if ("erro" in r) throw new Error(r.erro);
     expect(r.patch).toEqual({ status_revisao_financeira: "recusada", observacao_revisao_financeira: "Comprovante ilegível" });
+  });
+});
+
+describe("montarAuditoriaLevantamento (histórico do levantamento)", () => {
+  it("primeira aprovação registra a mesma ação da RPC, com saldo e formas", () => {
+    const r = montarPatchRevisaoFinanceira(valido, "pendente", AGORA);
+    if ("erro" in r) throw new Error(r.erro);
+    expect(montarAuditoriaLevantamento("pendente", r.patch)).toEqual({
+      acao: "confirmou_levantamento_financeiro",
+      detalhes: { de: "pendente", para: "aprovada", saldo_final: 4000, formas_quitacao: ["pix", "boleto_100"], taxa_cartao: null, observacaoInformada: false },
+    });
+  });
+
+  it("edição de levantamento aprovado e divergência têm ações próprias", () => {
+    const edicao = montarPatchRevisaoFinanceira({ ...valido, taxaCartao: 4.2 }, "aprovada", AGORA);
+    if ("erro" in edicao) throw new Error(edicao.erro);
+    expect(montarAuditoriaLevantamento("aprovada", edicao.patch).acao).toBe("editou_levantamento_financeiro");
+    const div = montarPatchRevisaoFinanceira({ decisao: "recusada", observacao: "Comprovante ilegível" }, "pendente", AGORA);
+    if ("erro" in div) throw new Error(div.erro);
+    const a = montarAuditoriaLevantamento("pendente", div.patch);
+    expect(a.acao).toBe("registrou_divergencia_levantamento");
+    expect(a.detalhes.observacaoInformada).toBe(true);
+    expect(JSON.stringify(a)).not.toContain("Comprovante ilegível");
   });
 });

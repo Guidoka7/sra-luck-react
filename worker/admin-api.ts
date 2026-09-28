@@ -155,6 +155,22 @@ export function montarPatchRevisaoFinanceira(
   return { patch };
 }
 
+/** Auditoria do levantamento (Etapa 2): mesma ação que a RPC agenda_confirmar_levantamento registra. */
+export function montarAuditoriaLevantamento(statusAnterior: string | null, patch: Record<string, unknown>) {
+  const aprovada = patch.status_revisao_financeira === "aprovada";
+  return {
+    acao: aprovada ? (statusAnterior === "aprovada" ? "editou_levantamento_financeiro" : "confirmou_levantamento_financeiro") : "registrou_divergencia_levantamento",
+    detalhes: {
+      de: statusAnterior,
+      para: patch.status_revisao_financeira ?? null,
+      saldo_final: patch.financeiro_saldo_restante ?? null,
+      formas_quitacao: patch.financeiro_formas_custeio ?? null,
+      taxa_cartao: patch.financeiro_taxa_cartao ?? null,
+      observacaoInformada: Boolean(patch.observacao_revisao_financeira),
+    },
+  };
+}
+
 export async function adminApi(request: Request, env: Env): Promise<Response | null> {
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
@@ -294,7 +310,17 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   if(path==="/api/admin/datas-liberacao-financeira"&&request.method==="GET"){const {data,error}=await supabase.from("datas_liberacao_financeira").select("*").order("data",{ascending:true});if(error)return json({erro:publicError(error)},500);return json({datas:data??[]});}
   if(path==="/api/admin/previsoes-liberacao"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,previsao_liberacao_financeira,status,clientes(id,nome_completo,cpf)").not("previsao_liberacao_financeira","is",null).order("previsao_liberacao_financeira",{ascending:true});if(error)return json({previsoes:[]});return json({previsoes:data??[]});}
   if((path==="/api/admin/liberacoes-financeiras"||path==="/api/admin/solicitacoes-liberacao-financeira")&&request.method==="GET"){const table=path.includes("solicitacoes")?"solicitacoes_liberacao_financeira":"liberacoes_financeiras";const {data,error}=await supabase.from(table).select("*").order("created_at",{ascending:false});if(error)return json({erro:publicError(error)},500);return json({[path.includes("solicitacoes")?"solicitacoes":"liberacoes"]:data??[]});}
-  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request);const atual=await supabase.from("clientes").select("status_revisao_financeira").eq("id",id).maybeSingle();if(atual.error)return json({erro:publicError(atual.error)},400);if(!atual.data)return json({erro:"Cliente não encontrada."},404);const montado=montarPatchRevisaoFinanceira(b,atual.data.status_revisao_financeira??null,new Date().toISOString());if("erro" in montado)return json({erro:montado.erro},400);const {data,error}=await supabase.from("clientes").update(montado.patch).eq("id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({cliente:data});}
+  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request);const atual=await supabase.from("clientes").select("status_revisao_financeira").eq("id",id).maybeSingle();if(atual.error)return json({erro:publicError(atual.error)},400);if(!atual.data)return json({erro:"Cliente não encontrada."},404);const montado=montarPatchRevisaoFinanceira(b,atual.data.status_revisao_financeira??null,new Date().toISOString());if("erro" in montado)return json({erro:montado.erro},400);
+    // Levantamento é decisão financeira: registra responsável e auditoria (mesma ação da RPC agenda_confirmar_levantamento).
+    const sessaoRev=await verificarTokenAdmin(getCookie(request,"admin_session"),env.CLIENTE_SESSION_SECRET!);
+    const colaboradorRev=sessaoRev?await buscarColaboradorAdminAtivo(sessaoRev.adminId,env):null;
+    if(!colaboradorRev)return json({erro:"Sessão administrativa expirada."},401);
+    const aprovada=montado.patch.status_revisao_financeira==="aprovada";
+    if(aprovada)montado.patch.financeiro_levantamento_confirmado_por=`staff:${colaboradorRev.id}`;
+    const {data,error}=await supabase.from("clientes").update(montado.patch).eq("id",id).select("*").single();if(error)return json({erro:publicError(error)},400);
+    const {error:erroLog}=await supabase.from("logs_alteracoes").insert({usuario:`staff:${colaboradorRev.id}`,entidade:"clientes",entidade_id:id,...montarAuditoriaLevantamento(atual.data.status_revisao_financeira??null,montado.patch)});
+    if(erroLog)console.error("Falha ao registrar auditoria do levantamento financeiro");
+    return json({cliente:data});}
 
   const statusContrato=path.match(/^\/api\/admin\/clientes\/([^/]+)\/status-contrato$/);
   if(statusContrato&&request.method==="POST"){

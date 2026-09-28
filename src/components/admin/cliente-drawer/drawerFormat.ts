@@ -73,6 +73,9 @@ export function descreverHistorico(h: LogAlteracao): { tipo: HistoricoTipo; text
   else if (acao === "ajustou_plano_financeiro") texto = "Plano financeiro atualizado";
   else if (acao === "alterou_status_contrato") texto = `Status alterado${d.para ? ` para ${String(d.para)}` : ""}`;
   else if (acao === "liberou_acesso_app") texto = "Acesso ao aplicativo liberado";
+  else if (acao === "confirmou_levantamento_financeiro") texto = "Levantamento financeiro concluído";
+  else if (acao === "editou_levantamento_financeiro") texto = "Levantamento financeiro atualizado";
+  else if (acao === "registrou_divergencia_levantamento") texto = "Divergência registrada no levantamento";
   else texto = acao.replaceAll("_", " ").replace(/^./, (x) => x.toUpperCase());
   const tipo: HistoricoTipo = /pag|baix|confirmou_comprovante/.test(acao) ? "payment"
     : acao.includes("comprovante") ? "receipt"
