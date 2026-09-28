@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CartaoCliente } from "../../../features/scheduling/types";
 import type { LogAlteracao } from "../../../types/database";
-import { passosDaJornada, statusDoDrawer } from "./drawerModel";
+import { passosDaJornada, resumoCarteira, statusDoDrawer } from "./drawerModel";
 import { descreverHistorico, ehHistoricoFinanceiro, statusCliente, statusParcela, STATUS_CLIENTE } from "./drawerFormat";
 
 const base = {
@@ -61,5 +61,20 @@ describe("parcelas e histórico do drawer", () => {
     expect(descreverHistorico(log("alterou_status_contrato", { para: "suspenso" })).texto).toBe("Status alterado para suspenso");
     expect(ehHistoricoFinanceiro(log("rejeitou_comprovante"))).toBe(true);
     expect(ehHistoricoFinanceiro(log("alterou_status_contrato"))).toBe(false);
+  });
+});
+
+describe("carteira de parcelas do levantamento", () => {
+  const b = (numero: number, extra: Record<string, unknown> = {}) => ({ id: `b${numero}`, numero_parcela: numero, status: "nao_pago", data_vencimento: "2026-12-10", suspensa: false, valor: 100, comprovante_url: null, ...extra }) as never;
+  it("conta pagas, vencidas, em conferência e soma o valor em aberto sem suspensas", () => {
+    const r = resumoCarteira([
+      b(3, { data_vencimento: "2026-09-10" }),
+      b(1, { status: "pago", comprovante_url: "x" }),
+      b(2, { status: "pendente_confirmacao", comprovante_url: "y" }),
+      b(4, { suspensa: true }),
+      b(5),
+    ], "2026-09-28");
+    expect(r).toMatchObject({ total: 5, pagas: 1, vencidas: 1, emConferencia: 1, comprovantes: 2, valorEmAberto: 300 });
+    expect(r.itens.map((i) => `${i.numero}:${i.status}`)).toEqual(["1:paid", "2:review", "3:overdue", "4:suspended", "5:pending"]);
   });
 });

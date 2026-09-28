@@ -1,4 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, Wallet } from "lucide-react";
+import { resumoCarteira } from "@/components/admin/cliente-drawer/drawerModel";
+import { hojeSaoPaulo, type ParcelaStatus } from "@/components/admin/cliente-drawer/drawerFormat";
 import type { Cliente } from "@/types/database";
 import type { ClienteCadastro } from "@/components/admin/useClienteCadastro";
 import { centralApi, dataBr, dataHoraBr, diaSemana, FORMAS_CUSTEIO, moeda, proximoDiaUtil, rotuloFormaCusteio, type FormaCusteio } from "./api";
@@ -153,8 +156,8 @@ function Agora(p: PropsProcesso) {
       {estagio === "financialRelease" && <CorpoLiberacao {...p} />}
       {estagio === "surgeryConfirmed" && <CorpoCirurgia {...p} />}
     </section>
+    {estagio === "financialReview" && <CarteiraParcelas {...p} />}
     {(fase === "analisar" || fase === "divergencia") && <div id="pr-levantamento"><EditorLevantamento {...p} /></div>}
-    {estagio === "financialReview" && <ParcelasLevantamento {...p} />}
   </>;
 }
 
@@ -230,12 +233,39 @@ function CorpoLevantamento(p: PropsProcesso) {
   ]} />;
 }
 
-function ParcelasLevantamento({ c, cad, parcelas }: PropsProcesso) {
-  const pagas = cad.boletos.filter((b) => b.status === "pago").length;
-  return <details className="drawer-accordion pr-parcelas">
-    <summary>Parcelas e comprovantes <span>{pagas}/{cad.boletos.length || c.totalParcelas} pagas</span></summary>
-    <div className="accordion-body" id="levantamento-parcelas">{parcelas}</div>
-  </details>;
+const ROTULO_PARCELA: Record<ParcelaStatus, string> = { paid: "Paga", pending: "Em aberto", overdue: "Vencida", review: "Comprovante em conferência", rejected: "Comprovante rejeitado", suspended: "Suspensa" };
+
+/**
+ * Carteira de parcelas e comprovantes (etapa 2): resumo e mapa sempre
+ * visíveis; ao clicar, abre a tabela real do Financeiro (mesmas ações de
+ * baixa, anexo e conferência de comprovante).
+ */
+function CarteiraParcelas({ cad, parcelas }: PropsProcesso) {
+  const [aberta, setAberta] = useState(false);
+  const r = resumoCarteira(cad.boletos, hojeSaoPaulo());
+  const carregando = cad.carregandoFin && r.total === 0;
+  return <section className={`pr-carteira${aberta ? " is-aberta" : ""}`}>
+    <button type="button" id="pr-carteira-toggle" className="pr-carteira-resumo" aria-expanded={aberta} aria-controls="levantamento-parcelas" onClick={() => setAberta((v) => !v)}>
+      <span className="pr-carteira-head">
+        <span className="pr-carteira-icone" aria-hidden="true"><Wallet size={18} /></span>
+        <span className="pr-carteira-titulo"><b>Carteira de parcelas e comprovantes</b><small>{carregando ? "Carregando parcelas…" : `${r.total} parcelas · ${r.comprovantes} ${r.comprovantes === 1 ? "comprovante" : "comprovantes"}`}</small></span>
+        <span className="pr-carteira-ver">{aberta ? "Recolher" : "Ver parcelas"}<ChevronDown size={15} aria-hidden="true" /></span>
+      </span>
+      {!carregando && r.total > 0 && <>
+        <span className="pr-carteira-kpis">
+          <span className="is-ok"><small>Pagas</small><b>{r.pagas}/{r.total}</b></span>
+          <span><small>Em aberto</small><b>{moeda(r.valorEmAberto)}</b></span>
+          <span className={r.vencidas ? "is-perigo" : undefined}><small>Vencidas</small><b>{r.vencidas}</b></span>
+          <span className={r.emConferencia ? "is-atencao" : undefined}><small>Em conferência</small><b>{r.emConferencia}</b></span>
+        </span>
+        <span className="pr-carteira-mapa" aria-label={`Mapa das parcelas: ${r.pagas} pagas de ${r.total}`}>
+          {r.itens.map((i) => <span key={i.id} className={`pr-parcela is-${i.status}`} title={`Parcela ${i.numero} · ${ROTULO_PARCELA[i.status]}${i.vencimento ? ` · vence ${dataBr(i.vencimento)}` : ""} · ${moeda(i.valor)}`}>{i.numero}</span>)}
+        </span>
+        <span className="pr-carteira-legenda" aria-hidden="true"><i className="pr-parcela is-paid" />Paga<i className="pr-parcela is-review" />Em conferência<i className="pr-parcela is-overdue" />Vencida<i className="pr-parcela" />Em aberto</span>
+      </>}
+    </button>
+    <div id="levantamento-parcelas" className="pr-carteira-tabela" hidden={!aberta}>{parcelas}</div>
+  </section>;
 }
 
 /**
@@ -261,7 +291,7 @@ function EditorLevantamento({ c, cad, form, ocupado, abrirModal, concluirLevanta
         <div className="lev-step-title"><span className="lev-num">1</span>Conferir parcelas e comprovantes</div>
         <div className="lev-check">
           <span>{cad.boletos.length ? `${pagas} de ${cad.boletos.length} parcelas pagas` : "Parcelas e comprovantes"}{aguardando ? ` · ${aguardando} comprovante${aguardando > 1 ? "s" : ""} aguardando conferência` : ""}</span>
-          <button type="button" className="mini-link" onClick={() => { const el = document.getElementById("levantamento-parcelas"); el?.closest("details")?.setAttribute("open", ""); el?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Ver parcelas ↓</button>
+          <button type="button" className="mini-link" onClick={() => { const alvo = document.getElementById("pr-carteira-toggle"); if (alvo?.getAttribute("aria-expanded") === "false") alvo.click(); alvo?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Ver parcelas ↑</button>
         </div>
       </li>
       <li>
