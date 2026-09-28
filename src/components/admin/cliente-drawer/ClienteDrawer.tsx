@@ -8,6 +8,8 @@ import { ProcessoTab, ordemEstagio, eventosDoProcesso, type ModalDrawer, type Fo
 import { AgendarCirurgiaModal, LiberacaoModal, QuitacaoModal, ResponsavelModal } from "@/features/scheduling/DrawerModals";
 import { TermsRescheduleModal } from "@/features/scheduling/TermsRescheduleModal";
 import { ConfirmModal } from "@/features/scheduling/V46Modal";
+import { RegistrarAtendimentoModal } from "@/features/scheduling/AtendimentoModals";
+import { faseLiberacao } from "@/features/scheduling/jornada";
 import { estadoLiberacao } from "@/features/scheduling/v46Cards";
 import { formatarTaxa, formatarValor, normalizarFormas, validarLevantamento } from "@/features/scheduling/levantamento";
 import "@/features/scheduling/central-v46.css";
@@ -316,14 +318,17 @@ function DrawerConteudo(props: ClienteDrawerProps & {
       : [b("Ver Financeiro", () => mudarAba("finance")), b("Registrar parcela paga", registrarParcela, "primary", !proximoBoleto)];
     // A confirmação do levantamento fica no próprio bloco da Etapa 2.
     if (estagio === "financialReview") return [b("Ver Financeiro", () => mudarAba("finance"))];
-    if (estagio === "termsConfirmed") return [b("Ver Agenda de Termos", () => irParaAgenda("terms", c.dataTermos)), b("Reagendar", () => setModal({ tipo: "reagendar" }), "primary", !c.agendamentoId)];
+    if (estagio === "termsConfirmed") return c.termosResponsavel
+      ? [b("Ver Agenda de Termos", () => irParaAgenda("terms", c.dataTermos)), b("Reagendar", () => setModal({ tipo: "reagendar" }), "primary", !c.agendamentoId)]
+      : [b("Reagendar", () => setModal({ tipo: "reagendar" }), "secondary", !c.agendamentoId), b("Definir responsável", () => setModal({ tipo: "responsavel" }), "primary", !c.agendamentoId)];
     if (estagio === "financialRelease") {
-      if (!c.previsaoConfirmadaEm) return [b("Ver Jornada completa", () => mudarAba("journey"))];
-      if (eLib.liberada && !c.dataCirurgia) return [b("Agendar cirurgia", () => setModal({ tipo: "agendarCirurgia" }), "success")];
-      if (!eLib.compareceu) return [b("Confirmar comparecimento", () => setModal({ tipo: "comparecimento", compareceu: true }), "primary")];
-      if (!eLib.quitada) return [b("Confirmar quitação", () => setModal({ tipo: "quitacao" }), "primary")];
+      const fase = faseLiberacao(c, hoje);
+      if (fase === "registrar") return [b("Registrar atendimento", () => setModal({ tipo: "atendimento" }), "primary")];
+      if (fase === "prazo") return [b(eLib.previsao && eLib.previsao < hoje ? "Liberar agora" : "Gerenciar prazo", () => setModal({ tipo: "liberacao" }), "primary")];
+      if (fase === "liberada" && !c.dataCirurgia) return [b("Agendar cirurgia", () => setModal({ tipo: "agendarCirurgia" }), "success")];
       return [b("Ver Jornada completa", () => mudarAba("journey"))];
     }
+    if (!concluido && c.dataCirurgia && c.dataCirurgia < hoje) return [b("Ver na Agenda Cirúrgica", () => irParaAgenda("surgery", c.dataCirurgia)), b("Confirmar pagamento", () => setModal({ tipo: "pagamentoCirurgia" }), "success")];
     return [b("Ver na Agenda Cirúrgica", () => irParaAgenda("surgery", c.dataCirurgia), "primary"), b("Ver Jornada", () => mudarAba("journey"))];
   }
 
@@ -360,7 +365,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
           {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
           {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
-          {c && estagio && <span className={styles.chip}>{statusDoDrawer(c, estagio, concluido, hoje)}</span>}
+          {c && estagio && <span className={styles.chip}>{statusDoDrawer(estagio, concluido)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
         </div>}
       </div>
@@ -433,6 +438,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
         rotuloConfirmar="Confirmar pagamento"
         onConfirmar={async () => { const ok = await executar("pagamentoCirurgia", () => centralApi.confirmarPagamentoCirurgia(c.agendamentoId!), "Pagamento confirmado. Processo concluído e arquivado na Agenda Cirúrgica."); if (ok) requestClose(); return ok; }}
         onClose={() => setModal(null)} />}
+      {modal?.tipo === "atendimento" && c.agendamentoId && <RegistrarAtendimentoModal c={c} hoje={hoje} onClose={() => setModal(null)} onDone={recarregar} />}
       {modal?.tipo === "divergencia" && <DivergenciaModal onClose={() => setModal(null)} onConfirmar={(obs) => concluirLevantamento("recusada", obs)} />}
     </div>}
   </>;

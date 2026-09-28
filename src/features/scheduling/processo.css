@@ -1,0 +1,118 @@
+/*
+ * Aba Processo do drawer da cliente (ProcessoTab). Escopado em .v46 .pr e
+ * baseado nos tokens do .v46 (que já têm variante escura em central-v46.css).
+ * Intenção: pouca informação por vez — trilha, um cartão "Agora" e registros.
+ */
+.v46 .pr { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--text); }
+.v46 .pr small { font-size: 11.5px; }
+
+/* Trilha das 5 etapas ------------------------------------------------------- */
+.v46 .pr-trilha { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 4px 0 2px; }
+.v46 .pr-trilha-etapa { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 2px; border: 0; background: transparent; color: var(--muted); text-align: center; border-radius: 10px; }
+.v46 .pr-trilha-etapa:not(:disabled):hover .pr-trilha-rotulo { color: var(--wine); }
+.v46 .pr-trilha-etapa:disabled { cursor: default; }
+.v46 .pr-trilha-etapa + .pr-trilha-etapa::before { content: ""; position: absolute; top: 12px; left: calc(-50% + 14px); width: calc(100% - 28px); height: 2px; background: var(--line-soft); }
+.v46 .pr-trilha-etapa.is-feito + .pr-trilha-etapa::before { background: var(--green); }
+.v46 .pr-trilha-num { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 99px; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1.5px solid var(--line); background: var(--surface); }
+.v46 .pr-trilha-etapa.is-feito .pr-trilha-num { background: var(--green); border-color: var(--green); color: #fff; }
+.v46 .pr-trilha-etapa.is-atual .pr-trilha-num { background: var(--wine); border-color: var(--wine); color: #fff; }
+.v46 .pr-trilha-etapa.is-sel .pr-trilha-num { box-shadow: 0 0 0 3px var(--surface-rose); }
+.v46 .pr-trilha-rotulo { font-size: 10.5px; font-weight: 600; line-height: 1.2; }
+.v46 .pr-trilha-etapa.is-futuro .pr-trilha-rotulo { opacity: .6; }
+.v46 .pr-trilha-etapa.is-sel .pr-trilha-rotulo { color: var(--wine); }
+
+/* Agora -------------------------------------------------------------------- */
+.v46 .pr-agora { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.v46 .pr-agora.is-atrasado { box-shadow: inset 3px 0 0 var(--danger); }
+.v46 .pr-agora-head { display: flex; align-items: flex-start; gap: 12px; }
+.v46 .pr-agora-titulo { flex: 1; min-width: 0; }
+.v46 .pr-agora-titulo small { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.v46 .pr-agora-titulo h3 { margin: 3px 0 0; font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text); }
+.v46 .pr-agora-titulo p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.v46 .pr .is-late { color: var(--danger) !important; font-weight: 600; }
+.v46 .pr-quem { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 650; white-space: nowrap; background: var(--surface-soft); color: var(--muted); }
+.v46 .pr-quem::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+.v46 .pr-quem.is-equipe { background: var(--surface-rose); color: var(--wine); }
+.v46 .pr-quem.is-cliente { background: rgba(37, 99, 235, .08); color: #2f5fd0; }
+.dark .v46 .pr-quem.is-cliente { background: rgba(145, 167, 216, .14); color: #a9bce6; }
+
+/* Fatos: rótulo → valor (→ ação) ------------------------------------------ */
+.v46 .pr-fatos { margin: 0; display: flex; flex-direction: column; }
+.v46 .pr-fatos > div { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 38px; padding: 6px 0; border-top: 1px solid var(--line-soft); }
+.v46 .pr-fatos dt { font-size: 12px; color: var(--muted); }
+.v46 .pr-fatos dd { margin: 0; font-size: 13px; font-weight: 600; min-width: 0; }
+.v46 .pr-falta { color: var(--muted); font-weight: 500; }
+.v46 .pr-fato-acao { justify-self: end; }
+.v46 .pr .pr-link { border: 0; background: transparent; padding: 4px 0; font-size: 12px; font-weight: 650; color: var(--wine); cursor: pointer; white-space: nowrap; }
+.v46 .pr .pr-link:hover:not(:disabled) { text-decoration: underline; }
+.v46 .pr .pr-link:disabled { opacity: .5; cursor: default; }
+.v46 .pr-inline-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.v46 .pr-inline-form input { height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; background: var(--surface); color: var(--text); font: inherit; font-weight: 500; }
+.v46 .pr-barra { height: 6px; border-radius: 99px; background: var(--surface-rose); overflow: hidden; }
+.v46 .pr-barra span { display: block; height: 100%; border-radius: 99px; background: var(--wine); }
+.v46 .pr-nota { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.v46 .pr-nota.is-ok { color: var(--green); font-weight: 600; }
+.v46 .pr-nota.is-perigo { color: var(--danger); font-weight: 600; }
+
+/* Editor do levantamento --------------------------------------------------- */
+.v46 .pr-bloco { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--surface); scroll-margin-top: 12px; }
+.v46 .pr-bloco-head { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+.v46 .pr-bloco-head b { display: block; font-size: 13.5px; }
+.v46 .pr-bloco-head small { display: block; margin-top: 2px; color: var(--muted); }
+.v46 .pr-bloco-corpo { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* Registros (histórico, documentos) ---------------------------------------- */
+.v46 .pr-registros { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--surface); }
+.v46 .pr-registros details + details { border-top: 1px solid var(--line-soft); }
+.v46 .pr-registros summary { display: flex; align-items: center; gap: 8px; padding: 11px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; list-style: none; }
+.v46 .pr-registros summary::-webkit-details-marker { display: none; }
+.v46 .pr-registros summary::after { content: "›"; margin-left: 6px; color: var(--muted); transition: transform .15s; }
+.v46 .pr-registros details[open] summary::after { transform: rotate(90deg); }
+.v46 .pr-registros summary span { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.v46 .pr-registros details > div { padding: 0 16px 12px; }
+
+/* Consulta de etapa concluída ------------------------------------------------ */
+.v46 .pr-revisao { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--surface-gold); font-size: 12.5px; }
+
+@media (max-width: 700px) {
+  .v46 .pr-trilha-rotulo { font-size: 9.5px; }
+  .v46 .pr-fatos > div { grid-template-columns: minmax(0, 1fr) auto; }
+  .v46 .pr-fatos dd { grid-column: 1; }
+}
+
+/* Carteira de parcelas e comprovantes (etapa 2) ------------------------------ */
+.v46 .pr-carteira { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); overflow: hidden; scroll-margin-top: 12px; }
+.v46 .pr-carteira.is-aberta { border-color: var(--wine); }
+.v46 .pr .pr-carteira-resumo { display: flex; flex-direction: column; gap: 14px; width: 100%; padding: 16px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.v46 .pr-carteira:not(.is-aberta):hover { border-color: var(--wine); }
+.v46 .pr .pr-carteira-resumo:hover .pr-carteira-ver { background: var(--wine); color: #fff; }
+.v46 .pr .pr-carteira-resumo:focus-visible { outline: 2px solid var(--wine); outline-offset: -2px; }
+.v46 .pr-carteira-head { display: flex; align-items: center; gap: 12px; }
+.v46 .pr-carteira-icone { width: 38px; height: 38px; flex: none; border-radius: 11px; display: grid; place-items: center; background: var(--surface-rose); color: var(--wine); }
+.v46 .pr-carteira-titulo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.v46 .pr-carteira-titulo b { font-size: 14.5px; font-weight: 700; }
+.v46 .pr-carteira-titulo small { color: var(--muted); }
+.v46 .pr-carteira-ver { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 99px; background: var(--surface-rose); color: var(--wine); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.v46 .pr-carteira-ver svg { transition: transform .15s; }
+.v46 .pr-carteira.is-aberta .pr-carteira-ver svg { transform: rotate(180deg); }
+.v46 .pr-carteira-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.v46 .pr-carteira-kpis > span { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border-radius: 10px; background: var(--surface-soft); }
+.v46 .pr-carteira-kpis small { font-size: 11px; color: var(--muted); }
+.v46 .pr-carteira-kpis b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.v46 .pr-carteira-kpis .is-ok b { color: var(--green); }
+.v46 .pr-carteira-kpis .is-perigo { background: var(--surface-rose); }
+.v46 .pr-carteira-kpis .is-perigo b { color: var(--danger); }
+.v46 .pr-carteira-kpis .is-atencao { background: var(--surface-gold); }
+.v46 .pr-carteira-mapa { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 4px; }
+.v46 .pr-parcela { height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.v46 .pr-parcela.is-paid { background: var(--green); border-color: var(--green); color: #fff; }
+.v46 .pr-parcela.is-review { background: var(--surface-gold); border-color: var(--gold); color: var(--text); }
+.v46 .pr-parcela.is-overdue, .v46 .pr-parcela.is-rejected { background: var(--surface-rose); border-color: var(--danger); color: var(--danger); }
+.v46 .pr-parcela.is-suspended { border-style: dashed; opacity: .6; }
+.v46 .pr-carteira-tabela { border-top: 1px solid var(--line-soft); padding: 12px; background: var(--surface-soft); }
+@media (max-width: 700px) {
+  .v46 .pr-carteira-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.v46 .pr-carteira-legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: -6px; font-size: 11px; color: var(--muted); }
+.v46 .pr-carteira-legenda .pr-parcela { width: 10px; height: 10px; border-radius: 3px; margin-left: 6px; }
+.v46 .pr-carteira-legenda .pr-parcela:first-child { margin-left: 0; }

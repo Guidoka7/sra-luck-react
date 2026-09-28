@@ -20,7 +20,7 @@ describe("AgendaCalendar — datas passadas", () => {
       onMudarMes: () => {},
     }));
 
-    expect(html).toContain("day-cell past");
+    expect(html).toContain("ag-dia is-past");
     expect(html).toContain("Selecionar 22/09/2026 (data encerrada)");
     expect(html).toContain("Selecionar 24/09/2026 (disponível)");
   });
@@ -31,6 +31,25 @@ describe("AgendaCalendar — datas passadas", () => {
     expect(capacidadeAoLiberar({ id: "bloqueada", data: "2026-09-24", vagasTotais: 4, vagasOcupadas: 0, status: "bloqueado" })).toBe(1);
     expect(capacidadeAoLiberar({ id: "aberta", data: "2026-09-24", vagasTotais: 3, vagasOcupadas: 0, status: "disponivel" })).toBe(3);
     expect(capacidadeAoLiberar({ id: "com-agendamentos", data: "2026-09-24", vagasTotais: 4, vagasOcupadas: 2, status: "bloqueado" })).toBe(2);
+  });
+
+  it("data aberta oferece fechar e ajustar vagas; fechada oferece abrir", () => {
+    const aberta = renderToStaticMarkup(createElement(DayPanel, {
+      tipo: "terms", data: "2026-09-24", hoje: "2026-09-23", dia: calendario[2], ocupado: false,
+      itens: [], onAbrir: () => {}, onBloquear: () => {}, onCapacidade: () => {},
+    }));
+    expect(aberta).toContain("Aberta no app");
+    expect(aberta).toContain("Fechar data");
+    expect(aberta).toContain('aria-label="Aumentar vagas"');
+    expect(aberta).not.toContain("Abrir para assinaturas");
+
+    const fechada = renderToStaticMarkup(createElement(DayPanel, {
+      tipo: "terms", data: "2026-09-25", hoje: "2026-09-23", dia: undefined, ocupado: false,
+      itens: [], onAbrir: () => {}, onBloquear: () => {}, onCapacidade: () => {},
+    }));
+    expect(fechada).toContain("Fechada no app");
+    expect(fechada).toContain("Abrir para assinaturas");
+    expect(fechada).not.toContain('aria-label="Aumentar vagas"');
   });
 
   it("remove todas as ações de alteração no painel de uma data passada", () => {
@@ -51,7 +70,7 @@ describe("AgendaCalendar — datas passadas", () => {
     expect(html).toContain("Data encerrada");
     expect(html).toContain("somente para consulta");
     expect(html).not.toContain("Abrir data cirúrgica");
-    expect(html).not.toContain(">Bloquear<");
+    expect(html).not.toContain("Fechar data");
     expect(html).not.toContain("＋ Nova cirurgia");
     expect(html).not.toContain('aria-label="Aumentar vagas"');
     expect(html).not.toContain('aria-label="Diminuir vagas"');

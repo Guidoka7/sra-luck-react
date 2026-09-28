@@ -1,0 +1,22 @@
+set check_function_bodies = off;
+\set ON_ERROR_STOP on
+begin;
+\echo == 01_types_tables.sql
+\i 01_types_tables.sql
+\echo == 02_constraints.sql
+\i 02_constraints.sql
+\echo == 03_functions.sql
+\i 03_functions.sql
+\echo == 04_views.sql
+\i 04_views.sql
+\echo == 05_indexes.sql
+\i 05_indexes.sql
+\echo == 06_triggers.sql
+\i 06_triggers.sql
+\echo == 07_rls_policies.sql
+\i 07_rls_policies.sql
+\echo == 08_grants.sql
+\i 08_grants.sql
+\echo == 09_buckets.sql
+\i 09_buckets.sql
+commit;

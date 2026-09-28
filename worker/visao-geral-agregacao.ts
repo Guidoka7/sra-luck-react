@@ -42,6 +42,8 @@ export interface ClienteLinha {
   taxa_administrativa_percentual: number | string | null;
   quantidade_parcelas: number | null;
   liberacao_financeira_solicitada_em: string | null;
+  /** aprovada = levantamento concluído (daí em diante depende da cliente no app). */
+  status_revisao_financeira?: string | null;
   ativo: boolean | null;
   created_at: string | null;
 }
@@ -340,7 +342,8 @@ export function montarVisaoGeral(d: DadosVisaoGeral): VisaoGeralAdmin {
         elegiveisSemSolicitacao += 1;
         elegiveisItens.push({ id: `eleg:${c.id}`, clienteId: c.id, nome, detalhe: `${parcelas.pagas}/${parcelas.total} parcelas pagas · mínimo ${minimo}`, meta: "Pode solicitar os termos", atrasado: false });
       }
-    } else if (etapa === "financialReview") {
+    } else if (etapa === "financialReview" && c.status_revisao_financeira !== "aprovada") {
+      // Levantamento concluído sai da fila da equipe: a cliente escolhe forma de pagamento e data.
       const solicitada = dataCivil(c.liberacao_financeira_solicitada_em) ?? hoje;
       const prazo = adicionarDiasUteis(solicitada, PRAZO_LEVANTAMENTO_DIAS_UTEIS);
       const vencido = prazo < hoje;

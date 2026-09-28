@@ -21,7 +21,7 @@ import type { VisaoGeralAdmin } from "../src/lib/visaoGeralContrato";
  * agregação a `montarVisaoGeral`, que é pura e testada.
  */
 
-const COLUNAS_CLIENTES = "id,nome_completo,cpf,data_nascimento,procedimento,acesso_app_liberado,status_contrato,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,liberacao_financeira_solicitada_em,ativo,created_at";
+const COLUNAS_CLIENTES = "id,nome_completo,cpf,data_nascimento,procedimento,acesso_app_liberado,status_contrato,valor_contrato,custo_total,taxa_administrativa_percentual,quantidade_parcelas,liberacao_financeira_solicitada_em,status_revisao_financeira,ativo,created_at";
 const COLUNAS_BOLETOS = "id,cliente_id,numero_parcela,total_parcelas,valor,status,data_vencimento,data_pagamento,suspensa,updated_at";
 const COLUNAS_RECEBIMENTOS = "boleto_id,status_validacao,data_pagamento,valor_recebido,created_at";
 const COLUNAS_AGENDAMENTOS = "id,cliente_id,status,horario_termos,termos_assinados_em,comparecimento_status,comparecimento_em,quitacao_status,quitacao_em,agenda_cirurgica_liberada_em,agenda_cirurgica_prazo_ajuste_dias,data_cirurgia,horario_cirurgia,processo_concluido_em,created_at,datas(data)";

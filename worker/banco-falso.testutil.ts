@@ -115,6 +115,8 @@ export function bancoFalso(inicial: Record<string, Linha[]> = {}, rpcs: Record<s
       not: (c: string, operador: string, v: null) => { if (operador === "is") filtros.push((l) => (l[c] ?? null) !== v); return q; },
       lte: (c: string, v: string) => { filtros.push((l) => l[c] <= v); return q; },
       gte: (c: string, v: string) => { filtros.push((l) => l[c] >= v); return q; },
+      lt: (c: string, v: string) => { filtros.push((l) => l[c] < v); return q; },
+      gt: (c: string, v: string) => { filtros.push((l) => l[c] > v); return q; },
       like: (c: string, padrao: string) => { const p = padrao.replace(/%$/, ""); filtros.push((l) => String(l[c] ?? "").startsWith(p)); return q; },
       or: (expr: string) => {
         const partes = expr.split(",").map((x) => { const [c, o, ...v] = x.split("."); return { c, o, v: v.join(".") }; });

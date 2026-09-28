@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CartaoCliente } from "../../../features/scheduling/types";
 import type { LogAlteracao } from "../../../types/database";
-import { passosDaJornada, statusDoDrawer } from "./drawerModel";
+import { passosDaJornada, resumoCarteira, statusDoDrawer } from "./drawerModel";
 import { descreverHistorico, ehHistoricoFinanceiro, statusCliente, statusParcela, STATUS_CLIENTE } from "./drawerFormat";
 
 const base = {
@@ -12,23 +12,14 @@ const base = {
 } as unknown as CartaoCliente;
 
 describe("cabeçalho do drawer: etapa real persistida", () => {
-  it("etapa 1 mostra quantas parcelas faltam", () => {
-    expect(statusDoDrawer(base, "preEligibility", false, "2026-10-10")).toBe("Etapa 1 · Falta 1 parcela");
-    expect(statusDoDrawer({ ...base, parcelasFaltantes: 0 }, "preEligibility", false, "2026-10-10")).toBe("Etapa 1 · Aguardando solicitação");
-  });
-  it("etapa 2 distingue levantamento em andamento de concluído", () => {
-    expect(statusDoDrawer(base, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Levantamento");
-    expect(statusDoDrawer({ ...base, statusRevisaoFinanceira: "aprovada" }, "financialReview", false, "2026-10-10")).toBe("Etapa 2 · Aguardando escolha dos termos");
-  });
-  it("etapa 4 segue o estado de liberação (conferência → prazo → liberada)", () => {
-    expect(statusDoDrawer(base, "financialRelease", false, "2026-10-10")).toBe("Etapa 4 · Conferência presencial");
-    const ambos = { ...base, comparecimentoStatus: "compareceu", quitacaoStatus: "paga", comparecimentoEm: "2026-10-01T13:00:00Z", quitacaoEm: "2026-10-02T13:00:00Z" } as CartaoCliente;
-    expect(statusDoDrawer(ambos, "financialRelease", false, "2026-10-07")).toMatch(/^Etapa 4 · 3 de \d+ dias úteis$/);
-    expect(statusDoDrawer({ ...ambos, agendaCirurgicaLiberadaEm: "2026-10-08T10:00:00Z" }, "financialRelease", false, "2026-10-09")).toBe("Etapa 4 · Agenda cirúrgica liberada");
+  it("mostra só a etapa (a situação detalhada fica na aba Processo)", () => {
+    expect(statusDoDrawer("preEligibility", false)).toBe("Etapa 1 · Pagando parcelas");
+    expect(statusDoDrawer("financialReview", false)).toBe("Etapa 2 · Levantamento financeiro");
+    expect(statusDoDrawer("financialRelease", false)).toBe("Etapa 4 · Liberação cirúrgica");
   });
   it("etapa 5 indica processo concluído", () => {
-    expect(statusDoDrawer(base, "surgeryConfirmed", false, "2026-10-10")).toBe("Etapa 5 · Cirurgia confirmada");
-    expect(statusDoDrawer(base, "surgeryConfirmed", true, "2026-10-10")).toBe("Etapa 5 · Processo concluído");
+    expect(statusDoDrawer("surgeryConfirmed", false)).toBe("Etapa 5 · Cirurgia agendada");
+    expect(statusDoDrawer("surgeryConfirmed", true)).toBe("Etapa 5 · Processo concluído");
   });
 });
 
@@ -70,5 +61,20 @@ describe("parcelas e histórico do drawer", () => {
     expect(descreverHistorico(log("alterou_status_contrato", { para: "suspenso" })).texto).toBe("Status alterado para suspenso");
     expect(ehHistoricoFinanceiro(log("rejeitou_comprovante"))).toBe(true);
     expect(ehHistoricoFinanceiro(log("alterou_status_contrato"))).toBe(false);
+  });
+});
+
+describe("carteira de parcelas do levantamento", () => {
+  const b = (numero: number, extra: Record<string, unknown> = {}) => ({ id: `b${numero}`, numero_parcela: numero, status: "nao_pago", data_vencimento: "2026-12-10", suspensa: false, valor: 100, comprovante_url: null, ...extra }) as never;
+  it("conta pagas, vencidas, em conferência e soma o valor em aberto sem suspensas", () => {
+    const r = resumoCarteira([
+      b(3, { data_vencimento: "2026-09-10" }),
+      b(1, { status: "pago", comprovante_url: "x" }),
+      b(2, { status: "pendente_confirmacao", comprovante_url: "y" }),
+      b(4, { suspensa: true }),
+      b(5),
+    ], "2026-09-28");
+    expect(r).toMatchObject({ total: 5, pagas: 1, vencidas: 1, emConferencia: 1, comprovantes: 2, valorEmAberto: 300 });
+    expect(r.itens.map((i) => `${i.numero}:${i.status}`)).toEqual(["1:paid", "2:review", "3:overdue", "4:suspended", "5:pending"]);
   });
 });

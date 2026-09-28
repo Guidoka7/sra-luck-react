@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Download, Plus } from "lucide-react";
 import { centralApi, dataBr, mesAno, moeda, somarMeses } from "./api";
 import { AgendaCalendar, AppointmentRow, capacidadeAoLiberar, DayPanel, statusDoDia } from "./AgendaCalendar";
 import type { AgendaCirurgiaResponse, CartaoCliente } from "./types";
@@ -36,7 +37,7 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
     setOcupado(true);
     try {
       await centralApi.abrirBloquearCirurgia(data, acao, vagas);
-      toast.success(msg ?? (acao === "liberar" ? "Data cirúrgica aberta. O sistema ainda validará o teto financeiro de cada cliente." : "Data bloqueada."));
+      toast.success(msg ?? (acao === "liberar" ? "Data cirúrgica aberta. O sistema ainda validará o teto financeiro de cada cliente." : "Data fechada: não aparece mais para novas escolhas no app."));
       await carregar(); await onMudou();
       return true;
     } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível atualizar a data."); return false; }
@@ -89,76 +90,75 @@ export function SurgeryAgendaTab({ hoje, data, onData, recarregarKey, liberadas,
     toast.success("CSV exportado.");
   }
 
-  return <div className="calendar-page surgery-agenda">
-    <div className="agenda-meta-line" aria-label="Resumo da Agenda Cirúrgica">
-      <span><b>{datasAbertas}</b> datas cirúrgicas abertas</span>
-      <span><b>{pendentes}</b> aguardando pagamento</span>
-      <span><b>{concluidos}</b> processos concluídos</span>
-      <span><b>{Math.max(0, capacidade - usadasAbertas)}</b> vagas disponíveis</span>
-      <span><b>{ocupacao}%</b> ocupação</span>
-      <span className="agenda-rule">Agenda cirúrgica · novas escolhas também respeitam o teto financeiro mensal de {moeda(teto || 100000)}</span>
+  return <div className="ag-agenda surgery-agenda">
+    {atual && <section className={`ag-panel ag-teto is-${st.cls}`} aria-label="Teto financeiro do mês">
+      <div className="ag-teto-head">
+        <div>
+          <span className="ag-eyebrow">Teto financeiro para cirurgias · {mesAno(data)}</span>
+          <strong>{moeda(usado)} <small>de {moeda(teto)} comprometidos</small></strong>
+        </div>
+        <span className={`ag-status is-${st.cls === "success" ? "open" : st.cls === "wait" ? "warn" : "closed"}`}>{st.rotulo}</span>
+      </div>
+      <div className="ag-teto-barra" role="progressbar" aria-valuenow={Math.min(100, pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Teto financeiro comprometido"><span style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div>
+      <p>{excedido > 0 ? <>O teto foi ultrapassado em <b>{moeda(excedido)}</b>. Novas escolhas deste mês ficam bloqueadas.</> : restante === 0 ? "O teto mensal foi atingido. Novas escolhas deste mês ficam bloqueadas." : <>Ainda cabem <b>{moeda(restante)}</b> em cartas de crédito neste mês. Cada nova cirurgia também passa por essa validação.</>}</p>
+    </section>}
+
+    <div className="ag-resumo" aria-label="Resumo da Agenda Cirúrgica">
+      <div className="ag-resumo-item"><span>Cirurgias no mês</span><b>{mapa.length}</b></div>
+      <div className={`ag-resumo-item${pendentes ? " is-alerta" : ""}`}><span>Aguardando pagamento</span><b>{pendentes}</b><small>{concluidos} concluídas</small></div>
+      <div className="ag-resumo-item"><span>Datas abertas com vaga</span><b>{datasAbertas}</b><small>{Math.max(0, capacidade - usadasAbertas)} vagas livres</small></div>
+      <div className="ag-resumo-item"><span>Liberadas para escolher</span><b>{liberadas.length}</b><small>{candidatas.length} cabem no teto</small></div>
     </div>
 
-    <div className="calendar-workspace">
-      <div className="panel panel-pad v46-surgery-calendar-panel">
+    <div className="ag-workspace">
+      <div className="ag-panel ag-cal-panel">
         <AgendaCalendar selecionado={data} hoje={hoje} calendario={calendario} onSelecionar={onData} onMudarMes={(d) => onData(somarMeses(data, d))} />
       </div>
       <DayPanel tipo="surgery" data={data} hoje={hoje} dia={dia} ocupado={ocupado || !calendario} tetoAtingido={tetoAtingido}
-        antesDaLista={atual && <div className={`surgery-financial-cap ${st.cls}`}>
-          <div className="surgery-financial-cap-head">
-            <div><small>Teto financeiro para cirurgias · {mesAno(data).replace(/^./, (x) => x.toUpperCase())}</small><strong>{moeda(teto)}</strong></div>
-            <span className={`badge ${st.cls}`}>{st.rotulo}</span>
-          </div>
-          <div className="surgery-financial-numbers">
-            <div><span>Comprometido</span><b>{moeda(usado)}</b></div>
-            <div><span>Disponível</span><b>{moeda(restante)}</b></div>
-            <div><span>Cirurgias no mês</span><b>{mapa.length}</b></div>
-          </div>
-          <div className="surgery-financial-track" role="progressbar" aria-valuenow={Math.min(100, pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Teto financeiro comprometido"><span style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div>
-          <p>{excedido > 0 ? <>O teto foi ultrapassado em <b>{moeda(excedido)}</b>. Novas escolhas deste mês ficam bloqueadas.</> : restante === 0 ? "O teto mensal foi atingido. Novas escolhas deste mês ficam bloqueadas." : <>Ainda há <b>{moeda(restante)}</b> disponíveis para novas liberações neste mês.</>}</p>
-        </div>}
-        acaoLista={<button type="button" className="primary-btn" onClick={abrirNovaCirurgia} disabled={ocupado || !calendario}>＋ Nova cirurgia</button>}
+        acaoLista={<button type="button" className="ag-btn is-primario" onClick={abrirNovaCirurgia} disabled={ocupado || !calendario}><Plus size={14} aria-hidden="true" />Agendar cirurgia</button>}
         onAbrir={() => void acaoDia("liberar", capacidadeAoLiberar(dia))}
         onBloquear={() => { const n = statusDoDia(dia).usadas; if (n > 0) setConfirmarBloqueio(n); else void acaoDia("bloquear"); }}
         onCapacidade={(n) => void acaoDia("liberar", n, "Capacidade atualizada.")}
-        itens={doDia.map((m) => <AppointmentRow key={m.agendamentoId} tipo="surgery" horario={m.horario} nome={m.nome} detalhe={m.procedimento ?? "—"}
-          badge={m.processoConcluido ? <span className="badge success">Processo concluído</span> : <span className="badge wait">Aguardando pagamento</span>}
-          onAbrir={() => (m.processoConcluido ? onConsultarProcesso : onAbrirCliente)(m.clienteId)} />)} />
+        itens={doDia.map((m) => <AppointmentRow key={m.agendamentoId} tipo="surgery" horario={m.horario} nome={m.nome} detalhe={`${m.procedimento ?? "Procedimento não informado"} · ${moeda(m.cartaDeCredito)}`}
+          badge={m.processoConcluido ? <span className="ag-situacao is-success">Processo concluído</span> : <span className="ag-situacao is-wait">Aguardando pagamento</span>}
+          onAbrir={() => (m.processoConcluido ? onConsultarProcesso : onAbrirCliente)(m.clienteId)}
+          acoes={m.processoConcluido ? undefined : <button type="button" className="ag-link" onClick={() => setPagamento({ agendamentoId: m.agendamentoId, nome: m.nome })}>Confirmar pagamento</button>} />)} />
     </div>
 
-    <div className="panel bottom-table surgery-table">
-      <div className="table-toolbar">
-        <div><h3>Mapa cirúrgico do mês</h3><small>Registro mensal das cirurgias agendadas. Processos concluídos permanecem arquivados somente no mês e na data escolhida.</small></div>
-        <button type="button" className="secondary-btn" onClick={exportarCsv} disabled={!mapa.length}>Exportar CSV</button>
-      </div>
-      <div className="table-wrap"><table className="data-table">
-        <thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Procedimento</th><th>Carta de crédito</th><th>Parcelamento</th><th>Status</th><th>Ações</th></tr></thead>
+    <section className="ag-panel ag-mapa" aria-labelledby="ag-mapa-titulo">
+      <header className="ag-panel-head">
+        <div><h2 id="ag-mapa-titulo" className="ag-h2">Mapa cirúrgico · {mesAno(data)}</h2><p>Todas as cirurgias do mês. Processos concluídos ficam arquivados na data da cirurgia.</p></div>
+        <button type="button" className="ag-btn" onClick={exportarCsv} disabled={!mapa.length}><Download size={14} aria-hidden="true" />Exportar CSV</button>
+      </header>
+      <div className="ag-tabela-wrap"><table className="ag-tabela">
+        <thead><tr><th>Data</th><th>Cliente</th><th>Carta de crédito</th><th>Contrato</th><th>Situação</th><th><span className="ag-sr">Ações</span></th></tr></thead>
         <tbody>
-          {!atual && <tr><td colSpan={8}>Carregando…</td></tr>}
-          {atual && mapa.length === 0 && <tr><td colSpan={8}>Nenhuma cirurgia no mês selecionado.</td></tr>}
+          {!atual && <tr><td colSpan={6} className="ag-tabela-vazia">Carregando…</td></tr>}
+          {atual && mapa.length === 0 && <tr><td colSpan={6} className="ag-tabela-vazia">Nenhuma cirurgia no mês selecionado.</td></tr>}
           {mapa.map((m) => {
             const c = cartoes.get(m.clienteId);
-            return <tr key={m.agendamentoId}>
-              <td><b>{dataBr(m.data)}</b></td><td>{m.horario ?? "—"}</td><td>{m.nome}</td><td>{m.procedimento ?? "—"}</td>
-              <td><b>{moeda(m.cartaDeCredito)}</b></td>
-              <td>{m.quitada ? <span className="paid-off-label">Quitada</span> : c ? `${c.totalParcelas}x · ${c.parcelasPagas} pagas` : "—"}</td>
-              <td>{m.processoConcluido ? <span className="badge success">Processo concluído</span> : <span className="badge wait">Aguardando pagamento</span>}</td>
-              <td><div className="table-actions-stack">
+            return <tr key={m.agendamentoId} className={m.data === data ? "is-sel" : undefined}>
+              <td><button type="button" className="ag-link ag-data" onClick={() => onData(m.data)}><b>{dataBr(m.data)}</b><small>{m.horario ?? "—"}</small></button></td>
+              <td><b>{m.nome}</b><small>{m.procedimento ?? "—"}</small></td>
+              <td className="ag-num">{moeda(m.cartaDeCredito)}</td>
+              <td>{m.quitada ? <span className="ag-situacao is-success">Quitado</span> : c ? `${c.parcelasPagas} de ${c.totalParcelas} pagas` : "—"}</td>
+              <td>{m.processoConcluido ? <span className="ag-situacao is-success">Processo concluído</span> : <span className="ag-situacao is-wait">Aguardando pagamento</span>}</td>
+              <td className="ag-tabela-acoes">
                 {m.processoConcluido
-                  ? <button type="button" className="mini-link consult-process-btn" onClick={() => onConsultarProcesso(m.clienteId)}>Consultar processo</button>
+                  ? <button type="button" className="ag-link" onClick={() => onConsultarProcesso(m.clienteId)}>Consultar processo</button>
                   : <>
-                      <button type="button" className="mini-link" onClick={() => onAbrirCliente(m.clienteId)}>Abrir cliente</button>
-                      <button type="button" className="mini-link" onClick={() => setPagamento({ agendamentoId: m.agendamentoId, nome: m.nome })}>Confirmar pagamento</button>
-                    </>}
-              </div></td>
+                    <button type="button" className="ag-link" onClick={() => onAbrirCliente(m.clienteId)}>Abrir cliente</button>
+                    <button type="button" className="ag-btn is-primario is-pequeno" onClick={() => setPagamento({ agendamentoId: m.agendamentoId, nome: m.nome })}>Confirmar pagamento</button>
+                  </>}
+              </td>
             </tr>;
           })}
         </tbody>
       </table></div>
-    </div>
+    </section>
 
-    {confirmarBloqueio != null && <ConfirmModal titulo="Bloquear data" perigo rotuloConfirmar="Bloquear"
-      mensagem={`Esta data possui ${confirmarBloqueio} agendamento(s). O bloqueio não apagará os agendamentos existentes. Deseja continuar?`}
+    {confirmarBloqueio != null && <ConfirmModal titulo="Fechar data" perigo rotuloConfirmar="Fechar data"
+      mensagem={`Esta data possui ${confirmarBloqueio} agendamento(s). Fechar a data só impede novas escolhas no app: os agendamentos existentes continuam valendo. Deseja continuar?`}
       onConfirmar={() => acaoDia("bloquear")} onClose={() => setConfirmarBloqueio(null)} />}
     {pagamento && <ConfirmModal titulo="Confirmar pagamento da cirurgia" rotuloConfirmar="Confirmar pagamento"
       mensagem={`Confirmar o pagamento da cirurgia de ${pagamento.nome}? O processo será concluído e ficará arquivado nesta data cirúrgica.`}

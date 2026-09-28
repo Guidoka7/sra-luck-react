@@ -1,0 +1,113 @@
+admin_clientes_totais||fd19480226087fa7198592d2d2b65609|191
+admin_dashboard_agenda|p_inicio date, p_fim date, p_hoje date, p_proximos_fim date|e7d2940d027e91529c88f5542292ec9c|290
+admin_dashboard_stats|p_hoje date, p_inicio date, p_fim date, p_semana_inicio date, p_semana_fim date, p_grafico_inicio date, p_grafico_fim date|e364736eb2b8c25785378c1a2dda5583|396
+admin_excluir_colaborador_auditado|p_actor_auth_id uuid, p_id uuid|10b3639f15f16f344d728b92c378b661|1873
+admin_forecast_page|p_limite integer, p_antes_criado timestamp with time zone, p_antes_id uuid|dfff3e61ced4a64f1a1ef78d2dd1485c|366
+admin_integration_snapshot||0dd1642470936365b498e5f72d96afc6|201
+admin_salvar_colaborador_auditado|p_actor_auth_id uuid, p_id uuid, p_dados jsonb|fcbd353b0e9b8a12fb06e10c241741b5|4976
+agenda_cirurgia_datas_snapshot|p_hoje date|72b2c53775527dd2695afc4a1d1cc9be|280
+agenda_liberada|p_cliente_id uuid|874b2d33989b02fd5e747e3b03866049|606
+agenda_liberar_termos_para_nova_escolha|p_agendamento_id uuid, p_usuario text|fea8fd48645086a6acb423ea52e46e03|1000
+agenda_processar_liberacoes_v46||7c963947ccc3d0f66cf4ea7778d10220|683
+loadtest_admin_clientes_totais||8e83777686c206780e9c83636c82a33e|618
+agenda_datas_snapshot|p_hoje date|95b4c42306bc8a5ce144a578eb365941|262
+bump_agenda_sync_state||d53557f245f41e03e225dcf1153985c2|749
+adicionar_dias_corridos|p_data date, p_dias integer|11ab9353153083aa77f5398ae997c6d0|263
+agenda_definir_responsavel_termos|p_agendamento_id uuid, p_responsavel text, p_usuario text|8f4a7a7a1e1c902a9ef0101cb784e0d8|814
+adicionar_dias_uteis|p_data date, p_dias integer|0fbb2de51268875b559d8a15d4535cd9|557
+admin_central_snapshot|p_hoje date, p_limite integer, p_estagio text, p_apos_nome text, p_apos_id uuid|4fb03be0a1af946f4be0901e30f60129|389
+admin_clientes_bancos||b1431f5cd945b42958b0d5e26390c943|191
+agenda_confirmar_previsao|p_agendamento_id uuid, p_previsao date, p_usuario text|5cdb6c9e0978b6b89f2b1f08b1b0381b|2192
+admin_clientes_pagina|p_limite integer, p_cursor_created timestamp with time zone, p_cursor_id uuid, p_busca text, p_funil text, p_status text, p_periodo_inicio timestamp with time zone, p_banco text, p_sort text, p_cursor_name text|e13da10f32054b41b905e7a6eb06fc6b|748
+admin_clientes_pagina_recent|p_limite integer, p_cursor_created timestamp with time zone, p_cursor_id uuid, p_busca text, p_funil text, p_status text, p_periodo_inicio timestamp with time zone, p_banco text, p_sort text, p_cursor_name text|9c7c9ae77744a4761c450b10b5fc0baa|762
+agenda_cirurgica_ajustar_prazo|p_agendamento_id uuid, p_dias_uteis integer, p_usuario text|7f7fdc6c11e76a6d51be16c07e034e6a|1409
+agenda_cirurgica_liberar_manual|p_agendamento_id uuid, p_usuario text|b0466541f09afb267cfa1e062488ab3e|1167
+agenda_comprometimento_mes|p_mes date, p_excluir_cliente uuid|9826536f06cffe05401dba11a7182228|1378
+agenda_confirmar_levantamento|p_cliente_id uuid, p_saldo_final numeric, p_formas text[], p_usuario text|ccbe5a49225980a05cfd45394f7e806b|2332
+agenda_confirmar_pagamento_cirurgia|p_agendamento_id uuid, p_usuario text|45ec574dd1b01faafefe5485e058116b|1202
+agenda_data_minima_cirurgia|p_agendamento_id uuid|b751cc95071a79a198b98ae6a8540988|413
+notificacao_motivo|p_texto text|547e8cb0c0c3c1de6ac1fced33547da2|274
+agenda_reagendar_termos_agora|p_agendamento_atual_id uuid, p_nova_data_id uuid, p_horario_termos text, p_usuario text|94af096327456ff4c0b601424191f17b|1342
+agenda_registrar_comparecimento|p_agendamento_id uuid, p_compareceu boolean, p_usuario text|65bb2f385bff14f7184c3b93dc0a3375|1948
+agenda_registrar_quitacao|p_agendamento_id uuid, p_recebido boolean, p_usuario text, p_idempotency_key text|d323ebda9816082293234cc48222ba1e|5950
+agenda_reservar_cirurgia|p_cliente_id uuid, p_data date, p_horario text, p_usuario text|2c091a504245b711237f8fbf296d86ed|3092
+agenda_reservar_cirurgia_cliente|p_cliente_id uuid, p_data date, p_horario text, p_usuario text|4728e639d9e847de0b576458d3059df5|919
+agenda_tentar_liberar_cirurgia|p_agendamento_id uuid, p_usuario text|c6334009ed153da8640e95bc08d64322|1468
+agendar_cirurgia_data|p_agendamento_id uuid, p_data date|aaaa8f12699a96449d1d622f9f584bf4|2392
+agendar_data|p_cliente_id uuid, p_data_id uuid, p_valor_contrato numeric, p_horario_termos text|5eba0d5c7810dd90abe25917ca013240|3400
+atualizar_solicitacao_liberacao_updated_at||204b9b9355e61b7541bc0633bbc9294c|224
+calcular_prazo_cirurgico_v46|p_comparecimento_em timestamp with time zone, p_quitacao_em timestamp with time zone, p_dias_ajuste integer|bdee348e4d0cbd8a2b0bae16a3e55c28|781
+carne_importar_parcelas|p_cliente_id uuid, p_chave text, p_documento jsonb, p_itens jsonb, p_usuario text|5848abccbea204bcca7dbae883ff1e22|8573
+cliente_agenda_snapshot|p_cliente_id uuid, p_hoje date|4ae872e14adff46c01ad30b49aa878ac|246
+cliente_financeiro_snapshot|p_cliente_id uuid|311b676c023e1f6839d81ea3135667cc|234
+cliente_solicitar_liberacao_financeira|p_cliente_id uuid|527ec2ea4db418f698f64d781822f901|1201
+lgpd_limpar_dados_tecnicos||90827f78fb3680c33cb887092312e546|573
+clientes_arquivar|p_cliente_id uuid, p_usuario text|a1c64c4246bdfe35d262f952cb60c22a|1435
+clube_atualizar_indicacao|p_indicacao_id uuid, p_status text, p_indicado_cliente_id uuid, p_observacao text, p_usuario text|81ac4b6279ff8f61b8a116f477c6e71d|2098
+loadtest_admin_central_snapshot|p_hoje date, p_limite integer, p_estagio text, p_apos_nome text, p_apos_id uuid|bf96b1668a01cc67a6c5f5f41b403e90|4298
+clube_atualizar_resgate|p_resgate_id uuid, p_status text, p_usuario text|7f08a85a6e6e809131afcc7d55599e0a|2849
+clube_avaliar_indicacao|p_indicacao_id uuid|6ba4972ab130080c22a23d1f0c22be83|1490
+clube_conceder_bonus_primeira_parcela|p_cliente_id uuid, p_boleto_id uuid|4032755259ba9e5d263da876edc5c0e1|1570
+clube_creditar_pontos|p_cliente_id uuid, p_tipo text, p_pontos integer, p_motivo text, p_referencia text, p_metadata jsonb|45f3e3f6a9851bb70b294275dcec8844|1272
+clube_notificar_boleto_status||c874a6493d71bcbde5f4163dd3976eef|2857
+clube_resgatar|p_cliente_id uuid, p_recompensa_id uuid, p_idempotency_key text|372d2ca6b5c1a54e0150b3757967f35e|3101
+finance_client_funnel|p_bucket text, p_busca text, p_ordenacao text, p_pagina integer, p_limite integer, p_hoje date|bc29d1237836fa64df856711cc6390af|340
+finance_receivables_page|p_inicio date, p_fim date, p_status text, p_busca text, p_pagina integer, p_limite integer|e9fb8b09f66f0142623d4a4abd386f72|338
+finance_received_page|p_tipo text, p_data date, p_busca text, p_pagina integer, p_limite integer, p_hoje date|0e5687d6e5118e2b1a88548b2a0bf28e|326
+finance_summary|p_inicio date, p_fim date, p_hoje date|93627ac4feea8b172b50ff445f505e2f|238
+loadtest_admin_clientes_bancos||bed2a8e4683f0ceb119d0d6629a91a9e|381
+financeiro_baixar_boleto|p_boleto_id uuid, p_data_pagamento date, p_juros numeric, p_multa numeric, p_desconto numeric, p_forma_pagamento text, p_instituicao_conta text, p_observacao text, p_usuario text, p_idempotency_key text|7ee704cc808a6f7033f8c993bc4ec72f|3098
+financeiro_set_updated_at||204b9b9355e61b7541bc0633bbc9294c|201
+financeiro_validar_comprovante|p_boleto_id uuid, p_acao text, p_observacao text, p_usuario text, p_idempotency_key text|fc3806b62827a9dd563dffec6478bb3e|2962
+loadtest_admin_clientes_pagina|p_limite integer, p_cursor_created timestamp with time zone, p_cursor_id uuid, p_busca text, p_funil text, p_status text, p_periodo_inicio timestamp with time zone, p_banco text, p_sort text, p_cursor_name text|3fe0fc1fe0801c49c12d1ecc55945c34|5621
+gerar_boletos_cliente|p_cliente_id uuid, p_quantidade_parcelas integer, p_taxa_percentual numeric, p_primeiro_vencimento date|2c676951571f07459ed37de213872598|1448
+gerar_comissao_sdr_comparecimento|p_agendamento_id uuid, p_usuario_id uuid|4efd65d3adab05d9d05a246cb938c02e|1387
+loadtest_admin_clientes_pagina_recent|p_limite integer, p_cursor_created timestamp with time zone, p_cursor_id uuid, p_busca text, p_funil text, p_status text, p_periodo_inicio timestamp with time zone, p_banco text, p_sort text, p_cursor_name text|ee36c93cd0240c96fbfc753aef19b3ef|4587
+gerar_comissao_vendedora_primeira_parcela|p_boleto_id uuid, p_usuario_id uuid|4bc9b4bd90fe840c9fe53f74be8d0745|1512
+integracao_consumir_uso|p_provedor text, p_funcao text, p_dia date, p_limite integer|be482f764e617c029bbbf344d1bee88c|618
+integracao_liberar_trava|p_nome text|c8f38f2e7257cd9c7723215042722700|230
+integracao_tentar_trava|p_nome text, p_segundos integer|6c9fbfdd95dda7285096e4d3a6eedbfd|499
+integracoes_disparar_sync||acfc9a91d76b2db1cdb29fcc7459fe77|772
+lgpd_normalizar_usuario_auditoria|valor text|c2c63a84a4deaa2f88b0e14427b0b1b7|1512
+lgpd_proteger_log_alteracao||fcc67e9c767294e7654947d7d28cebbc|343
+lgpd_sanitizar_json_auditoria|valor jsonb|231acdb8552a97cf4dff956503ab5573|2178
+loadtest_admin_dashboard_agenda|p_inicio date, p_fim date, p_hoje date, p_proximos_fim date|bf2f7fc5d768c54672804a251981073b|3564
+loadtest_admin_dashboard_stats|p_hoje date, p_inicio date, p_fim date, p_semana_inicio date, p_semana_fim date, p_grafico_inicio date, p_grafico_fim date|1f7e65e8eab9a56adf9ca615b028e299|6921
+loadtest_admin_forecast_page|p_limite integer, p_antes_criado timestamp with time zone, p_antes_id uuid|c3ce603cef95165cc0c84c6c63c2bcf5|1890
+novas_vendas_avancar_concluidas||6d0dfdcc71f8f1f64642c9b30fa569c3|556
+loadtest_admin_integration_checks||33b1aca6e56cca81e412ba2e60b96527|726
+loadtest_admin_integration_snapshot||84486aca5f03306d708000e18f031580|2022
+loadtest_agenda_cirurgia_datas_snapshot|p_hoje date|ab899d9385333e9a76e98a5932440b9f|622
+loadtest_agenda_datas_snapshot|p_hoje date|385ff4e5a5569aea9204571aeb9e0d91|536
+loadtest_cliente_agenda_snapshot|p_cliente_id uuid, p_hoje date|a561b3541ca0cd89612e4c70840e99a6|3538
+loadtest_cliente_financeiro_snapshot|p_cliente_id uuid|7530a502bf6fb4b5ed704b9b776d343a|776
+loadtest_finance_client_funnel|p_bucket text, p_busca text, p_ordenacao text, p_pagina integer, p_limite integer, p_hoje date|cbefc3136c02521aa2baa2774bb1e519|3999
+loadtest_finance_receivables_page|p_inicio date, p_fim date, p_status text, p_busca text, p_pagina integer, p_limite integer|d2d6ee0f9147e125e06fa866b2d99cb7|2365
+loadtest_finance_received_page|p_tipo text, p_data date, p_busca text, p_pagina integer, p_limite integer, p_hoje date|b80fa3e5e328ee9ce25f2cddaa17dd32|3692
+orcamento_do_mes|p_ano integer, p_mes integer|aad788050d82a90041717a7c83b188e5|409
+loadtest_finance_summary|p_inicio date, p_fim date, p_hoje date|15cc1079e7c6094d1bad63770a712c21|4604
+login_limpar_rate_limit|p_chave text|9c43ff54233adf9d92666b9f6d37ddb3|240
+login_limpar_rate_limits_expirados||030590f5bf7c916aac7641a1f88efa9d|414
+percentual_minimo_fluxo_agenda||d18803955b4e8cc012a3a27a73683625|185
+login_pode_tentar|p_chave text, p_max_falhas integer, p_janela_segundos integer|af2fdfa98c2f4fd41c45579ae3d621d1|981
+login_registrar_falha|p_chave text, p_max_falhas integer, p_janela_segundos integer|a12714727d8b12d40d2f4c2963eca077|1292
+notificacao_data_br|p_data date|ede97c229649fc33ccc0a16b9a6e2e32|235
+notificacao_horario_br|p_hora time without time zone|c4ba10e0fe7dd360157c99a68f40ea78|393
+notificacoes_lembretes_agenda||09e8609720f22c6af94ef929bd5220b3|1643
+notificar_agendamento||10472f378533451b2883825e67a39b19|4188
+notificar_cliente|p_cliente_id uuid, p_evento text, p_vars jsonb, p_referencia_id uuid, p_chave_dedupe text|42bf89ef25676cbabf6b48f6a7056417|3030
+notificar_liberacao_financeira||57fda59520c86248586030815cbb1bb9|992
+notificar_revisao_financeira||ae521b72b44faff0bf00f6b2fa4d1e80|868
+pode_agendar|p_cliente_id uuid|7e9266a261a400dd83f8effcbc177bcb|844
+porcentagem_pagamento|p_cliente_id uuid|6a4651bd2a9cdb9c5c1161e2b8b187f6|408
+proteger_exclusao_cliente_com_historico_financeiro||9d366c166ca8e6f9cabea7e24e4e839e|1352
+prune_monitoramento_acessos|p_dias integer|4f72a70faa7e56522ece0fea58519661|413
+rate_limit_consumir|p_chave text, p_max_tentativas integer, p_janela_segundos integer|b76d46fb17562a87ff06274418390938|1752
+rls_auto_enable||99be20677b456ea8d3be47bdd44fb369|1121
+salvar_plano_financeiro_cliente|p_cliente_id uuid, p_quantidade integer, p_valor_parcela numeric, p_primeiro_vencimento date, p_taxa_percentual numeric, p_recalcular_abertas boolean|9802a0eb5dc0ca3da77f3ae1c1251ad3|5215
+salvar_plano_financeiro_drawer|p_cliente_id uuid, p_quantidade integer, p_valor_parcela numeric, p_primeiro_vencimento date, p_valor_total_plano numeric, p_forma_pagamento text, p_instituicao text, p_dia_cobranca integer, p_status_plano text, p_recalcular_abertas boolean|613219a4cc3c0fa0590e320a06e96531|4658
+set_updated_at||204b9b9355e61b7541bc0633bbc9294c|196
+sincronizar_revisao_financeira||b44585030a4613990fc8c62f60bcd082|867
+suspender_realocar_parcelas_cliente|p_cliente_id uuid, p_parcela_ids uuid[], p_usuario text|d1d2d7459a7e62464804968a0846d51c|4284
+teto_mensal_operacional||426a6e1b646c5ccd5597cce8e266524d|268
+vagas_ocupadas|p_data_id uuid|f3eaad11924262de2821349e9d38c357|257

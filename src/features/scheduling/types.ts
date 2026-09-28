@@ -45,11 +45,17 @@ export interface CartaoCliente {
   horarioCirurgia: string | null;
   cirurgiaEscolhidaEm: string | null;
   processoConcluidoEm: string | null;
+  /** Último agendamento de termos cancelado por ausência ou saldo não quitado (só na etapa de levantamento). */
+  retornoTermos?: { motivo: "ausencia" | "sem_quitacao"; em: string; dataTermos: string | null } | null;
 }
+
+export interface DisponibilidadeDatas { datas: number; vagas: number; proxima: string | null }
 
 export interface VisaoGeralResponse {
   hoje: string;
   filas: Record<EstagioCentral, CartaoCliente[]>;
+  /** Datas futuras abertas com vaga; null quando a leitura de apoio falhou. */
+  disponibilidade?: { termos: DisponibilidadeDatas; cirurgia: DisponibilidadeDatas } | null;
 }
 
 export interface DiaCalendario {

@@ -1,4 +1,5 @@
 import { dataBr } from "./api";
+import { prazoLiberacaoDiasUteis } from "@/lib/regrasOperacionais";
 import type { CartaoCliente } from "./types";
 
 /** V46 `chosenDateHtml`: bloco "calendário" com a data escolhida. */
@@ -23,7 +24,7 @@ export function estadoLiberacao(c: CartaoCliente, hoje: string) {
   const ambos = compareceu && quitada;
   const liberada = Boolean(c.agendaCirurgicaLiberadaEm);
   const inicio = ambos ? maiorData(c.comparecimentoEm, c.quitacaoEm) : null;
-  const totalDias = 5 + Math.max(0, c.prazoAjusteDias || 0);
+  const totalDias = prazoLiberacaoDiasUteis() + Math.max(0, c.prazoAjusteDias || 0);
   const decorridos = inicio ? Math.min(totalDias, diasUteis(inicio, hoje)) : 0;
   return { compareceu, quitada, ambos, liberada, inicio, totalDias, decorridos, previsao: c.prazoCirurgico ?? null };
 }

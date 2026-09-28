@@ -155,6 +155,36 @@ export function montarPatchRevisaoFinanceira(
   return { patch };
 }
 
+/** Argumentos da RPC agenda_registrar_levantamento a partir do patch já validado. */
+export function argumentosRpcLevantamento(clienteId: string, patch: Record<string, unknown>, usuario: string) {
+  const numero = (v: unknown) => (v === undefined || v === null ? null : Number(v));
+  return {
+    p_cliente_id: clienteId,
+    p_decisao: String(patch.status_revisao_financeira),
+    p_saldo_restante: numero(patch.financeiro_saldo_restante),
+    p_formas: Array.isArray(patch.financeiro_formas_custeio) ? patch.financeiro_formas_custeio.map(String) : null,
+    p_taxa_cartao: numero(patch.financeiro_taxa_cartao),
+    p_observacao: patch.observacao_revisao_financeira ? String(patch.observacao_revisao_financeira) : null,
+    p_usuario: usuario,
+  };
+}
+
+const ERROS_LEVANTAMENTO: [RegExp, string, number][] = [
+  [/CLIENTE_NAO_ENCONTRADA/, "Cliente não encontrada.", 404],
+  [/DECISAO_INVALIDA/, "Decisão do levantamento inválida.", 400],
+  [/SALDO_INVALIDO/, "Informe um saldo restante válido.", 400],
+  [/FORMAS_QUITACAO_OBRIGATORIAS/, "Selecione ao menos uma forma de quitação.", 400],
+  [/FORMA_QUITACAO_INVALIDA/, "Forma de quitação inválida.", 400],
+  [/TAXA_CARTAO_INVALIDA/, "Informe uma taxa de cartão válida.", 400],
+];
+
+/** Erro da RPC → resposta. Qualquer outro erro (ex.: falha na auditoria) é 500 e nada foi gravado. */
+export function erroRpcLevantamento(mensagem: string | null | undefined): { erro: string; status: number } {
+  const texto = String(mensagem ?? "");
+  for (const [re, erro, status] of ERROS_LEVANTAMENTO) if (re.test(texto)) return { erro, status };
+  return { erro: "Não foi possível registrar o levantamento. Nada foi gravado; tente novamente.", status: 500 };
+}
+
 export async function adminApi(request: Request, env: Env): Promise<Response | null> {
   const url=new URL(request.url), path=url.pathname;
   if(!path.startsWith("/api/admin/")||["/api/admin/auth","/api/admin/session","/api/admin/logout","/api/admin/visao-geral"].includes(path))return null;
@@ -294,7 +324,15 @@ export async function adminApi(request: Request, env: Env): Promise<Response | n
   if(path==="/api/admin/datas-liberacao-financeira"&&request.method==="GET"){const {data,error}=await supabase.from("datas_liberacao_financeira").select("*").order("data",{ascending:true});if(error)return json({erro:publicError(error)},500);return json({datas:data??[]});}
   if(path==="/api/admin/previsoes-liberacao"&&request.method==="GET"){const {data,error}=await supabase.from("agendamentos").select("id,cliente_id,previsao_liberacao_financeira,status,clientes(id,nome_completo,cpf)").not("previsao_liberacao_financeira","is",null).order("previsao_liberacao_financeira",{ascending:true});if(error)return json({previsoes:[]});return json({previsoes:data??[]});}
   if((path==="/api/admin/liberacoes-financeiras"||path==="/api/admin/solicitacoes-liberacao-financeira")&&request.method==="GET"){const table=path.includes("solicitacoes")?"solicitacoes_liberacao_financeira":"liberacoes_financeiras";const {data,error}=await supabase.from(table).select("*").order("created_at",{ascending:false});if(error)return json({erro:publicError(error)},500);return json({[path.includes("solicitacoes")?"solicitacoes":"liberacoes"]:data??[]});}
-  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request);const atual=await supabase.from("clientes").select("status_revisao_financeira").eq("id",id).maybeSingle();if(atual.error)return json({erro:publicError(atual.error)},400);if(!atual.data)return json({erro:"Cliente não encontrada."},404);const montado=montarPatchRevisaoFinanceira(b,atual.data.status_revisao_financeira??null,new Date().toISOString());if("erro" in montado)return json({erro:montado.erro},400);const {data,error}=await supabase.from("clientes").update(montado.patch).eq("id",id).select("*").single();if(error)return json({erro:publicError(error)},400);return json({cliente:data});}
+  const rev=path.match(/^\/api\/admin\/clientes\/([^/]+)\/revisao-financeira$/);if(rev&&request.method==="POST"){const semPermissao=await exigirPermissao(request,env,PERMISSOES_ADMIN.FINANCEIRO_REVISAO,"Seu papel não tem permissão para concluir revisões financeiras.");if(semPermissao)return semPermissao;const id=decodeURIComponent(rev[1]),b=await body(request);const atual=await supabase.from("clientes").select("status_revisao_financeira").eq("id",id).maybeSingle();if(atual.error)return json({erro:publicError(atual.error)},400);if(!atual.data)return json({erro:"Cliente não encontrada."},404);const montado=montarPatchRevisaoFinanceira(b,atual.data.status_revisao_financeira??null,new Date().toISOString());if("erro" in montado)return json({erro:montado.erro},400);
+    // Decisão, responsável e auditoria numa única transação (migration_112): se
+    // qualquer parte falhar, nada é gravado e a API não responde sucesso.
+    const sessaoRev=await verificarTokenAdmin(getCookie(request,"admin_session"),env.CLIENTE_SESSION_SECRET!);
+    const colaboradorRev=sessaoRev?await buscarColaboradorAdminAtivo(sessaoRev.adminId,env):null;
+    if(!colaboradorRev)return json({erro:"Sessão administrativa expirada."},401);
+    const {data,error}=await supabase.rpc("agenda_registrar_levantamento",argumentosRpcLevantamento(id,montado.patch,`staff:${colaboradorRev.id}`));
+    if(error){const falha=erroRpcLevantamento(error.message);if(falha.status>=500)console.error("Levantamento financeiro não gravado (transação desfeita)");return json({erro:falha.erro},falha.status);}
+    return json({cliente:data});}
 
   const statusContrato=path.match(/^\/api\/admin\/clientes\/([^/]+)\/status-contrato$/);
   if(statusContrato&&request.method==="POST"){

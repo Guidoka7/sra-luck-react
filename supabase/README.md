@@ -32,6 +32,28 @@ Para migrations novas:
 - fornecer rollback/plano de reversão para alterações críticas;
 - validar em desenvolvimento antes de produção.
 
+### 096–110: leituras consolidadas (aplicadas em 26/09/2026)
+
+As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principal a partir do branch `load-test-10k-isolated` e agora estão versionadas aqui sem alteração. Em 28/09/2026 o SQL de cada arquivo foi comparado com `supabase_migrations.schema_migrations` (sem comentários e linhas em branco): idêntico nas 14.
+
+- São funções somente de leitura (`loadtest_*` e os aliases de produção `admin_*`, `finance_*`, `*_snapshot`, sem `SECURITY DEFINER` e sem `EXECUTE` para `anon`/`authenticated`) e o endurecimento de `EXECUTE` das funções `notificar_*` (110).
+- A `107_loadtest_finance_received_page` **não** foi aplicada nem versionada: a `108` redefine a mesma função (`loadtest_finance_received_page`). Não criar arquivo 107.
+- A `111` (liberação automática com status `realizado`) está pronta com teste e rollback, **ainda não aplicada**.
+
+### 112: levantamento atômico (não aplicada em produção)
+
+`migration_112_levantamento_atomico.sql` cria `agenda_registrar_levantamento`: decisão do levantamento, responsável e auditoria na mesma transação. Teste: `supabase/tests/levantamento_atomico_112.sql` (inclui falha forçada da auditoria). Rollback: `supabase/rollback/migration_112_rollback.sql`.
+
+**Ordem obrigatória:** aplicar a 112 antes de promover o App que chama a RPC; sem ela, "Concluir levantamento" responde erro (e nada é gravado).
+
+### 113: fila de pendências de integração (não aplicada em produção)
+
+`migration_113_integracao_pendencias.sql` cria `integracao_pendencias` (uma linha aberta por negociação + tipo, com ocorrências), `colaborador_vinculos_externos` (responsável do RD ↔ vendedora/SDR por ID estável), as RPCs `integracao_registrar_pendencia`, `integracao_resolver_pendencias`, `rd_recalcular_pendencias_venda` (regra única do que é venda completa) e `rd_recalcular_pendencias_todas` (preenche a fila a partir das vendas existentes, sem reimportar), e a view `vw_vendas_validas_bi`. Tudo só para `service_role`. Rollback: `supabase/rollback/migration_113_rollback.sql` (remove só esses objetos; vendas e importações ficam). Diagnóstico e motivo: `docs/DIAGNOSTICO-RD-2026-09-28.md`.
+
+**Ordem obrigatória:** aplicar a 113 antes de promover o App que grava pendências; sem ela, a importação termina em erro `PENDENCIA_NAO_REGISTRADA` (visível no histórico) em vez de gravar em silêncio. Depois de aplicada, rodar `select public.rd_recalcular_pendencias_todas('dev:<ator>')` **só com aprovação**: ela não altera vendas além de preencher `vendedora_id` pelos vínculos cadastrados.
+
+- A próxima migration é a `114`.
+
 ## Campos históricos importantes
 
 O modelo herdado contém conceitos como:

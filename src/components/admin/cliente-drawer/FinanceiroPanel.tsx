@@ -235,7 +235,7 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     </div>}
 
     <article className={`${styles.card} ${styles.financeCard}`}>
-      <div className={styles.cardHead}><div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="document" aria-hidden="true" />Parcelas</div>{cad.carregandoFin ? <span className={styles.muted}>Atualizando…</span> : null}</div>
+      {completo && <div className={styles.cardHead}><div role="heading" aria-level={3} className={styles.cardTitle}><DrawerIcon name="document" aria-hidden="true" />Parcelas</div>{cad.carregandoFin ? <span className={styles.muted}>Atualizando…</span> : null}</div>}
       <div className={styles.cardBody} style={{ paddingTop: 3 }}>
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pagamento</th><th>Comprovante</th><th>Ações</th></tr></thead>

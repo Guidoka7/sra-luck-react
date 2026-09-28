@@ -1,6 +1,8 @@
 import { deriveJourneySteps, journeyInputFromProcess } from "../../../lib/journeySteps";
 import type { CartaoCliente, EstagioCentral } from "../../../features/scheduling/types";
-import { estadoLiberacao, faltamTexto } from "../../../features/scheduling/v46Cards";
+import { ETAPA_POR_ID } from "../../../features/scheduling/jornada";
+import type { Boleto } from "../../../types/database";
+import { statusParcela, type ParcelaStatus } from "./drawerFormat";
 
 /**
  * Regras de exibição do drawer da cliente que dependem do estado persistido
@@ -8,18 +10,13 @@ import { estadoLiberacao, faltamTexto } from "../../../features/scheduling/v46Ca
  * ser testadas isoladamente.
  */
 
-/** Rótulo da etapa real exibido no cabeçalho do drawer. */
-export function statusDoDrawer(c: CartaoCliente, estagio: EstagioCentral, concluido: boolean, hoje: string): string {
-  if (estagio === "preEligibility") return c.parcelasFaltantes === 0 ? "Etapa 1 · Aguardando solicitação" : `Etapa 1 · ${faltamTexto(c.parcelasFaltantes)}`;
-  if (estagio === "financialReview") return c.statusRevisaoFinanceira === "aprovada" ? "Etapa 2 · Aguardando escolha dos termos" : "Etapa 2 · Levantamento";
-  if (estagio === "termsConfirmed") return "Etapa 3 · Próximos termos";
-  if (estagio === "financialRelease") {
-    const e = estadoLiberacao(c, hoje);
-    if (e.liberada) return "Etapa 4 · Agenda cirúrgica liberada";
-    if (e.ambos) return e.decorridos === 0 ? `Etapa 4 · Aguardando prazo de ${e.totalDias} dias úteis` : `Etapa 4 · ${e.decorridos} de ${e.totalDias} dias úteis`;
-    return "Etapa 4 · Conferência presencial";
-  }
-  return concluido ? "Etapa 5 · Processo concluído" : "Etapa 5 · Cirurgia confirmada";
+/**
+ * Rótulo da etapa real no cabeçalho do drawer (visível em todas as abas). A
+ * situação detalhada fica só na aba Processo, para não repetir informação.
+ */
+export function statusDoDrawer(estagio: EstagioCentral, concluido: boolean): string {
+  const etapa = ETAPA_POR_ID.get(estagio)!;
+  return `Etapa ${etapa.numero} · ${concluido ? "Processo concluído" : etapa.titulo}`;
 }
 
 /**
@@ -39,4 +36,35 @@ export function passosDaJornada(c: CartaoCliente, concluido: boolean) {
     dataCirurgia: c.dataCirurgia,
     cirurgiaRealizada: c.statusCirurgia === "realizada",
   }));
+}
+
+export interface ResumoCarteira {
+  total: number;
+  pagas: number;
+  vencidas: number;
+  emConferencia: number;
+  comprovantes: number;
+  /** Soma das parcelas ainda não pagas (suspensas ficam de fora). */
+  valorEmAberto: number;
+  itens: { id: string; numero: number; status: ParcelaStatus; vencimento: string | null; valor: number }[];
+}
+
+/**
+ * Carteira de parcelas do levantamento financeiro (aba Processo): contagens e
+ * mapa por parcela, com o mesmo `statusParcela` da tabela do Financeiro.
+ */
+export function resumoCarteira(boletos: Pick<Boleto, "id" | "numero_parcela" | "status" | "data_vencimento" | "suspensa" | "valor" | "comprovante_url">[], hoje: string): ResumoCarteira {
+  const itens = [...boletos]
+    .sort((a, b) => a.numero_parcela - b.numero_parcela)
+    .map((b) => ({ id: b.id, numero: b.numero_parcela, status: statusParcela(b, hoje), vencimento: b.data_vencimento, valor: Number(b.valor || 0) }));
+  const conta = (s: ParcelaStatus) => itens.filter((i) => i.status === s).length;
+  return {
+    total: itens.length,
+    pagas: conta("paid"),
+    vencidas: conta("overdue"),
+    emConferencia: conta("review"),
+    comprovantes: boletos.filter((b) => b.comprovante_url).length,
+    valorEmAberto: itens.filter((i) => i.status !== "paid" && i.status !== "suspended").reduce((s, i) => s + i.valor, 0),
+    itens,
+  };
 }

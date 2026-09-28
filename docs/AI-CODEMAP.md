@@ -199,7 +199,10 @@ As rotas antigas `/admin/pagamentos` e `/admin/parcelas` são apenas redirects p
 
 Procurar:
 
-- página de agenda admin;
+- página de agenda admin (`/admin/agenda`): `src/features/scheduling/CentralAcompanhamento.tsx` com três abas — **Jornada das clientes** (`JornadaBoard.tsx`, quadro com as 5 etapas lado a lado, estilo funil de CRM, com filtro por quem precisa agir; cada lista separa "Ação da equipe" (cartões com a próxima ação) de "Aguardando" (linhas compactas da cliente/sistema)), **Agenda de termos** (`TermsAgendaTab.tsx`) e **Agenda cirúrgica** (`SurgeryAgendaTab.tsx`); calendário e painel do dia em `AgendaCalendar.tsx`; estilos em `agenda.css` (tokens do shell; o `.v46` interno segue servindo modais e drawer). Parâmetros de endereço: `?etapa=<preEligibility|financialReview|termsConfirmed|financialRelease|surgeryConfirmed>` (destaca a coluna), `?aba=termos|cirurgia` e `&data=AAAA-MM-DD`;
+- `src/features/scheduling/jornada.ts` — somente exibição (testado em `jornada.test.ts`): o que é cada uma das 5 etapas e seus passos internos, como a cliente sai dela, filtros por etapa, a situação de cada cliente com **quem age agora** (Equipe, Cliente ou Automático), a ação principal da equipe e os bloqueios por falta de datas. A etapa em si vem pronta do Worker (`etapaCentral`); não decidir regra aqui. Fluxo real e funções do banco: `docs/FLOWS.md` §7.1;
+- `src/features/scheduling/ProcessoTab.tsx` (+ `processo.css`) — aba Processo do drawer da cliente: trilha das 5 etapas e um único cartão "Agora" com a situação (mesma `situacao` de `jornada.ts` usada no quadro), quem age e só os dados/controles da sub-etapa atual (lista rótulo → valor → ação); histórico e documentos recolhidos. A ação principal fica no rodapé do drawer (`ClienteDrawer.tsx`, `botoesProcesso`);
+- `src/features/scheduling/AtendimentoModals.tsx` — fluxos guiados: "Preparar atendimento" (responsável + previsão cirúrgica antes do dia) e "Registrar atendimento" (previsão → comparecimento → quitação), executando as RPCs em ordem e mostrando onde parou;
 - calendário cliente;
 - `worker/client-agenda.ts`;
 - `worker/agendamento-acoes.ts`;
