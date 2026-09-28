@@ -172,7 +172,7 @@ A regra antiga de 5 dias úteis não deve governar o novo fluxo.
 
 Bloqueios que travam clientes sem ação individual: nenhuma data de termos futura aberta com vaga (etapa 2 · data) e nenhuma data cirúrgica futura aberta com vaga (etapa 4 · agenda liberada). A tela Agenda avisa ambos.
 
-Correção de 27/09/2026 (migration_096): o cron só procurava agendamentos `confirmado`, mas o comparecimento grava `realizado`; por isso nenhuma liberação automática havia ocorrido. O cron passa a considerar os dois status.
+Correção de 27/09/2026 (migration_111): o cron só procurava agendamentos `confirmado`, mas o comparecimento grava `realizado`; por isso nenhuma liberação automática havia ocorrido. O cron passa a considerar os dois status.
 
 ## 8. Financeiro diário
 

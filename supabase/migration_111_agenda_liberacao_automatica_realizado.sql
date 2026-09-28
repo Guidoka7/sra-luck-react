@@ -1,5 +1,5 @@
 -- ============================================================================
--- migration_096_agenda_liberacao_automatica_realizado.sql
+-- migration_111_agenda_liberacao_automatica_realizado.sql
 --
 -- Problema (verificado em produção em 27/09/2026, somente leitura):
 --   agenda_registrar_comparecimento(p_compareceu := true) grava
@@ -69,4 +69,4 @@ grant execute on function public.agenda_processar_liberacoes_v46()
   to service_role;
 
 comment on function public.agenda_processar_liberacoes_v46() is
-  'V46: libera automaticamente a Agenda Cirúrgica quando o prazo em dias úteis vence. Considera agendamentos confirmados e realizados (o comparecimento grava realizado) — migration_096.';
+  'V46: libera automaticamente a Agenda Cirúrgica quando o prazo em dias úteis vence. Considera agendamentos confirmados e realizados (o comparecimento grava realizado) — migration_111.';
