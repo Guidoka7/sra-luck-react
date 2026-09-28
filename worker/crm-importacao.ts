@@ -12,13 +12,12 @@
  *   banco (migration_091) quando a cliente tem parcelas E acesso ao app liberado.
  * - RD continua somente leitura (só GET em /crm/v2).
  */
-import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
+import { configDaFuncao, CAMPOS_CRM, CAMPOS_NATIVOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
   arrayValue, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
-import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -106,6 +105,17 @@ export function valorPersonalizado(obj: unknown, slug: string): unknown {
     if (s === slug) return i.value;
   }
   return undefined;
+}
+
+/** Leitura exata da origem escolhida: ausência não equivale a zero, falso ou inferência. */
+export function extrairCamposSelecionados(s: RdDealSnapshot, deal: Json, contato: Json | undefined, config: ConfigCrm) {
+  return (funilParaSnapshot(s, config)?.camposSelecionados ?? []).map(({ fonte, rotulo }) => {
+    const [entidade, chave] = fonte.split(":");
+    const registro = entidade.startsWith("contact") ? contato : deal;
+    const valor = entidade.endsWith("_field") ? registro?.[chave] : valorPersonalizado(registro, chave);
+    const ausente = valor === undefined || valor === null || valor === "" || (Array.isArray(valor) && valor.length === 0);
+    return { fonte, rotulo, valor: ausente ? null : valor, situacao: !registro ? "origem_nao_carregada" : ausente ? "ausente" : "presente" };
+  });
 }
 
 function autoPorNome(obj: unknown, dica: string): string | null {
@@ -276,13 +286,15 @@ export async function processarNegociacao(db: Db, entrada: {
 }): Promise<ItemImportacao> {
   const { deal, snapshot: s, contato, config, indice, importacaoId } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
-  const dados = { ...valores, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
+  const camposSelecionados = extrairCamposSelecionados(s, deal, contato, config);
+  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados } } };
+  const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
   const existente = indice.vendaPorRd.get(s.rdStationId);
   if (existente) {
     // Mesma negociação: só o snapshot rd_* muda; a cópia local e o status ficam.
-    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(s)).eq("id", existente.id);
+    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshotSelecionado)).eq("id", existente.id);
     if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar o snapshot do RD." };
     return { ...base, resultado: "atualizada", motivo: "Só o snapshot do RD foi atualizado; dados locais preservados.", nova_venda_id: existente.id };
   }
@@ -292,10 +304,6 @@ export async function processarNegociacao(db: Db, entrada: {
   if (!valores.nome || valores.nome === "Cliente RD Station") return { ...base, resultado: "ignorada", motivo: "Negociação sem nome de contato." };
 
   const correspondencias = procurarDuplicidade(indice, valores, config, s.rdStationId);
-  if (correspondencias.length && await duplicidadeJaDecidida(db, s.rdStationId)) {
-    // "É a mesma pessoa" já foi decidido: não volta para a revisão a cada execução.
-    return { ...base, correspondencias, resultado: "ignorada", motivo: "Duplicidade já decidida na revisão: mesma pessoa. Nada foi criado." };
-  }
   if (correspondencias.length) {
     const cliente = correspondencias.some((c) => c.tipo === "cliente");
     const chaves = [...new Set(correspondencias.flatMap((c) => c.por))].join(", ");
@@ -306,7 +314,7 @@ export async function processarNegociacao(db: Db, entrada: {
     };
   }
 
-  const { data, error } = await db.from("novas_vendas").insert(linhaNovaVenda(s, valores, importacaoId)).select("id").single();
+  const { data, error } = await db.from("novas_vendas").insert(linhaNovaVenda(snapshotSelecionado, valores, importacaoId)).select("id").single();
   if (error || !data) {
     const duplicadoNoBanco = (error as { code?: string } | null)?.code === "23505";
     return { ...base, resultado: duplicadoNoBanco ? "atualizada" : "erro", motivo: duplicadoNoBanco ? "Negociação já registrada por outra execução." : "Falha ao gravar a venda." };
@@ -341,34 +349,6 @@ function totais(itens: ItemImportacao[], totalRd: number) {
   return { totalRd, criadas: conta("criada"), atualizadas: conta("atualizada"), duplicadas: conta("duplicada"), clienteExistente: conta("cliente_existente"), ignoradas: conta("ignorada"), erros: conta("erro") };
 }
 
-const LOTE_ITENS = 50;
-
-/** Hash curto e estável (FNV-1a) de uma negociação sem ID, para deduplicar a pendência. */
-export function chaveEstavel(deal: Json): string {
-  const base = JSON.stringify([stringValue(deal.name), stringValue(deal.created_at), stringValue(deal.pipeline_id ?? objectValue(deal.pipeline).id), stringValue(deal.owner_id ?? objectValue(deal.owner).id)]);
-  let h = 0x811c9dc5;
-  for (let i = 0; i < base.length; i++) { h ^= base.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-  return h.toString(16).padStart(8, "0");
-}
-/** Maior que a trava da importação (600 s): execução "em andamento" além disso morreu no meio. */
-export const PRAZO_EXECUCAO_MS = 15 * 60_000;
-
-/** Marca como interrompidas as execuções que ficaram "em andamento" além do prazo e abre pendência. */
-export async function marcarExecucoesInterrompidas(db: Db, atualId: string, agora = new Date()) {
-  const limite = new Date(agora.getTime() - PRAZO_EXECUCAO_MS).toISOString();
-  const { data } = await db.from("integracao_importacoes").update({ status: "erro", erro: "EXECUCAO_INTERROMPIDA", concluido_em: agora.toISOString() })
-    .eq("provedor", "rd_station").eq("status", "em_andamento").lt("iniciado_em", limite).neq("id", atualId).select("id,origem");
-  for (const e of (data ?? []) as Json[]) {
-    const { count } = await db.from("novas_vendas").select("id", { count: "exact", head: true }).eq("importacao_id", e.id);
-    await registrarPendencia(db, {
-      tipo: "execucao_interrompida", externalId: String(e.id), importacaoId: String(e.id), origem: String(e.origem),
-      motivo: `A execução parou no meio e não registrou o resultado${count ? `; ${count} venda(s) foram criadas nela` : ""}.`,
-      acao: "Reprocessar (não duplica vendas) e conferir as vendas criadas nessa execução.", dados: { vendas_criadas: count ?? 0 },
-    }).catch(() => undefined);
-  }
-  return (data ?? []).length;
-}
-
 async function gravarItens(db: Db, importacaoId: string, itens: ItemImportacao[]) {
   for (let i = 0; i < itens.length; i += 200) {
     await db.from("integracao_importacao_itens").insert(itens.slice(i, i + 200).map((item) => ({ ...item, importacao_id: importacaoId })));
@@ -389,7 +369,6 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     return { ok: false as const, erro: "A estrutura de importação ainda não foi aplicada (migration_091)." };
   }
   const importacaoId = String((imp as Json).id);
-  await marcarExecucoesInterrompidas(db, importacaoId);
   const fontes = deps.fontes ?? fontesRd(env);
   try {
     // As três leituras são independentes. Fazê-las em paralelo reduz bastante o
@@ -410,39 +389,18 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     const deals = [...porId.values()];
     const refs = { contatos: mapById(r.contatos), usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
     const itens: ItemImportacao[] = [];
-    // Itens gravados DURANTE a execução: se a função for interrompida no meio, o que já foi
-    // feito continua visível (antes, 914 vendas ficaram sem nenhum item — docs/DIAGNOSTICO-RD).
-    let gravados = 0;
-    const descarregar = async (fim = false) => {
-      const pendentes = itens.slice(gravados);
-      if (!fim && pendentes.length < LOTE_ITENS) return;
-      // Item "atualizada" sem mudança é ruído no histórico; guarda só o que importa.
-      await gravarItens(db, importacaoId, pendentes.filter((i) => i.resultado !== "atualizada"));
-      gravados = itens.length;
-    };
     for (const deal of deals) {
       const snapshot = normalizarDealRd(deal, refs);
-      let item: ItemImportacao;
-      if (!snapshot) {
-        // Nunca descartar em silêncio: vira item e pendência.
-        // Chave estável pelo conteúdo: a mesma negociação sem ID não abre uma pendência nova a cada execução.
-        item = { external_id: `sem-id-${chaveEstavel(deal)}`, resultado: "erro", motivo: "Negociação sem identificador no RD.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: stringValue(deal.status) || null } };
-      } else {
-        const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
-        try {
-          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId });
-        } catch {
-          item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
-        }
+      if (!snapshot) continue;
+      const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
+      try {
+        itens.push(await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId }));
+      } catch {
+        itens.push({ external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: {} });
       }
-      itens.push(item);
-      await registrarPendenciasDoItem(db, item, opcoes.origem, importacaoId);
-      await descarregar();
     }
-    await descarregar(true);
-    // Execução completa: falhas de execução anteriores deixaram de valer.
-    await db.from("integracao_pendencias").update({ estado: "resolvida", resolucao: "resolvida_pela_origem", resolvido_por: opcoes.ator, resolvido_em: new Date().toISOString() })
-      .eq("provedor", "rd_station").in("tipo", ["execucao_falhou", "execucao_interrompida"]).eq("estado", "aberta");
+    // Item "atualizada" sem mudança é ruído no histórico; guarda só o que importa.
+    await gravarItens(db, importacaoId, itens.filter((i) => i.resultado !== "atualizada"));
     const resumo = { ...totais(itens, deals.length), somenteLeitura: true };
     const status = resumo.erros ? "parcial" : "concluida";
     await db.from("integracao_importacoes").update({ status, totais: resumo, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
@@ -450,16 +408,9 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     await db.from("logs_alteracoes").insert({ usuario: opcoes.ator, acao: "importou_crm_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { importacaoId, origem: opcoes.origem, filtro, ...resumo } });
     return { ok: true as const, importacaoId, filtro, ...resumo };
   } catch (error) {
-    // Código explícito também quando a falha é ao registrar pendência (antes virava "Falha ao ler o RD").
-    const mensagem = error instanceof Error && /^(RD_|PENDENCIA_)/.test(error.message) ? error.message : "Falha ao ler o RD Station.";
+    const mensagem = error instanceof Error && /^RD_/.test(error.message) ? error.message : "Falha ao ler o RD Station.";
     await db.from("integracao_importacoes").update({ status: "erro", erro: mensagem, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
     await registrarEvento(db, { eventType: `importacao_${opcoes.origem}`, referencia: importacaoId, status: "erro", erro: mensagem, payload: {} });
-    // Falha da EXECUÇÃO inteira (não de uma negociação): uma pendência por código de erro,
-    // somando ocorrências (as 75 falhas de token de 24–25/09 seriam UMA pendência com 75).
-    await registrarPendencia(db, {
-      tipo: "execucao_falhou", externalId: codigoErroExecucao(mensagem), motivo: mensagem, origem: opcoes.origem, importacaoId,
-      acao: mensagem === "RD_ACCESS_TOKEN_MISSING" ? "Reconectar o RD Station no Dev Console e reprocessar." : "Verificar a conexão com o RD no Dev Console e reprocessar.",
-    }).catch(() => undefined);
     return { ok: false as const, importacaoId, erro: mensagem };
   } finally {
     await db.rpc("integracao_liberar_trava", { p_nome: "crm_importacao" });
@@ -476,7 +427,6 @@ export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao:
   const importacaoId = imp ? String((imp as Json).id) : null;
   const indice = await carregarIndice(db);
   const item = await processarNegociacao(db, { deal, snapshot, config, indice, importacaoId });
-  await registrarPendenciasDoItem(db, item, "webhook", importacaoId);
   if (importacaoId) {
     if (item.resultado !== "atualizada") await gravarItens(db, importacaoId, [item]);
     await db.from("integracao_importacoes").update({ status: item.resultado === "erro" ? "parcial" : "concluida", totais: { ...totais([item], 1), transacao }, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
@@ -519,62 +469,23 @@ export function itemParaTela(item: Json) {
   };
 }
 
-export async function listarImportacoes(db: Db, limite = 30, incluirWebhook = false) {
-  // Cada evento de webhook vira uma execução: sem este filtro, as 30 mais recentes eram todas
-  // webhook e o último erro de execução ficava na posição 3.038 (docs/DIAGNOSTICO-RD).
-  let q = db.from("integracao_importacoes")
+export async function listarImportacoes(db: Db, limite = 30) {
+  const { data, error } = await db.from("integracao_importacoes")
     .select("id,origem,status,filtro,totais,erro,iniciado_por,iniciado_em,concluido_em")
     .eq("provedor", "rd_station").order("iniciado_em", { ascending: false }).limit(Math.min(100, Math.max(1, limite)));
-  if (!incluirWebhook) q = q.neq("origem", "webhook");
-  const { data, error } = await q;
   if (error) return { disponivel: false, importacoes: [] };
-  const aguardando = await itensDaImportacao(db, null, true);
-  return { disponivel: true, importacoes: data ?? [], aguardandoRevisao: aguardando.length };
-}
-
-const RESULTADOS_REVISAO = ["duplicada", "cliente_existente"];
-
-/** Já houve decisão "mesma pessoa" para esta negociação (item revisado sem venda criada). */
-async function duplicidadeJaDecidida(db: Db, rdStationId: string) {
-  const { data } = await db.from("integracao_importacao_itens").select("id").eq("external_id", rdStationId)
-    .in("resultado", RESULTADOS_REVISAO).not("revisado_em", "is", null).limit(1);
-  return (data ?? []).length > 0;
+  const { count } = await db.from("integracao_importacao_itens").select("id", { count: "exact", head: true })
+    .in("resultado", ["duplicada", "cliente_existente"]).is("revisado_em", null);
+  return { disponivel: true, importacoes: data ?? [], aguardandoRevisao: count ?? null };
 }
 
 export async function itensDaImportacao(db: Db, importacaoId: string | null, apenasRevisao = false) {
-  let q = db.from("integracao_importacao_itens").select("*").order("created_at", { ascending: false }).limit(apenasRevisao ? 2000 : 500);
+  let q = db.from("integracao_importacao_itens").select("*").order("created_at", { ascending: false }).limit(500);
   if (importacaoId) q = q.eq("importacao_id", importacaoId);
-  if (apenasRevisao) q = q.in("resultado", RESULTADOS_REVISAO).is("revisado_em", null);
+  if (apenasRevisao) q = q.in("resultado", ["duplicada", "cliente_existente"]).is("revisado_em", null);
   const { data, error } = await q;
   if (error) return [];
-  if (!apenasRevisao) return (data ?? []).map(itemParaTela);
-  // Revisão: UMA linha por negociação (a mais recente). Cada execução grava um item novo para a
-  // mesma duplicidade; sem agrupar, a fila repetia a negociação uma vez por execução.
-  const porNegociacao = new Map<string, Json & { repeticoes: number }>();
-  for (const it of (data ?? []) as Json[]) {
-    const chave = String(it.external_id);
-    const atual = porNegociacao.get(chave);
-    if (atual) atual.repeticoes += 1; else porNegociacao.set(chave, { ...it, repeticoes: 1 });
-  }
-  const ids = [...porNegociacao.keys()];
-  if (ids.length) {
-    const [{ data: decididas }, { data: vendas }] = await Promise.all([
-      db.from("integracao_importacao_itens").select("external_id").in("external_id", ids).in("resultado", [...RESULTADOS_REVISAO, "importada_apos_revisao"]).not("revisado_em", "is", null),
-      db.from("novas_vendas").select("rd_station_id").in("rd_station_id", ids),
-    ]);
-    for (const x of [...(decididas ?? []).map((d) => (d as Json).external_id), ...(vendas ?? []).map((v) => (v as Json).rd_station_id)]) porNegociacao.delete(String(x));
-  }
-  return [...porNegociacao.values()].map((it) => ({ ...itemParaTela(it), repeticoes: it.repeticoes }));
-}
-
-/** Decisão humana vale para a negociação inteira: fecha as repetições e a pendência de duplicidade. */
-async function encerrarRevisaoDaNegociacao(db: Db, externalId: string, ator: string, agora: string, mesmaPessoa: boolean) {
-  await db.from("integracao_importacao_itens").update({ revisado_por: ator, revisado_em: agora })
-    .eq("external_id", externalId).in("resultado", RESULTADOS_REVISAO).is("revisado_em", null);
-  await db.from("integracao_pendencias").update(mesmaPessoa
-    ? { estado: "descartada", resolucao: "decidida_na_revisao", nota: "Confirmada como a mesma pessoa na revisão.", resolvido_por: ator, resolvido_em: agora }
-    : { estado: "resolvida", resolucao: "decidida_na_revisao", nota: "Importada mesmo assim na revisão.", resolvido_por: ator, resolvido_em: agora })
-    .eq("provedor", "rd_station").eq("tipo", "duplicidade_possivel").eq("external_id", externalId).eq("estado", "aberta");
+  return (data ?? []).map(itemParaTela);
 }
 
 /** Revisão humana de uma duplicidade: grava a venda mesmo assim, em Aguardando cadastro. */
@@ -597,19 +508,14 @@ export async function importarMesmoAssim(db: Db, itemId: string, ator: string) {
   if (error || !venda) return { ok: false as const, status: 500, erro: "Não foi possível gravar a venda." };
   const agora = new Date().toISOString();
   await db.from("integracao_importacao_itens").update({ resultado: "importada_apos_revisao", nova_venda_id: (venda as Json).id, revisado_por: ator, revisado_em: agora }).eq("id", itemId);
-  await encerrarRevisaoDaNegociacao(db, String(it.external_id), ator, agora, false);
-  // A venda importada passa pelas mesmas regras (CPF, valor, vendedora): incompleta não conta no BI.
-  await db.rpc("rd_recalcular_pendencias_venda", { p_venda_id: (venda as Json).id, p_origem: "revisao", p_importacao_id: it.importacao_id ?? null, p_ator: ator });
   await db.from("logs_alteracoes").insert({ usuario: ator, acao: "importou_venda_duplicada_apos_revisao", entidade: "novas_vendas", entidade_id: (venda as Json).id, detalhes: { itemId, rdStationId: it.external_id, correspondencias: it.correspondencias, escritaNoRd: false } });
   return { ok: true as const, novaVendaId: String((venda as Json).id) };
 }
 
 export async function descartarRevisao(db: Db, itemId: string, ator: string) {
-  const agora = new Date().toISOString();
-  const { data, error } = await db.from("integracao_importacao_itens").update({ revisado_por: ator, revisado_em: agora })
-    .eq("id", itemId).in("resultado", RESULTADOS_REVISAO).is("revisado_em", null).select("id,external_id").maybeSingle();
+  const { data, error } = await db.from("integracao_importacao_itens").update({ revisado_por: ator, revisado_em: new Date().toISOString() })
+    .eq("id", itemId).in("resultado", ["duplicada", "cliente_existente"]).is("revisado_em", null).select("id").maybeSingle();
   if (error || !data) return { ok: false as const, status: 409, erro: "Este item não está aguardando revisão." };
-  await encerrarRevisaoDaNegociacao(db, String((data as Json).external_id), ator, agora, true);
   await db.from("logs_alteracoes").insert({ usuario: ator, acao: "confirmou_duplicidade_crm", entidade: "integracoes", entidade_id: itemId, detalhes: { escritaNoRd: false } });
   return { ok: true as const };
 }
@@ -627,40 +533,5 @@ export async function opcoesCrm(env: Env) {
     .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
     .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
     .filter((c) => /^[a-z0-9_]{1,60}$/.test(c.slug));
-  return { funis: comEtapas, campos };
-}
-
-/**
- * Relê UMA negociação e processa com a mesma chave rd_station_id (única em novas_vendas):
- * se a venda existe, só o snapshot muda; se não existe e agora passa nos filtros, é criada uma vez.
- */
-export async function reprocessarNegociacao(env: Env, db: Db, externalId: string, ator: string,
-  fonte?: (id: string) => Promise<{ deal: Json; contato?: Json }>) {
-  try {
-    const lido = fonte ? await fonte(externalId) : await lerNegociacaoRd(env, externalId);
-    const snapshot = normalizarDealRd(lido.deal, { contatos: lido.contato ? mapById([lido.contato]) : undefined });
-    if (!snapshot) return { ok: false, erro: "O RD não devolveu a negociação." };
-    const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
-    const indice = await carregarIndice(db);
-    const item = await processarNegociacao(db, { deal: lido.deal, snapshot, contato: lido.contato, config, indice, importacaoId: null });
-    if (item.resultado === "criada" || item.resultado === "atualizada") {
-      // Primeiro registra que foi a pessoa que reprocessou; depois o recálculo avalia a venda.
-      await db.from("integracao_pendencias").update({ estado: "resolvida", resolucao: "reprocessada", resolvido_por: ator, resolvido_em: new Date().toISOString() })
-        .eq("provedor", "rd_station").eq("external_id", externalId).in("tipo", ["negociacao_com_erro", "ganha_fora_do_funil"]).eq("estado", "aberta");
-    }
-    await registrarPendenciasDoItem(db, item, "reprocessamento", null);
-    return { ok: true, resultado: item.resultado };
-  } catch (e) {
-    const msg = e instanceof Error && /^RD_/.test(e.message) ? e.message : "Falha ao reler a negociação no RD.";
-    return { ok: false, erro: msg };
-  }
-}
-
-async function lerNegociacaoRd(env: Env, id: string) {
-  const r = await rdGet(env, `/deals/${encodeURIComponent(id)}`);
-  const deal = objectValue(r.data ?? r);
-  const contatoId = stringValue(arrayValue(deal.contact_ids)[0]) || stringValue(objectValue(deal.contact).id);
-  let contato: Json | undefined;
-  if (contatoId) { try { const c = await rdGet(env, `/contacts/${encodeURIComponent(contatoId)}`); contato = objectValue(c.data ?? c); } catch { contato = undefined; } }
-  return { deal, contato };
+  return { funis: comEtapas, campos, camposNativos: CAMPOS_NATIVOS_CRM };
 }
