@@ -38,7 +38,15 @@ As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principa
 
 - São funções somente de leitura (`loadtest_*` e os aliases de produção `admin_*`, `finance_*`, `*_snapshot`, sem `SECURITY DEFINER` e sem `EXECUTE` para `anon`/`authenticated`) e o endurecimento de `EXECUTE` das funções `notificar_*` (110).
 - A `107_loadtest_finance_received_page` **não** foi aplicada nem versionada: a `108` redefine a mesma função (`loadtest_finance_received_page`). Não criar arquivo 107.
-- A próxima migration é a `111`.
+- A `111` (liberação automática com status `realizado`) está pronta com teste e rollback, **ainda não aplicada**.
+
+### 112: levantamento atômico (não aplicada em produção)
+
+`migration_112_levantamento_atomico.sql` cria `agenda_registrar_levantamento`: decisão do levantamento, responsável e auditoria na mesma transação. Teste: `supabase/tests/levantamento_atomico_112.sql` (inclui falha forçada da auditoria). Rollback: `supabase/rollback/migration_112_rollback.sql`.
+
+**Ordem obrigatória:** aplicar a 112 antes de promover o App que chama a RPC; sem ela, "Concluir levantamento" responde erro (e nada é gravado).
+
+- A próxima migration é a `113`.
 
 ## Campos históricos importantes
 

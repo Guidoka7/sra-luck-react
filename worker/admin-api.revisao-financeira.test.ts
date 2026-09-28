@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { montarAuditoriaLevantamento, montarPatchRevisaoFinanceira } from "./admin-api";
+import { argumentosRpcLevantamento, erroRpcLevantamento, montarPatchRevisaoFinanceira } from "./admin-api";
 
 const AGORA = "2026-10-10T12:00:00.000Z";
 const valido = { decisao: "aprovada", saldoRestante: 4000, formasCusteio: ["pix", "boleto_100"] };
@@ -37,25 +37,28 @@ describe("montarPatchRevisaoFinanceira (Etapa 2 — levantamento)", () => {
   });
 });
 
-describe("montarAuditoriaLevantamento (histórico do levantamento)", () => {
-  it("primeira aprovação registra a mesma ação da RPC, com saldo e formas", () => {
-    const r = montarPatchRevisaoFinanceira(valido, "pendente", AGORA);
+describe("levantamento atômico (RPC agenda_registrar_levantamento)", () => {
+  it("aprovação vira os argumentos da RPC com o responsável", () => {
+    const r = montarPatchRevisaoFinanceira({ ...valido, taxaCartao: 4.2 }, "pendente", AGORA);
     if ("erro" in r) throw new Error(r.erro);
-    expect(montarAuditoriaLevantamento("pendente", r.patch)).toEqual({
-      acao: "confirmou_levantamento_financeiro",
-      detalhes: { de: "pendente", para: "aprovada", saldo_final: 4000, formas_quitacao: ["pix", "boleto_100"], taxa_cartao: null, observacaoInformada: false },
+    expect(argumentosRpcLevantamento("c1", r.patch, "staff:x")).toEqual({
+      p_cliente_id: "c1", p_decisao: "aprovada", p_saldo_restante: 4000, p_formas: ["pix", "boleto_100"],
+      p_taxa_cartao: 4.2, p_observacao: null, p_usuario: "staff:x",
     });
   });
 
-  it("edição de levantamento aprovado e divergência têm ações próprias", () => {
-    const edicao = montarPatchRevisaoFinanceira({ ...valido, taxaCartao: 4.2 }, "aprovada", AGORA);
-    if ("erro" in edicao) throw new Error(edicao.erro);
-    expect(montarAuditoriaLevantamento("aprovada", edicao.patch).acao).toBe("editou_levantamento_financeiro");
-    const div = montarPatchRevisaoFinanceira({ decisao: "recusada", observacao: "Comprovante ilegível" }, "pendente", AGORA);
-    if ("erro" in div) throw new Error(div.erro);
-    const a = montarAuditoriaLevantamento("pendente", div.patch);
-    expect(a.acao).toBe("registrou_divergencia_levantamento");
-    expect(a.detalhes.observacaoInformada).toBe(true);
-    expect(JSON.stringify(a)).not.toContain("Comprovante ilegível");
+  it("divergência sem valores envia nulos (o banco preserva os atuais)", () => {
+    const r = montarPatchRevisaoFinanceira({ decisao: "recusada", observacao: "Comprovante ilegível" }, "pendente", AGORA);
+    if ("erro" in r) throw new Error(r.erro);
+    expect(argumentosRpcLevantamento("c1", r.patch, "staff:x")).toMatchObject({ p_decisao: "recusada", p_saldo_restante: null, p_formas: null, p_taxa_cartao: null, p_observacao: "Comprovante ilegível" });
+  });
+
+  it("erros de regra viram 4xx; falha de auditoria ou qualquer outra vira 500 e nunca sucesso", () => {
+    expect(erroRpcLevantamento("CLIENTE_NAO_ENCONTRADA").status).toBe(404);
+    expect(erroRpcLevantamento("FORMA_QUITACAO_INVALIDA").status).toBe(400);
+    const auditoria = erroRpcLevantamento('new row for relation "logs_alteracoes" violates check constraint');
+    expect(auditoria.status).toBe(500);
+    expect(auditoria.erro).toContain("Nada foi gravado");
+    expect(erroRpcLevantamento(undefined).status).toBe(500);
   });
 });
