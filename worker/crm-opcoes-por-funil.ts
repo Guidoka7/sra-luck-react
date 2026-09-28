@@ -16,15 +16,15 @@ function stringValue(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-const SLUG_RD = /^[a-z0-9_-]{1,100}$/;
+const SLUG_RD_SUPORTADO = /^[a-z0-9_]{1,60}$/;
 
 function slugsPersonalizados(registro: Json) {
   const cf = registro.custom_fields;
-  if (cf && typeof cf === "object" && !Array.isArray(cf)) return Object.keys(cf).filter((slug) => SLUG_RD.test(slug));
+  if (cf && typeof cf === "object" && !Array.isArray(cf)) return Object.keys(cf).filter((slug) => SLUG_RD_SUPORTADO.test(slug));
   return arrayValue(cf).map((raw) => {
     const item = objectValue(raw);
     return stringValue(item.slug) || stringValue(objectValue(item.custom_field).slug);
-  }).filter((slug) => SLUG_RD.test(slug));
+  }).filter((slug) => SLUG_RD_SUPORTADO.test(slug));
 }
 
 function idsContato(deal: Json) {
