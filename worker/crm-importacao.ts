@@ -12,7 +12,7 @@
  *   banco (migration_091) quando a cliente tem parcelas E acesso ao app liberado.
  * - RD continua somente leitura (só GET em /crm/v2).
  */
-import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
+import { configDaFuncao, CAMPOS_CRM, CAMPOS_NATIVOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
   arrayValue, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
@@ -105,6 +105,17 @@ export function valorPersonalizado(obj: unknown, slug: string): unknown {
     if (s === slug) return i.value;
   }
   return undefined;
+}
+
+/** Leitura exata da origem escolhida: ausência não equivale a zero, falso ou inferência. */
+export function extrairCamposSelecionados(s: RdDealSnapshot, deal: Json, contato: Json | undefined, config: ConfigCrm) {
+  return (funilParaSnapshot(s, config)?.camposSelecionados ?? []).map(({ fonte, rotulo }) => {
+    const [entidade, chave] = fonte.split(":");
+    const registro = entidade.startsWith("contact") ? contato : deal;
+    const valor = entidade.endsWith("_field") ? registro?.[chave] : valorPersonalizado(registro, chave);
+    const ausente = valor === undefined || valor === null || valor === "" || (Array.isArray(valor) && valor.length === 0);
+    return { fonte, rotulo, valor: ausente ? null : valor, situacao: !registro ? "origem_nao_carregada" : ausente ? "ausente" : "presente" };
+  });
 }
 
 function autoPorNome(obj: unknown, dica: string): string | null {
@@ -275,13 +286,15 @@ export async function processarNegociacao(db: Db, entrada: {
 }): Promise<ItemImportacao> {
   const { deal, snapshot: s, contato, config, indice, importacaoId } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
-  const dados = { ...valores, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
+  const camposSelecionados = extrairCamposSelecionados(s, deal, contato, config);
+  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados } } };
+  const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
   const existente = indice.vendaPorRd.get(s.rdStationId);
   if (existente) {
     // Mesma negociação: só o snapshot rd_* muda; a cópia local e o status ficam.
-    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(s)).eq("id", existente.id);
+    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshotSelecionado)).eq("id", existente.id);
     if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar o snapshot do RD." };
     return { ...base, resultado: "atualizada", motivo: "Só o snapshot do RD foi atualizado; dados locais preservados.", nova_venda_id: existente.id };
   }
@@ -301,7 +314,7 @@ export async function processarNegociacao(db: Db, entrada: {
     };
   }
 
-  const { data, error } = await db.from("novas_vendas").insert(linhaNovaVenda(s, valores, importacaoId)).select("id").single();
+  const { data, error } = await db.from("novas_vendas").insert(linhaNovaVenda(snapshotSelecionado, valores, importacaoId)).select("id").single();
   if (error || !data) {
     const duplicadoNoBanco = (error as { code?: string } | null)?.code === "23505";
     return { ...base, resultado: duplicadoNoBanco ? "atualizada" : "erro", motivo: duplicadoNoBanco ? "Negociação já registrada por outra execução." : "Falha ao gravar a venda." };
@@ -520,5 +533,5 @@ export async function opcoesCrm(env: Env) {
     .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
     .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
     .filter((c) => /^[a-z0-9_]{1,60}$/.test(c.slug));
-  return { funis: comEtapas, campos };
+  return { funis: comEtapas, campos, camposNativos: CAMPOS_NATIVOS_CRM };
 }

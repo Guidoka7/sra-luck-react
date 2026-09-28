@@ -249,7 +249,34 @@ export type CampoCrm = typeof CAMPOS_CRM[number];
 export type FonteCampoCrm = string;
 export const FREQUENCIAS_CRM = [15, 30, 60, 180, 360, 720, 1440] as const;
 
+export type CampoSelecionadoCrm = { fonte: string; rotulo: string };
+export const CAMPOS_NATIVOS_CRM = [
+  ...["name", "status", "total_price", "created_at", "updated_at", "pipeline_id", "stage_id", "user_id"].map((chave) => ({ fonte: `deal_field:${chave}`, rotulo: `Negociação: ${chave}` })),
+  ...["name", "emails", "phones"].map((chave) => ({ fonte: `contact_field:${chave}`, rotulo: `Contato: ${chave}` })),
+];
+
+export function validarCamposSelecionadosCrm(bruto: unknown): Validacao<CampoSelecionadoCrm[]> {
+  if (bruto === undefined) return { ok: true, config: [] };
+  if (!Array.isArray(bruto) || bruto.length > 100) return { ok: false, erro: "Selecione até 100 campos por funil." };
+  const fontes = new Set<string>();
+  const config: CampoSelecionadoCrm[] = [];
+  for (const item of bruto) {
+    const c = objeto(item);
+    if (!c || Object.keys(c).some((k) => !["fonte", "rotulo"].includes(k)) || typeof c.fonte !== "string" ||
+      (!/^(deal|contact):[a-z0-9_]{1,60}$/.test(c.fonte) && !CAMPOS_NATIVOS_CRM.some((n) => n.fonte === c.fonte)))
+      return { ok: false, erro: "Origem de campo selecionado inválida." };
+    if (typeof c.rotulo !== "string" || !c.rotulo.trim() || c.rotulo.trim().length > 100)
+      return { ok: false, erro: "Dê um nome de até 100 caracteres a cada campo selecionado." };
+    if (fontes.has(c.fonte)) return { ok: false, erro: "O mesmo campo foi selecionado duas vezes no funil." };
+    fontes.add(c.fonte);
+    config.push({ fonte: c.fonte, rotulo: c.rotulo.trim() });
+  }
+  return { ok: true, config };
+}
+
 export type ConfigCrmFunil = {
+  /** Campos escolhidos livremente; não criam colunas nem sobrescrevem o cadastro. */
+  camposSelecionados?: CampoSelecionadoCrm[];
   pipelineId: string;
   /** Vazio = todas as etapas desse funil. */
   etapas: string[];
@@ -363,7 +390,7 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
     for (const brutoFunil of c.funis) {
       const funil = objeto(brutoFunil);
       if (!funil) return { ok: false, erro: "Configuração de funil inválida." };
-      if (Object.keys(funil).some((k) => !["pipelineId", "etapas", "mapeamento"].includes(k))) return { ok: false, erro: "Configuração de funil possui campo não permitido." };
+      if (Object.keys(funil).some((k) => !["pipelineId", "etapas", "mapeamento", "camposSelecionados"].includes(k))) return { ok: false, erro: "Configuração de funil possui campo não permitido." };
 
       const pipelineId = typeof funil.pipelineId === "string" ? funil.pipelineId : "";
       if (!ID_RD.test(pipelineId)) return { ok: false, erro: "Funil inválido." };
@@ -375,7 +402,10 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
 
       const mapa = validarMapaCrm(funil.mapeamento, out.mapeamento);
       if (!mapa.ok) return mapa;
+      const selecionados = validarCamposSelecionadosCrm(funil.camposSelecionados);
+      if (!selecionados.ok) return selecionados;
       out.funis.push({
+        camposSelecionados: selecionados.config,
         pipelineId,
         etapas: [...new Set(etapas as string[])],
         mapeamento: mapa.config,
@@ -458,6 +488,7 @@ export type CampoFormulario = {
   rotulo: string;
   tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano" | "rd_funis";
   ajuda?: string;
+  camposLivres?: boolean;
   placeholder?: string;
   min?: number; max?: number; passo?: number; maxLength?: number;
   opcoes?: { valor: string; rotulo: string }[];
@@ -485,7 +516,7 @@ const CAMPOS_CRM_FORM: CampoFormulario[] = [
   { chave: "frequenciaMinutos", rotulo: "Frequência", tipo: "selecao", opcoes: FREQUENCIAS_CRM.map((m) => ({ valor: String(m), rotulo: m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "1 vez por dia" })) },
   { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
   { chave: "mapeamento", rotulo: "Preenchimento padrão", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Fallback para todos os funis. Cada funil selecionado pode sobrescrever este preenchimento campo a campo." },
-  { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas e quais dados preencher. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
+  { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", camposLivres: true, opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas e quais dados preencher. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
   { chave: "deduplicarPor", rotulo: "Deduplicar por", tipo: "grupo_booleano", itens: [{ chave: "cpf", rotulo: "CPF" }, { chave: "telefone", rotulo: "Telefone" }, { chave: "email", rotulo: "E-mail" }] },
 ];
 
