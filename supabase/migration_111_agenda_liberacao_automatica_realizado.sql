@@ -17,8 +17,14 @@
 --   agenda_tentar_liberar_cirurgia (prazo configurável da migration_094).
 --   Nenhuma outra regra muda. Idempotente.
 --
--- Rollback: reaplicar a função e o índice da migration_065 (status =
---   'confirmado'). Não há alteração de dados nesta migration.
+-- Rollback: supabase/rollback/migration_111_rollback.sql restaura SOMENTE a
+--   função agenda_processar_liberacoes_v46 e o índice
+--   idx_agendamentos_liberacao_pendente_v46 exatamente como estão em produção
+--   antes da 111 (definições lidas em 28/09/2026). Não reaplicar a 065 inteira.
+--   Não há alteração de dados nesta migration.
+--
+-- Teste: supabase/tests/agenda_liberacao_automatica_111.sql (casos
+--   confirmado/realizado, prazo, quitação, cancelado, idempotência e rollback).
 -- ============================================================================
 
 drop index if exists public.idx_agendamentos_liberacao_pendente_v46;
@@ -47,7 +53,6 @@ begin
       and a.comparecimento_status = 'compareceu'
       and a.quitacao_status = 'paga'
       and a.agenda_cirurgica_liberada_em is null
-      and a.data_cirurgia is null
     order by a.id
   loop
     if public.agenda_tentar_liberar_cirurgia(

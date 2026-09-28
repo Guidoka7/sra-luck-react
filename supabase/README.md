@@ -32,6 +32,14 @@ Para migrations novas:
 - fornecer rollback/plano de reversão para alterações críticas;
 - validar em desenvolvimento antes de produção.
 
+### 096–110: leituras consolidadas (aplicadas em 26/09/2026)
+
+As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principal a partir do branch `load-test-10k-isolated` e agora estão versionadas aqui sem alteração. Em 28/09/2026 o SQL de cada arquivo foi comparado com `supabase_migrations.schema_migrations` (sem comentários e linhas em branco): idêntico nas 14.
+
+- São funções somente de leitura (`loadtest_*` e os aliases de produção `admin_*`, `finance_*`, `*_snapshot`, sem `SECURITY DEFINER` e sem `EXECUTE` para `anon`/`authenticated`) e o endurecimento de `EXECUTE` das funções `notificar_*` (110).
+- A `107_loadtest_finance_received_page` **não** foi aplicada nem versionada: a `108` redefine a mesma função (`loadtest_finance_received_page`). Não criar arquivo 107.
+- A próxima migration é a `111`.
+
 ## Campos históricos importantes
 
 O modelo herdado contém conceitos como:
