@@ -107,15 +107,27 @@ function firstNumber(value: unknown, hints: string[]) {
   return numberValue(firstDeep(value, hints));
 }
 
-function customFieldValue(value: unknown, hints: string[]): unknown {
+/**
+ * Campo personalizado do RD por nome aproximado. O CRM v2 devolve `custom_fields` como OBJETO
+ * `{ slug: valor }` (visto em 1.207 de 1.209 negociações em 28/09); a versão antiga, como lista.
+ * Antes só a lista era lida, e campos como `quantidade-de-parcelas` ficavam vazios.
+ * Nome exato ganha de nome parecido, para não trocar um campo por outro.
+ */
+export function customFieldValue(value: unknown, hints: string[]): unknown {
   const procurados = hints.map(semAcentos);
-  for (const field of arrayValue(objectValue(value).custom_fields)) {
-    const item = objectValue(field);
-    const meta = objectValue(item.custom_field);
-    const nome = semAcentos(stringValue(meta.label) || stringValue(meta.name) || stringValue(meta.slug) || stringValue(item.label) || stringValue(item.name) || stringValue(item.slug));
-    if (nome && procurados.some((hint) => nome === hint || nome.includes(hint) || hint.includes(nome))) return item.value;
-  }
-  return undefined;
+  const cf = objectValue(value).custom_fields;
+  const campos: { nome: string; valor: unknown }[] = cf && typeof cf === "object" && !Array.isArray(cf)
+    ? Object.entries(cf as Json).map(([slug, valor]) => ({ nome: semAcentos(slug), valor }))
+    : arrayValue(cf).map((field) => {
+      const item = objectValue(field);
+      const meta = objectValue(item.custom_field);
+      return { nome: semAcentos(stringValue(meta.label) || stringValue(meta.name) || stringValue(meta.slug) || stringValue(item.label) || stringValue(item.name) || stringValue(item.slug)), valor: item.value };
+    });
+  const preenchido = (v: unknown) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+  const exato = campos.find((c) => c.nome && procurados.includes(c.nome) && preenchido(c.valor));
+  if (exato) return exato.valor;
+  const parecido = campos.find((c) => c.nome && preenchido(c.valor) && procurados.some((hint) => c.nome.includes(hint) || hint.includes(c.nome)));
+  return parecido?.valor;
 }
 
 function firstId(value: unknown): string | null {
@@ -438,7 +450,7 @@ export function normalizarDealRd(deal: Json, refs: {
   const origemOriginal = stringValue(fonte?.name) || stringValue(sourceInline.name) || firstString(deal, ["source_name", "origem"]) || null;
   const vendedoraOriginal = stringValue(usuario?.name) || stringValue(ownerInline.name) || firstString(deal, ["owner_name", "user_name", "vendedor", "responsavel"]) || null;
   const valorOriginal = firstNumber(deal, ["total_price", "amount", "value", "valor_contrato"]) ?? numberValue(customFieldValue(deal, ["valor da carta", "carta de credito", "valor contrato"])) ?? 0;
-  const quantidadeParcelasOriginal = numberValue(customFieldValue(deal, ["quantidade parcelas", "numero parcelas", "parcelas"])) ?? firstNumber(deal, ["quantidade_parcelas", "numero_parcelas"]);
+  const quantidadeParcelasOriginal = numberValue(customFieldValue(deal, ["quantidade de parcelas", "quantidade parcelas", "numero parcelas", "parcelas"])) ?? firstNumber(deal, ["quantidade_parcelas", "numero_parcelas"]);
   const valorParcelaOriginal = numberValue(customFieldValue(deal, ["valor parcela", "parcela valor"])) ?? firstNumber(deal, ["valor_parcela", "parcela_valor"]);
   const taxaAdministrativaOriginal = numberValue(customFieldValue(deal, ["taxa administrativa", "taxa adm"])) ?? firstNumber(deal, ["taxa_administrativa", "taxa_adm"]);
   const tipoVendaOriginal = stringValue(customFieldValue(deal, ["tipo venda", "modalidade", "tipo contrato"])) || firstString(deal, ["tipo_venda", "modalidade", "contract_type"]) || null;
@@ -497,6 +509,14 @@ export async function registrarEvento(db: Db, input: { eventId?: string | null; 
 
 type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
 
+/** Resultado da negociação → status do registro bruto do webhook. */
+export function statusEntradaWebhook(resultado: string | null): "convertido" | "ignorado" | "erro" | "aguardando_conferencia" {
+  if (resultado === "criada" || resultado === "atualizada") return "convertido";
+  if (resultado === "ignorada") return "ignorado";
+  if (resultado === "erro") return "erro";
+  return "aguardando_conferencia"; // duplicidade: segue para a revisão
+}
+
 async function processarWebhookRd(payload: Json, env: Env) {
   const eventType = stringValue(payload.event_name) || "unknown";
   const transaction = stringValue(payload.transaction_uuid) || null;
@@ -534,7 +554,9 @@ async function processarWebhookRd(payload: Json, env: Env) {
       vendedor: snapshot?.vendedoraOriginal ?? null,
       valor_contrato: snapshot?.valorOriginal ?? null,
       payload,
-      status: "aguardando_conferencia",
+      // O status reflete o que aconteceu (antes, tudo ficava "aguardando_conferencia" e nenhuma
+      // tela lia essa tabela). O que exige ação está na fila integracao_pendencias.
+      status: statusEntradaWebhook(persistencia?.resultado ?? null),
     });
     await registrarEvento(db, { eventId: transaction, eventType, referencia: dealId, payload, status: "processado" });
     return { ok: true, recebido: true, venda: persistencia };
@@ -605,7 +627,7 @@ async function rotasCrm(request: Request, env: Env, adminId: string, path: strin
   if (path.endsWith("/opcoes") && request.method === "GET") {
     try { return json(await opcoesCrm(env)); } catch { return json({ erro: "Não foi possível ler funis e campos do RD Station agora." }, 502); }
   }
-  if (path.endsWith("/importacoes") && request.method === "GET") return json(await listarImportacoes(db, Number(url.searchParams.get("limite") || 30)));
+  if (path.endsWith("/importacoes") && request.method === "GET") return json(await listarImportacoes(db, Number(url.searchParams.get("limite") || 30), url.searchParams.get("webhook") === "1"));
   if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });
   const itens = path.match(/\/importacoes\/([0-9a-f-]{36})\/itens$/);
   if (itens && request.method === "GET") return json({ itens: await itensDaImportacao(db, itens[1]) });

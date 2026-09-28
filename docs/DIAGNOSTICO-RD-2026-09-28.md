@@ -155,3 +155,23 @@ Correções de código propostas (App, enquanto a coleta do RD ainda roda nele):
 5. `crm_vendas_entrada` deixa de gravar "aguardando_conferencia" para tudo: o status passa a refletir
    o resultado (convertido/ignorado/erro).
 6. Vínculo usuário RD ↔ pessoa da equipe e cálculo de `vendedora_id`.
+
+## 4. Correção implementada e validada no QA isolado (28/09/2026)
+
+Nada foi aplicado em Production. RD simulado no QA (fontes injetáveis do próprio código, dados fictícios).
+
+| Item | Onde | Prova no QA |
+|---|---|---|
+| Fila `integracao_pendencias` + regra única de venda completa | `migration_113` (RPC `rd_recalcular_pendencias_venda`, view `vw_vendas_validas_bi`) | J17: 30/30 provas; BI = gabarito independente |
+| Falha de execução agrupada (3 falhas de token → 1 pendência, 3 ocorrências) e fechada pela origem | `worker/crm-importacao.ts` | J17 |
+| Execução interrompida marcada `EXECUCAO_INTERROMPIDA`; itens gravados em lotes durante o laço | `worker/crm-importacao.ts` | J17 |
+| Negociação sem ID vira pendência com chave estável (não duplica por execução) | `worker/crm-importacao.ts` | J17 |
+| `custom_fields` como objeto `{slug: valor}` (parcelas passam a ser lidas); CPF do contato | `worker/rd-station-readonly.ts` | J17 |
+| `crm_vendas_entrada` com status real (convertido/ignorado/erro) | `worker/rd-station-readonly.ts` | J17 |
+| Histórico sem execuções de webhook por padrão | `worker/crm-importacao.ts` | J17 |
+| Revisão de duplicidade: **uma linha por negociação** ("vista em N execuções"); decisão fecha todas as repetições e a pendência; "mesma pessoa" não volta na próxima execução | `worker/crm-importacao.ts`, Admin | J17 + J18 (tela) |
+| Vínculo responsável do RD ↔ vendedora/SDR por ID estável, em Admin › Clientes › Importações do RD (`equipe.gerenciar`); fecha a pendência sozinho | `worker/integracao-pendencias.ts`, `worker/admin-rotas-dev.ts`, Admin | J18 (tela) |
+| Fila no Dev Console: ver (viewer+), reprocessar/descartar com motivo (owner/developer/operator); duplicidade só na revisão (409); falha do RD mantém a pendência aberta (502) | Console `pendencias.html` | J18: 8/8 casos RBAC, telas viewer/operator |
+
+Reprocessar nunca cria outra venda: usa a chave única `rd_station_id`. Reimportar não duplica vendas
+nem pendências (J17 `repeticaoNaoDuplicaVendasNemPendencias`).

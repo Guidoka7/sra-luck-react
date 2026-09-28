@@ -12,6 +12,8 @@ describe("áreas exclusivas do Dev", () => {
       ["/api/admin/integrations/gemini/mensagem-do-dia", "POST"], ["/api/admin/integrations/historico", "GET"],
       ["/api/admin/integrations/rd-station/authorize-url", "GET"], ["/api/admin/integrations/rd-station/sync", "POST"],
       ["/api/admin/integrations/conta-azul/authorize-url", "GET"], ["/api/admin/integrations/conta-azul/opcoes", "GET"],
+      ["/api/admin/integrations/pendencias", "GET"], [`/api/admin/integrations/pendencias/${ID}/reprocessar`, "POST"],
+      [`/api/admin/integrations/pendencias/${ID}/descartar`, "POST"],
       ["/api/admin/monitoramento-app", "GET"], ["/api/admin/monitoramento-erros", "GET"], ["/api/admin/diagnostico", "GET"],
     ]) expect(rotaExclusivaDoDev(rota, metodo), `${metodo} ${rota}`).toBe(true);
   });
@@ -22,6 +24,7 @@ describe("áreas exclusivas do Dev", () => {
       ["/api/admin/integrations/rd-station/importacoes", "GET"], ["/api/admin/integrations/rd-station/importacoes/revisao", "GET"],
       [`/api/admin/integrations/rd-station/importacoes/${ID}/itens`, "GET"], [`/api/admin/integrations/rd-station/importacoes/itens/${ID}/importar`, "POST"],
       ["/api/admin/integrations/rd-station/importar", "POST"],
+      ["/api/admin/integrations/rd-station/responsaveis", "GET"], ["/api/admin/integrations/rd-station/responsaveis", "POST"],
       ["/api/admin/integrations/conta-azul/painel", "GET"], ["/api/admin/integrations/conta-azul/conflitos", "GET"],
       [`/api/admin/integrations/conta-azul/conflitos/${ID}/resolver`, "POST"], [`/api/admin/integrations/conta-azul/fila/${ID}/reprocessar`, "POST"],
       ["/api/admin/integrations/conta-azul/sincronizar", "POST"], ["/api/admin/integrations/conta-azul/vincular", "POST"],

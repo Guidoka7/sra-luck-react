@@ -8,7 +8,8 @@ import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
-import { importacaoAgendadaSeDevida } from "./crm-importacao";
+import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
+import { pendenciasApi } from "./integracao-pendencias";
 import { catalogo, ESQUEMAS_CONFIG, salvarConfig } from "./integracoes-registro";
 import { calcularEncargosAtraso } from "../src/lib/financeiro/encargos";
 
@@ -414,6 +415,15 @@ async function salvarConfigApi(request: Request, env: Env) {
 }
 
 export async function integrationsApi(request: Request, env: Env, ctx?: BackgroundContext): Promise<Response | null> {
+  // Fila de pendências antes das rotas do RD (que devolvem 404 para caminhos que não conhecem).
+  const pendencias = await pendenciasApi(request, env, {
+    negociacao: (e, db, id, ator) => reprocessarNegociacao(e, db, id, ator),
+    execucao: async (e, ator) => {
+      const r = await importarCrm(e, { origem: "manual", ator });
+      return r.ok ? { ok: true } : { ok: false, erro: "erro" in r && r.erro ? r.erro : "A execução não foi concluída." };
+    },
+  });
+  if (pendencias) return pendencias;
   const webPush = await webPushConfigApi(request, env);
   if (webPush) return webPush;
   const rd = await rdStationReadonlyApi(request, env, ctx);

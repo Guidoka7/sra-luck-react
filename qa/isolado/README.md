@@ -14,7 +14,7 @@ depende dessa decisão de custo.
 | `schema/` | Estrutura exportada do catálogo de produção (somente leitura, **sem dados**): tipos, 70 tabelas, 281 constraints, 113 funções, view, 260 índices, 28 triggers, RLS/policy, grants e os 3 buckets. `functions_manifest.prod.txt` tem o md5 de cada função de produção para provar paridade. |
 | `seed/` | Dados 100% fictícios (CPFs com prefixo 900, e-mails `@sraluck.test`), criados pelas **mesmas RPCs de produção**. |
 | `tools/` | `qa-serve.mjs` (app; recusa iniciar se `SUPABASE_URL` não for local), `console-serve.cjs` (Dev Console com os rewrites do `vercel.json`), `run-app.sh`, `run-console.sh`, extratores. |
-| `jornadas/` | Roteiros Playwright/HTTP de cada fluxo (J01–J15). |
+| `jornadas/` | Roteiros Playwright/HTTP de cada fluxo (J01–J18). J16: levantamento atômico. J17: importação do RD com respostas simuladas (TypeScript; empacotar com esbuild dentro do repo e rodar com `SUPABASE_URL` local, recusa URL remota). J18: fila de pendências no Console (RBAC) e vínculo/revisão no Admin. |
 | `supabase/config.toml` | Stack local (Realtime/Studio/Edge desligados). |
 
 Credenciais de QA ficam em `$QA_PRIVADO/qa-credentials.env` (padrão `/tmp/sra-luck-qa`),
