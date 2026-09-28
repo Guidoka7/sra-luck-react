@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, Search } from "lucide-react";
-import { ETAPAS, ROTULO_RESPONSAVEL, bloqueios, contarAcaoEquipe, contextoDe, situacao, type AcaoJornada, type Responsavel } from "./jornada";
+import { ETAPAS, ROTULO_RESPONSAVEL, bloqueios, contextoDe, situacao, type AcaoJornada, type Responsavel } from "./jornada";
 import type { CartaoCliente, EstagioCentral, VisaoGeralResponse } from "./types";
 
 type Ordem = "urgencia" | "nomeAsc" | "nomeDesc";
@@ -41,7 +41,9 @@ export function JornadaBoard({ dados, etapa, selecionadoId, onAbrirCliente, onAc
     if (ordem === "nomeAsc") itens.sort((a, b) => a.c.nome.localeCompare(b.c.nome, "pt-BR"));
     else if (ordem === "nomeDesc") itens.sort((a, b) => b.c.nome.localeCompare(a.c.nome, "pt-BR"));
     else itens.sort((a, b) => a.s.urgencia - b.s.urgencia || a.c.nome.localeCompare(b.c.nome, "pt-BR"));
-    return { etapa: e, total: todos.length, equipe: contarAcaoEquipe(todos.map((x) => x.c), e.id, hoje, ctx), itens };
+    const por = { equipe: 0, cliente: 0, sistema: 0 };
+    for (const x of todos) por[x.s.responsavel]++;
+    return { etapa: e, total: todos.length, por, itens };
   }), [dados, termo, quem, ordem, hoje, ctx]);
 
   const totais = useMemo(() => {
@@ -79,32 +81,53 @@ export function JornadaBoard({ dados, etapa, selecionadoId, onAbrirCliente, onAc
 
     <div className="ag-quadro-wrap">
       <div className="ag-quadro">
-        {colunas.map(({ etapa: e, total, equipe, itens }) => <section key={e.id} ref={(el) => { colunasRef.current[e.id] = el; }}
-          className={`ag-coluna${etapa === e.id ? " is-destaque" : ""}`} aria-labelledby={`ag-col-${e.id}`}>
-          <header className="ag-coluna-head">
-            <div className="ag-coluna-titulo">
-              <span className="ag-trilha-num" aria-hidden="true">{e.numero}</span>
-              <h2 id={`ag-col-${e.id}`} className="ag-h3">{e.titulo}</h2>
-              <span className="ag-coluna-info" tabIndex={0} role="img" title={`${e.resumo}\n\n${e.saida}`} aria-label={`Sobre esta etapa: ${e.resumo} ${e.saida}`}><Info size={14} aria-hidden="true" /></span>
-              <span className="ag-coluna-total" title={`${total} cliente(s) nesta etapa`}>{total}</span>
-            </div>
-            <span className={`ag-coluna-equipe${equipe ? "" : " is-vazio"}`}>{equipe ? <><i className="ag-ponto is-equipe" aria-hidden="true" />{equipe} com a equipe</> : "Nada com a equipe"}</span>
-          </header>
-          <div className="ag-coluna-cartoes">
-            {itens.length === 0
-              ? <div className="ag-vazio ag-vazio-compacto"><span>{termo || quem !== "todos" ? "Nenhuma cliente neste filtro." : "Nenhuma cliente nesta etapa."}</span></div>
-              : itens.map(({ c, s }) => <article key={c.id} className={`ag-cartao${s.atrasado ? " is-late" : ""}${selecionadoId === c.id ? " is-selected" : ""}`}>
-                <button type="button" className="ag-cartao-main" onClick={() => onAbrirCliente(c.id, e.id)} aria-label={`Abrir ${c.nome}: ${s.texto}. ${ROTULO_RESPONSAVEL[s.responsavel]}.`}>
+        {colunas.map(({ etapa: e, total, por, itens }) => {
+          const acoes = itens.filter((x) => x.s.responsavel === "equipe");
+          const espera = itens.filter((x) => x.s.responsavel !== "equipe");
+          return <section key={e.id} ref={(el) => { colunasRef.current[e.id] = el; }}
+            className={`ag-coluna${etapa === e.id ? " is-destaque" : ""}`} aria-labelledby={`ag-col-${e.id}`}>
+            <header className="ag-coluna-head">
+              <div className="ag-coluna-titulo">
+                <span className="ag-coluna-num" aria-hidden="true">{e.numero}</span>
+                <h2 id={`ag-col-${e.id}`} className="ag-h3">{e.titulo}</h2>
+                <span className="ag-coluna-info" tabIndex={0} role="img" title={`${e.resumo}\n\n${e.saida}`} aria-label={`Sobre esta etapa: ${e.resumo} ${e.saida}`}><Info size={14} aria-hidden="true" /></span>
+              </div>
+              <div className="ag-coluna-numeros">
+                <b>{total}</b><span>{total === 1 ? "cliente" : "clientes"}</span>
+              </div>
+              <div className="ag-coluna-barra" role="img" aria-label={`${por.equipe} com a equipe, ${por.cliente} com a cliente, ${por.sistema} automático`}>
+                {total > 0 && (["equipe", "cliente", "sistema"] as Responsavel[]).map((r) => por[r] > 0 && <span key={r} className={`is-${r}`} style={{ flexGrow: por[r] }} />)}
+              </div>
+            </header>
+
+            {itens.length === 0 && <div className="ag-coluna-vazia">{termo || quem !== "todos" ? "Nenhuma cliente neste filtro." : "Nenhuma cliente nesta etapa."}</div>}
+
+            {acoes.length > 0 && <div className="ag-grupo">
+              <h3 className="ag-grupo-titulo">Ação da equipe<span>{acoes.length}</span></h3>
+              {acoes.map(({ c, s }) => <article key={c.id} className={`ag-cartao${s.atrasado ? " is-late" : ""}${selecionadoId === c.id ? " is-selected" : ""}`}>
+                <button type="button" className="ag-cartao-main" onClick={() => onAbrirCliente(c.id, e.id)} aria-label={`Abrir ${c.nome}: ${s.texto}`}>
                   <strong className="ag-cartao-nome">{c.nome}</strong>
-                  <span className="ag-cartao-sit"><i className={`ag-ponto is-${s.responsavel}`} title={ROTULO_RESPONSAVEL[s.responsavel]} aria-hidden="true" />{s.texto}</span>
-                </button>
-                {(s.prazo || s.acao) && <div className="ag-cartao-rodape">
+                  <span className="ag-cartao-sit">{s.texto}</span>
                   {s.prazo && <small className={`ag-cartao-prazo${s.atrasado ? " is-late" : ""}`}>{s.prazo}</small>}
-                  {s.acao && <button type="button" className={`ag-btn is-pequeno${s.atrasado ? " is-primario" : ""}`} onClick={() => onAcao(c, e.id, s.acao!.id)}>{s.acao.rotulo}</button>}
-                </div>}
+                </button>
+                {s.acao && <button type="button" className={`ag-btn is-pequeno ag-cartao-acao${s.atrasado ? " is-primario" : ""}`} onClick={() => onAcao(c, e.id, s.acao!.id)}>{s.acao.rotulo}</button>}
               </article>)}
-          </div>
-        </section>)}
+            </div>}
+
+            {espera.length > 0 && <div className="ag-grupo is-espera">
+              <h3 className="ag-grupo-titulo">Aguardando<span>{espera.length}</span></h3>
+              <ul className="ag-lista">
+                {espera.map(({ c, s }) => <li key={c.id} className={selecionadoId === c.id ? "is-selected" : undefined}>
+                  <button type="button" className="ag-lista-main" onClick={() => onAbrirCliente(c.id, e.id)} aria-label={`Abrir ${c.nome}: ${s.texto}. ${ROTULO_RESPONSAVEL[s.responsavel]}.`}>
+                    <span className="ag-lista-nome"><i className={`ag-ponto is-${s.responsavel}`} title={ROTULO_RESPONSAVEL[s.responsavel]} aria-hidden="true" /><strong>{c.nome}</strong></span>
+                    <span className="ag-lista-sit">{s.texto}{s.prazo ? ` · ${s.prazo}` : ""}</span>
+                  </button>
+                  {s.acao && <button type="button" className="ag-lista-acao" onClick={() => onAcao(c, e.id, s.acao!.id)}>{s.acao.rotulo}</button>}
+                </li>)}
+              </ul>
+            </div>}
+          </section>;
+        })}
       </div>
     </div>
   </div>;
