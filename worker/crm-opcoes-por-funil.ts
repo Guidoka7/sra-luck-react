@@ -1,3 +1,4 @@
+import "./integracoes-registro-rd-slug-patch";
 import { CAMPOS_NATIVOS_CRM } from "./integracoes-registro";
 
 type Json = Record<string, any>;
