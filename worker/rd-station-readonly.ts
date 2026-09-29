@@ -472,6 +472,11 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
     itens.push(...atual);
     const next = stringValue(objectValue(resposta.links).next);
     const total = Number(resposta.total ?? objectValue(resposta.meta).total ?? 0);
+    // A API do RD só permite acessar os 10 mil primeiros registros de um filtro.
+    // Nunca apresentar uma leitura interrompida como importação completa.
+    if (page === MAX_PAGES && (next || total > itens.length || atual.length >= PAGE_SIZE)) {
+      throw new Error("RD_RESULT_LIMIT_10000");
+    }
     if (next) continue;
     if (Number.isFinite(total) && total > itens.length) continue;
     if (atual.length >= PAGE_SIZE) continue;
