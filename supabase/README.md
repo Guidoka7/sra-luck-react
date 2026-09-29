@@ -62,7 +62,11 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_116_rd_vinculo_equipe_opcional.sql` redefine `rd_recalcular_pendencias_venda` para não abrir mais `vendedora_nao_vinculada` (o vínculo, quando existe, continua preenchendo `vendedora_id`), tira a exigência de `vendedora_id` de `vw_vendas_validas_bi` e encerra como descartadas as pendências `vendedora_nao_vinculada` abertas. Decisão do responsável em 29/09/2026. Comissão continua exigindo a vendedora da cliente. Pré-requisito: 113. Rollback: `supabase/rollback/migration_116_rollback.sql` (as pendências reabrem no próximo recálculo).
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `117`.
+### 117: agendador de integrações autorizado pelo cofre
+
+`migration_117_integracoes_cron_autorizado.sql` cria `integracoes_cron_autorizado(token)`: o App confirma o Bearer do pg_cron (`integracoes_disparar_sync`) contra `vault.sra_luck_cron_secret` sem que o segredo saia do banco. Em 29/09/2026 o cron recebia 402 (URL de deploy desativado, corrigida no cofre para `sraluckapp.vercel.app`) e depois 401 (CRON_SECRET diferente). Só `service_role`. Rollback: `supabase/rollback/migration_117_rollback.sql`.
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `118`.
 
 ## Campos históricos importantes
 

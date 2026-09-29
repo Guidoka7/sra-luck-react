@@ -3,7 +3,7 @@ import { obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna 
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { atualizarCatalogoCrm } from "./crm-catalogo";
-import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm } from "./crm-importacao";
+import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm, usarPerfilDaDuplicata } from "./crm-importacao";
 
 const RD_CRM_BASE = "https://api.rd.services/crm/v2";
 const RD_OAUTH_TOKEN = "https://api.rd.services/oauth2/token";
@@ -488,18 +488,20 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
 export async function lerContatosPorId(
   ids: string[],
   ler: (id: string) => Promise<Json>,
-  opcoes: { concorrencia?: number; esperas?: number[] } = {},
+  opcoes: { concorrencia?: number; esperas?: number[]; prazoMs?: number } = {},
 ): Promise<{ contatos: Map<string, Json>; falhas: Set<string>; limitadas: Set<string> }> {
   const unicos = [...new Set(ids.map((id) => stringValue(id)).filter(Boolean))];
   const contatos = new Map<string, Json>();
   const falhas = new Set<string>();
-  /** Não lidas por limite do RD (429): não é problema do dado, tenta na próxima sincronização. */
+  /** Não lidas agora (limite do RD, instabilidade ou fim do prazo desta execução): ficam para a próxima. */
   const limitadas = new Set<string>();
+  const fim = opcoes.prazoMs ? Date.now() + opcoes.prazoMs : Infinity;
   const esperas = opcoes.esperas ?? [1000, 3000, 6000];
   let proximo = 0;
   const trabalhador = async () => {
     while (proximo < unicos.length) {
       const id = unicos[proximo++];
+      if (Date.now() >= fim) { limitadas.add(id); continue; }
       for (let tentativa = 0; ; tentativa++) {
         try {
           const r = await ler(id);
@@ -508,10 +510,11 @@ export async function lerContatosPorId(
           else falhas.add(id);
           break;
         } catch (e) {
-          const limite = e instanceof Error && e.message === "RD_HTTP_429";
-          if (limite && tentativa < esperas.length) { await new Promise((r) => setTimeout(r, esperas[tentativa])); continue; }
-          // 429 esgotado: adia. 404 (contato removido) ou outra falha: registra.
-          (limite ? limitadas : falhas).add(id);
+          const msg = e instanceof Error ? e.message : "";
+          const limite = msg === "RD_HTTP_429";
+          if (limite && tentativa < esperas.length && Date.now() < fim) { await new Promise((r) => setTimeout(r, esperas[tentativa])); continue; }
+          // Só 404/410 é "contato não existe mais no RD"; limite, 5xx e rede são temporários (próxima execução).
+          (/^RD_HTTP_(404|410)$/.test(msg) ? falhas : limitadas).add(id);
           break;
         }
       }
@@ -522,8 +525,8 @@ export async function lerContatosPorId(
 }
 
 /** rdGet já espera o Retry-After; aqui só uma tentativa extra e concorrência baixa (o ritmo é global). */
-export async function lerContatosRd(env: Env, ids: string[]) {
-  return lerContatosPorId(ids, (id) => rdGet(env, `/contacts/${encodeURIComponent(id)}`), { concorrencia: 3, esperas: [2_000] });
+export async function lerContatosRd(env: Env, ids: string[], prazoMs?: number) {
+  return lerContatosPorId(ids, (id) => rdGet(env, `/contacts/${encodeURIComponent(id)}`), { concorrencia: 3, esperas: [2_000], prazoMs });
 }
 
 /** Só o que a importação usa do contato (cache guardado junto da venda). */
@@ -766,10 +769,13 @@ async function rotasCrm(request: Request, env: Env, adminId: string, path: strin
   if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });
   const itens = path.match(/\/importacoes\/([0-9a-f-]{36})\/itens$/);
   if (itens && request.method === "GET") return json({ itens: await itensDaImportacao(db, itens[1]) });
-  const revisar = path.match(/\/importacoes\/itens\/([0-9a-f-]{36})\/(importar|descartar)$/);
+  const revisar = path.match(/\/importacoes\/itens\/([0-9a-f-]{36})\/(importar|descartar|usar-perfil)$/);
   if (revisar && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
-    const r = revisar[2] === "importar" ? await importarMesmoAssim(db, revisar[1], `admin:${adminId}`) : await descartarRevisao(db, revisar[1], `admin:${adminId}`);
+    const ator = `admin:${adminId}`;
+    const r = revisar[2] === "importar" ? await importarMesmoAssim(db, revisar[1], ator)
+      : revisar[2] === "usar-perfil" ? await usarPerfilDaDuplicata(db, revisar[1], ator)
+      : await descartarRevisao(db, revisar[1], ator);
     return r.ok ? json(r) : json({ erro: r.erro }, r.status);
   }
   return null;

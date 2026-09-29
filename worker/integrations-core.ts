@@ -369,8 +369,24 @@ async function alterarEstadoIntegracao(request: Request, env: Env) {
  */
 type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
 
+/**
+ * O pg_cron do Supabase chama esta rota com o segredo guardado no cofre do próprio banco
+ * (sra_luck_cron_secret). Se o CRON_SECRET da hospedagem não estiver igual, o banco confirma o token
+ * pela RPC integracoes_cron_autorizado (migration_117): o segredo nunca sai do cofre.
+ */
+export async function cronAutorizadoPeloBanco(request: Request, env: Env, db?: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> }) {
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  if (token.length < 32) return false;
+  try {
+    const { data, error } = await (db ?? createServiceSupabaseClient(env)).rpc("integracoes_cron_autorizado", { p_token: token });
+    return !error && data === true;
+  } catch {
+    return false;
+  }
+}
+
 async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundContext) {
-  if (!rotinaAutorizada(request, env)) return json({ erro: "Não autorizado." }, 401);
+  if (!rotinaAutorizada(request, env) && !(await cronAutorizadoPeloBanco(request, env))) return json({ erro: "Não autorizado." }, 401);
   const resultado: Record<string, unknown> = {};
 
   try { resultado.rdWebhooks = await garantirWebhooksRd(env, "sistema:agendador"); }

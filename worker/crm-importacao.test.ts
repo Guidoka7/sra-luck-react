@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bancoFalso } from "./banco-falso.testutil";
 import {
-  aplicarMapeamento, chaveTelefone, filtroRdql, importacaoAgendadaSeDevida, importarCrm, importarDoWebhook, importarMesmoAssim, passaNoFiltro,
+  aplicarMapeamento, chaveTelefone, filtroRdql, importacaoAgendadaSeDevida, importarCrm, importarDoWebhook, importarMesmoAssim, passaNoFiltro, usarPerfilDaDuplicata,
 } from "./crm-importacao";
 import { PADRAO_CRM, validarConfigCrm, type ConfigCrm } from "./integracoes-registro";
 import { normalizarDealRd } from "./rd-station-readonly";
@@ -221,15 +221,23 @@ describe("importação", () => {
     }
   });
 
-  it("duplicata mais completa completa só os campos vazios da venda pendente; nada preenchido é sobrescrito", async () => {
+  it("duplicata vai para a revisão com o perfil mais completo indicado; a venda pendente não muda sozinha", async () => {
     const { db, tabela } = cenario();
     await importarCrm(env, { origem: "manual", ator: "admin:1" }, {
       db, config: config(),
       fontes: fontes([deal("TEL", { total_price: 7000 })], [contato("TEL", "Caio de Novo", "(61) 8888-7777", "caio@x.com", "52998224725")]),
     });
     expect(tabela("novas_vendas").find((v) => v.rd_station_id === "TEL")).toBeUndefined();
-    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ nome_completo: "Caio Pendente", telefone: "61 98888-7777", email: "caio@x.com", cpf: "52998224725", valor_contrato: 7000 });
-    expect(tabela("integracao_importacao_itens")[0]).toMatchObject({ resultado: "duplicada", motivo: expect.stringMatching(/mais completa/) });
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ nome_completo: "Caio Pendente", telefone: "61 98888-7777", email: null, cpf: null });
+    const item = tabela("integracao_importacao_itens")[0];
+    expect(item).toMatchObject({ resultado: "duplicada", motivo: expect.stringMatching(/mais completa/), correspondencias: [{ tipo: "venda", id: "nv-1", completude: 2 }] });
+    expect(item.dados.completude).toBeGreaterThan(2);
+    // A equipe escolhe ESTE perfil: os dados dele vão para a venda pendente e os anteriores ficam no log.
+    expect(await usarPerfilDaDuplicata(db, item.id, "admin:2")).toMatchObject({ ok: true, vendaId: "nv-1" });
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ nome_completo: "Caio de Novo", email: "caio@x.com", cpf: "52998224725", valor_contrato: 7000 });
+    expect(tabela("logs_alteracoes").find((l) => l.acao === "usou_perfil_duplicata_crm")).toMatchObject({ entidade_id: "nv-1", detalhes: { antes: { nome_completo: "Caio Pendente", email: null } } });
+    expect(tabela("integracao_importacao_itens")[0]).toMatchObject({ revisado_por: "admin:2" });
+    expect(await usarPerfilDaDuplicata(db, item.id, "admin:2")).toMatchObject({ ok: false, status: 409 });
   });
 
   it("venda pendente reflete o preenchimento do Console a cada sincronização; edição feita no Admin é preservada", async () => {
@@ -271,13 +279,25 @@ describe("importação", () => {
     expect(tabela("integracao_pendencias")).toHaveLength(0);
   });
 
-  it("contato que não pôde ser lido no RD: nada é gravado com dados vazios", async () => {
+  it("contato removido no RD (404) não impede a importação da negociação; nada se perde", async () => {
     const { db, tabela } = cenario();
-    const f = { ...fontes([deal("SEMCT")], []), contatos: async () => ({ contatos: new Map(), falhas: new Set(["ctSEMCT"]) }) };
+    const f = { ...fontes([deal("SEMCT", { contact_name: "Nome na negociação" }), deal("D-PEND")], []), contatos: async () => ({ contatos: new Map(), falhas: new Set(["ctSEMCT", "ctD-PEND"]) }) };
     const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: f });
-    expect(r).toMatchObject({ ok: true, criadas: 0, erros: 1 });
-    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "SEMCT")).toBeUndefined();
-    expect(tabela("integracao_importacao_itens")[0]).toMatchObject({ resultado: "erro", motivo: expect.stringMatching(/contato/) });
+    expect(r).toMatchObject({ ok: true, criadas: 1, erros: 0 });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "SEMCT")).toMatchObject({ status: "aguardando_cadastro", nome_completo: "Nome na negociação" });
+    // Venda existente sem contato: mantém o que tinha.
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ telefone: "61 98888-7777", nome_completo: "Caio Pendente" });
+  });
+
+  it("lê TODOS os contatos pendentes (sem cota) e adia só o que não coube no prazo", async () => {
+    const { db, tabela } = cenario();
+    const deals = Array.from({ length: 150 }, (_, i) => deal(`L${i}`));
+    const pedidos: string[][] = [];
+    const f = { ...fontes(deals, []), contatos: async (ids: string[]) => { pedidos.push(ids); return { contatos: new Map(ids.map((id, i) => [id, contato(id.slice(2), `Pessoa ${id}`, `61 9${String(10000000 + i).slice(0, 8)}`, "")])), falhas: new Set<string>() }; } };
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: f });
+    expect(pedidos[0]).toHaveLength(150);
+    expect(r).toMatchObject({ ok: true, criadas: 150, adiadas: 0 });
+    expect(tabela("novas_vendas").filter((v) => String(v.rd_station_id).startsWith("L"))).toHaveLength(150);
   });
 
   it("consulta vários funis e preserva o mapeamento de cada um", async () => {
@@ -340,7 +360,8 @@ describe("importação", () => {
     expect(tabela("novas_vendas").find((v) => v.rd_station_id === "W2")).toMatchObject({ status: "aguardando_cadastro", nome_completo: "Gabi Webhook", telefone: "+55 61 99999-8888" });
     // O evento só traz a negociação: o contato é lido pelo id; sem ele, nada é gravado.
     expect(lidos).toContainEqual(["ctW2"]);
-    expect((await importarDoWebhook(env, db, deal("W3"), "t3", { contatos }))?.item.resultado).toBe("erro");
+    // Contato removido no RD: a negociação entra mesmo assim, com os dados dela.
+    expect((await importarDoWebhook(env, db, deal("W3", { contact_name: "W3 sem contato" }), "t3", { contatos }))?.item.resultado).toBe("criada");
     // Mesmo telefone em outro formato: duplicata.
     const w4 = await importarDoWebhook(env, db, deal("W4"), "t4", { contatos: async () => ({ contatos: new Map([["ctW4", contato("W4", "Gabi", "061 99999 8888", "")]]), falhas: new Set() }) });
     expect(w4?.item.resultado).toBe("duplicada");

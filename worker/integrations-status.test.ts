@@ -59,3 +59,20 @@ describe("status da integração Gemini", () => {
     expect(consultas).toContainEqual({ tabela: "mensagens_do_dia", coluna: "data" });
   });
 });
+
+describe("agendador de integrações autorizado pelo cofre do banco", () => {
+  it("aceita só token longo confirmado pela RPC; qualquer falha nega", async () => {
+    const { cronAutorizadoPeloBanco } = await import("./integrations-core");
+    const req = (t?: string) => new Request("https://app/api/cron/integracoes", { method: "POST", headers: t ? { Authorization: `Bearer ${t}` } : {} });
+    const env = {} as never;
+    const chamadas: unknown[] = [];
+    const db = (ok: unknown, erro: unknown = null) => ({ rpc: async (fn: string, args: Record<string, unknown>) => { chamadas.push([fn, args]); return { data: ok, error: erro }; } });
+    const longo = "x".repeat(64);
+    expect(await cronAutorizadoPeloBanco(req(longo), env, db(true))).toBe(true);
+    expect(chamadas[0]).toEqual(["integracoes_cron_autorizado", { p_token: longo }]);
+    expect(await cronAutorizadoPeloBanco(req(longo), env, db(false))).toBe(false);
+    expect(await cronAutorizadoPeloBanco(req(longo), env, db(null, { message: "função não existe" }))).toBe(false);
+    expect(await cronAutorizadoPeloBanco(req("curto"), env, db(true))).toBe(false);
+    expect(await cronAutorizadoPeloBanco(req(), env, db(true))).toBe(false);
+  });
+});

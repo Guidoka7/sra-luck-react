@@ -21,16 +21,24 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
 
-/** Contato guardado vale 24 h; por execução, no máximo esta cota é relida (além das negociações novas). */
+/**
+ * Contato guardado vale 24 h. TODOS os contatos dos funis configurados são lidos, sem cota; como o RD
+ * aceita 120 consultas/min, uma execução lê até este prazo e a seguinte continua de onde parou
+ * (os já lidos ficam guardados na venda). Nada é descartado: o que não foi lido é adiado.
+ */
 const CONTATO_VALIDADE_MS = 24 * 60 * 60_000;
-const CONTATOS_RENOVADOS_POR_EXECUCAO = 60;
+const PRAZO_LEITURA_CONTATOS_MS = 200_000;
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 
 export type Origem = "manual" | "agendada" | "webhook";
 export type Resultado = "criada" | "atualizada" | "duplicada" | "cliente_existente" | "ignorada" | "erro";
-export type Correspondencia = { tipo: "cliente" | "venda"; id: string; nome: string | null; por: ("cpf" | "telefone" | "email")[] };
+export type Correspondencia = {
+  tipo: "cliente" | "venda"; id: string; nome: string | null; por: ("cpf" | "telefone" | "email")[];
+  /** Quantos dados a venda pendente tem preenchidos (para indicar o perfil mais completo na revisão). */
+  completude?: number;
+};
 
 export type ValoresVenda = {
   nome: string;
@@ -397,7 +405,8 @@ function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<strin
   for (const [campo, coluna] of COLUNAS_PREENCHIDAS) {
     if (editadas?.has(coluna)) continue;
     const novo = valores[campo];
-    if (campo === "nome" && vazio(novo)) continue;
+    // Nunca troca um dado preenchido por vazio: a sincronização não apaga nada.
+    if (vazio(novo)) continue;
     if (soVazias && (!vazio(v.linha[coluna]) || vazio(novo))) continue;
     if ((v.linha[coluna] ?? null) === (novo ?? null)) continue;
     patch[coluna] = novo ?? null;
@@ -435,8 +444,10 @@ export async function processarNegociacao(db: Db, entrada: {
   }
   if (existente) {
     if (contatoIndisponivel) {
-      // Sem o contato, os dados dele sairiam vazios: mantém a venda como está.
-      return { ...base, resultado: "erro", motivo: "O contato desta negociação não pôde ser lido no RD agora; a venda não foi alterada. Reprocessar.", nova_venda_id: existente.id };
+      // Contato removido no RD e sem cópia guardada: mantém a venda como está (nada é apagado).
+      const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshotSelecionado)).eq("id", existente.id);
+      if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar o snapshot do RD." };
+      return { ...base, resultado: "atualizada", nova_venda_id: existente.id, motivo: "O contato desta negociação não existe mais no RD; os dados da venda foram mantidos." };
     }
     const venda = indice.vendaPorId?.get(existente.id);
     const patch = venda && pendenteDeCadastro(venda) ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false) : {};
@@ -452,7 +463,6 @@ export async function processarNegociacao(db: Db, entrada: {
 
   const fora = passaNoFiltro(s, config);
   if (fora) return { ...base, resultado: "ignorada", motivo: fora };
-  if (contatoIndisponivel) return { ...base, resultado: "erro", motivo: "O contato desta negociação não pôde ser lido no RD agora; nada foi gravado. Reprocessar." };
   if (!valores.nome || valores.nome === "Cliente RD Station") return { ...base, resultado: "ignorada", motivo: "Negociação sem nome de contato." };
 
   const telefones = chavesTelefone(valores, contato);
@@ -465,23 +475,19 @@ export async function processarNegociacao(db: Db, entrada: {
     if (correspondencias.some((c) => c.tipo === "cliente")) {
       return { ...base, correspondencias, resultado: "cliente_existente", motivo: "Já existe cliente com o mesmo telefone. Nada foi criado nem alterado." };
     }
-    // Mesmo telefone de venda ainda pendente: fica UM perfil, o mais completo. Esta negociação
-    // completa o que estiver vazio na venda existente (nada preenchido é sobrescrito).
+    // Mesmo telefone de venda ainda pendente: nada é alterado nem perdido. A duplicata vai para a
+    // revisão do Admin com a indicação do perfil mais completo; a equipe escolhe qual perfil usar.
     const minha = completude(valores, camposSelecionados);
-    const completadas: string[] = [];
-    for (const c of correspondencias) {
+    const comPontos = correspondencias.map((c) => {
       const venda = indice.vendaPorId?.get(c.id);
-      if (!venda || !pendenteDeCadastro(venda) || minha <= completudeDaLinha(venda.linha)) continue;
-      const patch = patchLocal(venda, valores, indice.editadasNoAdmin?.get(c.id), true);
-      if (!Object.keys(patch).length) continue;
-      const { error } = await db.from("novas_vendas").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", c.id);
-      if (!error) { Object.assign(venda.linha, patch); completadas.push(...Object.keys(patch)); }
-    }
+      return venda ? { ...c, completude: completudeDaLinha(venda.linha) } : c;
+    });
+    const melhorExistente = Math.max(0, ...comPontos.map((c) => c.completude ?? 0));
     return {
-      ...base, correspondencias, resultado: "duplicada",
-      motivo: completadas.length
-        ? `Mesmo telefone de venda já pendente. Esta negociação era mais completa: ${[...new Set(completadas)].join(", ")} foram completados na venda existente. Nenhuma venda nova foi criada.`
-        : "Mesmo telefone de venda já pendente (a existente é a mais completa). Nenhuma venda nova foi criada.",
+      ...base, dados: { ...base.dados, completude: minha }, correspondencias: comPontos, resultado: "duplicada",
+      motivo: minha > melhorExistente
+        ? `Mesmo telefone de venda já pendente. Esta negociação é a mais completa (${minha} dados contra ${melhorExistente}): escolha o perfil na revisão.`
+        : `Mesmo telefone de venda já pendente (a existente é a mais completa: ${melhorExistente} dados contra ${minha}). Escolha o perfil na revisão.`,
     };
   }
 
@@ -508,6 +514,7 @@ type Fontes = {
   contatos?: (ids: string[]) => Promise<LeituraContatos>;
 };
 
+
 function fontesRd(env: Env): Fontes {
   return {
     deals: (filtro) => listarTudo(env, "deals", filtro || undefined),
@@ -515,7 +522,7 @@ function fontesRd(env: Env): Fontes {
       const [usuarios, campanhas, fontes] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources")]);
       return { contatos: [], usuarios, campanhas, fontes };
     },
-    contatos: (ids) => lerContatosRd(env, ids),
+    contatos: (ids) => lerContatosRd(env, ids, PRAZO_LEITURA_CONTATOS_MS),
   };
 }
 
@@ -609,9 +616,10 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       else if (!cache || stringValue(cache.dados.id) !== idContato) renovar.push({ id: idContato, lidoEm: "" });
       else if (Date.parse(cache.lidoEm) < Date.now() - CONTATO_VALIDADE_MS) renovar.push({ id: idContato, lidoEm: cache.lidoEm });
     }
-    const cota = renovar.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).slice(0, CONTATOS_RENOVADOS_POR_EXECUCAO).map((x) => x.id);
+    // Ordem: negociações novas, vendas sem contato guardado, depois os guardados mais antigos.
+    const aRenovar = renovar.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).map((x) => x.id);
     const leitura: LeituraContatos = fontes.contatos
-      ? await fontes.contatos([...new Set([...novos, ...cota])])
+      ? await fontes.contatos([...new Set([...novos, ...aRenovar])])
       : { contatos: mapById(r.contatos), falhas: new Set() };
     const contatosLidos = leitura.contatos;
     const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
@@ -753,6 +761,7 @@ export function itemParaTela(item: Json) {
     dados: {
       nome: d.nome ?? null, cpf: mascararCpf(d.cpf), telefone: mascararTelefone(d.telefone), email: mascararEmail(d.email),
       valorContrato: d.valor_contrato ?? null, etapa: d.rdStageId ?? null, status: d.rdStatus ?? null,
+      completude: typeof d.completude === "number" ? d.completude : null,
     },
   };
 }
@@ -840,6 +849,40 @@ export async function importarMesmoAssim(db: Db, itemId: string, ator: string) {
   await db.rpc("rd_recalcular_pendencias_venda", { p_venda_id: (venda as Json).id, p_origem: "revisao", p_importacao_id: it.importacao_id ?? null, p_ator: ator });
   await db.from("logs_alteracoes").insert({ usuario: ator, acao: "importou_venda_duplicada_apos_revisao", entidade: "novas_vendas", entidade_id: (venda as Json).id, detalhes: { itemId, rdStationId: it.external_id, correspondencias: it.correspondencias, escritaNoRd: false } });
   return { ok: true as const, novaVendaId: String((venda as Json).id) };
+}
+
+/**
+ * Revisão humana: usa ESTE perfil (a duplicata) na venda pendente com o mesmo telefone. Os dados
+ * preenchidos da duplicata substituem os da venda; os valores anteriores ficam no log (nada se perde).
+ */
+export async function usarPerfilDaDuplicata(db: Db, itemId: string, ator: string) {
+  const { data: item } = await db.from("integracao_importacao_itens").select("*").eq("id", itemId).maybeSingle();
+  if (!item) return { ok: false as const, status: 404, erro: "Item não encontrado." };
+  const it = item as Json;
+  if (it.resultado !== "duplicada" || it.revisado_em) return { ok: false as const, status: 409, erro: "Este item não está aguardando revisão." };
+  const alvo = arrayValue(it.correspondencias).map(objectValue).find((c) => c.tipo === "venda");
+  if (!alvo) return { ok: false as const, status: 409, erro: "Não há venda pendente para receber este perfil." };
+  const { data: venda } = await db.from("novas_vendas").select(COLUNAS_VENDA).eq("id", alvo.id).maybeSingle();
+  const v = venda as Json | null;
+  if (!v || v.cliente_id || v.status !== "aguardando_cadastro") return { ok: false as const, status: 409, erro: "A venda já foi cadastrada ou não existe mais; use \"Importar mesmo assim\"." };
+  const d = objectValue(it.dados);
+  const patch: Json = {}, antes: Json = {};
+  for (const [campo, coluna] of COLUNAS_PREENCHIDAS) {
+    const novo = d[campo];
+    if (vazio(novo) || (v[coluna] ?? null) === novo) continue;
+    patch[coluna] = novo;
+    antes[coluna] = v[coluna] ?? null;
+  }
+  const agora = new Date().toISOString();
+  if (Object.keys(patch).length) {
+    const { error } = await db.from("novas_vendas").update({ ...patch, updated_at: agora }).eq("id", alvo.id);
+    if (error) return { ok: false as const, status: 500, erro: "Não foi possível atualizar a venda." };
+  }
+  await db.from("integracao_importacao_itens").update({ nova_venda_id: alvo.id, revisado_por: ator, revisado_em: agora }).eq("id", itemId);
+  await encerrarRevisaoDaNegociacao(db, String(it.external_id), ator, agora, true);
+  await db.rpc("rd_recalcular_pendencias_venda", { p_venda_id: alvo.id, p_origem: "revisao", p_importacao_id: it.importacao_id ?? null, p_ator: ator });
+  await db.from("logs_alteracoes").insert({ usuario: ator, acao: "usou_perfil_duplicata_crm", entidade: "novas_vendas", entidade_id: alvo.id, detalhes: { itemId, rdStationId: it.external_id, campos: Object.keys(patch), antes, escritaNoRd: false } });
+  return { ok: true as const, vendaId: String(alvo.id), campos: Object.keys(patch) };
 }
 
 export async function descartarRevisao(db: Db, itemId: string, ator: string) {
