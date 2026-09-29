@@ -60,7 +60,7 @@ function rdFalso(opcoes: { semOrdenacao?: boolean; falhar?: boolean } = {}) {
       throw new Error("RD_HTTP_404");
     },
   };
-  return { rd, chamadas };
+  return { rd, chamadas, contatos };
 }
 
 beforeEach(() => limparCatalogoEmMemoria());
@@ -73,13 +73,14 @@ describe("catálogo do RD por funil", () => {
     const gets = chamadas.filter((c) => c.tipo === "get").map((c) => c.alvo);
     expect(gets.filter((g) => g.startsWith("/deals"))).toHaveLength(2);
     expect(gets.every((g) => !g.startsWith("/deals") || g.includes("page[size]=100") && g.includes("sort[updated_at]=desc"))).toBe(true);
-    // Contatos lidos um a um pelo id (o RDQL de contatos não filtra por id), só os da amostra.
-    expect(gets.filter((g) => g.startsWith("/contacts")).sort()).toEqual([`/contacts/${K1}`, `/contacts/${K2}`]);
+    // O catálogo não gasta o limite do RD (120/min) lendo contatos: usa os já guardados pela importação.
+    expect(gets.filter((g) => g.startsWith("/contacts"))).toEqual([]);
   });
 
   it("campos de cada funil vêm das regras do RD e da amostra, sem catálogo global", async () => {
-    const { rd } = rdFalso();
-    const [comercial, posVenda] = await montarCatalogoCrm(env, { rd });
+    const { rd, contatos } = rdFalso();
+    const contatosPorFunil = new Map([[F1, new Map(contatos.map((c) => [c.id, c]))]]);
+    const [comercial, posVenda] = await montarCatalogoCrm(env, { rd, contatosPorFunil });
     const fontes = (f: typeof comercial) => f.fontes.map((x) => x.fonte);
     expect(fontes(comercial)).toEqual(expect.arrayContaining(["deal:valor-da-carta", "deal:banco", "deal:sdr", "contact:cpf", "deal_field:owner_id", "contact_field:phones", "contact_field:emails", "contact_field:name", "contact_field:whatsapp_username"]));
     expect(comercial.fontes.find((f) => f.fonte === "contact_field:whatsapp_username")).toMatchObject({ rotulo: "Contato: Nome de usuário no WhatsApp", grupo: "contact_nativo", preenchidas: 1 });
@@ -91,6 +92,8 @@ describe("catálogo do RD por funil", () => {
     expect(comercial.fontes.find((f) => f.fonte === "deal:valor-da-carta")).toMatchObject({ rotulo: "Negociação: Valor da carta", preenchidas: 1, mapeavel: true });
     expect(comercial.fontes.find((f) => f.fonte === "deal_field:owner_id")?.rotulo).toBe("Negociação: Responsável (vendedora)");
     expect(comercial.amostra).toEqual({ negociacoes: 3, contatos: 2, contatosIndisponiveis: false });
+    // Pós-venda: negociação sem contato ligado, sem contato guardado → nenhum campo de contato.
+    expect(fontes(posVenda).some((f) => f.startsWith("contact"))).toBe(false);
   });
 
   it("valores selecionáveis: vendedoras, fonte, campanha e campos de opção, com contagem da amostra", async () => {

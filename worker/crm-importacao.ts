@@ -14,12 +14,16 @@
  */
 import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
-  arrayValue, idsContatoDaNegociacao, lerContatosRd, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
+  arrayValue, contatoParaCache, idsContatoDaNegociacao, lerContatosRd, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
+
+/** Contato guardado vale 24 h; por execução, no máximo esta cota é relida (além das negociações novas). */
+const CONTATO_VALIDADE_MS = 24 * 60 * 60_000;
+const CONTATOS_RENOVADOS_POR_EXECUCAO = 60;
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -264,7 +268,9 @@ function completudeDaLinha(linha: Json) {
 }
 
 type Registro = { tipo: "cliente" | "venda"; id: string; nome: string | null; rdId?: string | null };
-type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json };
+/** Contato lido do RD guardado junto da venda (rd_snapshot._sra_contato): evita reler a cada sincronização. */
+export type ContatoEmCache = { dados: Json; lidoEm: string };
+type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json; contato?: ContatoEmCache | null };
 export type IndiceDedupe = {
   porCpf: Map<string, Registro[]>; porTelefone: Map<string, Registro[]>; porEmail: Map<string, Registro[]>;
   vendaPorRd: Map<string, { id: string; status: string }>;
@@ -303,7 +309,7 @@ async function todasAsLinhas<T>(consulta: (de: number, ate: number) => PromiseLi
   return linhas;
 }
 
-const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
+const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,contato_cache:rd_snapshot->_sra_contato,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
 
 export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   const indice = indiceVazio();
@@ -318,7 +324,9 @@ export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   }
   for (const v of vendas) {
     if (v.rd_station_id) indice.vendaPorRd.set(String(v.rd_station_id), { id: v.id, status: v.status });
-    indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v });
+    const cache = objectValue(v.contato_cache ?? objectValue(v.rd_snapshot)._sra_contato);
+    const contato = cache.dados && cache.lidoEm ? { dados: objectValue(cache.dados), lidoEm: String(cache.lidoEm) } : null;
+    indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v, contato });
     if (!v.cliente_id) indexar(indice, { tipo: "venda", id: v.id, nome: v.nome_completo ?? null, rdId: v.rd_station_id ?? null }, v);
   }
   for (const e of edicoes) {
@@ -399,17 +407,32 @@ function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<strin
 
 export async function processarNegociacao(db: Db, entrada: {
   deal: Json; snapshot: RdDealSnapshot; contato?: Json; config: ConfigCrm; indice: IndiceDedupe; importacaoId: string | null;
-  /** A negociação tem contato no RD, mas ele não pôde ser lido agora. */
+  /** A negociação tem contato no RD, mas ele não existe mais ou deu erro ao ler. */
   contatoIndisponivel?: boolean;
+  /** Contato ainda não lido por limite do RD: a venda existente só tem o snapshot atualizado. */
+  contatoAdiado?: boolean;
+  /** Quando o contato foi lido do RD (para o cache); ausente = veio do cache e ele é mantido. */
+  contatoLidoEm?: string | null;
 }): Promise<ItemImportacao> {
-  const { deal, snapshot: s, contato, config, indice, importacaoId, contatoIndisponivel } = entrada;
+  const { deal, snapshot: s, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
   const camposSelecionados = extrairCamposSelecionados(s, deal, contato, config);
-  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores } } };
+  const existenteIdx = indice.vendaPorRd.get(s.rdStationId);
+  const cacheAnterior = existenteIdx ? indice.vendaPorId?.get(existenteIdx.id)?.contato ?? null : null;
+  const cacheContato: ContatoEmCache | null = contato && entrada.contatoLidoEm
+    ? { dados: contatoParaCache(contato), lidoEm: entrada.contatoLidoEm }
+    : cacheAnterior;
+  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores }, ...(cacheContato ? { _sra_contato: cacheContato } : {}) } };
   const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
-  const existente = indice.vendaPorRd.get(s.rdStationId);
+  const existente = existenteIdx;
+  if (existente && contatoAdiado && !contato) {
+    // Sem contato (limite do RD): não remapeia para não apagar telefone/CPF; só o snapshot.
+    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshotSelecionado)).eq("id", existente.id);
+    if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar o snapshot do RD." };
+    return { ...base, resultado: "atualizada", nova_venda_id: existente.id, motivo: "Contato ainda não lido (limite de consultas do RD); os dados serão atualizados na próxima sincronização." };
+  }
   if (existente) {
     if (contatoIndisponivel) {
       // Sem o contato, os dados dele sairiam vazios: mantém a venda como está.
@@ -419,7 +442,7 @@ export async function processarNegociacao(db: Db, entrada: {
     const patch = venda && pendenteDeCadastro(venda) ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false) : {};
     const { error } = await db.from("novas_vendas").update({ ...snapshotUpdatePreservandoLocal(snapshotSelecionado), ...patch }).eq("id", existente.id);
     if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar a venda com os dados do RD." };
-    if (venda) Object.assign(venda.linha, patch);
+    if (venda) { Object.assign(venda.linha, patch); if (cacheContato) venda.contato = cacheContato; }
     const colunas = Object.keys(patch);
     return {
       ...base, resultado: "atualizada", nova_venda_id: existente.id,
@@ -470,14 +493,14 @@ export async function processarNegociacao(db: Db, entrada: {
   const id = String((data as Json).id);
   indice.vendaPorRd.set(s.rdStationId, { id, status: "aguardando_cadastro" });
   const linha = linhaNovaVenda(snapshotSelecionado, valores, importacaoId) as Json;
-  indice.vendaPorId?.set(id, { id, status: "aguardando_cadastro", clienteId: null, linha: { ...linha, id } });
+  indice.vendaPorId?.set(id, { id, status: "aguardando_cadastro", clienteId: null, linha: { ...linha, id }, contato: cacheContato });
   indexar(indice, { tipo: "venda", id, nome: valores.nome, rdId: s.rdStationId }, valores, telefones);
   return { ...base, resultado: "criada", motivo: "Entrou em Aguardando cadastro.", nova_venda_id: id };
 }
 
 // ------------------------------------------------------------------ importação completa
 
-type LeituraContatos = { contatos: Map<string, Json>; falhas: Set<string> };
+type LeituraContatos = { contatos: Map<string, Json>; falhas: Set<string>; limitadas?: Set<string> };
 type Fontes = {
   deals: (filtro: string) => Promise<Json[]>;
   refs: () => Promise<{ contatos: Json[]; usuarios: Json[]; campanhas: Json[]; fontes: Json[] }>;
@@ -570,9 +593,29 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     const lidas = [...porId.values()];
     // Contatos só das negociações lidas (antes: a base inteira de contatos, que estourava o limite
     // e deixava telefone/CPF vazios em silêncio).
-    const idsContato = lidas.map((d) => idsContatoDaNegociacao(d)[0]).filter(Boolean) as string[];
-    const leitura: LeituraContatos = fontes.contatos ? await fontes.contatos(idsContato) : { contatos: mapById(r.contatos), falhas: new Set() };
-    const refs = { contatos: leitura.contatos, usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
+    // O RD aceita 120 consultas/min por conta: contatos são relidos só para negociações novas e,
+    // numa cota por execução, para vendas sem contato guardado (ou com o mais antigo). O resto usa o cache.
+    const agoraIso = new Date().toISOString();
+    const cachePorContato = new Map<string, ContatoEmCache>();
+    const novos: string[] = [];
+    const renovar: { id: string; lidoEm: string }[] = [];
+    for (const d of lidas) {
+      const idContato = idsContatoDaNegociacao(d)[0];
+      if (!idContato) continue;
+      const venda = indice.vendaPorRd.get(stringValue(d.id));
+      const cache = venda ? indice.vendaPorId?.get(venda.id)?.contato : null;
+      if (cache && stringValue(cache.dados.id) === idContato) cachePorContato.set(idContato, cache);
+      if (!venda) novos.push(idContato);
+      else if (!cache || stringValue(cache.dados.id) !== idContato) renovar.push({ id: idContato, lidoEm: "" });
+      else if (Date.parse(cache.lidoEm) < Date.now() - CONTATO_VALIDADE_MS) renovar.push({ id: idContato, lidoEm: cache.lidoEm });
+    }
+    const cota = renovar.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).slice(0, CONTATOS_RENOVADOS_POR_EXECUCAO).map((x) => x.id);
+    const leitura: LeituraContatos = fontes.contatos
+      ? await fontes.contatos([...new Set([...novos, ...cota])])
+      : { contatos: mapById(r.contatos), falhas: new Set() };
+    const contatosLidos = leitura.contatos;
+    const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
+    const refs = { contatos: contatosTodos, usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
     // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
     // viram duplicatas dela. Negociações já importadas mantêm a ordem.
     const pontos = new Map<Json, number>();
@@ -584,6 +627,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     }
     const deals = lidas.slice().sort((a, b) => (pontos.get(b) ?? 0) - (pontos.get(a) ?? 0));
     const itens: ItemImportacao[] = [];
+    let adiadas = 0;
     // Itens gravados DURANTE a execução: se a função for interrompida no meio, o que já foi
     // feito continua visível (antes, 914 vendas ficaram sem nenhum item — docs/DIAGNOSTICO-RD).
     let gravados = 0;
@@ -603,9 +647,13 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
         item = { external_id: `sem-id-${chaveEstavel(deal)}`, resultado: "erro", motivo: "Negociação sem identificador no RD.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: stringValue(deal.status) || null } };
       } else {
         const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
-        const contatoIndisponivel = Boolean(snapshot.rdContactId && !contato && leitura.falhas.has(snapshot.rdContactId));
+        const idC = snapshot.rdContactId;
+        const contatoIndisponivel = Boolean(idC && !contato && leitura.falhas.has(idC));
+        const contatoAdiado = Boolean(idC && !contato && !contatoIndisponivel);
+        if (contatoAdiado && !indice.vendaPorRd.has(snapshot.rdStationId)) { adiadas++; continue; }
         try {
-          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel });
+          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado,
+            contatoLidoEm: idC && contatosLidos.has(idC) ? agoraIso : null });
         } catch {
           item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
         }
@@ -618,7 +666,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     // Execução completa: falhas de execução anteriores deixaram de valer.
     await db.from("integracao_pendencias").update({ estado: "resolvida", resolucao: "resolvida_pela_origem", resolvido_por: opcoes.ator, resolvido_em: new Date().toISOString() })
       .eq("provedor", "rd_station").in("tipo", ["execucao_falhou", "execucao_interrompida"]).eq("estado", "aberta");
-    const resumo = { ...totais(itens, deals.length), somenteLeitura: true };
+    const resumo = { ...totais(itens, deals.length), adiadas, somenteLeitura: true };
     const status = resumo.erros ? "parcial" : "concluida";
     await db.from("integracao_importacoes").update({ status, totais: resumo, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
     await registrarEvento(db, { eventType: `importacao_${opcoes.origem}`, referencia: importacaoId, payload: resumo, status: resumo.erros ? "parcial" : "processado" });
@@ -646,17 +694,26 @@ export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao:
   deps: { contatos?: (ids: string[]) => Promise<LeituraContatos> } = {}) {
   // O evento traz só a negociação: o contato é lido pelo id, como na importação.
   const idContato = idsContatoDaNegociacao(deal)[0];
-  const leitura = idContato ? await (deps.contatos ?? ((ids: string[]) => lerContatosRd(env, ids)))([idContato]) : { contatos: new Map<string, Json>(), falhas: new Set<string>() };
-  const snapshot = normalizarDealRd(deal, { contatos: leitura.contatos });
+  const leitura: LeituraContatos = idContato ? await (deps.contatos ?? ((ids: string[]) => lerContatosRd(env, ids)))([idContato]) : { contatos: new Map<string, Json>(), falhas: new Set<string>() };
+  const indice = await carregarIndice(db);
+  // Limite do RD: usa o contato guardado da venda, se houver.
+  const vendaIdx = indice.vendaPorRd.get(stringValue(deal.id));
+  const cache = vendaIdx ? indice.vendaPorId?.get(vendaIdx.id)?.contato : null;
+  const contatos = new Map(leitura.contatos);
+  if (idContato && !contatos.has(idContato) && cache && stringValue(cache.dados.id) === idContato) contatos.set(idContato, cache.dados);
+  const snapshot = normalizarDealRd(deal, { contatos });
   if (!snapshot) return null;
-  const contato = snapshot.rdContactId ? leitura.contatos.get(snapshot.rdContactId) : undefined;
+  const contato = snapshot.rdContactId ? contatos.get(snapshot.rdContactId) : undefined;
   const contatoIndisponivel = Boolean(snapshot.rdContactId && !contato && leitura.falhas.has(snapshot.rdContactId));
+  const contatoAdiado = Boolean(snapshot.rdContactId && !contato && !contatoIndisponivel);
+  const contatoLidoEm = snapshot.rdContactId && leitura.contatos.has(snapshot.rdContactId) ? new Date().toISOString() : null;
   const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
   const { data: imp } = await db.from("integracao_importacoes")
     .insert({ provedor: "rd_station", origem: "webhook", filtro: filtroRdql(config), iniciado_por: "sistema:rd_station_webhook" }).select("id").single();
   const importacaoId = imp ? String((imp as Json).id) : null;
-  const indice = await carregarIndice(db);
-  const item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel });
+  const item: ItemImportacao = contatoAdiado && !vendaIdx
+    ? { external_id: snapshot.rdStationId, resultado: "ignorada", motivo: "Contato ainda não lido (limite de consultas do RD); a negociação entra na próxima sincronização.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus, rdPipelineId: snapshot.rdPipelineId, rdStageId: snapshot.rdStageId } }
+    : await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado, contatoLidoEm });
   await registrarPendenciasDoItem(db, item, "webhook", importacaoId);
   if (importacaoId) {
     if (item.resultado !== "atualizada") await gravarItens(db, importacaoId, [item]);

@@ -18,7 +18,7 @@
  */
 import { configDaFuncao, rotuloNativoCrm, type CampoCrm, type ConfigCrm } from "./integracoes-registro";
 import { camposDisponiveisDoFunil, type CampoCatalogoCrm } from "./crm-opcoes-por-funil";
-import { arrayValue, lerContatosPorId, listarTudo, objectValue, rdGet, stringValue } from "./rd-station-readonly";
+import { arrayValue, listarTudo, objectValue, rdGet, stringValue } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
 type Json = Record<string, any>;
@@ -142,14 +142,8 @@ function idsDeContato(deal: Json): string[] {
   return [...ids];
 }
 
-/** Contatos da amostra lidos um a um (o RDQL de contatos não filtra por id). 30 bastam para ver os campos. */
-const CONTATOS_POR_FUNIL = 30;
-async function contatosDaAmostra(rd: LeitorRd, deals: Json[]): Promise<{ contatos: Map<string, Json>; indisponivel: boolean }> {
-  const ids = [...new Set(deals.flatMap((d) => idsDeContato(d).slice(0, 1)))].slice(0, CONTATOS_POR_FUNIL);
-  if (!ids.length) return { contatos: new Map(), indisponivel: false };
-  const { contatos, falhas } = await lerContatosPorId(ids, (id) => rd.get(`/contacts/${encodeURIComponent(id)}`), { concorrencia: 4, esperas: [800, 2000] });
-  return { contatos, indisponivel: contatos.size === 0 && falhas.size > 0 };
-}
+/** Campos padrão de todo contato do RD (esquema do CRM v2). */
+const NATIVOS_CONTATO = ["contact_field:name", "contact_field:phones", "contact_field:emails", "contact_field:whatsapp_username", "contact_field:job_title", "contact_field:birthday"];
 
 type Regra = { campo: CampoCrm; nomes: string[]; nativos: string[] };
 /** Mesma intenção da leitura automática antiga, mas escolhendo uma origem concreta do funil. */
@@ -227,7 +221,11 @@ export function montarFunil(entrada: {
   // 2) campos que o RD exibe especificamente neste funil, mesmo sem valor ainda.
   for (const c of catalogo) if (c.entidade === "deal" && funisDaRegra(c.bruto)?.includes(id)) disponiveis.add(`deal:${c.slug}`);
   // Um campo restrito a OUTROS funis e sem valor aqui não entra (a chave vazia vem do layout global).
-  const contatosUsados = [...new Set(deals.flatMap(idsDeContato))].map((c) => contatos.get(c)).filter(Boolean) as Json[];
+  // Contatos: os já guardados das vendas deste funil (o catálogo não gasta consultas do RD com contatos).
+  const contatosUsados = [...contatos.values()];
+  const temContato = contatosUsados.length > 0 || deals.some((d) => idsDeContato(d).length > 0);
+  // Todo contato tem o mesmo esquema: com negociações ligadas a contatos, os campos de contato valem no funil.
+  if (temContato) for (const c of catalogo) if (c.entidade === "contact") disponiveis.add(`contact:${c.slug}`);
   const preenchidasEm = (fonte: string) => {
     const [entidade, slug] = fonte.split(":");
     const registros = entidade === "deal" ? deals : contatosUsados;
@@ -248,7 +246,8 @@ export function montarFunil(entrada: {
       preenchidas: preenchidasEm(fonte),
     } as FonteCatalogo;
   });
-  const nativas: FonteCatalogo[] = vistos.camposNativos.map((n) => {
+  const nativosDoFunil = [...new Set([...vistos.camposNativos.map((n) => n.fonte).filter((f) => !f.startsWith("contact_field:")), ...(temContato ? NATIVOS_CONTATO : [])])];
+  const nativas: FonteCatalogo[] = nativosDoFunil.map((fonte) => ({ fonte })).map((n) => {
     const [ent, chave] = n.fonte.split(":");
     const contato = ent === "contact_field";
     const registros = contato ? contatosUsados : deals;
@@ -285,7 +284,7 @@ export function montarFunil(entrada: {
     etapas: etapas.slice().sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0)).map((e) => ({ id: stringValue(e.id), nome: stringValue(e.name) || stringValue(e.id) })),
     campos: personalizadas.map((f) => { const [entidade, slug] = f.fonte.split(":") as ["deal" | "contact", string]; return { slug, nome: porFonte.get(f.fonte)?.nome || slug, entidade, tipo: f.tipo }; })
       .sort((a, b) => `${a.entidade}:${a.nome}`.localeCompare(`${b.entidade}:${b.nome}`, "pt-BR")),
-    camposNativos: vistos.camposNativos.map((n) => ({ fonte: n.fonte, rotulo: rotuloNativoCrm(n.fonte) })),
+    camposNativos: nativosDoFunil.map((fonte) => ({ fonte, rotulo: rotuloNativoCrm(fonte) })),
     fontes,
     filtros,
     sugestoes: sugerirOrigens(fontes),
@@ -293,8 +292,8 @@ export function montarFunil(entrada: {
   };
 }
 
-/** Lê o RD com poucas chamadas (≈ 5 + 3 por funil) e monta o catálogo de todos os funis. */
-export async function montarCatalogoCrm(env: Env, deps: { rd?: LeitorRd } = {}): Promise<FunilCatalogo[]> {
+/** Lê o RD com poucas chamadas (≈ 5 + 2 por funil) e monta o catálogo de todos os funis. */
+export async function montarCatalogoCrm(env: Env, deps: { rd?: LeitorRd; contatosPorFunil?: Map<string, Map<string, Json>> } = {}): Promise<FunilCatalogo[]> {
   const rd = deps.rd ?? leitorRd(env);
   const opcional = (recurso: string) => comRetentativa(() => rd.listar(recurso)).catch(() => [] as Json[]);
   const [funis, camposRd, usuarios, fontesRd, campanhas] = await Promise.all([
@@ -308,8 +307,8 @@ export async function montarCatalogoCrm(env: Env, deps: { rd?: LeitorRd } = {}):
       comRetentativa(() => rd.get(`/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)).then((r) => arrayValue(r.data).map(objectValue)),
       amostraDoFunil(rd, id),
     ]);
-    const { contatos, indisponivel } = await contatosDaAmostra(rd, deals);
-    return montarFunil({ funil, etapas, deals, contatos, contatosIndisponiveis: indisponivel, camposRd, usuarios, fontesRd, campanhas });
+    const contatos = deps.contatosPorFunil?.get(id) ?? new Map<string, Json>();
+    return montarFunil({ funil, etapas, deals, contatos, contatosIndisponiveis: false, camposRd, usuarios, fontesRd, campanhas });
   });
 }
 
@@ -341,6 +340,22 @@ function resposta(g: Guardado, origem: CatalogoCrm["catalogo"]["origem"], agora 
   };
 }
 
+/** Contatos já lidos pela importação (rd_snapshot._sra_contato), até 50 por funil, para contar preenchimento. */
+async function contatosGuardados(db: Db): Promise<Map<string, Map<string, Json>>> {
+  const porFunil = new Map<string, Map<string, Json>>();
+  const { data, error } = await db.from("novas_vendas").select("rd_pipeline_id,contato:rd_snapshot->_sra_contato").not("rd_pipeline_id", "is", null).order("updated_at", { ascending: false }).limit(3000);
+  if (error) return porFunil;
+  for (const v of (data ?? []) as Json[]) {
+    const dados = objectValue(objectValue(v.contato ?? objectValue(v.rd_snapshot)._sra_contato).dados);
+    const id = stringValue(dados.id);
+    if (!id) continue;
+    const mapa = porFunil.get(String(v.rd_pipeline_id)) ?? new Map<string, Json>();
+    if (mapa.size < 50) mapa.set(id, dados);
+    porFunil.set(String(v.rd_pipeline_id), mapa);
+  }
+  return porFunil;
+}
+
 /** Monta e guarda. Chamadas simultâneas reaproveitam a mesma leitura do RD. */
 export async function atualizarCatalogoCrm(env: Env, deps: { db?: Db; rd?: LeitorRd } = {}): Promise<CatalogoCrm> {
   const db = deps.db ?? createServiceSupabaseClient(env);
@@ -348,7 +363,7 @@ export async function atualizarCatalogoCrm(env: Env, deps: { db?: Db; rd?: Leito
     emAndamento = (async () => {
       const inicio = Date.now();
       try {
-        const funis = await montarCatalogoCrm(env, { rd: deps.rd });
+        const funis = await montarCatalogoCrm(env, { rd: deps.rd, contatosPorFunil: await contatosGuardados(db) });
         const atualizadoEm = new Date().toISOString();
         const duracaoMs = Date.now() - inicio;
         const { error } = await db.from("integracao_catalogos").upsert(

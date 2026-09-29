@@ -246,6 +246,31 @@ describe("importação", () => {
     expect(nv1()).toMatchObject({ banco_local: "Banco B", email: "certo@x.com" });
   });
 
+  it("contato guardado evita reler no RD: só negociações novas são lidas; o cache fica na venda", async () => {
+    const { db, tabela } = cenario();
+    const lidos: string[][] = [];
+    const base = fontes([deal("C1"), deal("C2")], [contato("C1", "Ana", "61 91111-0001", "a@x.com"), contato("C2", "Bea", "61 91111-0002", "b@x.com")]);
+    const todos = new Map([contato("C1", "Ana", "61 91111-0001", "a@x.com"), contato("C2", "Bea", "61 91111-0002", "b@x.com"), contato("C3", "Cris", "61 91111-0003", "c@x.com")].map((c) => [c.id, c]));
+    const comLeitura = (deals: Record<string, unknown>[]) => ({ ...base, deals: async () => deals as never[], contatos: async (ids: string[]) => { lidos.push(ids); return { contatos: new Map(ids.filter((i) => todos.has(i)).map((i) => [i, todos.get(i)!])), falhas: new Set<string>() }; } });
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: comLeitura([deal("C1"), deal("C2")]) });
+    expect(lidos[0].sort()).toEqual(["ctC1", "ctC2"]);
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "C1")!.rd_snapshot._sra_contato).toMatchObject({ dados: { id: "ctC1", name: "Ana" }, lidoEm: expect.any(String) });
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: comLeitura([deal("C1"), deal("C2"), deal("C3")]) });
+    expect(lidos[1]).toEqual(["ctC3"]);
+    // A venda existente continua com telefone/e-mail (vindos do cache), não apagados.
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "C1")).toMatchObject({ telefone: "61 91111-0001", email: "a@x.com" });
+  });
+
+  it("limite do RD (429) não vira erro nem pendência: nova fica para a próxima sincronização, existente mantém os dados", async () => {
+    const { db, tabela } = cenario();
+    const f = { ...fontes([deal("NOVA429"), deal("D-PEND")], []), contatos: async (ids: string[]) => ({ contatos: new Map(), falhas: new Set<string>(), limitadas: new Set(ids) }) };
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: f });
+    expect(r).toMatchObject({ ok: true, criadas: 0, erros: 0, adiadas: 1 });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "NOVA429")).toBeUndefined();
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ telefone: "61 98888-7777", nome_completo: "Caio Pendente" });
+    expect(tabela("integracao_pendencias")).toHaveLength(0);
+  });
+
   it("contato que não pôde ser lido no RD: nada é gravado com dados vazios", async () => {
     const { db, tabela } = cenario();
     const f = { ...fontes([deal("SEMCT")], []), contatos: async () => ({ contatos: new Map(), falhas: new Set(["ctSEMCT"]) }) };
