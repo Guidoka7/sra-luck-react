@@ -64,3 +64,5 @@ Referências verificadas: https://developers.rdstation.com/reference/crm-v2-intr
 Instalação verificada em 29/09/2026: migration registrada como `20260929204811_bi_commercial_ingestion`. As 7 tabelas têm RLS e nenhum SELECT para anon/authenticated. Nenhuma fonte nem registro comercial criado. Arquivo alinhado à versão registrada pelo conector Supabase.
 
 Advisor de segurança: somente aviso informativo “RLS Enabled No Policy” nas tabelas novas, esperado para acesso exclusivo via service_role e grants revogados aos clientes. Referência: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy .
+
+Revisão de integridade aplicada: `20260929205621_bi_projection_integrity.sql`. Ao mudar mapeamento, somente diferenças em `custom_fields` são aceitas no mesmo timestamp de origem; alteração de nome, valor ou outro fato nativo continua em quarentena. O teste isolado cobre as duas situações.

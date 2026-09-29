@@ -68,7 +68,7 @@ export async function biCollector(request: Request,env: Env,actor: string) {
   return json({ok:true,result:data});
  } catch(e) {
   const code=e instanceof Error&&/^BI_[A-Z0-9_]+$/.test(e.message)?e.message:'BI_STORAGE_UNAVAILABLE';
-  const status=/CONFLICT|BUSY|PAUSED|LEASE|OTHER_RUN/.test(code)?409:/INVALID|REQUIRED/.test(code)?400:503;
+  const status=/CONFLICT|BUSY|PAUSED|LEASE|OTHER_RUN/.test(code)?409:/INVALID|REQUIR/.test(code)?400:503;
   return json({erro:'A operação do coletor não foi concluída.',codigo:code},status);
  }
 }

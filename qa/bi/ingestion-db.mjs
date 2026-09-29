@@ -7,6 +7,7 @@ const {PGlite}=await import(process.env.PGLITE_MODULE||'@electric-sql/pglite');
 const db=new PGlite();
 await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
 await db.exec(await readFile(new URL('../../supabase/migrations/20260929204811_bi_commercial_ingestion.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../supabase/migrations/20260929205621_bi_projection_integrity.sql',import.meta.url),'utf8'));
 const source=randomUUID(),lease=randomUUID();
 const rpc=async(name,args)=>(await db.query(`select ${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) as result`,args.map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows[0].result;
 const count=async(table)=>(await db.query('select count(*)::int as n from '+table)).rows[0].n;
@@ -42,7 +43,9 @@ await commit([],3,true,randomUUID());
 // A new mapping changes the projection, not the source version. Re-reading is legitimate.
 await rpc('bi_save_mapping',[source,1,{version:1,funnels:[]},'qa-owner']);
 run=await rpc('bi_start_run',[source,'commercial',checkpoint,'qa-owner']);await rpc('bi_claim_run',[run.id,lease]);
-result=await commit([record('d1','New projection QA','2026-09-28T00:00:00Z','e')],0,false,randomUUID());assert.equal(result.changed,1);assert.equal(result.quarantined,0);
+result=await commit([record('d1','Changed native QA','2026-09-28T00:00:00Z','f')],0,false,randomUUID());assert.equal(result.quarantined,1);
+await claim();
+result=await commit([{...record('d1','Lead QA','2026-09-28T00:00:00Z','e'),data:{id:'d1',name:'Lead QA',custom_fields:{seller:'QA seller'}}}],1,false,randomUUID());assert.equal(result.changed,1);assert.equal(result.quarantined,0);
 assert.equal((await db.query('select mapping_version from bi_records')).rows[0].mapping_version,2);
 // Failures preserve cursor, respect retry delay and eventually pause.
 for(let i=0;i<5;i++){await claim();await rpc('bi_fail_run',[run.id,lease,'BI_RD_HTTP_429',{page:1},30]);}
