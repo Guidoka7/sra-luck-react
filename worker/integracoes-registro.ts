@@ -651,7 +651,7 @@ export async function salvarConfig(env: Env, entrada: { provedor?: unknown; func
   if (erroLeitura) return { ok: false as const, status: 409, codigo: "migration_090", erro: "A estrutura de configuração ainda não foi aplicada neste ambiente (migration_090)." };
   const versaoAtual = atual?.versao ?? 0;
   if (entrada.versao !== undefined && Number(entrada.versao) !== versaoAtual) {
-    return { ok: false as const, status: 409, codigo: "conflito_versao", erro: "Outra pessoa alterou esta configuração. Recarregue antes de salvar." };
+    return { ok: false as const, status: 409, codigo: "conflito_versao", versaoAtual, erro: `A configuração foi alterada enquanto você editava (agora na versão ${versaoAtual}). Suas escolhas continuam na tela: confira e salve de novo.` };
   }
   const agora = new Date().toISOString();
   const linha = { provedor, funcao, config: validado.config, versao: versaoAtual + 1, atualizado_por: autor, atualizado_em: agora };

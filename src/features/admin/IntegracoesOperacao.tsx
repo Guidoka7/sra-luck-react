@@ -96,7 +96,16 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
   async function salvar() {
     setSalvando(true); setMsg(null);
     try {
-      const r = await api("/api/admin/integrations/config", { method: "POST", body: { provedor, funcao, config: valores, versao: fn?.versao ?? 0 } });
+      const resposta = await fetch("/api/admin/integrations/config", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provedor, funcao, config: valores, versao: fn?.versao ?? 0 }) });
+      const r = await resposta.json().catch(() => ({})) as Json;
+      if (resposta.status === 409 && r.codigo === "conflito_versao" && typeof r.versaoAtual === "number") {
+        // A configuração mudou enquanto a tela estava aberta: mantém as escolhas desta tela e passa a
+        // usar a versão nova. Antes, cada nova tentativa era recusada e recarregar apagava a seleção.
+        setFn((atual) => (atual ? { ...atual, versao: r.versaoAtual } : atual));
+        setMsg({ t: String(r.erro), ok: false });
+        return;
+      }
+      if (!resposta.ok) throw new Error(String(r.erro ?? "Não foi possível salvar a configuração."));
       setMsg({ t: `Configuração salva (versão ${r.versao}).`, ok: true }); await carregar();
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); } finally { setSalvando(false); }
   }
@@ -166,7 +175,8 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
       {c.ajuda && <span style={{ ...muted, fontWeight: 400 }}>{c.ajuda}</span>}
     </label>)}
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-      <span style={muted}>{fn.versao ? `Versão ${fn.versao} · ${dataHora(fn.atualizadoEm)}` : "Sem configuração salva: valem os padrões."}</span>
+      <span style={muted}>{fn.versao ? `Versão ${fn.versao} · ${dataHora(fn.atualizadoEm)}` : "Sem configuração salva: valem os padrões."}
+        {JSON.stringify(valores) !== JSON.stringify(fn.config ?? {}) && <strong style={{ color: "var(--gold)", marginLeft: 6 }}>· Alterações ainda não salvas: só valem depois de "Salvar configuração".</strong>}</span>
       <button style={btnPrim} disabled={salvando} onClick={() => void salvar()}>{salvando ? "Salvando…" : "Salvar configuração"}</button>
     </div>
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />

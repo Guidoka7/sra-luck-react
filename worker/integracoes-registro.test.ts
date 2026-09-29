@@ -89,7 +89,7 @@ describe("configuração do Gemini por função", () => {
   it("salvar exige versão atual, registra auditoria e rejeita função desconhecida", async () => {
     const { db, tabelas } = bancoFalso([{ provedor: "gemini", funcao: "mensagem_diaria", config: {}, versao: 2 }]);
     expect(await salvarConfig(env, { provedor: "gemini", funcao: "mensagem_diaria", config: { ativo: false }, versao: 1 }, "col-1", { db }))
-      .toMatchObject({ ok: false, codigo: "conflito_versao" });
+      .toMatchObject({ ok: false, codigo: "conflito_versao", versaoAtual: 2 });
     expect(await salvarConfig(env, { provedor: "gemini", funcao: "mensagem_diaria", config: { ativo: false }, versao: 2 }, "col-1", { db }))
       .toMatchObject({ ok: true, versao: 3, config: { ativo: false } });
     expect(tabelas.get("logs_alteracoes")).toHaveLength(1);
