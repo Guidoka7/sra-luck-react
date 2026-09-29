@@ -435,6 +435,11 @@ export async function processarNegociacao(db: Db, entrada: {
   const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
+  // O filtro configurado vale também para vendas já importadas. Caso contrário,
+  // elas eram contadas como atualizadas mesmo fora do escopo e escondiam a exclusão de vendas novas.
+  const fora = passaNoFiltro(s, config);
+  if (fora) return { ...base, resultado: "ignorada", motivo: fora };
+
   const existente = existenteIdx;
   if (existente && contatoAdiado && !contato) {
     // Sem contato (limite do RD): não remapeia para não apagar telefone/CPF; só o snapshot.
@@ -461,8 +466,6 @@ export async function processarNegociacao(db: Db, entrada: {
     };
   }
 
-  const fora = passaNoFiltro(s, config);
-  if (fora) return { ...base, resultado: "ignorada", motivo: fora };
   if (!valores.nome || valores.nome === "Cliente RD Station") return { ...base, resultado: "ignorada", motivo: "Negociação sem nome de contato." };
 
   const telefones = chavesTelefone(valores, contato);
