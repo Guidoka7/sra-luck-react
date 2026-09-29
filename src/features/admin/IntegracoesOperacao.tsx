@@ -269,8 +269,9 @@ const ACOES: Record<string, { rotulo: string; acoes: [string, string][] }> = {
 
 /** modo "equipe": conflitos, fila, vínculos, histórico e sincronização (conexão e configuração são do Dev). */
 /**
- * Responsável do RD ↔ pessoa da equipe (identificador estável, nunca pelo nome). Sem vínculo,
- * a venda fica com a pendência "vendedora sem vínculo" e não conta como venda válida no BI.
+ * Responsável do RD ↔ pessoa da equipe (identificador estável, nunca pelo nome). OPCIONAL
+ * (migration_116): sem vínculo a venda entra e conta normalmente, com o nome do responsável do RD;
+ * o vínculo só liga a venda à pessoa da equipe.
  */
 function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | null) => void }) {
   const [dados, setDados] = useState<Json | null>(null);
@@ -286,7 +287,7 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
   const nomeDe = (id: string) => equipe.find((c) => c.id === id)?.nome ?? "—";
   async function vincular(rdUserId: string) {
     const colaboradorId = escolha[rdUserId];
-    if (!colaboradorId) { onMsg({ t: "Escolha a vendedora ou SDR.", ok: false }); return; }
+    if (!colaboradorId) return;
     setSalvando(rdUserId);
     try {
       const r = await api("/api/admin/integrations/rd-station/responsaveis", { method: "POST", body: { rdUserId, colaboradorId } });
@@ -295,7 +296,9 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
     } catch (e) { onMsg({ t: (e as Error).message, ok: false }); } finally { setSalvando(null); }
   }
   return <>
-    <div style={titulo}>Responsáveis do RD sem vínculo ({sem.length})</div>
+    <details style={{ marginTop: 12 }}>
+    <summary style={{ ...titulo, cursor: "pointer" }}>Vincular responsáveis do RD à equipe · opcional ({sem.length} sem vínculo)</summary>
+    <div style={{ ...caixa, marginBottom: 6 }}>Opcional. Sem vínculo, a venda é importada e conta normalmente, com o nome do responsável que vem do RD. Vincule só quem você quer ligar a uma pessoa da equipe.</div>
     {sem.length === 0 ? <div style={caixa}>Todos os responsáveis do RD estão vinculados a uma pessoa da equipe.</div>
       : equipe.length === 0 ? <div style={caixa}>Cadastre vendedoras e SDRs em Equipe para vincular os responsáveis do RD.</div>
       : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{sem.map((r) => <div key={r.rdUserId} style={{ ...caixa, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -304,8 +307,9 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
           <option value="">Escolher pessoa da equipe…</option>
           {equipe.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.cargo === "sdr" ? "SDR" : "vendedora"})</option>)}
         </select>
-        <button style={btnPrim} disabled={salvando === r.rdUserId} onClick={() => void vincular(r.rdUserId)}>{salvando === r.rdUserId ? "Gravando…" : "Vincular"}</button>
+        <button style={btnPrim} disabled={!escolha[r.rdUserId] || salvando === r.rdUserId} title={escolha[r.rdUserId] ? undefined : "Escolha a pessoa da equipe para vincular"} onClick={() => void vincular(r.rdUserId)}>{salvando === r.rdUserId ? "Gravando…" : "Vincular"}</button>
       </div>)}</div>}
+    </details>
   </>;
 }
 

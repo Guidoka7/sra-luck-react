@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
@@ -24,7 +24,7 @@ import styles from "./ClienteDrawer.module.css";
 
 export type AbaDrawer = "process" | "profile" | "finance" | "journey";
 type Central = { estagio: EstagioDrawer; cartao: CartaoCliente };
-type OrigemCrmBadge = { funil: string | null; etapa: string | null };
+type OrigemCrmBadge = { funil: string | null; etapa: string | null; campos?: { rotulo: string; valor: string | null; situacao: string }[] };
 
 export interface ClienteDrawerProps {
   /** `null` abre o cadastro de uma nova cliente (somente Perfil). */
@@ -368,6 +368,15 @@ function DrawerConteudo(props: ClienteDrawerProps & {
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(estagio, concluido)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
         </div>}
+        {origemCrm?.campos?.length ? <details style={{ marginTop: 8, fontSize: 12 }}>
+          <summary style={{ cursor: "pointer", opacity: 0.85 }}>Dados do RD escolhidos no Console ({origemCrm.campos.length})</summary>
+          <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
+            {origemCrm.campos.map((campo, i) => <Fragment key={`${campo.rotulo}-${i}`}>
+              <dt style={{ opacity: 0.7 }}>{campo.rotulo}</dt>
+              <dd style={{ margin: 0, overflowWrap: "anywhere" }}>{campo.valor ?? (campo.situacao === "origem_nao_carregada" ? "Não lido do RD" : "Vazio no RD")}</dd>
+            </Fragment>)}
+          </dl>
+        </details> : null}
       </div>
       <div className={styles.actions}>
         {!criando && <div className={styles.statusWrap} data-client-status-control>

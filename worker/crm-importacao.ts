@@ -14,7 +14,7 @@
  */
 import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
-  arrayValue, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
+  arrayValue, idsContatoDaNegociacao, lerContatosRd, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
@@ -141,9 +141,10 @@ export function extrairCamposSelecionados(s: RdDealSnapshot, deal: Json, contato
   });
 }
 
-/** Primeiro item de listas do RD (phones: [{ phone }], emails: [{ email }]). */
+/** Primeiro item de listas do RD (phones: [{ phone }], emails: [{ email }]); celular tem preferência. */
 function primeiroValor(v: unknown): unknown {
-  const item = Array.isArray(v) ? v[0] : v;
+  const lista = Array.isArray(v) ? v : null;
+  const item = lista ? (lista.find((x) => x && typeof x === "object" && (x as Json).type === "mobile" && (x as Json).phone) ?? lista.find((x) => x && (typeof x !== "object" || (x as Json).phone || (x as Json).email || (x as Json).value)) ?? lista[0]) : v;
   if (item && typeof item === "object") {
     const o = item as Json;
     return o.phone ?? o.email ?? o.value ?? o.number ?? o.name ?? null;
@@ -210,11 +211,22 @@ export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json |
   return out;
 }
 
-// ------------------------------------------------------------------ deduplicação
+// ------------------------------------------------------------------ deduplicação (somente telefone)
 
+/**
+ * Chave do telefone brasileiro: DDD + número (11 dígitos no celular, 10 no fixo).
+ * Aceita +55, 0055, zero de longa distância, código de operadora (0 + 2 dígitos) e o
+ * celular antigo de 8 dígitos (ganha o 9). Sem DDD não há chave: número local é ambíguo.
+ */
 export function chaveTelefone(bruto: unknown): string | null {
   let d = stringValue(bruto).replace(/\D/g, "");
+  if (d.startsWith("0")) {
+    d = d.replace(/^0+/, "");
+    // 0 + operadora (2 dígitos) + DDD + número.
+    if (!d.startsWith("55") && (d.length === 12 || d.length === 13)) d = d.slice(2);
+  }
   if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
+  if (!/^[1-9][0-9]/.test(d)) return null;
   if (d.length === 11) return d;
   // Celular no formato antigo (8 dígitos começando com 6–9) ganha o 9; fixo (2–5) fica como está.
   if (d.length === 10) return /^[6-9]$/.test(d[2]) ? `${d.slice(0, 2)}9${d.slice(2)}` : d;
@@ -223,10 +235,43 @@ export function chaveTelefone(bruto: unknown): string | null {
 export const chaveCpf = (v: unknown) => { const d = stringValue(v).replace(/\D/g, ""); return d.length === 11 ? d : null; };
 export const chaveEmail = (v: unknown) => { const e = stringValue(v).trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e : null; };
 
+/** Todas as chaves de telefone da negociação: o telefone preenchido e todos os telefones do contato. */
+export function chavesTelefone(valores: { telefone?: unknown }, contato?: Json): string[] {
+  const chaves = new Set<string>();
+  const add = (v: unknown) => { const k = chaveTelefone(v); if (k) chaves.add(k); };
+  add(valores.telefone);
+  for (const p of arrayValue(contato?.phones)) add(typeof p === "object" && p ? (p as Json).phone : p);
+  add(contato?.phone);
+  add(contato?.mobile_phone);
+  return [...chaves];
+}
+
+/** Colunas locais que vêm do preenchimento configurado no Console. */
+const COLUNAS_PREENCHIDAS: [keyof ValoresVenda, string][] = [
+  ["nome", "nome_completo"], ["cpf", "cpf"], ["telefone", "telefone"], ["email", "email"], ["vendedora", "vendedora_responsavel"],
+  ["valor_contrato", "valor_contrato"], ["quantidade_parcelas", "quantidade_parcelas"], ["valor_parcela", "valor_parcela"],
+  ["taxa_administrativa", "taxa_administrativa"], ["tipo_venda", "tipo_venda"], ["procedimento", "procedimento_local"],
+  ["banco", "banco_local"], ["origem", "origem_venda"], ["campanha", "campanha_local"],
+];
+const vazio = (v: unknown) => v === undefined || v === null || v === "" || (typeof v === "number" && v === 0);
+
+/** Quantos dados a negociação traz preenchidos (mais completa ganha entre duplicatas do mesmo telefone). */
+export function completude(valores: ValoresVenda, camposSelecionados: { situacao: string }[] = []) {
+  return COLUNAS_PREENCHIDAS.filter(([campo]) => !vazio(valores[campo])).length + camposSelecionados.filter((c) => c.situacao === "presente").length;
+}
+function completudeDaLinha(linha: Json) {
+  return COLUNAS_PREENCHIDAS.filter(([, coluna]) => !vazio(linha[coluna])).length;
+}
+
 type Registro = { tipo: "cliente" | "venda"; id: string; nome: string | null; rdId?: string | null };
+type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json };
 export type IndiceDedupe = {
   porCpf: Map<string, Registro[]>; porTelefone: Map<string, Registro[]>; porEmail: Map<string, Registro[]>;
   vendaPorRd: Map<string, { id: string; status: string }>;
+  /** Vendas conhecidas pelo id, com as colunas locais (para completar/atualizar sem tocar no que foi editado). */
+  vendaPorId?: Map<string, VendaIndexada>;
+  /** Colunas editadas à mão no Admin por venda: nunca são sobrescritas pela importação. */
+  editadasNoAdmin?: Map<string, Set<string>>;
 };
 
 function adicionar(mapa: Map<string, Registro[]>, chave: string | null, r: Registro) {
@@ -237,12 +282,13 @@ function adicionar(mapa: Map<string, Registro[]>, chave: string | null, r: Regis
 }
 
 export function indiceVazio(): IndiceDedupe {
-  return { porCpf: new Map(), porTelefone: new Map(), porEmail: new Map(), vendaPorRd: new Map() };
+  return { porCpf: new Map(), porTelefone: new Map(), porEmail: new Map(), vendaPorRd: new Map(), vendaPorId: new Map(), editadasNoAdmin: new Map() };
 }
 
-export function indexar(indice: IndiceDedupe, r: Registro, dados: { cpf?: unknown; telefone?: unknown; email?: unknown }) {
+export function indexar(indice: IndiceDedupe, r: Registro, dados: { cpf?: unknown; telefone?: unknown; email?: unknown }, outrasChaves: string[] = []) {
   adicionar(indice.porCpf, chaveCpf(dados.cpf), r);
   adicionar(indice.porTelefone, chaveTelefone(dados.telefone), r);
+  for (const k of outrasChaves) adicionar(indice.porTelefone, k, r);
   adicionar(indice.porEmail, chaveEmail(dados.email), r);
 }
 
@@ -257,11 +303,14 @@ async function todasAsLinhas<T>(consulta: (de: number, ate: number) => PromiseLi
   return linhas;
 }
 
+const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
+
 export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   const indice = indiceVazio();
-  const [clientes, vendas] = await Promise.all([
+  const [clientes, vendas, edicoes] = await Promise.all([
     todasAsLinhas<Json>((de, ate) => db.from("clientes").select("id,nome_completo,cpf,telefone,email,arquivado_em").order("id").range(de, ate)),
-    todasAsLinhas<Json>((de, ate) => db.from("novas_vendas").select("id,rd_station_id,cliente_id,nome_completo,cpf,telefone,email,status").order("id").range(de, ate)),
+    todasAsLinhas<Json>((de, ate) => db.from("novas_vendas").select(COLUNAS_VENDA).order("id").range(de, ate)),
+    todasAsLinhas<Json>((de, ate) => db.from("logs_alteracoes").select("entidade_id,detalhes").eq("acao", "editou_venda_local_sem_sync_rd").order("entidade_id").range(de, ate)).catch(() => [] as Json[]),
   ]);
   for (const c of clientes) {
     if (c.arquivado_em) continue; // arquivada libera o CPF (migration_077)
@@ -269,25 +318,28 @@ export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   }
   for (const v of vendas) {
     if (v.rd_station_id) indice.vendaPorRd.set(String(v.rd_station_id), { id: v.id, status: v.status });
+    indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v });
     if (!v.cliente_id) indexar(indice, { tipo: "venda", id: v.id, nome: v.nome_completo ?? null, rdId: v.rd_station_id ?? null }, v);
+  }
+  for (const e of edicoes) {
+    const id = String(e.entidade_id);
+    const set = indice.editadasNoAdmin!.get(id) ?? new Set<string>();
+    for (const c of arrayValue(objectValue(e.detalhes).campos)) set.add(String(c));
+    indice.editadasNoAdmin!.set(id, set);
   }
   return indice;
 }
 
-export function procurarDuplicidade(indice: IndiceDedupe, valores: ValoresVenda, config: ConfigCrm, rdId: string): Correspondencia[] {
+/** Duplicata é SOMENTE mesmo telefone (DDD + número). CPF, e-mail e nome não bastam. */
+export function procurarDuplicidade(indice: IndiceDedupe, valores: ValoresVenda, config: ConfigCrm, rdId: string, outrasChaves: string[] = []): Correspondencia[] {
+  if (config.deduplicarPor.telefone === false) return [];
   const achados = new Map<string, Correspondencia>();
-  const marcar = (lista: Registro[] | undefined, por: "cpf" | "telefone" | "email") => {
-    for (const r of lista ?? []) {
+  for (const chave of new Set([chaveTelefone(valores.telefone), ...outrasChaves].filter(Boolean) as string[])) {
+    for (const r of indice.porTelefone.get(chave) ?? []) {
       if (r.tipo === "venda" && r.rdId === rdId) continue;
-      const k = `${r.tipo}:${r.id}`;
-      const atual = achados.get(k) ?? { tipo: r.tipo, id: r.id, nome: r.nome, por: [] };
-      if (!atual.por.includes(por)) atual.por.push(por);
-      achados.set(k, atual);
+      achados.set(`${r.tipo}:${r.id}`, { tipo: r.tipo, id: r.id, nome: r.nome, por: ["telefone"] });
     }
-  };
-  if (config.deduplicarPor.cpf) marcar(indice.porCpf.get(chaveCpf(valores.cpf) ?? ""), "cpf");
-  if (config.deduplicarPor.telefone) marcar(indice.porTelefone.get(chaveTelefone(valores.telefone) ?? ""), "telefone");
-  if (config.deduplicarPor.email) marcar(indice.porEmail.get(chaveEmail(valores.email) ?? ""), "email");
+  }
   return [...achados.values()];
 }
 
@@ -325,40 +377,88 @@ function linhaNovaVenda(s: RdDealSnapshot, v: ValoresVenda, importacaoId: string
   };
 }
 
+/** Venda ainda em "Aguardando cadastro" e sem cliente: a cópia local segue o preenchimento do Console. */
+const pendenteDeCadastro = (v: VendaIndexada | undefined) => Boolean(v && !v.clienteId && v.status === "aguardando_cadastro");
+
+/**
+ * Colunas locais que mudam para refletir o preenchimento atual. Nunca mexe no que a equipe
+ * editou no Admin; `soVazias` = só completa o que está vazio (duplicata mais completa).
+ */
+function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<string> | undefined, soVazias: boolean) {
+  const patch: Json = {};
+  for (const [campo, coluna] of COLUNAS_PREENCHIDAS) {
+    if (editadas?.has(coluna)) continue;
+    const novo = valores[campo];
+    if (campo === "nome" && vazio(novo)) continue;
+    if (soVazias && (!vazio(v.linha[coluna]) || vazio(novo))) continue;
+    if ((v.linha[coluna] ?? null) === (novo ?? null)) continue;
+    patch[coluna] = novo ?? null;
+  }
+  return patch;
+}
+
 export async function processarNegociacao(db: Db, entrada: {
   deal: Json; snapshot: RdDealSnapshot; contato?: Json; config: ConfigCrm; indice: IndiceDedupe; importacaoId: string | null;
+  /** A negociação tem contato no RD, mas ele não pôde ser lido agora. */
+  contatoIndisponivel?: boolean;
 }): Promise<ItemImportacao> {
-  const { deal, snapshot: s, contato, config, indice, importacaoId } = entrada;
+  const { deal, snapshot: s, contato, config, indice, importacaoId, contatoIndisponivel } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
   const camposSelecionados = extrairCamposSelecionados(s, deal, contato, config);
-  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados } } };
+  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores } } };
   const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
   const existente = indice.vendaPorRd.get(s.rdStationId);
   if (existente) {
-    // Mesma negociação: só o snapshot rd_* muda; a cópia local e o status ficam.
-    const { error } = await db.from("novas_vendas").update(snapshotUpdatePreservandoLocal(snapshotSelecionado)).eq("id", existente.id);
-    if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar o snapshot do RD." };
-    return { ...base, resultado: "atualizada", motivo: "Só o snapshot do RD foi atualizado; dados locais preservados.", nova_venda_id: existente.id };
+    if (contatoIndisponivel) {
+      // Sem o contato, os dados dele sairiam vazios: mantém a venda como está.
+      return { ...base, resultado: "erro", motivo: "O contato desta negociação não pôde ser lido no RD agora; a venda não foi alterada. Reprocessar.", nova_venda_id: existente.id };
+    }
+    const venda = indice.vendaPorId?.get(existente.id);
+    const patch = venda && pendenteDeCadastro(venda) ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false) : {};
+    const { error } = await db.from("novas_vendas").update({ ...snapshotUpdatePreservandoLocal(snapshotSelecionado), ...patch }).eq("id", existente.id);
+    if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar a venda com os dados do RD." };
+    if (venda) Object.assign(venda.linha, patch);
+    const colunas = Object.keys(patch);
+    return {
+      ...base, resultado: "atualizada", nova_venda_id: existente.id,
+      motivo: colunas.length ? `Dados atualizados conforme o Console: ${colunas.join(", ")}.` : pendenteDeCadastro(venda) ? "Sem mudança nos dados." : "Venda já cadastrada: só o snapshot do RD foi atualizado; dados locais preservados.",
+    };
   }
 
   const fora = passaNoFiltro(s, config);
   if (fora) return { ...base, resultado: "ignorada", motivo: fora };
+  if (contatoIndisponivel) return { ...base, resultado: "erro", motivo: "O contato desta negociação não pôde ser lido no RD agora; nada foi gravado. Reprocessar." };
   if (!valores.nome || valores.nome === "Cliente RD Station") return { ...base, resultado: "ignorada", motivo: "Negociação sem nome de contato." };
 
-  const correspondencias = procurarDuplicidade(indice, valores, config, s.rdStationId);
+  const telefones = chavesTelefone(valores, contato);
+  const correspondencias = procurarDuplicidade(indice, valores, config, s.rdStationId, telefones);
   if (correspondencias.length && await duplicidadeJaDecidida(db, s.rdStationId)) {
     // "É a mesma pessoa" já foi decidido: não volta para a revisão a cada execução.
     return { ...base, correspondencias, resultado: "ignorada", motivo: "Duplicidade já decidida na revisão: mesma pessoa. Nada foi criado." };
   }
   if (correspondencias.length) {
-    const cliente = correspondencias.some((c) => c.tipo === "cliente");
-    const chaves = [...new Set(correspondencias.flatMap((c) => c.por))].join(", ");
+    if (correspondencias.some((c) => c.tipo === "cliente")) {
+      return { ...base, correspondencias, resultado: "cliente_existente", motivo: "Já existe cliente com o mesmo telefone. Nada foi criado nem alterado." };
+    }
+    // Mesmo telefone de venda ainda pendente: fica UM perfil, o mais completo. Esta negociação
+    // completa o que estiver vazio na venda existente (nada preenchido é sobrescrito).
+    const minha = completude(valores, camposSelecionados);
+    const completadas: string[] = [];
+    for (const c of correspondencias) {
+      const venda = indice.vendaPorId?.get(c.id);
+      if (!venda || !pendenteDeCadastro(venda) || minha <= completudeDaLinha(venda.linha)) continue;
+      const patch = patchLocal(venda, valores, indice.editadasNoAdmin?.get(c.id), true);
+      if (!Object.keys(patch).length) continue;
+      const { error } = await db.from("novas_vendas").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", c.id);
+      if (!error) { Object.assign(venda.linha, patch); completadas.push(...Object.keys(patch)); }
+    }
     return {
-      ...base, correspondencias,
-      resultado: cliente ? "cliente_existente" : "duplicada",
-      motivo: cliente ? `Já existe cliente com o mesmo ${chaves}. Nada foi criado nem alterado.` : `Já existe venda aguardando cadastro com o mesmo ${chaves}. Nada foi criado nem alterado.`,
+      ...base, correspondencias, resultado: "duplicada",
+      motivo: completadas.length
+        ? `Mesmo telefone de venda já pendente. Esta negociação era mais completa: ${[...new Set(completadas)].join(", ")} foram completados na venda existente. Nenhuma venda nova foi criada.`
+        : "Mesmo telefone de venda já pendente (a existente é a mais completa). Nenhuma venda nova foi criada.",
     };
   }
 
@@ -369,26 +469,30 @@ export async function processarNegociacao(db: Db, entrada: {
   }
   const id = String((data as Json).id);
   indice.vendaPorRd.set(s.rdStationId, { id, status: "aguardando_cadastro" });
-  indexar(indice, { tipo: "venda", id, nome: valores.nome, rdId: s.rdStationId }, valores);
+  const linha = linhaNovaVenda(snapshotSelecionado, valores, importacaoId) as Json;
+  indice.vendaPorId?.set(id, { id, status: "aguardando_cadastro", clienteId: null, linha: { ...linha, id } });
+  indexar(indice, { tipo: "venda", id, nome: valores.nome, rdId: s.rdStationId }, valores, telefones);
   return { ...base, resultado: "criada", motivo: "Entrou em Aguardando cadastro.", nova_venda_id: id };
 }
 
 // ------------------------------------------------------------------ importação completa
 
+type LeituraContatos = { contatos: Map<string, Json>; falhas: Set<string> };
 type Fontes = {
   deals: (filtro: string) => Promise<Json[]>;
   refs: () => Promise<{ contatos: Json[]; usuarios: Json[]; campanhas: Json[]; fontes: Json[] }>;
+  /** Contatos das negociações lidas, por id. Sem esta fonte, usa `refs().contatos`. */
+  contatos?: (ids: string[]) => Promise<LeituraContatos>;
 };
 
 function fontesRd(env: Env): Fontes {
   return {
     deals: (filtro) => listarTudo(env, "deals", filtro || undefined),
     refs: async () => {
-      const [contatos, usuarios, campanhas, fontes] = await Promise.all([
-        listarSeguro(env, "contacts"), listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources"),
-      ]);
-      return { contatos, usuarios, campanhas, fontes };
+      const [usuarios, campanhas, fontes] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources")]);
+      return { contatos: [], usuarios, campanhas, fontes };
     },
+    contatos: (ids) => lerContatosRd(env, ids),
   };
 }
 
@@ -463,8 +567,22 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       const id = stringValue(deal.id) || `__sem_id_${anonimo++}`;
       if (!porId.has(id)) porId.set(id, deal);
     }
-    const deals = [...porId.values()];
-    const refs = { contatos: mapById(r.contatos), usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
+    const lidas = [...porId.values()];
+    // Contatos só das negociações lidas (antes: a base inteira de contatos, que estourava o limite
+    // e deixava telefone/CPF vazios em silêncio).
+    const idsContato = lidas.map((d) => idsContatoDaNegociacao(d)[0]).filter(Boolean) as string[];
+    const leitura: LeituraContatos = fontes.contatos ? await fontes.contatos(idsContato) : { contatos: mapById(r.contatos), falhas: new Set() };
+    const refs = { contatos: leitura.contatos, usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
+    // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
+    // viram duplicatas dela. Negociações já importadas mantêm a ordem.
+    const pontos = new Map<Json, number>();
+    for (const d of lidas) {
+      const sn = normalizarDealRd(d, refs);
+      if (!sn || indice.vendaPorRd.has(sn.rdStationId)) { pontos.set(d, Infinity); continue; }
+      const contato = sn.rdContactId ? refs.contatos.get(sn.rdContactId) : undefined;
+      pontos.set(d, completude(aplicarMapeamento(sn, d, contato, config), extrairCamposSelecionados(sn, d, contato, config)));
+    }
+    const deals = lidas.slice().sort((a, b) => (pontos.get(b) ?? 0) - (pontos.get(a) ?? 0));
     const itens: ItemImportacao[] = [];
     // Itens gravados DURANTE a execução: se a função for interrompida no meio, o que já foi
     // feito continua visível (antes, 914 vendas ficaram sem nenhum item — docs/DIAGNOSTICO-RD).
@@ -473,7 +591,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       const pendentes = itens.slice(gravados);
       if (!fim && pendentes.length < LOTE_ITENS) return;
       // Item "atualizada" sem mudança é ruído no histórico; guarda só o que importa.
-      await gravarItens(db, importacaoId, pendentes.filter((i) => i.resultado !== "atualizada"));
+      await gravarItens(db, importacaoId, pendentes.filter((i) => i.resultado !== "atualizada" || Boolean(i.motivo?.startsWith("Dados atualizados"))));
       gravados = itens.length;
     };
     for (const deal of deals) {
@@ -485,8 +603,9 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
         item = { external_id: `sem-id-${chaveEstavel(deal)}`, resultado: "erro", motivo: "Negociação sem identificador no RD.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: stringValue(deal.status) || null } };
       } else {
         const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
+        const contatoIndisponivel = Boolean(snapshot.rdContactId && !contato && leitura.falhas.has(snapshot.rdContactId));
         try {
-          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId });
+          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel });
         } catch {
           item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
         }
@@ -523,15 +642,21 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
 }
 
 /** Uma negociação do webhook: mesmo filtro, mesmo mapeamento, mesma deduplicação. */
-export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao: string | null) {
-  const snapshot = normalizarDealRd(deal);
+export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao: string | null,
+  deps: { contatos?: (ids: string[]) => Promise<LeituraContatos> } = {}) {
+  // O evento traz só a negociação: o contato é lido pelo id, como na importação.
+  const idContato = idsContatoDaNegociacao(deal)[0];
+  const leitura = idContato ? await (deps.contatos ?? ((ids: string[]) => lerContatosRd(env, ids)))([idContato]) : { contatos: new Map<string, Json>(), falhas: new Set<string>() };
+  const snapshot = normalizarDealRd(deal, { contatos: leitura.contatos });
   if (!snapshot) return null;
+  const contato = snapshot.rdContactId ? leitura.contatos.get(snapshot.rdContactId) : undefined;
+  const contatoIndisponivel = Boolean(snapshot.rdContactId && !contato && leitura.falhas.has(snapshot.rdContactId));
   const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
   const { data: imp } = await db.from("integracao_importacoes")
     .insert({ provedor: "rd_station", origem: "webhook", filtro: filtroRdql(config), iniciado_por: "sistema:rd_station_webhook" }).select("id").single();
   const importacaoId = imp ? String((imp as Json).id) : null;
   const indice = await carregarIndice(db);
-  const item = await processarNegociacao(db, { deal, snapshot, config, indice, importacaoId });
+  const item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel });
   await registrarPendenciasDoItem(db, item, "webhook", importacaoId);
   if (importacaoId) {
     if (item.resultado !== "atualizada") await gravarItens(db, importacaoId, [item]);
@@ -709,6 +834,11 @@ async function lerNegociacaoRd(env: Env, id: string) {
   const deal = objectValue(r.data ?? r);
   const contatoId = stringValue(arrayValue(deal.contact_ids)[0]) || stringValue(objectValue(deal.contact).id);
   let contato: Json | undefined;
-  if (contatoId) { try { const c = await rdGet(env, `/contacts/${encodeURIComponent(contatoId)}`); contato = objectValue(c.data ?? c); } catch { contato = undefined; } }
+  if (contatoId) {
+    const { contatos } = await lerContatosRd(env, [contatoId]);
+    contato = contatos.get(contatoId);
+    // Sem o contato, telefone/CPF sairiam vazios: não reprocessa com dados incompletos.
+    if (!contato) throw new Error("RD_CONTATO_INDISPONIVEL");
+  }
   return { deal, contato };
 }

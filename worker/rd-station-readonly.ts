@@ -444,6 +444,60 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
   return itens;
 }
 
+/**
+ * Contatos das negociações, um GET /contacts/{id} por contato (o RDQL de contatos não filtra
+ * por id). Concorrência limitada e nova tentativa em 429. Falhas voltam em `falhas`: quem chama
+ * decide não gravar dados de contato vazios no lugar de dados que existem no RD.
+ */
+export async function lerContatosPorId(
+  ids: string[],
+  ler: (id: string) => Promise<Json>,
+  opcoes: { concorrencia?: number; esperas?: number[] } = {},
+): Promise<{ contatos: Map<string, Json>; falhas: Set<string> }> {
+  const unicos = [...new Set(ids.map((id) => stringValue(id)).filter(Boolean))];
+  const contatos = new Map<string, Json>();
+  const falhas = new Set<string>();
+  const esperas = opcoes.esperas ?? [1000, 3000, 6000];
+  let proximo = 0;
+  const trabalhador = async () => {
+    while (proximo < unicos.length) {
+      const id = unicos[proximo++];
+      for (let tentativa = 0; ; tentativa++) {
+        try {
+          const r = await ler(id);
+          const contato = objectValue(r.data ?? r);
+          if (stringValue(contato.id) || Object.keys(contato).length) contatos.set(id, { ...contato, id: stringValue(contato.id) || id });
+          else falhas.add(id);
+          break;
+        } catch (e) {
+          const limite = e instanceof Error && e.message === "RD_HTTP_429";
+          if (limite && tentativa < esperas.length) { await new Promise((r) => setTimeout(r, esperas[tentativa])); continue; }
+          // 404: o contato não existe mais no RD; qualquer outra falha também fica registrada.
+          falhas.add(id);
+          break;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(opcoes.concorrencia ?? 6, unicos.length) }, trabalhador));
+  return { contatos, falhas };
+}
+
+export async function lerContatosRd(env: Env, ids: string[]) {
+  return lerContatosPorId(ids, (id) => rdGet(env, `/contacts/${encodeURIComponent(id)}`));
+}
+
+/** IDs dos contatos ligados a uma negociação (v2: contact_ids; formatos antigos: contact/contacts). */
+export function idsContatoDaNegociacao(deal: Json): string[] {
+  const ids = new Set<string>();
+  const add = (v: unknown) => { const id = typeof v === "object" && v ? stringValue(objectValue(v).id) : stringValue(v); if (id) ids.add(id); };
+  add(deal.contact_id);
+  add(deal.contact);
+  for (const v of arrayValue(deal.contact_ids)) add(v);
+  for (const v of arrayValue(deal.contacts)) add(v);
+  return [...ids];
+}
+
 export async function listarSeguro(env: Env, resource: string) {
   try { return await listarTudo(env, resource); } catch { return [] as Json[]; }
 }

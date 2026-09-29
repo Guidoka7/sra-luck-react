@@ -18,7 +18,7 @@
  */
 import { configDaFuncao, rotuloNativoCrm, type CampoCrm, type ConfigCrm } from "./integracoes-registro";
 import { camposDisponiveisDoFunil, type CampoCatalogoCrm } from "./crm-opcoes-por-funil";
-import { arrayValue, listarTudo, objectValue, rdGet, stringValue } from "./rd-station-readonly";
+import { arrayValue, lerContatosPorId, listarTudo, objectValue, rdGet, stringValue } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 
 type Json = Record<string, any>;
@@ -142,17 +142,13 @@ function idsDeContato(deal: Json): string[] {
   return [...ids];
 }
 
+/** Contatos da amostra lidos um a um (o RDQL de contatos não filtra por id). 30 bastam para ver os campos. */
+const CONTATOS_POR_FUNIL = 30;
 async function contatosDaAmostra(rd: LeitorRd, deals: Json[]): Promise<{ contatos: Map<string, Json>; indisponivel: boolean }> {
-  const ids = [...new Set(deals.flatMap(idsDeContato))].slice(0, 100);
+  const ids = [...new Set(deals.flatMap((d) => idsDeContato(d).slice(0, 1)))].slice(0, CONTATOS_POR_FUNIL);
   if (!ids.length) return { contatos: new Map(), indisponivel: false };
-  try {
-    const r = await comRetentativa(() => rd.get(`/contacts?filter=${encodeURIComponent(`id:(${ids.join(",")})`)}&page[number]=1&page[size]=100`));
-    const contatos = new Map<string, Json>();
-    for (const c of arrayValue(r.data).map(objectValue)) if (stringValue(c.id)) contatos.set(stringValue(c.id), c);
-    return { contatos, indisponivel: false };
-  } catch {
-    return { contatos: new Map(), indisponivel: true };
-  }
+  const { contatos, falhas } = await lerContatosPorId(ids, (id) => rd.get(`/contacts/${encodeURIComponent(id)}`), { concorrencia: 4, esperas: [800, 2000] });
+  return { contatos, indisponivel: contatos.size === 0 && falhas.size > 0 };
 }
 
 type Regra = { campo: CampoCrm; nomes: string[]; nativos: string[] };

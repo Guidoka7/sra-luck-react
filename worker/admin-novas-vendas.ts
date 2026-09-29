@@ -32,6 +32,26 @@ function nomeNoSnapshot(snapshot: unknown, tipo: "pipeline" | "stage") {
   return null;
 }
 
+/** Campos escolhidos no Dev Console para o funil desta venda, com o valor lido do RD na última sincronização. */
+function textoDoValor(valor: unknown): string | null {
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (Array.isArray(valor)) {
+    const partes = valor.map((v) => (v && typeof v === "object" ? (v as Record<string, unknown>).phone ?? (v as Record<string, unknown>).email ?? (v as Record<string, unknown>).value ?? (v as Record<string, unknown>).name ?? "" : v))
+      .map((v) => String(v ?? "").trim()).filter(Boolean);
+    return partes.length ? partes.join(", ") : null;
+  }
+  if (typeof valor === "object") return null;
+  if (typeof valor === "boolean") return valor ? "Sim" : "Não";
+  return String(valor).trim() || null;
+}
+function camposDoConsole(snapshot: unknown) {
+  const mapa = snapshot && typeof snapshot === "object" ? (snapshot as Record<string, any>)._sra_mapeamento : null;
+  const campos = Array.isArray(mapa?.campos) ? mapa.campos : [];
+  return campos
+    .filter((c: any) => c && typeof c.rotulo === "string")
+    .map((c: any) => ({ rotulo: String(c.rotulo), valor: textoDoValor(c.valor), situacao: String(c.situacao ?? "") }));
+}
+
 async function opcoesCrmComCache(env: Env) {
   if (opcoesCrmCache && opcoesCrmCache.expiraEm > Date.now()) return opcoesCrmCache.valor;
   const valor = await opcoesCrm(env);
@@ -58,6 +78,7 @@ async function origemCrmDaVenda(env: Env, venda: Record<string, any>) {
     stageId: venda.rd_stage_id ?? null,
     funil,
     etapa,
+    campos: camposDoConsole(venda.rd_snapshot),
   };
 }
 
