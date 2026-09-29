@@ -2,6 +2,7 @@ import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from
 import { obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna } from "./integrations-credenciais";
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { atualizarCatalogoCrm } from "./crm-catalogo";
 import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm } from "./crm-importacao";
 
 const RD_CRM_BASE = "https://api.rd.services/crm/v2";
@@ -649,6 +650,14 @@ async function rotasCrm(request: Request, env: Env, adminId: string, path: strin
   const url = new URL(request.url);
   if (path.endsWith("/opcoes") && request.method === "GET") {
     try { return json(await opcoesCrm(env)); } catch (error) { return json(erroOpcoesRd(error), 502); }
+  }
+  if (path.endsWith("/opcoes/atualizar") && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    try {
+      const r = await atualizarCatalogoCrm(env, { db });
+      await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "atualizou_catalogo_rd_station", entidade: "integracoes", entidade_id: "rd_station", detalhes: { funis: r.funis.length, duracaoMs: r.catalogo.duracaoMs, escritaNoRd: false } });
+      return json(r);
+    } catch (error) { return json(erroOpcoesRd(error), 502); }
   }
   if (path.endsWith("/importacoes") && request.method === "GET") return json(await listarImportacoes(db, Number(url.searchParams.get("limite") || 30), url.searchParams.get("webhook") === "1"));
   if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });

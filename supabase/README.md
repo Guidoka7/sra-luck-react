@@ -52,7 +52,13 @@ As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principa
 
 **Ordem obrigatória:** aplicar a 113 antes de promover o App que grava pendências; sem ela, a importação termina em erro `PENDENCIA_NAO_REGISTRADA` (visível no histórico) em vez de gravar em silêncio. Depois de aplicada, rodar `select public.rd_recalcular_pendencias_todas('dev:<ator>')` **só com aprovação**: ela não altera vendas além de preencher `vendedora_id` pelos vínculos cadastrados.
 
-- A próxima migration é a `114`.
+### 115: catálogo pré-calculado do RD Station (não aplicada em produção)
+
+`migration_115_integracao_catalogos.sql` cria `integracao_catalogos` (provedor + chave → `dados` jsonb, `atualizado_em`, `duracao_ms`, último `erro`). O Worker guarda ali os funis, etapas, campos por funil, valores selecionáveis (responsável, fonte, campanha, campos de opção) e sugestões de origem (`worker/crm-catalogo.ts`); a configuração do RD no Dev Console lê essa linha na hora em vez de esperar o RD. Só metadados do CRM, nenhum dado pessoal de cliente. Só `service_role`. Rollback: `supabase/rollback/migration_115_rollback.sql`.
+
+Opcional para o App funcionar: sem ela o catálogo fica em memória de cada instância (a primeira abertura após um deploy lê o RD, alguns segundos).
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre depois dela é a `116`.
 
 ## Campos históricos importantes
 

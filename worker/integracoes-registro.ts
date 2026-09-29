@@ -81,7 +81,7 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
     autenticacao: "OAuth2 (authorize + refresh com rotação), tokens cifrados no cofre.",
     funcoes: [
       { id: "importacao", nome: "Importar vendas do CRM", descricao: "Lê as negociações do funil e das etapas escolhidos e grava cada cliente nova em Aguardando cadastro. Nunca cria cliente nem encaminha ao Financeiro.", direcao: "entrada", origem: "RD Station: GET /crm/v2/deals (RDQL por funil, etapa e status), contacts, users, campaigns, sources", destino: "novas_vendas (status aguardando_cadastro) + histórico da importação", situacao: "disponivel", configuravel: true },
-      { id: "escolher_funil_etapa", nome: "Escolher funil e etapas", descricao: "Funil e etapas lidos do RD na hora de configurar.", direcao: "entrada", origem: "RD Station: GET /crm/v2/pipelines e /pipelines/{id}/stages", destino: "Filtro RDQL pipeline_id / stage_id", situacao: "disponivel" },
+      { id: "escolher_funil_etapa", nome: "Escolher funil e etapas", descricao: "Funis, etapas, campos e valores de cada funil ficam pré-calculados e são renovados pelo agendador (ou em Atualizar do RD).", direcao: "entrada", origem: "RD Station: GET /crm/v2/pipelines e /pipelines/{id}/stages", destino: "Filtro RDQL pipeline_id / stage_id", situacao: "disponivel" },
       { id: "campos_personalizados", nome: "Escolher e mapear campos", descricao: "Cada campo do Sra Luck vem da leitura automática, de um campo personalizado da negociação ou do contato, ou é ignorado.", direcao: "entrada", origem: "RD Station: GET /crm/v2/custom_fields (slug)", destino: "Campos de novas_vendas", situacao: "disponivel" },
       { id: "deduplicacao", nome: "Deduplicação por CPF, telefone e e-mail", descricao: "Negociação cujo CPF, telefone ou e-mail já pertence a uma cliente ou a outra venda pendente não vira venda nova: fica no histórico para revisão humana.", direcao: "interna", origem: "Dados normalizados do contato", destino: "Histórico (duplicada / cliente existente)", situacao: "disponivel" },
       { id: "avanco_da_venda", nome: "Avanço da venda", descricao: "A venda só passa a Financeiro concluído quando a cliente tem parcelas cadastradas E acesso ao app liberado.", direcao: "interna", origem: "clientes.acesso_app_liberado + boletos", destino: "novas_vendas.status", situacao: "disponivel" },
@@ -250,10 +250,55 @@ export type FonteCampoCrm = string;
 export const FREQUENCIAS_CRM = [15, 30, 60, 180, 360, 720, 1440] as const;
 
 export type CampoSelecionadoCrm = { fonte: string; rotulo: string };
-export const CAMPOS_NATIVOS_CRM = [
-  ...["name", "status", "total_price", "created_at", "updated_at", "pipeline_id", "stage_id", "user_id"].map((chave) => ({ fonte: `deal_field:${chave}`, rotulo: `Negociação: ${chave}` })),
-  ...["name", "emails", "phones"].map((chave) => ({ fonte: `contact_field:${chave}`, rotulo: `Contato: ${chave}` })),
-];
+/** Campos padrão do RD (não personalizados), com nome legível. */
+const ROTULOS_NATIVOS_CRM: Record<string, string> = {
+  "deal_field:name": "Negociação: Nome",
+  "deal_field:owner_id": "Negociação: Responsável (vendedora)",
+  "deal_field:source_id": "Negociação: Fonte",
+  "deal_field:campaign_id": "Negociação: Campanha",
+  "deal_field:total_price": "Negociação: Valor total",
+  "deal_field:one_time_price": "Negociação: Valor único",
+  "deal_field:recurrence_price": "Negociação: Valor recorrente",
+  "deal_field:closed_at": "Negociação: Data de fechamento",
+  "deal_field:expected_close_date": "Negociação: Previsão de fechamento",
+  "deal_field:created_at": "Negociação: Data de criação",
+  "deal_field:updated_at": "Negociação: Última atualização",
+  "deal_field:status": "Negociação: Status",
+  "deal_field:pipeline_id": "Negociação: Funil",
+  "deal_field:stage_id": "Negociação: Etapa",
+  "deal_field:user_id": "Negociação: Responsável (formato antigo)",
+  "contact_field:name": "Contato: Nome",
+  "contact_field:emails": "Contato: E-mail",
+  "contact_field:phones": "Contato: Telefone",
+};
+export const CAMPOS_NATIVOS_CRM = Object.entries(ROTULOS_NATIVOS_CRM).map(([fonte, rotulo]) => ({ fonte, rotulo }));
+export const rotuloNativoCrm = (fonte: string) => ROTULOS_NATIVOS_CRM[fonte] ?? fonte;
+const ehNativoCrm = (fonte: string) => fonte in ROTULOS_NATIVOS_CRM;
+
+/** Filtros por valor aceitos dentro de um funil (valores = IDs do RD ou opções do campo). */
+export type FiltroCrmFunil = { fonte: string; valores: string[] };
+const FONTE_FILTRO_CRM = /^(deal_field:(owner_id|source_id|campaign_id)|deal:[a-z0-9_-]{1,100})$/;
+
+export function validarFiltrosCrm(bruto: unknown): Validacao<FiltroCrmFunil[]> {
+  if (bruto === undefined || bruto === null) return { ok: true, config: [] };
+  if (!Array.isArray(bruto) || bruto.length > 10) return { ok: false, erro: "Use no máximo 10 filtros por funil." };
+  const fontes = new Set<string>();
+  const out: FiltroCrmFunil[] = [];
+  for (const item of bruto) {
+    const f = objeto(item);
+    if (!f || Object.keys(f).some((k) => !["fonte", "valores"].includes(k)) || typeof f.fonte !== "string" || !FONTE_FILTRO_CRM.test(f.fonte))
+      return { ok: false, erro: "Filtro de funil inválido." };
+    if (fontes.has(f.fonte)) return { ok: false, erro: "O mesmo filtro foi usado duas vezes no funil." };
+    if (!Array.isArray(f.valores) || f.valores.length > 300 || f.valores.some((v) => typeof v !== "string" || !v.trim() || v.length > 200))
+      return { ok: false, erro: "Valores de filtro inválidos." };
+    const valores = [...new Set((f.valores as string[]).map((v) => v.trim()))];
+    // Filtro sem valor marcado = sem filtro: não é gravado.
+    if (!valores.length) continue;
+    fontes.add(f.fonte);
+    out.push({ fonte: f.fonte, valores });
+  }
+  return { ok: true, config: out };
+}
 
 export function validarCamposSelecionadosCrm(bruto: unknown): Validacao<CampoSelecionadoCrm[]> {
   if (bruto === undefined) return { ok: true, config: [] };
@@ -263,7 +308,7 @@ export function validarCamposSelecionadosCrm(bruto: unknown): Validacao<CampoSel
   for (const item of bruto) {
     const c = objeto(item);
     if (!c || Object.keys(c).some((k) => !["fonte", "rotulo"].includes(k)) || typeof c.fonte !== "string" ||
-      (!/^(deal|contact):[a-z0-9_]{1,60}$/.test(c.fonte) && !CAMPOS_NATIVOS_CRM.some((n) => n.fonte === c.fonte)))
+      (!/^(deal|contact):[a-z0-9_]{1,60}$/.test(c.fonte) && !ehNativoCrm(c.fonte)))
       return { ok: false, erro: "Origem de campo selecionado inválida." };
     if (typeof c.rotulo !== "string" || !c.rotulo.trim() || c.rotulo.trim().length > 100)
       return { ok: false, erro: "Dê um nome de até 100 caracteres a cada campo selecionado." };
@@ -277,6 +322,8 @@ export function validarCamposSelecionadosCrm(bruto: unknown): Validacao<CampoSel
 export type ConfigCrmFunil = {
   /** Campos escolhidos livremente; não criam colunas nem sobrescrevem o cadastro. */
   camposSelecionados?: CampoSelecionadoCrm[];
+  /** Importa só negociações cujos valores estejam entre os marcados (vazio = sem filtro). */
+  filtros?: FiltroCrmFunil[];
   pipelineId: string;
   /** Vazio = todas as etapas desse funil. */
   etapas: string[];
@@ -321,6 +368,8 @@ export const PADRAO_CRM: ConfigCrm = {
 
 const ID_RD = /^[0-9a-f]{24}$/;
 const FONTE_CRM = /^(auto|ignorar|(deal|contact):[a-z0-9_]{1,60})$/;
+/** IDs internos do RD não viram dado da venda. */
+const NATIVOS_SEM_VALOR = new Set(["deal_field:pipeline_id", "deal_field:stage_id", "deal_field:status", "deal_field:updated_at"]);
 
 function objeto(bruto: unknown): Record<string, unknown> | null {
   return bruto && typeof bruto === "object" && !Array.isArray(bruto) ? bruto as Record<string, unknown> : null;
@@ -333,7 +382,7 @@ function validarMapaCrm(bruto: unknown, base: Record<CampoCrm, FonteCampoCrm>): 
   const out = { ...base };
   for (const [campo, fonte] of Object.entries(m)) {
     if (!(CAMPOS_CRM as readonly string[]).includes(campo)) return { ok: false, erro: `Campo do Sra Luck desconhecido: ${campo}.` };
-    if (typeof fonte !== "string" || !FONTE_CRM.test(fonte)) return { ok: false, erro: `Fonte inválida para ${campo}.` };
+    if (typeof fonte !== "string" || (!FONTE_CRM.test(fonte) && !(ehNativoCrm(fonte) && !NATIVOS_SEM_VALOR.has(fonte)))) return { ok: false, erro: `Fonte inválida para ${campo}.` };
     out[campo as CampoCrm] = fonte;
   }
   return { ok: true, config: out };
@@ -390,7 +439,7 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
     for (const brutoFunil of c.funis) {
       const funil = objeto(brutoFunil);
       if (!funil) return { ok: false, erro: "Configuração de funil inválida." };
-      if (Object.keys(funil).some((k) => !["pipelineId", "etapas", "mapeamento", "camposSelecionados"].includes(k))) return { ok: false, erro: "Configuração de funil possui campo não permitido." };
+      if (Object.keys(funil).some((k) => !["pipelineId", "etapas", "mapeamento", "camposSelecionados", "filtros"].includes(k))) return { ok: false, erro: "Configuração de funil possui campo não permitido." };
 
       const pipelineId = typeof funil.pipelineId === "string" ? funil.pipelineId : "";
       if (!ID_RD.test(pipelineId)) return { ok: false, erro: "Funil inválido." };
@@ -404,8 +453,11 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
       if (!mapa.ok) return mapa;
       const selecionados = validarCamposSelecionadosCrm(funil.camposSelecionados);
       if (!selecionados.ok) return selecionados;
+      const filtros = validarFiltrosCrm(funil.filtros);
+      if (!filtros.ok) return filtros;
       out.funis.push({
         camposSelecionados: selecionados.config,
+        filtros: filtros.config,
         pipelineId,
         etapas: [...new Set(etapas as string[])],
         mapeamento: mapa.config,
@@ -489,6 +541,8 @@ export type CampoFormulario = {
   tipo: "booleano" | "numero" | "texto" | "texto_longo" | "selecao" | "multi_selecao" | "mapeamento" | "grupo_booleano" | "rd_funis";
   ajuda?: string;
   camposLivres?: boolean;
+  /** Backend aceita filtros por valor e origens nativas explícitas em cada funil. */
+  filtrosPorFunil?: boolean;
   placeholder?: string;
   min?: number; max?: number; passo?: number; maxLength?: number;
   opcoes?: { valor: string; rotulo: string }[];
@@ -516,7 +570,7 @@ const CAMPOS_CRM_FORM: CampoFormulario[] = [
   { chave: "frequenciaMinutos", rotulo: "Frequência", tipo: "selecao", opcoes: FREQUENCIAS_CRM.map((m) => ({ valor: String(m), rotulo: m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "1 vez por dia" })) },
   { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
   { chave: "mapeamento", rotulo: "Preenchimento padrão", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Fallback para todos os funis. Cada funil selecionado pode sobrescrever este preenchimento campo a campo." },
-  { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", camposLivres: true, opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas e quais dados preencher. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
+  { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", camposLivres: true, filtrosPorFunil: true, opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas, filtros (vendedora, fonte, campanha, campos de opção) e a origem de cada dado. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
   { chave: "deduplicarPor", rotulo: "Deduplicar por", tipo: "grupo_booleano", itens: [{ chave: "cpf", rotulo: "CPF" }, { chave: "telefone", rotulo: "Telefone" }, { chave: "email", rotulo: "E-mail" }] },
 ];
 

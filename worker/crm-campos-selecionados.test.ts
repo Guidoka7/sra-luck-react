@@ -20,7 +20,7 @@ describe("campos escolhidos por funil", () => {
     expect(resultado).toMatchObject({ ok: true });
     limparCacheConfig();
     const salvo = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
-    expect(salvo.funis).toEqual(config.funis);
+    expect(salvo.funis).toEqual(config.funis.map((f) => ({ ...f, filtros: [] })));
     expect(validarConfigCrm({ ...PADRAO_CRM, funis: [funil(A, [])] })).toMatchObject({ ok: true, config: { funis: [{ camposSelecionados: [] }] } });
   });
   it("rejeita fonte inválida, duplicada, nome vazio e seleção excessiva", () => {
