@@ -81,6 +81,7 @@ function partesFiltro(config: ConfigCrm, funil?: ConfigCrmFunil) {
 
 /** Um filtro por funil; sem seleção explícita, lê todos os funis com o status configurado. */
 export function filtrosRdql(config: ConfigCrm): string[] {
+  if (config.todosFunis) return [""];
   const funis = funisConfigurados(config);
   return funis.length ? funis.map((f) => partesFiltro(config, f)) : [partesFiltro(config)];
 }
@@ -111,6 +112,7 @@ const ROTULO_FILTRO: Record<string, string> = { "deal_field:owner_id": "respons�
 
 /** Webhook e reprocessamentos passam pelo mesmo filtro da importação. */
 export function passaNoFiltro(s: RdDealSnapshot, config: ConfigCrm): string | null {
+  if (config.todosFunis) return null;
   const funis = funisConfigurados(config);
   if (funis.length) {
     const funil = funilParaSnapshot(s, config);
@@ -213,6 +215,12 @@ export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json |
     const fonte = mapa[campo] ?? config.mapeamento[campo] ?? "auto";
     let bruto: unknown;
     if (fonte === "ignorar") bruto = null;
+    else if (campo === "vendedora" && fonte === "deal:nome-da-vendedora") {
+      // O segundo campo comercial complementa o primeiro; o proprietário da negociação
+      // é um responsável operacional e não identifica necessariamente quem vendeu.
+      bruto = converter("vendedora", valorPersonalizado(deal, "nome-da-vendedora"))
+        || valorPersonalizado(deal, "vendedora-que-realizou-a-reuniao");
+    }
     else if (fonte.startsWith("deal:")) bruto = valorPersonalizado(deal, fonte.slice(5));
     else if (fonte.startsWith("contact:")) bruto = valorPersonalizado(contato, fonte.slice(8));
     else if (fonte.startsWith("deal_field:") || fonte.startsWith("contact_field:")) bruto = valorNativo(fonte, s, deal, contato);
@@ -400,13 +408,13 @@ const pendenteDeCadastro = (v: VendaIndexada | undefined) => Boolean(v && !v.cli
  * Colunas locais que mudam para refletir o preenchimento atual. Nunca mexe no que a equipe
  * editou no Admin; `soVazias` = só completa o que está vazio (duplicata mais completa).
  */
-function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<string> | undefined, soVazias: boolean) {
+function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<string> | undefined, soVazias: boolean, limparVendedoraVazia = false) {
   const patch: Json = {};
   for (const [campo, coluna] of COLUNAS_PREENCHIDAS) {
     if (editadas?.has(coluna)) continue;
     const novo = valores[campo];
     // Nunca troca um dado preenchido por vazio: a sincronização não apaga nada.
-    if (vazio(novo)) continue;
+    if (vazio(novo) && !(limparVendedoraVazia && coluna === "vendedora_responsavel" && !soVazias)) continue;
     if (soVazias && (!vazio(v.linha[coluna]) || vazio(novo))) continue;
     if ((v.linha[coluna] ?? null) === (novo ?? null)) continue;
     patch[coluna] = novo ?? null;
@@ -455,7 +463,9 @@ export async function processarNegociacao(db: Db, entrada: {
       return { ...base, resultado: "atualizada", nova_venda_id: existente.id, motivo: "O contato desta negociação não existe mais no RD; os dados da venda foram mantidos." };
     }
     const venda = indice.vendaPorId?.get(existente.id);
-    const patch = venda && pendenteDeCadastro(venda) ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false) : {};
+    const fonteVendedora = funilParaSnapshot(s, config)?.mapeamento.vendedora ?? config.mapeamento.vendedora;
+    const patch = venda && pendenteDeCadastro(venda)
+      ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false, fonteVendedora === "deal:nome-da-vendedora") : {};
     const { error } = await db.from("novas_vendas").update({ ...snapshotUpdatePreservandoLocal(snapshotSelecionado), ...patch }).eq("id", existente.id);
     if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar a venda com os dados do RD." };
     if (venda) { Object.assign(venda.linha, patch); if (cacheContato) venda.contato = cacheContato; }
