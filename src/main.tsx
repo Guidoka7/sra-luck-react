@@ -37,6 +37,7 @@ const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
 const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));
 const FinanceiroPage = lazy(() => import("./app/admin/(painel)/financeiro/page"));
 const FinanceiroAvancado = lazy(() => import("./features/financeiro/AdminFinanceiro"));
+const AdminBi = lazy(() => import("./features/bi/AdminBi"));
 const RelatoriosPage = lazy(() => import("./app/admin/(painel)/relatorios/page"));
 const ClubeAdminPage = lazy(() => import("./app/admin/(painel)/clube/page"));
 
@@ -65,6 +66,7 @@ function AdminRoute({ path }: { path: string }) {
   else if (path.startsWith("/admin/clientes")) conteudo = <ClientesPage />;
   else if (path.startsWith("/admin/financeiro/avancado")) conteudo = <FinanceiroAvancado />;
   else if (path.startsWith("/admin/financeiro")) conteudo = <FinanceiroPage />;
+  else if (path === "/admin/bi" || path.startsWith("/admin/bi/")) conteudo = <AdminBi />;
   else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
   else if (path.startsWith("/admin/clube")) conteudo = <ClubeAdminPage />;
   else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;

@@ -23,6 +23,7 @@ const NAV_OPERACAO = [
 ];
 
 const NAV_GESTAO = [
+  { href: "/admin/bi", label: "Inteligência de negócio", icon: "▥", perms: [P.RELATORIOS_VISUALIZAR] },
   { href: "/admin/previsoes", label: "Previsões", icon: "↗", perms: [P.PREVISOES_VER, P.AGENDA_GERENCIAR] },
   { href: "/admin/relatorios", label: "Relatórios", icon: "▥", perms: [P.RELATORIOS_VISUALIZAR] },
 ];
