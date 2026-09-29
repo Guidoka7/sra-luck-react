@@ -518,6 +518,36 @@ export async function listarDealsPorPeriodos(
   }
 }
 
+/** Data do RD no formato do filtro RDQL ("AAAA-MM-DD HH:MM:SS", UTC), truncada no segundo. */
+export function dataRdql(valor: unknown): string | null {
+  const ms = Date.parse(stringValue(valor));
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 19).replace("T", " ") : null;
+}
+
+export const TAMANHO_PAGINA_RD = PAGE_SIZE;
+
+/**
+ * Uma página de negociações em ordem de criação, a partir de `desde` (inclusivo).
+ * A importação em etapas avança `desde` a cada página: cada consulta começa perto do início
+ * do resultado e nunca encosta no limite de 10 mil registros por filtro do RD.
+ */
+export async function paginaDeals(env: Env, filtro: string, desde: string | null, pagina: number): Promise<Json[]> {
+  const q = new URLSearchParams();
+  q.set("page[number]", String(pagina));
+  q.set("page[size]", String(PAGE_SIZE));
+  q.set("sort[created_at]", "asc");
+  const completo = [filtro, desde ? `created_at:>="${desde}"` : ""].filter(Boolean).join(" ");
+  if (completo) q.set("filter", completo);
+  const resposta = await rdGet(env, `/deals?${q.toString()}`);
+  return arrayValue(resposta.data).map(objectValue);
+}
+
+/** IDs de todos os funis da conta (para ler funil por funil). */
+export async function idsFunisRd(env: Env): Promise<string[]> {
+  const funis = await listarTudo(env, "pipelines");
+  return [...new Set(funis.map((f) => stringValue(f.id)).filter(Boolean))];
+}
+
 export async function listarDealsTodosFunis(env: Env): Promise<Json[]> {
   const funis = await listarTudo(env, "pipelines");
   const ids = [...new Set(funis.map((f) => stringValue(f.id)).filter(Boolean))];

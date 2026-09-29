@@ -66,7 +66,11 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_117_integracoes_cron_autorizado.sql` cria `integracoes_cron_autorizado(token)`: o App confirma o Bearer do pg_cron (`integracoes_disparar_sync`) contra `vault.sra_luck_cron_secret` sem que o segredo saia do banco. Em 29/09/2026 o cron recebia 402 (URL de deploy desativado, corrigida no cofre para `sraluckapp.vercel.app`) e depois 401 (CRON_SECRET diferente). Só `service_role`. Rollback: `supabase/rollback/migration_117_rollback.sql`.
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `118`.
+### 118: continuação da importação do CRM em etapas
+
+`migration_118_crm_importacao_continuacao.sql` cria `integracoes_disparar_continuacao_crm()` e o job `integracoes-crm-continuacao` (minutos 5, 10, 20, 25, 35, 40, 50 e 55), que chama `/api/cron/integracoes/crm` com o mesmo segredo do cofre. O App importa o RD em etapas (100 negociações por página, posição guardada em `integracao_catalogos`/`crm_importacao_progresso`); este job só continua uma passada que não terminou. Em 29/09/2026 todas as execuções com "todos os funis" eram encerradas no meio. Pré-requisitos: 091, 115, 117. Rollback: `supabase/rollback/migration_118_rollback.sql`.
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `119`.
 
 ## Campos históricos importantes
 

@@ -14,8 +14,8 @@
  */
 import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
-  arrayValue, contatoParaCache, idsContatoDaNegociacao, lerContatosRd, listarDealsTodosFunis, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
-  registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
+  arrayValue, contatoParaCache, dataRdql, idsContatoDaNegociacao, lerContatosRd, listarDealsTodosFunis, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, paginaDeals, rdGet,
+  registrarEvento, snapshotUpdatePreservandoLocal, stringValue, TAMANHO_PAGINA_RD, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
@@ -23,11 +23,10 @@ import { catalogoCrm } from "./crm-catalogo";
 
 /**
  * Contato guardado vale 24 h. TODOS os contatos dos funis configurados são lidos, sem cota; como o RD
- * aceita 120 consultas/min, uma execução lê até este prazo e a seguinte continua de onde parou
- * (os já lidos ficam guardados na venda). Nada é descartado: o que não foi lido é adiado.
+ * aceita 120 consultas/min, a importação é feita em etapas (ver importarCrm) e cada execução
+ * continua de onde a anterior parou. Nada é descartado: o que não foi lido é relido depois.
  */
 const CONTATO_VALIDADE_MS = 24 * 60 * 60_000;
-const PRAZO_LEITURA_CONTATOS_MS = 200_000;
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -523,8 +522,10 @@ type LeituraContatos = { contatos: Map<string, Json>; falhas: Set<string>; limit
 type Fontes = {
   deals: (filtro: string) => Promise<Json[]>;
   refs: () => Promise<{ contatos: Json[]; usuarios: Json[]; campanhas: Json[]; fontes: Json[] }>;
-  /** Contatos das negociações lidas, por id. Sem esta fonte, usa `refs().contatos`. */
-  contatos?: (ids: string[]) => Promise<LeituraContatos>;
+  /** Contatos das negociações lidas, por id (até `prazoMs`). Sem esta fonte, usa `refs().contatos`. */
+  contatos?: (ids: string[], prazoMs?: number) => Promise<LeituraContatos>;
+  /** Uma página (100) em ordem de criação a partir de `desde`. Sem esta fonte, pagina `deals(filtro)` em memória. */
+  pagina?: (filtro: string, desde: string | null, pagina: number) => Promise<Json[]>;
 };
 
 
@@ -535,7 +536,8 @@ function fontesRd(env: Env): Fontes {
       const [usuarios, campanhas, fontes] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources")]);
       return { contatos: [], usuarios, campanhas, fontes };
     },
-    contatos: (ids) => lerContatosRd(env, ids, PRAZO_LEITURA_CONTATOS_MS),
+    contatos: (ids, prazoMs) => lerContatosRd(env, ids, prazoMs),
+    pagina: (filtro, desde, pagina) => paginaDeals(env, filtro, desde, pagina),
   };
 }
 
@@ -578,13 +580,92 @@ async function gravarItens(db: Db, importacaoId: string, itens: ItemImportacao[]
   }
 }
 
-export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "webhook">; ator: string }, deps: { db?: Db; fontes?: Fontes; config?: ConfigCrm } = {}) {
+// ------------------------------------------------------------------ importação em etapas
+
+/**
+ * Com milhares de negociações (todos os funis), ler tudo e depois processar não cabe numa execução
+ * da hospedagem: a função era encerrada no meio e nada era registrado (EXECUCAO_INTERROMPIDA).
+ * Agora cada execução lê página por página (100 negociações, em ordem de criação), grava o que
+ * processou e guarda a posição em integracao_catalogos (crm_importacao_progresso). A execução
+ * seguinte continua dali; ao terminar a última página, a passada fecha e a próxima recomeça do
+ * início, atualizando tudo de novo. Cada consulta filtra `created_at >= posição`, então nenhuma
+ * passa do limite de 10 mil registros por filtro do RD.
+ */
+export const ORCAMENTO_EXECUCAO_MS = 200_000;
+/** Trava maior que o orçamento; se a função morrer, libera antes da próxima rodada de 5 min. */
+const TRAVA_SEGUNDOS = 290;
+/** Contatos guardados vencidos relidos por execução; novos e sem contato guardado não têm limite. */
+const RENOVACOES_POR_EXECUCAO = 60;
+/** Mesma página bloqueada por contatos não lidos (limite do RD) mais vezes que isto: segue e relê na próxima passada. */
+const TENTATIVAS_POR_PAGINA = 3;
+const CHAVE_PROGRESSO = "crm_importacao_progresso";
+
+export type ProgressoImportacao = {
+  passada: string;
+  iniciadaEm: string;
+  concluidaEm: string | null;
+  /** Filtros da passada; se a configuração mudar, a passada recomeça. */
+  assinatura: string;
+  segmentos: string[];
+  indice: number;
+  /** Data de criação (RDQL, UTC) a partir da qual a próxima página é lida. */
+  desde: string | null;
+  pagina: number;
+  /** O RD recusou o filtro por data: segue só pelo número da página. */
+  semFiltroData?: boolean;
+  /** Já processadas no segundo de `desde` (a consulta seguinte as devolve de novo). */
+  noLimite?: string[];
+  tentativas: number;
+  lidas: number;
+  execucoes: number;
+};
+
+/** Um filtro por funil configurado; "todos os funis" é um só filtro (só o status), lido por data. */
+export function segmentosDaImportacao(config: ConfigCrm): string[] {
+  if (config.todosFunis) return [config.status !== "qualquer" ? `status:${config.status}` : ""];
+  return filtrosRdql(config);
+}
+
+export async function lerProgresso(db: Db): Promise<ProgressoImportacao | null> {
+  const { data } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", CHAVE_PROGRESSO).maybeSingle();
+  const p = objectValue((data as Json | null)?.dados);
+  return typeof p.passada === "string" && Array.isArray(p.segmentos) ? p as ProgressoImportacao : null;
+}
+
+async function salvarProgresso(db: Db, p: ProgressoImportacao) {
+  await db.from("integracao_catalogos").upsert({ provedor: "rd_station", chave: CHAVE_PROGRESSO, dados: p, atualizado_em: new Date().toISOString() }, { onConflict: "provedor,chave" });
+}
+
+/** Passada começada e não terminada: o agendador continua sem esperar a frequência. */
+export async function passadaEmAndamento(db: Db) {
+  const p = await lerProgresso(db);
+  return Boolean(p && !p.concluidaEm);
+}
+
+/** Sem fonte paginada (testes), pagina em memória o resultado de `deals(filtro)` do mesmo jeito que o RD. */
+function paginadorEmMemoria(listar: (filtro: string) => Promise<Json[]>) {
+  const cache = new Map<string, Promise<Json[]>>();
+  return async (filtro: string, desde: string | null, pagina: number) => {
+    if (!cache.has(filtro)) {
+      cache.set(filtro, listar(filtro).then((ds) => ds.map((d, i) => ({ d, i }))
+        .sort((a, b) => stringValue(a.d.created_at).localeCompare(stringValue(b.d.created_at)) || a.i - b.i).map((x) => x.d)));
+    }
+    const todos = await cache.get(filtro)!;
+    const aPartir = desde ? todos.filter((d) => (dataRdql(d.created_at) ?? "") >= desde) : todos;
+    return aPartir.slice((pagina - 1) * TAMANHO_PAGINA_RD, pagina * TAMANHO_PAGINA_RD);
+  };
+}
+
+export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "webhook">; ator: string },
+  deps: { db?: Db; fontes?: Fontes; config?: ConfigCrm; orcamentoMs?: number; relogio?: () => number } = {}) {
   const db = deps.db ?? createServiceSupabaseClient(env);
-  const { data: trava } = await db.rpc("integracao_tentar_trava", { p_nome: "crm_importacao", p_segundos: 600 });
+  const relogio = deps.relogio ?? Date.now;
+  const prazo = relogio() + (deps.orcamentoMs ?? ORCAMENTO_EXECUCAO_MS);
+  const { data: trava } = await db.rpc("integracao_tentar_trava", { p_nome: "crm_importacao", p_segundos: TRAVA_SEGUNDOS });
   if (trava === false) return { ok: false as const, ocupado: true, erro: "Já existe uma importação em andamento." };
   const config = deps.config ?? await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
-  const filtros = filtrosRdql(config);
-  const filtro = filtros.join(" || ");
+  const segmentos = segmentosDaImportacao(config);
+  const filtro = segmentos.join(" || ");
   const { data: imp, error: erroImp } = await db.from("integracao_importacoes")
     .insert({ provedor: "rd_station", origem: opcoes.origem, filtro, iniciado_por: opcoes.ator }).select("id").single();
   if (erroImp || !imp) {
@@ -594,61 +675,20 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
   const importacaoId = String((imp as Json).id);
   await marcarExecucoesInterrompidas(db, importacaoId);
   const fontes = deps.fontes ?? fontesRd(env);
+  const lerPagina = fontes.pagina ?? paginadorEmMemoria(fontes.deals);
   try {
-    // As três leituras são independentes. Fazê-las em paralelo reduz bastante o
-    // tempo total de importação e evita desperdiçar a janela de execução da Edge.
-    const [gruposDeals, r, indice] = await Promise.all([
-      Promise.all(filtros.map((f) => fontes.deals(f))),
-      fontes.refs(),
-      carregarIndice(db),
-    ]);
-    // Um negócio pertence a um funil, mas removemos repetidos por segurança caso o provedor
-    // devolva a mesma negociação em filtros sobrepostos.
-    const porId = new Map<string, Json>();
-    let anonimo = 0;
-    for (const deal of gruposDeals.flat()) {
-      const id = stringValue(deal.id) || `__sem_id_${anonimo++}`;
-      if (!porId.has(id)) porId.set(id, deal);
-    }
-    const lidas = [...porId.values()];
-    // Contatos só das negociações lidas (antes: a base inteira de contatos, que estourava o limite
-    // e deixava telefone/CPF vazios em silêncio).
-    // O RD aceita 120 consultas/min por conta: contatos são relidos só para negociações novas e,
-    // numa cota por execução, para vendas sem contato guardado (ou com o mais antigo). O resto usa o cache.
+    const [r, indice, anterior] = await Promise.all([fontes.refs(), carregarIndice(db), lerProgresso(db)]);
     const agoraIso = new Date().toISOString();
-    const cachePorContato = new Map<string, ContatoEmCache>();
-    const novos: string[] = [];
-    const renovar: { id: string; lidoEm: string }[] = [];
-    for (const d of lidas) {
-      const idContato = idsContatoDaNegociacao(d)[0];
-      if (!idContato) continue;
-      const venda = indice.vendaPorRd.get(stringValue(d.id));
-      const cache = venda ? indice.vendaPorId?.get(venda.id)?.contato : null;
-      if (cache && stringValue(cache.dados.id) === idContato) cachePorContato.set(idContato, cache);
-      if (!venda) novos.push(idContato);
-      else if (!cache || stringValue(cache.dados.id) !== idContato) renovar.push({ id: idContato, lidoEm: "" });
-      else if (Date.parse(cache.lidoEm) < Date.now() - CONTATO_VALIDADE_MS) renovar.push({ id: idContato, lidoEm: cache.lidoEm });
-    }
-    // Ordem: negociações novas, vendas sem contato guardado, depois os guardados mais antigos.
-    const aRenovar = renovar.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).map((x) => x.id);
-    const leitura: LeituraContatos = fontes.contatos
-      ? await fontes.contatos([...new Set([...novos, ...aRenovar])])
-      : { contatos: mapById(r.contatos), falhas: new Set() };
-    const contatosLidos = leitura.contatos;
-    const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
-    const refs = { contatos: contatosTodos, usuarios: mapById(r.usuarios), campanhas: mapById(r.campanhas), fontes: mapById(r.fontes) };
-    // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
-    // viram duplicatas dela. Negociações já importadas mantêm a ordem.
-    const pontos = new Map<Json, number>();
-    for (const d of lidas) {
-      const sn = normalizarDealRd(d, refs);
-      if (!sn || indice.vendaPorRd.has(sn.rdStationId)) { pontos.set(d, Infinity); continue; }
-      const contato = sn.rdContactId ? refs.contatos.get(sn.rdContactId) : undefined;
-      pontos.set(d, completude(aplicarMapeamento(sn, d, contato, config), extrairCamposSelecionados(sn, d, contato, config)));
-    }
-    const deals = lidas.slice().sort((a, b) => (pontos.get(b) ?? 0) - (pontos.get(a) ?? 0));
+    const progresso: ProgressoImportacao = anterior && !anterior.concluidaEm && anterior.assinatura === filtro
+      ? anterior
+      : { passada: importacaoId, iniciadaEm: agoraIso, concluidaEm: null, assinatura: filtro, segmentos, indice: 0, desde: null, pagina: 1, tentativas: 0, lidas: 0, execucoes: 0 };
+    progresso.execucoes++;
+    const usuarios = mapById(r.usuarios), campanhas = mapById(r.campanhas), fontesRef = mapById(r.fontes);
     const itens: ItemImportacao[] = [];
+    const vistas = new Set<string>(progresso.noLimite ?? []);
+    const jaVistas = vistas.size;
     let adiadas = 0;
+    let renovacoes = RENOVACOES_POR_EXECUCAO;
     // Itens gravados DURANTE a execução: se a função for interrompida no meio, o que já foi
     // feito continua visível (antes, 914 vendas ficaram sem nenhum item — docs/DIAGNOSTICO-RD).
     let gravados = 0;
@@ -659,35 +699,137 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       await gravarItens(db, importacaoId, pendentes.filter((i) => i.resultado !== "atualizada" || Boolean(i.motivo?.startsWith("Dados atualizados"))));
       gravados = itens.length;
     };
-    for (const deal of deals) {
-      const snapshot = normalizarDealRd(deal, refs);
-      let item: ItemImportacao;
-      if (!snapshot) {
-        // Nunca descartar em silêncio: vira item e pendência.
-        // Chave estável pelo conteúdo: a mesma negociação sem ID não abre uma pendência nova a cada execução.
-        item = { external_id: `sem-id-${chaveEstavel(deal)}`, resultado: "erro", motivo: "Negociação sem identificador no RD.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: stringValue(deal.status) || null } };
-      } else {
-        const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
-        const idC = snapshot.rdContactId;
-        const contatoIndisponivel = Boolean(idC && !contato && leitura.falhas.has(idC));
-        const contatoAdiado = Boolean(idC && !contato && !contatoIndisponivel);
-        if (contatoAdiado && !indice.vendaPorRd.has(snapshot.rdStationId)) { adiadas++; continue; }
-        try {
-          item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado,
-            contatoLidoEm: idC && contatosLidos.has(idC) ? agoraIso : null });
-        } catch {
-          item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
-        }
+
+    /** Processa uma página. Devolve falso se contatos de negociações NOVAS ficaram sem leitura (a página é relida). */
+    const processarPagina = async (pagina: Json[]) => {
+      let anonimo = 0;
+      const lidas = pagina.filter((d) => {
+        const id = stringValue(d.id) || `__sem_id_${vistas.size}_${anonimo++}`;
+        if (vistas.has(id)) return false;
+        vistas.add(id);
+        return true;
+      });
+      // O RD aceita 120 consultas/min: o contato é lido para toda negociação nova e venda sem
+      // contato guardado; os guardados vencidos são relidos aos poucos. O resto usa o cache.
+      const cachePorContato = new Map<string, ContatoEmCache>();
+      const novos: string[] = [];
+      const semCache: string[] = [];
+      const vencidos: { id: string; lidoEm: string }[] = [];
+      for (const d of lidas) {
+        const idContato = idsContatoDaNegociacao(d)[0];
+        if (!idContato) continue;
+        const venda = indice.vendaPorRd.get(stringValue(d.id));
+        const cache = venda ? indice.vendaPorId?.get(venda.id)?.contato : null;
+        if (cache && stringValue(cache.dados.id) === idContato) cachePorContato.set(idContato, cache);
+        if (!venda) novos.push(idContato);
+        else if (!cache || stringValue(cache.dados.id) !== idContato) semCache.push(idContato);
+        else if (Date.parse(cache.lidoEm) < Date.now() - CONTATO_VALIDADE_MS) vencidos.push({ id: idContato, lidoEm: cache.lidoEm });
       }
-      itens.push(item);
-      await registrarPendenciasDoItem(db, item, opcoes.origem, importacaoId);
-      await descarregar();
+      const renovar = vencidos.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).slice(0, Math.max(0, renovacoes)).map((x) => x.id);
+      renovacoes -= renovar.length;
+      const pedir = [...new Set([...novos, ...semCache, ...renovar])];
+      const leitura: LeituraContatos = fontes.contatos
+        ? (pedir.length ? await fontes.contatos(pedir, Math.max(5_000, prazo - relogio())) : { contatos: new Map(), falhas: new Set() })
+        : { contatos: mapById(r.contatos), falhas: new Set() };
+      const contatosLidos = leitura.contatos;
+      const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
+      const refs = { contatos: contatosTodos, usuarios, campanhas, fontes: fontesRef };
+      // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
+      // viram duplicatas dela. Negociações já importadas mantêm a ordem.
+      const pontos = new Map<Json, number>();
+      for (const d of lidas) {
+        const sn = normalizarDealRd(d, refs);
+        if (!sn || indice.vendaPorRd.has(sn.rdStationId)) { pontos.set(d, Infinity); continue; }
+        const contato = sn.rdContactId ? refs.contatos.get(sn.rdContactId) : undefined;
+        pontos.set(d, completude(aplicarMapeamento(sn, d, contato, config), extrairCamposSelecionados(sn, d, contato, config)));
+      }
+      const deals = lidas.slice().sort((a, b) => (pontos.get(b) ?? 0) - (pontos.get(a) ?? 0));
+      let completa = true;
+      for (const deal of deals) {
+        const snapshot = normalizarDealRd(deal, refs);
+        let item: ItemImportacao;
+        if (!snapshot) {
+          // Nunca descartar em silêncio: vira item e pendência.
+          // Chave estável pelo conteúdo: a mesma negociação sem ID não abre uma pendência nova a cada execução.
+          item = { external_id: `sem-id-${chaveEstavel(deal)}`, resultado: "erro", motivo: "Negociação sem identificador no RD.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: stringValue(deal.status) || null } };
+        } else {
+          const contato = snapshot.rdContactId ? refs.contatos.get(snapshot.rdContactId) : undefined;
+          const idC = snapshot.rdContactId;
+          const contatoIndisponivel = Boolean(idC && !contato && leitura.falhas.has(idC));
+          const contatoAdiado = Boolean(idC && !contato && !contatoIndisponivel);
+          if (contatoAdiado && !indice.vendaPorRd.has(snapshot.rdStationId)) {
+            // Não lida agora (limite do RD): sai de `vistas` para entrar quando a página for relida.
+            vistas.delete(snapshot.rdStationId);
+            adiadas++;
+            completa = false;
+            continue;
+          }
+          try {
+            item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado,
+              contatoLidoEm: idC && contatosLidos.has(idC) ? agoraIso : null });
+          } catch {
+            item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
+          }
+        }
+        itens.push(item);
+        await registrarPendenciasDoItem(db, item, opcoes.origem, importacaoId);
+        await descarregar();
+      }
+      return completa;
+    };
+
+    const proximoSegmento = () => { progresso.indice++; progresso.desde = null; progresso.pagina = 1; progresso.tentativas = 0; progresso.noLimite = []; };
+    while (progresso.indice < progresso.segmentos.length && relogio() < prazo) {
+      const segmento = progresso.segmentos[progresso.indice];
+      let pagina: Json[];
+      try {
+        pagina = await lerPagina(segmento, progresso.semFiltroData ? null : progresso.desde, progresso.pagina);
+      } catch (e) {
+        // Filtro por data recusado pelo RD: segue pelo número da página (até o limite de 10 mil).
+        if (progresso.desde && !progresso.semFiltroData && e instanceof Error && /^RD_HTTP_(400|422)$/.test(e.message)) {
+          progresso.semFiltroData = true;
+          progresso.desde = null;
+          progresso.pagina = 1;
+          continue;
+        }
+        throw e;
+      }
+      if (!pagina.length) { proximoSegmento(); await salvarProgresso(db, progresso); continue; }
+      const antes = vistas.size;
+      const completa = await processarPagina(pagina);
+      progresso.lidas += vistas.size - antes;
+      if (!completa && ++progresso.tentativas < TENTATIVAS_POR_PAGINA) {
+        // A mesma página é relida na próxima execução; as já processadas dela não contam de novo.
+        if (!progresso.semFiltroData) progresso.noLimite = pagina.map((d) => stringValue(d.id)).filter((id) => id && vistas.has(id));
+        await salvarProgresso(db, progresso);
+        break;
+      }
+      progresso.tentativas = 0;
+      if (pagina.length < TAMANHO_PAGINA_RD) {
+        proximoSegmento();
+      } else if (progresso.semFiltroData) {
+        if (progresso.pagina >= 100) throw new Error("RD_RESULT_LIMIT_10000");
+        progresso.pagina++;
+      } else {
+        const ultima = dataRdql(pagina[pagina.length - 1].created_at);
+        // Próxima consulta a partir da data da última lida (as do mesmo segundo são puladas por `vistas`).
+        if (ultima && ultima !== progresso.desde) { progresso.desde = ultima; progresso.pagina = 1; } else progresso.pagina++;
+        progresso.noLimite = pagina.filter((d) => dataRdql(d.created_at) === progresso.desde).map((d) => stringValue(d.id)).filter((id) => id && vistas.has(id));
+      }
+      await salvarProgresso(db, progresso);
     }
     await descarregar(true);
+    const concluida = progresso.indice >= progresso.segmentos.length;
+    if (concluida) progresso.concluidaEm = new Date().toISOString();
+    await salvarProgresso(db, progresso);
     // Execução completa: falhas de execução anteriores deixaram de valer.
     await db.from("integracao_pendencias").update({ estado: "resolvida", resolucao: "resolvida_pela_origem", resolvido_por: opcoes.ator, resolvido_em: new Date().toISOString() })
       .eq("provedor", "rd_station").in("tipo", ["execucao_falhou", "execucao_interrompida"]).eq("estado", "aberta");
-    const resumo = { ...totais(itens, deals.length), adiadas, somenteLeitura: true };
+    const passada = {
+      concluida, iniciadaEm: progresso.iniciadaEm, lidas: progresso.lidas, execucoes: progresso.execucoes,
+      lidoAte: progresso.desde, funil: Math.min(progresso.indice + 1, progresso.segmentos.length), funis: progresso.segmentos.length,
+    };
+    const resumo = { ...totais(itens, vistas.size - jaVistas), adiadas, somenteLeitura: true, passada };
     const status = resumo.erros ? "parcial" : "concluida";
     await db.from("integracao_importacoes").update({ status, totais: resumo, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
     await registrarEvento(db, { eventType: `importacao_${opcoes.origem}`, referencia: importacaoId, payload: resumo, status: resumo.erros ? "parcial" : "processado" });
@@ -743,17 +885,23 @@ export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao:
   return { snapshot, item };
 }
 
-/** Chamado pelo agendador a cada 15 min: roda só se ligado e se a frequência venceu. */
-export async function importacaoAgendadaSeDevida(env: Env, deps: { db?: Db; agora?: Date; fontes?: Fontes } = {}) {
+/**
+ * Chamado pelo agendador: roda só se ligado e se a frequência venceu. Uma passada em andamento
+ * (importação em etapas) continua a cada chamada, sem esperar a frequência. `somenteContinuacao`
+ * (rodada de 5 min) só continua uma passada; nunca começa outra.
+ */
+export async function importacaoAgendadaSeDevida(env: Env, deps: { db?: Db; agora?: Date; fontes?: Fontes; somenteContinuacao?: boolean } = {}) {
   const db = deps.db ?? createServiceSupabaseClient(env);
   const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
   if (!config.ativo) return { executada: false, motivo: "desligada" };
+  const emAndamento = await passadaEmAndamento(db);
+  if (deps.somenteContinuacao && !emAndamento) return { executada: false, motivo: "sem_passada_em_andamento" };
   const { data: ultima } = await db.from("integracao_importacoes").select("iniciado_em")
     .eq("provedor", "rd_station").eq("origem", "agendada").order("iniciado_em", { ascending: false }).limit(1).maybeSingle();
   const agora = (deps.agora ?? new Date()).getTime();
   const desde = ultima ? agora - new Date(String((ultima as Json).iniciado_em)).getTime() : Infinity;
   // 1 min de folga: o agendador não bate exatamente no mesmo segundo.
-  if (desde < (config.frequenciaMinutos - 1) * 60_000) return { executada: false, motivo: "ainda_nao_venceu" };
+  if (!emAndamento && desde < (config.frequenciaMinutos - 1) * 60_000) return { executada: false, motivo: "ainda_nao_venceu" };
   const r = await importarCrm(env, { origem: "agendada", ator: "sistema:agendador" }, { db, fontes: deps.fontes, config });
   return { executada: true, resultado: r };
 }
