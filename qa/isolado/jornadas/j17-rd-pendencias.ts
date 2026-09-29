@@ -21,8 +21,8 @@ function cpf(b: string) { const d = b.split("").map(Number); for (const n of [10
 const CPF1 = cpf("900000201"), CPF5 = cpf("900000205");
 const contato = (id: number, c: string | null, fone: string) => ({ id: h(id), name: `Contato QA ${id}`, phones: [{ phone: fone }], custom_fields: c ? { cpf: c } : {} });
 const CONTATOS = [contato(0xc01, CPF1, "5561910000001"), contato(0xc02, null, "5561910000002"), contato(0xc03, cpf("900000203"), "5561910000003"),
-  contato(0xc04, cpf("900000204"), "5561910000004"), contato(0xc05, CPF5, "5561910000005"), contato(0xc07, CPF1, "5561910000007"), contato(0xc09, cpf("900000209"), "5561910000009"),
-  contato(0xc0a, cpf("900000203"), "5561910000010")];
+  contato(0xc04, cpf("900000204"), "5561910000004"), contato(0xc05, CPF5, "5561910000005"), contato(0xc07, CPF1, "+55 (61) 91000-0001"), contato(0xc09, cpf("900000209"), "5561910000009"),
+  contato(0xc0a, cpf("900000203"), "061 91000-0003")];
 const deal = (id: number, o: { status: string; pipe: string; owner: string; contato: number; total: number }) => ({
   id: h(id), name: `Negociação QA ${id}`, status: o.status, pipeline_id: o.pipe, stage_id: ETAPA, owner_id: o.owner, contact_ids: [h(o.contato)],
   total_price: o.total, created_at: "2026-09-20T12:00:00Z", updated_at: "2026-09-27T12:00:00Z", custom_fields: { "quantidade-de-parcelas": "24", banco: "Banco QA" },
@@ -33,11 +33,13 @@ const D3 = deal(0xd3, { status: "won", pipe: PIPE_A, owner: U_X, contato: 0xc03,
 const D4 = deal(0xd4, { status: "ongoing", pipe: PIPE_B, owner: U_V, contato: 0xc04, total: 8000 }); // não ganha
 const D5 = deal(0xd5, { status: "won", pipe: PIPE_C, owner: U_V, contato: 0xc05, total: 7000 });    // ganha fora do funil
 const D6 = deal(0xd6, { status: "ongoing", pipe: PIPE_C, owner: U_V, contato: 0xc05, total: 1 });   // em andamento fora do funil
-const D7 = deal(0xd7, { status: "won", pipe: PIPE_A, owner: U_V, contato: 0xc07, total: 5000 });    // mesmo CPF da D1
+const D7 = deal(0xd7, { status: "won", pipe: PIPE_A, owner: U_V, contato: 0xc07, total: 5000 });    // mesmo telefone da D1 (com +55 e máscara)
 const D8 = { name: "Negociação sem id", status: "won", pipeline_id: PIPE_A };                       // sem identificador
 const D9 = deal(0xd9, { status: "won", pipe: PIPE_A, owner: U_V, contato: 0xc09, total: -5 });     // valor negativo: gravação falha
-const DA = deal(0xda, { status: "won", pipe: PIPE_A, owner: U_V, contato: 0xc0a, total: 4000 });    // mesmo CPF da D3 (decidida "mesma pessoa")
+const DA = deal(0xda, { status: "won", pipe: PIPE_A, owner: U_V, contato: 0xc0a, total: 4000 });    // mesmo telefone da D3 com zero de longa distância (decidida "mesma pessoa")
 const TODOS = [D1, D2, D3, D4, D5, D6, D7, D8, D9, DA];
+// Webhook: o contato é lido pelo id (aqui, da lista fixa da jornada).
+const contatosQa = async (ids: string[]) => ({ contatos: new Map(CONTATOS.filter((c: any) => ids.includes(String(c.id))).map((c: any) => [String(c.id), c])), falhas: new Set<string>() });
 const fontesOk = { deals: async (f: string) => TODOS.filter((d) => f.includes(String(d.pipeline_id))), refs: async () => ({ contatos: CONTATOS, usuarios: [{ id: U_V, name: "Vendedora QA" }, { id: U_X, name: "Usuário RD sem vínculo" }], campanhas: [], fontes: [] }) };
 const fontesSemToken = { deals: async () => { throw new Error("RD_ACCESS_TOKEN_MISSING"); }, refs: async () => ({ contatos: [], usuarios: [], campanhas: [], fontes: [] }) };
 const mapa = Object.fromEntries(["cpf", "telefone", "email", "vendedora", "origem", "campanha", "valor_contrato", "quantidade_parcelas", "valor_parcela", "taxa_administrativa", "tipo_venda", "procedimento", "banco"].map((c) => [c, "auto"]));
@@ -95,7 +97,7 @@ r.repeticao = { antes, depois };
 provas.repeticaoNaoDuplicaVendasNemPendencias = antes.vendas === depois.vendas && antes.pendencias === depois.pendencias;
 
 // 5) Webhook repetido 5x da mesma negociação ganha fora do funil: 1 linha, ocorrências somam
-for (let i = 0; i < 5; i++) await importarDoWebhook(env, db, D5, `qa-tx-${i}`);
+for (let i = 0; i < 5; i++) await importarDoWebhook(env, db, D5, `qa-tx-${i}`, { contatos: contatosQa });
 r.webhookD5 = (pend() as any[]).filter((p) => p.id === "00d5");
 provas.webhookGanhaForaDoFunilUmaLinha = (r.webhookD5 as any[]).length === 1 && (r.webhookD5 as any[])[0].tipo === "ganha_fora_do_funil" && (r.webhookD5 as any[])[0].oc === 5;
 
@@ -139,7 +141,7 @@ provas.descartadaNaoReabre = sql(`select count(*) from integracao_pendencias whe
 provas.d4ContinuaForaDoBi = sql(`select count(*) from vw_vendas_validas_bi where rd_station_id='${h(0xd4)}'`) === "0";
 
 // 11) Exclusão no RD via webhook → pendência excluida_no_rd e sai do BI
-await importarDoWebhook(env, db, D1, "qa-tx-antes-exclusao");
+await importarDoWebhook(env, db, D1, "qa-tx-antes-exclusao", { contatos: contatosQa });
 sql(`update novas_vendas set rd_status='deleted', rd_excluido_em=now() where rd_station_id='${h(0xd1)}'`);
 await db.rpc("rd_recalcular_pendencias_venda", { p_venda_id: sql(`select id from novas_vendas where rd_station_id='${h(0xd1)}'`), p_origem: "webhook", p_importacao_id: null, p_ator: "qa" });
 provas.exclusaoNoRdSaiDoBi = sql(`select count(*) from vw_vendas_validas_bi where rd_station_id='${h(0xd1)}'`) === "0" && sql(`select count(*) from integracao_pendencias where tipo='excluida_no_rd' and external_id='${h(0xd1)}' and estado='aberta'`) === "1";

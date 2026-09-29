@@ -37,7 +37,7 @@ function rdFalso(opcoes: { semOrdenacao?: boolean; falhar?: boolean } = {}) {
     [F2]: [{ id: "d4", name: "D", pipeline_id: F2, owner_id: U2, total_price: 0, contact_ids: [], custom_fields: { sdr: null } }],
   };
   const contatos = [
-    { id: K1, name: "Maria", phones: [{ phone: "61999990000" }], emails: [{ email: "m@x.com" }], custom_fields: { cpf: "12345678901" } },
+    { id: K1, name: "Maria", phones: [{ phone: "61999990000", type: "mobile" }], emails: [{ email: "m@x.com" }], whatsapp_username: "maria", custom_fields: { cpf: "12345678901" } },
     { id: K2, name: "Joana", phones: [], emails: [], custom_fields: { cpf: null } },
   ];
   const rd: LeitorRd = {
@@ -51,9 +51,11 @@ function rdFalso(opcoes: { semOrdenacao?: boolean; falhar?: boolean } = {}) {
         const pid = decodeURIComponent(path).match(/pipeline_id:([0-9a-f]{24})/)![1];
         return { data: deals[pid] };
       }
-      if (path.startsWith("/contacts")) {
-        const ids = decodeURIComponent(path).match(/id:\(([^)]*)\)/)![1].split(",");
-        return { data: contatos.filter((c) => ids.includes(c.id)) };
+      const umContato = path.match(/^\/contacts\/([0-9a-f]{24})$/);
+      if (umContato) {
+        const c = contatos.find((x) => x.id === umContato[1]);
+        if (!c) throw new Error("RD_HTTP_404");
+        return { data: c };
       }
       throw new Error("RD_HTTP_404");
     },
@@ -71,15 +73,16 @@ describe("catálogo do RD por funil", () => {
     const gets = chamadas.filter((c) => c.tipo === "get").map((c) => c.alvo);
     expect(gets.filter((g) => g.startsWith("/deals"))).toHaveLength(2);
     expect(gets.every((g) => !g.startsWith("/deals") || g.includes("page[size]=100") && g.includes("sort[updated_at]=desc"))).toBe(true);
-    // Só o funil com contatos na amostra busca contatos, em UMA chamada filtrada por id.
-    expect(gets.filter((g) => g.startsWith("/contacts"))).toHaveLength(1);
+    // Contatos lidos um a um pelo id (o RDQL de contatos não filtra por id), só os da amostra.
+    expect(gets.filter((g) => g.startsWith("/contacts")).sort()).toEqual([`/contacts/${K1}`, `/contacts/${K2}`]);
   });
 
   it("campos de cada funil vêm das regras do RD e da amostra, sem catálogo global", async () => {
     const { rd } = rdFalso();
     const [comercial, posVenda] = await montarCatalogoCrm(env, { rd });
     const fontes = (f: typeof comercial) => f.fontes.map((x) => x.fonte);
-    expect(fontes(comercial)).toEqual(expect.arrayContaining(["deal:valor-da-carta", "deal:banco", "deal:sdr", "contact:cpf", "deal_field:owner_id", "contact_field:phones"]));
+    expect(fontes(comercial)).toEqual(expect.arrayContaining(["deal:valor-da-carta", "deal:banco", "deal:sdr", "contact:cpf", "deal_field:owner_id", "contact_field:phones", "contact_field:emails", "contact_field:name", "contact_field:whatsapp_username"]));
+    expect(comercial.fontes.find((f) => f.fonte === "contact_field:whatsapp_username")).toMatchObject({ rotulo: "Contato: Nome de usuário no WhatsApp", grupo: "contact_nativo", preenchidas: 1 });
     expect(fontes(comercial)).not.toContain("deal:motivo-retorno");
     expect(fontes(posVenda)).toContain("deal:motivo-retorno");
     expect(fontes(posVenda)).not.toContain("deal:sdr");

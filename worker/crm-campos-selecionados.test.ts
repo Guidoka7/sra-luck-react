@@ -42,7 +42,9 @@ describe("campos escolhidos por funil", () => {
     await importarCrm({} as Env, { origem: "manual", ator: "qa" }, { db, config, fontes });
     const venda = tabela("novas_vendas")[0];
     expect(venda.rd_snapshot._sra_mapeamento.campos[0].valor).toBe("Fernanda");
+    // Edição feita no Admin (PATCH /novas-vendas/:id grava este log): a importação não sobrescreve.
     venda.nome_completo = "Nome editado localmente";
+    tabela("logs_alteracoes").push({ acao: "editou_venda_local_sem_sync_rd", entidade: "novas_vendas", entidade_id: venda.id, detalhes: { campos: ["nome_completo"] } });
     deal.custom_fields.sdr = "Outra SDR";
     await importarCrm({} as Env, { origem: "manual", ator: "qa" }, { db, config, fontes });
     expect(tabela("novas_vendas")).toHaveLength(1);

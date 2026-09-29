@@ -270,6 +270,9 @@ const ROTULOS_NATIVOS_CRM: Record<string, string> = {
   "contact_field:name": "Contato: Nome",
   "contact_field:emails": "Contato: E-mail",
   "contact_field:phones": "Contato: Telefone",
+  "contact_field:whatsapp_username": "Contato: Nome de usuário no WhatsApp",
+  "contact_field:job_title": "Contato: Cargo",
+  "contact_field:birthday": "Contato: Data de aniversário",
 };
 export const CAMPOS_NATIVOS_CRM = Object.entries(ROTULOS_NATIVOS_CRM).map(([fonte, rotulo]) => ({ fonte, rotulo }));
 export const rotuloNativoCrm = (fonte: string) => ROTULOS_NATIVOS_CRM[fonte] ?? fonte;
@@ -363,7 +366,8 @@ export const PADRAO_CRM: ConfigCrm = {
   etapas: [],
   status: "won",
   mapeamento: MAPEAMENTO_CRM_PADRAO(),
-  deduplicarPor: { cpf: true, telefone: true, email: true },
+  // Duplicata = mesmo telefone (decisão do responsável, 29/09/2026). cpf/email ficam só por compatibilidade.
+  deduplicarPor: { cpf: false, telefone: true, email: false },
 };
 
 const ID_RD = /^[0-9a-f]{24}$/;
@@ -571,7 +575,7 @@ const CAMPOS_CRM_FORM: CampoFormulario[] = [
   { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
   { chave: "mapeamento", rotulo: "Preenchimento padrão", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Fallback para todos os funis. Cada funil selecionado pode sobrescrever este preenchimento campo a campo." },
   { chave: "funis", rotulo: "Funis sincronizados", tipo: "rd_funis", camposLivres: true, filtrosPorFunil: true, opcoesDe: "rd_funis", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Marque vários funis. Dentro de cada um, escolha etapas, filtros (vendedora, fonte, campanha, campos de opção) e a origem de cada dado. Nenhum funil marcado = todos os funis usando o preenchimento padrão." },
-  { chave: "deduplicarPor", rotulo: "Deduplicar por", tipo: "grupo_booleano", itens: [{ chave: "cpf", rotulo: "CPF" }, { chave: "telefone", rotulo: "Telefone" }, { chave: "email", rotulo: "E-mail" }] },
+  { chave: "deduplicarPor", rotulo: "Duplicatas por telefone", tipo: "grupo_booleano", itens: [{ chave: "telefone", rotulo: "Mesmo telefone (com ou sem +55, DDD e zero)" }], ajuda: "Só o telefone identifica a mesma pessoa. Entre duplicatas, fica a negociação mais completa; ela completa o que faltar na venda pendente." },
 ];
 
 const CAMPOS_CONTA_AZUL_FORM: CampoFormulario[] = [
