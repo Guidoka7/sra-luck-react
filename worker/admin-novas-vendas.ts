@@ -136,9 +136,9 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     const status = url.searchParams.get("status");
     const escopoAtual = url.searchParams.get("escopo") === "funil_atual";
     const config = escopoAtual ? await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db }) : null;
-    const funis = config ? (config.funis.length ? config.funis.map((f) => f.pipelineId) : config.pipelineId ? [config.pipelineId] : []) : [];
+    const funis = config && !config.todosFunis ? (config.funis.length ? config.funis.map((f) => f.pipelineId) : config.pipelineId ? [config.pipelineId] : []) : [];
     let ultimaImportacao: string | null = null;
-    if (escopoAtual && config && funis.length) {
+    if (escopoAtual && config) {
       const { data } = await db.from("integracao_importacoes").select("iniciado_em")
         .eq("provedor", "rd_station").eq("filtro", filtroRdql(config)).eq("status", "concluida")
         .neq("origem", "webhook").order("iniciado_em", { ascending: false }).limit(1).maybeSingle();
@@ -152,10 +152,8 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
         .select("id,rd_station_id,cliente_id,nome_completo,cpf,telefone,email,data_venda,vendedora_responsavel,valor_contrato,quantidade_parcelas,valor_parcela,taxa_administrativa,tipo_venda,origem_venda,status,created_at,updated_at,vendedora_id", { count: "exact" });
       if (status) query = query.eq("status", status);
       if (status === "aguardando_cadastro") query = query.is("cliente_id", null);
-      if (escopoAtual && funis.length) {
-        query = query.in("rd_pipeline_id", funis);
-        if (ultimaImportacao) query = query.gte("sincronizado_rd_em", ultimaImportacao);
-      }
+      if (escopoAtual && funis.length) query = query.in("rd_pipeline_id", funis);
+      if (escopoAtual && ultimaImportacao) query = query.gte("sincronizado_rd_em", ultimaImportacao);
       const { data, error, count } = await query
         .order("data_venda", { ascending: false })
         .range(de, de + PAGE_SIZE - 1);
