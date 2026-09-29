@@ -173,15 +173,23 @@ const RESULTADO: Record<string, [string, ZipKind]> = {
   cliente_existente: ["Cliente já existe", "warn"], ignorada: ["Ignorada", "neutral"], erro: ["Erro", "bad"], importada_apos_revisao: ["Importada após revisão", "blue"],
 };
 
-function ItemImportacao({ it, onAcao }: { it: Json; onAcao?: (id: string, acao: "importar" | "descartar") => void }) {
+type AcaoRevisao = "importar" | "descartar" | "usar-perfil";
+
+function ItemImportacao({ it, onAcao }: { it: Json; onAcao?: (id: string, acao: AcaoRevisao) => void }) {
   const [r, k] = RESULTADO[it.resultado] ?? [it.resultado, "neutral"];
+  const minha = typeof it.dados?.completude === "number" ? it.dados.completude as number : null;
+  const vendaPendente = (it.correspondencias ?? []).find((c: Json) => c.tipo === "venda");
+  const deles = typeof vendaPendente?.completude === "number" ? vendaPendente.completude as number : null;
+  const estaMaisCompleta = minha != null && deles != null && minha > deles;
   return <div style={{ ...caixa, display: "flex", flexDirection: "column", gap: 4 }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong>{it.dados?.nome ?? it.externalId}</strong><span style={chip(k)}>{r}</span></div>
     <span style={muted}>{[it.dados?.cpf, it.dados?.telefone, it.dados?.email].filter(Boolean).join(" · ") || "Sem contato"}{it.motivo ? ` — ${it.motivo}` : ""}{it.repeticoes > 1 ? ` · vista em ${it.repeticoes} execuções` : ""}</span>
-    {(it.correspondencias ?? []).map((c: Json) => <span key={`${c.tipo}${c.id}`} style={muted}>↳ {c.tipo === "cliente" ? "Cliente" : "Venda pendente"} {c.nome ?? c.id} (mesmo {c.por.join(", ")})</span>)}
-    {onAcao && !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado) && <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-      <button style={btn} onClick={() => onAcao(it.id, "descartar")}>É a mesma pessoa</button>
-      <button style={btnPrim} onClick={() => onAcao(it.id, "importar")}>Importar mesmo assim</button>
+    {(it.correspondencias ?? []).map((c: Json) => <span key={`${c.tipo}${c.id}`} style={muted}>↳ {c.tipo === "cliente" ? "Cliente" : "Venda pendente"} {c.nome ?? c.id} (mesmo {c.por.join(", ")}){typeof c.completude === "number" ? ` · ${c.completude} dado(s) preenchido(s)` : ""}</span>)}
+    {minha != null && <span style={muted}>Este perfil: {minha} dado(s) preenchido(s){deles != null ? (estaMaisCompleta ? " · mais completo que a venda pendente" : minha === deles ? " · igual à venda pendente" : " · a venda pendente é mais completa") : ""}</span>}
+    {onAcao && !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado) && <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+      <button style={btn} onClick={() => onAcao(it.id, "descartar")}>É a mesma pessoa (manter a venda pendente)</button>
+      {it.resultado === "duplicada" && vendaPendente && <button style={estaMaisCompleta ? btnPrim : btn} onClick={() => onAcao(it.id, "usar-perfil")}>Usar este perfil na venda pendente</button>}
+      <button style={estaMaisCompleta ? btn : btnPrim} onClick={() => onAcao(it.id, "importar")}>Importar mesmo assim</button>
     </div>}
   </div>;
 }
@@ -216,8 +224,11 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     setAberta(id); setItens([]);
     try { setItens((await api(`/api/admin/integrations/rd-station/importacoes/${id}/itens`)).itens ?? []); } catch (e) { setMsg({ t: (e as Error).message, ok: false }); }
   }
-  async function revisar(id: string, acao: "importar" | "descartar") {
-    try { await api(`/api/admin/integrations/rd-station/importacoes/itens/${id}/${acao}`, { method: "POST" }); setMsg({ t: acao === "importar" ? "Venda criada em Aguardando cadastro." : "Marcada como a mesma pessoa; nada foi criado.", ok: true }); await carregar(); }
+  async function revisar(id: string, acao: AcaoRevisao) {
+    const sucesso = acao === "importar" ? "Venda criada em Aguardando cadastro."
+      : acao === "usar-perfil" ? "Perfil aplicado na venda pendente; os valores anteriores ficaram registrados no histórico."
+      : "Marcada como a mesma pessoa; nada foi criado.";
+    try { await api(`/api/admin/integrations/rd-station/importacoes/itens/${id}/${acao}`, { method: "POST" }); setMsg({ t: sucesso, ok: true }); await carregar(); }
     catch (e) { setMsg({ t: (e as Error).message, ok: false }); }
   }
 
