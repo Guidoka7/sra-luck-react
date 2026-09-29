@@ -436,7 +436,7 @@ async function salvarConfigApi(request: Request, env: Env) {
     if (financeiro instanceof Response) return financeiro;
   }
   const r = await salvarConfig(env, body, authorization.colaboradorId);
-  if (!r.ok) return json({ erro: r.erro, codigo: r.codigo }, r.status);
+  if (!r.ok) return json({ erro: r.erro, codigo: r.codigo, ...("versaoAtual" in r ? { versaoAtual: r.versaoAtual } : {}) }, r.status);
   requestLogger(request).info("Configuração de função de integração salva", { eventCode: "INTEGRATION_FUNCTION_CONFIGURED", provider: r.provedor, funcao: r.funcao, versao: r.versao });
   return json(r);
 }
