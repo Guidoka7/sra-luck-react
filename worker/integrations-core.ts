@@ -9,6 +9,7 @@ import { pseudonymizeActorId, requestLogger } from "./logger";
 import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
+import { atualizarCatalogoSeVencido } from "./crm-catalogo";
 import { pendenciasApi } from "./integracao-pendencias";
 import { catalogo, ESQUEMAS_CONFIG, salvarConfig } from "./integracoes-registro";
 import { calcularEncargosAtraso } from "../src/lib/financeiro/encargos";
@@ -381,6 +382,15 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
     resultado.crm = { agendada: true, processamento: "segundo_plano" };
   } else {
     try { resultado.crm = await crm; } catch { resultado.crm = { erro: "Falha na importação agendada do CRM." }; }
+  }
+
+  // Catálogo de funis/campos do RD: renova quando vence (6 h) para a tela abrir sem esperar o RD.
+  const catalogo = atualizarCatalogoSeVencido(env);
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(catalogo.then(() => undefined).catch(() => undefined));
+    resultado.rdCatalogo = { agendado: true, processamento: "segundo_plano" };
+  } else {
+    try { resultado.rdCatalogo = await catalogo; } catch { resultado.rdCatalogo = { erro: "Falha ao atualizar o catálogo do RD Station." }; }
   }
 
   try { resultado.contaAzul = await sincronizarContaAzul(env, { origem: "agendada", ator: "sistema:agendador" }); } catch { resultado.contaAzul = { erro: "Falha na sincronização da Conta Azul." }; }

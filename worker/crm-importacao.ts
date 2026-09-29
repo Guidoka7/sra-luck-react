@@ -12,14 +12,14 @@
  *   banco (migration_091) quando a cliente tem parcelas E acesso ao app liberado.
  * - RD continua somente leitura (só GET em /crm/v2).
  */
-import { configDaFuncao, CAMPOS_CRM, CAMPOS_NATIVOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
+import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
   arrayValue, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
-import { camposDisponiveisDoFunil, type CampoCatalogoCrm } from "./crm-opcoes-por-funil";
+import { catalogoCrm } from "./crm-catalogo";
 
 type Json = Record<string, any>;
 type Db = ReturnType<typeof createServiceSupabaseClient>;
@@ -83,6 +83,20 @@ function funilParaSnapshot(s: RdDealSnapshot, config: ConfigCrm) {
   return funis.find((f) => f.pipelineId === s.rdPipelineId) ?? null;
 }
 
+/** Valores da negociação para um filtro do funil (IDs do RD ou opções do campo). */
+function valoresParaFiltro(s: RdDealSnapshot, fonte: string): string[] {
+  if (fonte === "deal_field:owner_id") return s.rdOwnerId ? [s.rdOwnerId] : [];
+  if (fonte === "deal_field:source_id") return s.rdSourceId ? [s.rdSourceId] : [];
+  if (fonte === "deal_field:campaign_id") return s.rdCampaignId ? [s.rdCampaignId] : [];
+  if (fonte.startsWith("deal:")) {
+    const v = valorPersonalizado(s.raw, fonte.slice(5));
+    return (Array.isArray(v) ? v : [v]).map(stringValue).filter(Boolean);
+  }
+  return [];
+}
+
+const ROTULO_FILTRO: Record<string, string> = { "deal_field:owner_id": "responsável", "deal_field:source_id": "fonte", "deal_field:campaign_id": "campanha" };
+
 /** Webhook e reprocessamentos passam pelo mesmo filtro da importação. */
 export function passaNoFiltro(s: RdDealSnapshot, config: ConfigCrm): string | null {
   const funis = funisConfigurados(config);
@@ -90,6 +104,13 @@ export function passaNoFiltro(s: RdDealSnapshot, config: ConfigCrm): string | nu
     const funil = funilParaSnapshot(s, config);
     if (!funil) return "Fora dos funis configurados.";
     if (funil.etapas.length && (!s.rdStageId || !funil.etapas.includes(s.rdStageId))) return "Fora das etapas configuradas para este funil.";
+    for (const filtro of funil.filtros ?? []) {
+      if (!filtro.valores.length) continue;
+      const valores = valoresParaFiltro(s, filtro.fonte);
+      if (!valores.some((v) => filtro.valores.includes(v))) {
+        return `Fora do filtro de ${ROTULO_FILTRO[filtro.fonte] ?? `campo ${filtro.fonte.slice(5)}`} deste funil.`;
+      }
+    }
   }
   if (config.status !== "qualquer" && s.rdStatus && s.rdStatus !== config.status) return `Status ${s.rdStatus} diferente do configurado (${config.status}).`;
   return null;
@@ -118,6 +139,26 @@ export function extrairCamposSelecionados(s: RdDealSnapshot, deal: Json, contato
     const ausente = valor === undefined || valor === null || valor === "" || (Array.isArray(valor) && valor.length === 0);
     return { fonte, rotulo, valor: ausente ? null : valor, situacao: !registro ? "origem_nao_carregada" : ausente ? "ausente" : "presente" };
   });
+}
+
+/** Primeiro item de listas do RD (phones: [{ phone }], emails: [{ email }]). */
+function primeiroValor(v: unknown): unknown {
+  const item = Array.isArray(v) ? v[0] : v;
+  if (item && typeof item === "object") {
+    const o = item as Json;
+    return o.phone ?? o.email ?? o.value ?? o.number ?? o.name ?? null;
+  }
+  return item;
+}
+
+/** Origem nativa escolhida explicitamente no funil. Nomes (responsável, fonte, campanha) já vêm resolvidos no snapshot. */
+export function valorNativo(fonte: string, s: RdDealSnapshot, deal: Json, contato: Json | undefined): unknown {
+  if (fonte === "deal_field:owner_id" || fonte === "deal_field:user_id") return s.vendedoraOriginal;
+  if (fonte === "deal_field:source_id") return s.origemOriginal;
+  if (fonte === "deal_field:campaign_id") return s.campanhaOriginal;
+  const [entidade, chave] = fonte.split(":");
+  const registro = entidade === "contact_field" ? contato : deal;
+  return primeiroValor(registro?.[chave]);
 }
 
 function autoPorNome(obj: unknown, dica: string): string | null {
@@ -161,6 +202,7 @@ export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json |
     if (fonte === "ignorar") bruto = null;
     else if (fonte.startsWith("deal:")) bruto = valorPersonalizado(deal, fonte.slice(5));
     else if (fonte.startsWith("contact:")) bruto = valorPersonalizado(contato, fonte.slice(8));
+    else if (fonte.startsWith("deal_field:") || fonte.startsWith("contact_field:")) bruto = valorNativo(fonte, s, deal, contato);
     else bruto = auto[campo];
     (out as Record<string, unknown>)[campo] = converter(campo, bruto);
   }
@@ -629,41 +671,11 @@ export async function descartarRevisao(db: Db, itemId: string, ator: string) {
 }
 
 /**
- * Funis, etapas e campos do RD para montar a configuração.
- * A disponibilidade de origem é específica por funil: o catálogo só fornece o nome/tipo;
- * um campo entra na lista daquele funil somente quando a chave aparece em uma negociação
- * do pipeline ou em um contato ligado a ela. Não existe fallback global de campos.
+ * Funis, etapas, campos e valores do RD para montar a configuração.
+ * Vem do catálogo pré-calculado (crm-catalogo.ts): a tela não espera o RD.
  */
 export async function opcoesCrm(env: Env) {
-  const [funis, catalogoBruto, contatos] = await Promise.all([
-    listarTudo(env, "pipelines"),
-    listarTudo(env, "custom_fields"),
-    listarTudo(env, "contacts"),
-  ]);
-  const catalogo = catalogoBruto
-    .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
-    .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
-    .filter((c) => /^[a-z0-9_-]{1,100}$/.test(c.slug)) as CampoCatalogoCrm[];
-  const contatosPorId = mapById(contatos);
-  const comEtapas = await Promise.all(funis.map(async (f) => {
-    const id = stringValue(f.id);
-    let etapas: Json[] = [];
-    let deals: Json[] = [];
-    await Promise.all([
-      rdGet(env, `/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)
-        .then((r) => { etapas = arrayValue(r.data).map(objectValue); }),
-      listarTudo(env, "deals", `pipeline_id:${id}`)
-        .then((r) => { deals = r; }),
-    ]);
-    const disponiveis = camposDisponiveisDoFunil(deals, contatosPorId, catalogo);
-    return {
-      id,
-      nome: stringValue(f.name) || id,
-      etapas: etapas.sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0)).map((e) => ({ id: stringValue(e.id), nome: stringValue(e.name) || stringValue(e.id) })),
-      ...disponiveis,
-    };
-  }));
-  return { funis: comEtapas, campos: [], camposNativos: [], escopoCampos: "por_funil" as const };
+  return catalogoCrm(env);
 }
 
 /**

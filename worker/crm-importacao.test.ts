@@ -112,6 +112,51 @@ describe("configuração do CRM", () => {
     expect(chaveTelefone("9876")).toBeNull();
   });
 
+  it("preenchimento explícito com origens nativas do RD (responsável, fonte, telefone e e-mail do contato)", () => {
+    const U = "1".repeat(24), S = "2".repeat(24);
+    const cfg = config({
+      funis: [{ pipelineId: FUNIL, etapas: [], mapeamento: {
+        ...PADRAO_CRM.mapeamento, vendedora: "deal_field:owner_id", origem: "deal_field:source_id", telefone: "contact_field:phones",
+        email: "contact_field:emails", valor_contrato: "deal_field:one_time_price",
+      } }],
+    });
+    const c = contato("N", "Cliente N", "61 99999-1234", "n@x.com");
+    const d = deal("N", { owner_id: U, source_id: S, one_time_price: 7777, contact_ids: ["ctN"] });
+    const s = normalizarDealRd(d, { contatos: new Map([["ctN", c]]), usuarios: new Map([[U, { id: U, name: "Raissa" }]]), fontes: new Map([[S, { id: S, name: "Instagram" }]]) })!;
+    expect(aplicarMapeamento(s, d, c, cfg)).toMatchObject({ vendedora: "Raissa", origem: "Instagram", telefone: "61 99999-1234", email: "n@x.com", valor_contrato: 7777 });
+  });
+
+  it("filtros do funil: só importa a vendedora e a opção marcadas", () => {
+    const RAISSA = "1".repeat(24), GIOVANA = "2".repeat(24);
+    const cfg = config({
+      funis: [{ pipelineId: FUNIL, etapas: [], mapeamento: { ...PADRAO_CRM.mapeamento }, filtros: [
+        { fonte: "deal_field:owner_id", valores: [RAISSA] },
+        { fonte: "deal:tipo-de-venda", valores: ["Consórcio"] },
+      ] }],
+    });
+    const s = (extra: Record<string, unknown>) => normalizarDealRd(deal("X", extra))!;
+    expect(passaNoFiltro(s({ owner_id: RAISSA, custom_fields: { "tipo-de-venda": "Consórcio" } }), cfg)).toBeNull();
+    expect(passaNoFiltro(s({ owner_id: RAISSA, custom_fields: { "tipo-de-venda": ["Outro", "Consórcio"] } }), cfg)).toBeNull();
+    expect(passaNoFiltro(s({ owner_id: GIOVANA, custom_fields: { "tipo-de-venda": "Consórcio" } }), cfg)).toMatch(/responsável/);
+    expect(passaNoFiltro(s({ owner_id: RAISSA, custom_fields: { "tipo-de-venda": "Outro" } }), cfg)).toMatch(/tipo-de-venda/);
+    expect(passaNoFiltro(s({ custom_fields: { "tipo-de-venda": "Consórcio" } }), cfg)).toMatch(/responsável/);
+  });
+
+  it("valida filtros por funil e origens nativas", () => {
+    const base = (funil: Record<string, unknown>) => validarConfigCrm({ funis: [{ pipelineId: FUNIL, etapas: [], ...funil }] });
+    const ok = base({ filtros: [{ fonte: "deal_field:owner_id", valores: ["a", "a", "b"] }, { fonte: "deal:banco", valores: [] }], mapeamento: { vendedora: "deal_field:owner_id", telefone: "contact_field:phones" } });
+    expect(ok).toMatchObject({ ok: true });
+    if (ok.ok) {
+      expect(ok.config.funis[0].filtros).toEqual([{ fonte: "deal_field:owner_id", valores: ["a", "b"] }]);
+      expect(ok.config.funis[0].mapeamento).toMatchObject({ vendedora: "deal_field:owner_id", telefone: "contact_field:phones" });
+    }
+    expect(base({ filtros: [{ fonte: "contact:cpf", valores: ["1"] }] })).toMatchObject({ ok: false });
+    expect(base({ filtros: [{ fonte: "deal_field:owner_id", valores: ["a"] }, { fonte: "deal_field:owner_id", valores: ["b"] }] })).toMatchObject({ ok: false });
+    expect(base({ filtros: [{ fonte: "deal_field:owner_id", valores: "a" }] })).toMatchObject({ ok: false });
+    expect(base({ mapeamento: { cpf: "deal_field:pipeline_id" } })).toMatchObject({ ok: false });
+    expect(base({ mapeamento: { cpf: "deal_field:qualquer" } })).toMatchObject({ ok: false });
+  });
+
   it("webhook fora do funil ou da etapa é ignorado", () => {
     const s = normalizarDealRd(deal("9", { stage_id: OUTRA }))!;
     expect(passaNoFiltro(s, config({ pipelineId: FUNIL, etapas: [ETAPA] }))).toMatch(/etapas/);
