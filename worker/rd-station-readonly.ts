@@ -489,6 +489,48 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
 }
 
 /**
+ * A API só permite navegar os primeiros 10 mil resultados de CADA filtro.
+ * Quando um funil excede esse limite, divide a busca por intervalos de criação
+ * sem sobreposição (início inclusivo, fim exclusivo).
+ */
+export async function listarDealsPorPeriodos(
+  filtro: string,
+  listar: (filtro: string) => Promise<Json[]>,
+  inicio = Date.UTC(1970, 0, 1),
+  fim = Date.UTC(2100, 0, 1),
+): Promise<Json[]> {
+  const formatar = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+  const intervalo = `${filtro} created_at:>="${formatar(inicio)}" created_at:<"${formatar(fim)}"`.trim();
+  try {
+    return await listar(intervalo);
+  } catch (e) {
+    if (!(e instanceof Error) || e.message !== "RD_RESULT_LIMIT_10000") throw e;
+    const meio = Math.floor((inicio + fim) / 2000) * 1000;
+    if (meio <= inicio || meio >= fim) throw new Error("RD_RESULT_LIMIT_SAME_SECOND");
+    const anterior = await listarDealsPorPeriodos(filtro, listar, inicio, meio);
+    const posterior = await listarDealsPorPeriodos(filtro, listar, meio, fim);
+    return [...anterior, ...posterior];
+  }
+}
+
+export async function listarDealsTodosFunis(env: Env): Promise<Json[]> {
+  const funis = await listarTudo(env, "pipelines");
+  const ids = [...new Set(funis.map((f) => stringValue(f.id)).filter(Boolean))];
+  if (!ids.length) throw new Error("RD_PIPELINES_EMPTY");
+  const deals: Json[] = [];
+  for (const id of ids) {
+    const filtro = `pipeline_id:${id}`;
+    try {
+      deals.push(...await listarTudo(env, "deals", filtro));
+    } catch (e) {
+      if (!(e instanceof Error) || e.message !== "RD_RESULT_LIMIT_10000") throw e;
+      deals.push(...await listarDealsPorPeriodos(filtro, (f) => listarTudo(env, "deals", f)));
+    }
+  }
+  return deals;
+}
+
+/**
  * Contatos das negociações, um GET /contacts/{id} por contato (o RDQL de contatos não filtra
  * por id). Concorrência limitada e nova tentativa em 429. Falhas voltam em `falhas`: quem chama
  * decide não gravar dados de contato vazios no lugar de dados que existem no RD.
