@@ -66,7 +66,7 @@ function AdminRoute({ path }: { path: string }) {
   else if (path.startsWith("/admin/clientes")) conteudo = <ClientesPage />;
   else if (path.startsWith("/admin/financeiro/avancado")) conteudo = <FinanceiroAvancado />;
   else if (path.startsWith("/admin/financeiro")) conteudo = <FinanceiroPage />;
-  else if (path === "/admin/bi" || path.startsWith("/admin/bi/")) conteudo = <AdminBi />;
+  else if (path === "/admin/bi" || path.startsWith("/admin/bi/") || path === "/admin/power-bi" || path.startsWith("/admin/power-bi/")) conteudo = <AdminBi />;
   else if (path.startsWith("/admin/relatorios")) conteudo = <RelatoriosPage />;
   else if (path.startsWith("/admin/clube")) conteudo = <ClubeAdminPage />;
   else if (path.startsWith("/admin/equipe")) conteudo = <AdminWorkspace />;

@@ -1,27 +1,31 @@
-export type BiArea = 'geral' | 'marketing' | 'sdr' | 'comercial' | 'financeiro' | 'qualidade';
-export type BiMetric = { id: string; label: string; value: number | null; scope: string; error?: string };
+/** Contrato exclusivo do BI comercial. Nenhuma métrica vem das tabelas do app. */
+export type BiArea = 'geral' | 'origens' | 'funis' | 'agendamentos' | 'vendas' | 'leads' | 'qualidade';
 export interface BiOverview {
-  periodo: string;
-  consultedAt: string;
-  source: 'sra_luck';
-  externalCollection: 'not_implemented';
-  metrics: BiMetric[];
-  contracts: BiMetric[];
+  source: 'rd_station';
+  scope: 'company_commercial';
+  collection: { state: 'not_implemented'; lastSyncedAt: null; historicalComplete: false };
+  metrics: null;
 }
-export const BI_AREAS: {id: BiArea; label: string; description: string; indicators: string[]}[] = [
-  {id:'geral',label:'Visão geral',description:'Uma visão da empresa, com a origem de cada informação.',indicators:[]},
-  {id:'marketing',label:'Marketing',description:'Da origem do lead ao resultado de cada campanha.',indicators:['Leads por fonte','Campanhas e conversões','Custo por lead','Retorno por campanha']},
-  {id:'sdr',label:'SDR',description:'Atendimentos, agendamentos e comparecimento por SDR.',indicators:['Pessoas atendidas','Agendamentos confirmados','Não confirmados','Compareceram / não compareceram']},
-  {id:'comercial',label:'Comercial',description:'Reuniões, contratos e atribuição correta das vendas.',indicators:['Contratos fechados','Em negociação e perdidos','Vendas por vendedora','Reuniões realizadas']},
-  {id:'financeiro',label:'Financeiro',description:'Recebimentos, vencimentos e conciliação financeira.',indicators:['Recebidos em dia','Recebidos em atraso','Vencidos em aberto','Estornos e baixas parciais']},
-  {id:'qualidade',label:'Qualidade dos dados',description:'O que precisa ser conferido antes de virar resultado.',indicators:['Leads sem responsável','Fonte ou campanha ausente','Vendedora / SDR em conflito','Possíveis duplicidades']},
+export const BI_AREAS: {id: BiArea; label: string; description: string; indicators: string[]; columns: string[]}[] = [
+  {id:'geral',label:'Visão comercial',description:'A operação comercial da Sra. Luck, da entrada do lead à venda.',indicators:['Novos leads','Agendamentos confirmados','Reuniões realizadas','Vendas ganhas'],columns:[]},
+  {id:'origens',label:'Fontes e campanhas',description:'De onde os leads chegaram e quais origens geraram resultado.',indicators:['Leads por fonte','Agendamentos por origem','Vendas por campanha','Conversão por origem'],columns:['Fonte','Campanha','Leads únicos','Agendamentos','Comparecimentos','Vendas','Conversão']},
+  {id:'funis',label:'Funis e conversão',description:'Movimentação, tempo em cada etapa, perdas e avanços nos funis reais do RD.',indicators:['Negociações em aberto','Avanços de etapa','Negociações perdidas','Tempo até a venda'],columns:['Funil','Etapa','Negociações','Entradas no período','Saídas no período','Tempo na etapa']},
+  {id:'agendamentos',label:'SDR e agendamentos',description:'Quem atendeu, quem agendou e o que aconteceu com cada reunião.',indicators:['Agendados','Confirmados','Compareceram','Não compareceram'],columns:['Lead','SDR','Data da reunião','Modalidade','Confirmação','Comparecimento','Vendedora da reunião']},
+  {id:'vendas',label:'Vendas e vendedoras',description:'Cada venda vinculada à negociação e à vendedora que a realizou.',indicators:['Vendas ganhas','Valor vendido','Sem vendedora identificada','Atribuições conflitantes'],columns:['Negociação','Lead','Vendedora','Data da venda','Valor','Fonte','Campanha','Situação da atribuição']},
+  {id:'leads',label:'Jornada dos leads',description:'Cada lead desde sua origem, com todos os atendimentos e negociações relacionados.',indicators:['Leads novos','Leads em atendimento','Leads com venda','Sem responsável'],columns:['Lead / ID RD','Entrada no CRM','Fonte / campanha','Responsável atual','SDR','Funil / etapa','Vendedora','Última atividade']},
+  {id:'qualidade',label:'Pendências',description:'Falhas de preenchimento, atribuição e coleta que precisam de conferência.',indicators:['Sem origem','Sem responsável','Vendedora / SDR em conflito','Duplicidades suspeitas'],columns:['Registro no RD','Problema','Campo afetado','Impacto no indicador','Responsável pela correção','Situação']},
 ];
-export function periodoBi(value: string) {
-  if(!/^(20\d{2})-(0[1-9]|1[0-2])$/.test(value)) return null;
-  const [year,month]=value.split('-').map(Number);
-  return {inicio:`${value}-01`,fim:new Date(Date.UTC(year,month,1)).toISOString().slice(0,10)};
-}
-export function mesSaoPaulo() {
-  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date());
-  return `${parts.find(p=>p.type==='year')?.value}-${parts.find(p=>p.type==='month')?.value}`;
+/** Eventos distintos, com identificação de origem e sem assumir que todo lead tem venda. */
+export type CommercialEventType = 'lead_created' | 'owner_changed' | 'source_changed' | 'stage_changed' | 'appointment_created' | 'appointment_confirmed' | 'attendance_recorded' | 'deal_won' | 'deal_lost' | 'deal_reopened';
+export interface CommercialEvent {
+  sourceEventId: string;
+  companyId: string;
+  leadId: string;
+  dealId: string | null;
+  type: CommercialEventType;
+  occurredAt: string | null;
+  observedAt: string;
+  source: 'rd_station';
+  actorId: string | null;
+  mappingVersion: string;
 }
