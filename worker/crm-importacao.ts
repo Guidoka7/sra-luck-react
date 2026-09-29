@@ -14,7 +14,7 @@
  */
 import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
-  arrayValue, contatoParaCache, idsContatoDaNegociacao, lerContatosRd, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
+  arrayValue, contatoParaCache, idsContatoDaNegociacao, lerContatosRd, listarDealsTodosFunis, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
@@ -530,7 +530,7 @@ type Fontes = {
 
 function fontesRd(env: Env): Fontes {
   return {
-    deals: (filtro) => listarTudo(env, "deals", filtro || undefined),
+    deals: (filtro) => filtro ? listarTudo(env, "deals", filtro) : listarDealsTodosFunis(env),
     refs: async () => {
       const [usuarios, campanhas, fontes] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources")]);
       return { contatos: [], usuarios, campanhas, fontes };
