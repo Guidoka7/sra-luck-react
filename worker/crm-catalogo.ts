@@ -54,6 +54,8 @@ export type FunilCatalogo = {
   filtros: FiltroCatalogo[];
   sugestoes: Partial<Record<CampoCrm, string>>;
   amostra: { negociacoes: number; contatos: number; contatosIndisponiveis: boolean };
+  /** Quantas negociações o funil tem no RD (todas as etapas e status). */
+  total?: TotalFunil;
 };
 export type CatalogoCrm = {
   funis: FunilCatalogo[];
@@ -122,15 +124,48 @@ function funisDaRegra(campo: Json): string[] | null {
   return regras.map((r) => stringValue(r.value)).filter(Boolean);
 }
 
-async function amostraDoFunil(rd: LeitorRd, pipelineId: string): Promise<Json[]> {
-  const base = `/deals?filter=${encodeURIComponent(`pipeline_id:${pipelineId}`)}&page[number]=1&page[size]=${AMOSTRA_NEGOCIACOES}`;
+/** Total de negociações do funil no RD (todas as etapas e status). */
+export type TotalFunil = { negociacoes: number | null; exato: boolean };
+
+/** Número da página em links.last (o RD não devolve o total). */
+function ultimaPagina(resposta: Json): number | null {
+  const last = stringValue(objectValue(resposta.links).last);
+  if (!last) return null;
+  const n = Number(new URL(last, "https://rd.invalid").searchParams.get("page[number]"));
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+async function amostraDoFunil(rd: LeitorRd, pipelineId: string): Promise<{ deals: Json[]; total: TotalFunil }> {
+  const base = `/deals?filter=${encodeURIComponent(`pipeline_id:${pipelineId}`)}&page[size]=${AMOSTRA_NEGOCIACOES}`;
+  let consulta = `${base}&sort[updated_at]=desc`;
+  let resposta: Json;
   try {
-    return arrayValue((await comRetentativa(() => rd.get(`${base}&sort[updated_at]=desc`))).data).map(objectValue);
+    resposta = await comRetentativa(() => rd.get(`${consulta}&page[number]=1`));
   } catch (e) {
     // Conta em que a ordenação por updated_at não é aceita: amostra sem ordenação.
     if (!(e instanceof Error) || e.message !== "RD_HTTP_400") throw e;
-    return arrayValue((await comRetentativa(() => rd.get(base))).data).map(objectValue);
+    consulta = base;
+    resposta = await comRetentativa(() => rd.get(`${consulta}&page[number]=1`));
   }
+  const deals = arrayValue(resposta.data).map(objectValue);
+  // Total: com menos de uma página, é o que veio; senão, lê a última página (1 consulta a mais).
+  // O RD só navega os 10 mil primeiros: acima disso o total é aproximado pelo número de páginas.
+  let total: TotalFunil = { negociacoes: deals.length, exato: true };
+  const ultima = ultimaPagina(resposta);
+  if (deals.length >= AMOSTRA_NEGOCIACOES && ultima && ultima > 1) {
+    if (ultima > 100) total = { negociacoes: ultima * AMOSTRA_NEGOCIACOES, exato: false };
+    else {
+      try {
+        const fim = await comRetentativa(() => rd.get(`${consulta}&page[number]=${ultima}`));
+        total = { negociacoes: (ultima - 1) * AMOSTRA_NEGOCIACOES + arrayValue(fim.data).length, exato: true };
+      } catch {
+        total = { negociacoes: ultima * AMOSTRA_NEGOCIACOES, exato: false };
+      }
+    }
+  } else if (deals.length >= AMOSTRA_NEGOCIACOES && !ultima) {
+    total = { negociacoes: null, exato: false };
+  }
+  return { deals, total };
 }
 
 function idsDeContato(deal: Json): string[] {
@@ -303,12 +338,12 @@ export async function montarCatalogoCrm(env: Env, deps: { rd?: LeitorRd; contato
   ]);
   return emLotes(funis, CONCORRENCIA_FUNIS, async (funil) => {
     const id = stringValue(funil.id);
-    const [etapas, deals] = await Promise.all([
+    const [etapas, { deals, total }] = await Promise.all([
       comRetentativa(() => rd.get(`/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)).then((r) => arrayValue(r.data).map(objectValue)),
       amostraDoFunil(rd, id),
     ]);
     const contatos = deps.contatosPorFunil?.get(id) ?? new Map<string, Json>();
-    return montarFunil({ funil, etapas, deals, contatos, contatosIndisponiveis: false, camposRd, usuarios, fontesRd, campanhas });
+    return { ...montarFunil({ funil, etapas, deals, contatos, contatosIndisponiveis: false, camposRd, usuarios, fontesRd, campanhas }), total };
   });
 }
 
