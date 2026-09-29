@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { assertRdCommercialReadOnly, normalizarDealRd, snapshotUpdatePreservandoLocal } from "./rd-station-readonly";
+import { assertRdCommercialReadOnly, listarDealsPorPeriodos, normalizarDealRd, snapshotUpdatePreservandoLocal } from "./rd-station-readonly";
+
+describe("paginação acima de 10 mil por filtro", () => {
+  it("divide a faixa de criação sem sobrepor fronteiras", async () => {
+    const filtros: string[] = [];
+    const ler = async (filtro: string) => {
+      filtros.push(filtro);
+      if (filtro.includes('created_at:>="2026-01-01 00:00:00"') && filtro.includes('created_at:<"2026-01-03 00:00:00"')) throw new Error("RD_RESULT_LIMIT_10000");
+      return [{ id: filtro.includes('created_at:<"2026-01-02 00:00:00"') ? "antes" : "depois" }];
+    };
+    const resultado = await listarDealsPorPeriodos("pipeline_id:abc", ler, Date.UTC(2026, 0, 1), Date.UTC(2026, 0, 3));
+    expect(resultado.map((d) => d.id)).toEqual(["antes", "depois"]);
+    expect(filtros[1]).toContain('created_at:<"2026-01-02 00:00:00"');
+    expect(filtros[2]).toContain('created_at:>="2026-01-02 00:00:00"');
+  });
+
+  it("não converte falhas do RD em leitura completa", async () => {
+    await expect(listarDealsPorPeriodos("pipeline_id:abc", async () => { throw new Error("RD_HTTP_400"); })).rejects.toThrow("RD_HTTP_400");
+  });
+});
 
 describe("RD Station CRM — barreira comercial somente leitura", () => {
   it("permite GET", () => {
