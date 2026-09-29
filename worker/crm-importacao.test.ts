@@ -329,11 +329,108 @@ describe("importação", () => {
     const { db, tabela } = cenario();
     const deals = Array.from({ length: 150 }, (_, i) => deal(`L${i}`));
     const pedidos: string[][] = [];
-    const f = { ...fontes(deals, []), contatos: async (ids: string[]) => { pedidos.push(ids); return { contatos: new Map(ids.map((id, i) => [id, contato(id.slice(2), `Pessoa ${id}`, `61 9${String(10000000 + i).slice(0, 8)}`, "")])), falhas: new Set<string>() }; } };
+    const f = { ...fontes(deals, []), contatos: async (ids: string[]) => { pedidos.push(ids); return { contatos: new Map(ids.map((id) => [id, contato(id.slice(2), `Pessoa ${id}`, `61 9${String(10000000 + Number(id.slice(3))).slice(0, 8)}`, "")])), falhas: new Set<string>() }; } };
     const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config(), fontes: f });
-    expect(pedidos[0]).toHaveLength(150);
-    expect(r).toMatchObject({ ok: true, criadas: 150, adiadas: 0 });
+    // Uma leitura por página de 100 negociações, sem cota.
+    expect(pedidos.map((p) => p.length)).toEqual([100, 50]);
+    expect(r).toMatchObject({ ok: true, criadas: 150, adiadas: 0, passada: { concluida: true, lidas: 150 } });
     expect(tabela("novas_vendas").filter((v) => String(v.rd_station_id).startsWith("L"))).toHaveLength(150);
+  });
+
+  describe("importação em etapas (todos os funis, milhares de negociações)", () => {
+    const criadaEm = (i: number) => new Date(Date.UTC(2024, 0, 1) + Math.floor(i / 3) * 1000).toISOString();
+    const muitas = (n: number) => Array.from({ length: n }, (_, i) => deal(`E${i}`, { created_at: criadaEm(i), contact_ids: [] }));
+    /** Fonte paginada como o RD: ordem de criação, `created_at >= desde` com precisão de segundo. */
+    const paginado = (deals: Record<string, unknown>[], aoLer: (filtro: string, desde: string | null, pagina: number) => void = () => undefined) => ({
+      ...fontes([], []),
+      pagina: async (filtro: string, desde: string | null, pagina: number) => {
+        aoLer(filtro, desde, pagina);
+        const seg = (v: unknown) => new Date(String(v)).toISOString().slice(0, 19).replace("T", " ");
+        const a = desde ? deals.filter((d) => seg(d.created_at) >= desde) : deals;
+        return a.slice((pagina - 1) * 100, pagina * 100) as never[];
+      },
+    });
+
+    it("continua de onde parou, sem pular nem repetir negociações, e fecha a passada", async () => {
+      const { db, tabela } = cenario();
+      const deals = muitas(350);
+      let t = 0;
+      const consultas: (string | null)[] = [];
+      // Cada página "custa" 90 s: cabem 3 páginas por execução de 200 s.
+      const f = paginado(deals, (_f, desde) => { consultas.push(desde); t += 90_000; });
+      const cfg = config({ todosFunis: true, status: "qualquer" });
+      const r1 = await importarCrm(env, { origem: "agendada", ator: "sistema" }, { db, config: cfg, fontes: f, relogio: () => t });
+      // Páginas seguintes começam no segundo da última lida (3 por segundo): 100 + 99 + 99.
+      expect(r1).toMatchObject({ ok: true, criadas: 298, passada: { concluida: false, lidas: 298 } });
+      t = 0;
+      const r2 = await importarCrm(env, { origem: "agendada", ator: "sistema" }, { db, config: cfg, fontes: f, relogio: () => t });
+      expect(r2).toMatchObject({ ok: true, criadas: 52, passada: { concluida: true, lidas: 350, execucoes: 2 } });
+      const importadas = tabela("novas_vendas").filter((v) => String(v.rd_station_id).startsWith("E"));
+      expect(importadas).toHaveLength(350);
+      expect(new Set(importadas.map((v) => v.rd_station_id)).size).toBe(350);
+      // Cada consulta começa na data da última lida: nunca passa do limite de 10 mil do RD.
+      expect(consultas[0]).toBeNull();
+      expect(consultas[1]).toBe(criadaEm(99).slice(0, 19).replace("T", " "));
+      // Passada fechada: a próxima recomeça do início e só atualiza.
+      t = 0;
+      const r3 = await importarCrm(env, { origem: "agendada", ator: "sistema" }, { db, config: cfg, fontes: f, relogio: () => t });
+      expect(r3).toMatchObject({ ok: true, criadas: 0, passada: { concluida: false, execucoes: 1 } });
+    });
+
+    it("mais de 100 negociações no mesmo segundo: avança pela página, sem laço infinito", async () => {
+      const { db, tabela } = cenario();
+      const deals = Array.from({ length: 250 }, (_, i) => deal(`S${i}`, { created_at: "2025-05-05T05:05:05.000Z", contact_ids: [] }));
+      const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config({ todosFunis: true, status: "qualquer" }), fontes: paginado(deals) });
+      expect(r).toMatchObject({ ok: true, criadas: 250, passada: { concluida: true } });
+      expect(tabela("novas_vendas").filter((v) => String(v.rd_station_id).startsWith("S"))).toHaveLength(250);
+    });
+
+    it("contato de negociação nova não lido (limite do RD): a página é relida na próxima execução, nada se perde", async () => {
+      const { db, tabela } = cenario();
+      const deals = [deal("N1", { created_at: "2026-01-01T00:00:00Z" }), deal("N2", { created_at: "2026-01-02T00:00:00Z" })];
+      const todos = new Map([contato("N1", "Ana", "61 91111-1111", ""), contato("N2", "Bia", "61 92222-2222", "")].map((c) => [c.id, c]));
+      let limitar = true;
+      const f = { ...paginado(deals), contatos: async (ids: string[]) => limitar
+        ? { contatos: new Map([["ctN1", todos.get("ctN1")!]]), falhas: new Set<string>(), limitadas: new Set(ids.filter((i) => i !== "ctN1")) }
+        : { contatos: new Map(ids.map((i) => [i, todos.get(i)!])), falhas: new Set<string>() } };
+      const cfg = config({ todosFunis: true, status: "qualquer" });
+      const r1 = await importarCrm(env, { origem: "agendada", ator: "sistema" }, { db, config: cfg, fontes: f });
+      expect(r1).toMatchObject({ ok: true, criadas: 1, adiadas: 1, passada: { concluida: false } });
+      limitar = false;
+      const r2 = await importarCrm(env, { origem: "agendada", ator: "sistema" }, { db, config: cfg, fontes: f });
+      expect(r2).toMatchObject({ ok: true, criadas: 1, adiadas: 0, passada: { concluida: true } });
+      expect(tabela("novas_vendas").find((v) => v.rd_station_id === "N2")).toMatchObject({ telefone: "61 92222-2222" });
+    });
+
+    it("RD recusa o filtro por data: segue pelo número da página", async () => {
+      const { db, tabela } = cenario();
+      const deals = muitas(150);
+      const base = paginado(deals);
+      const f = { ...base, pagina: async (filtro: string, desde: string | null, pagina: number) => {
+        if (desde) throw new Error("RD_HTTP_400");
+        return base.pagina(filtro, null, pagina);
+      } };
+      const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config({ todosFunis: true, status: "qualquer" }), fontes: f });
+      expect(r).toMatchObject({ ok: true, criadas: 150, passada: { concluida: true } });
+      expect(tabela("novas_vendas").filter((v) => String(v.rd_station_id).startsWith("E"))).toHaveLength(150);
+    });
+
+    it("configuração nova recomeça a passada; agendador continua passada em andamento sem esperar a frequência", async () => {
+      const { db, tabela } = cenario();
+      const { limparCacheConfig } = await import("./integracoes-registro");
+      tabela("integracoes_config").push({ provedor: "rd_station", funcao: "importacao", config: { ativo: true, frequenciaMinutos: 60, todosFunis: true, status: "qualquer" }, versao: 1 });
+      limparCacheConfig();
+      expect(await importacaoAgendadaSeDevida(env, { db, fontes: paginado([]), somenteContinuacao: true })).toMatchObject({ executada: false, motivo: "sem_passada_em_andamento" });
+      tabela("integracao_catalogos").push({ provedor: "rd_station", chave: "crm_importacao_progresso", dados: { passada: "p1", iniciadaEm: "2026-09-24T12:00:00Z", concluidaEm: null, assinatura: "", segmentos: [""], indice: 0, desde: null, pagina: 1, tentativas: 0, lidas: 0, execucoes: 1 } });
+      tabela("integracao_importacoes").push({ id: "imp-0", provedor: "rd_station", origem: "agendada", status: "concluida", iniciado_em: new Date().toISOString() });
+      expect(await importacaoAgendadaSeDevida(env, { db, fontes: paginado([deal("CONT", { contact_ids: [] })]), somenteContinuacao: true })).toMatchObject({ executada: true });
+      expect(tabela("novas_vendas").find((v) => v.rd_station_id === "CONT")).toBeTruthy();
+      // Outra configuração (outro filtro): a passada antiga não é reaproveitada.
+      tabela("integracao_catalogos")[0].dados = { ...tabela("integracao_catalogos")[0].dados, concluidaEm: null, assinatura: "pipeline_id:x", indice: 0 };
+      const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config({ todosFunis: true, status: "qualquer" }), fontes: paginado([]) });
+      expect(r).toMatchObject({ ok: true, passada: { concluida: true, execucoes: 1 } });
+      limparCacheConfig();
+    });
   });
 
   it("consulta vários funis e preserva o mapeamento de cada um", async () => {
@@ -381,6 +478,24 @@ describe("importação", () => {
     expect(tabela("novas_vendas").find((v) => v.rd_station_id === "CPF")).toMatchObject({ status: "aguardando_cadastro", nome_completo: "Bia de Novo" });
     expect(tabela("integracao_importacao_itens")[0]).toMatchObject({ resultado: "importada_apos_revisao", revisado_por: "admin:2" });
     expect(await importarMesmoAssim(db, item.id, "admin:2")).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("webhook no formato antigo do RD (v1): relê a negociação na v2 e respeita só os funis marcados", async () => {
+    const { db, tabela } = cenario();
+    const { limparCacheConfig } = await import("./integracoes-registro");
+    tabela("integracoes_config").push({ provedor: "rd_station", funcao: "importacao", config: { status: "qualquer", funis: [{ pipelineId: FUNIL, etapas: [], mapeamento: { ...PADRAO_CRM.mapeamento, banco: "deal:banco" } }] }, versao: 1 });
+    limparCacheConfig();
+    const v1 = (id: string, funil: string) => ({ id, name: `V1 ${id}`, deal_pipeline: { id: funil, name: "Funil" }, deal_stage: { id: ETAPA }, user: { id: "u".repeat(24), name: "Raissa" }, deal_custom_fields: [{ value: "BRB", custom_field: { id: "x", label: "Banco" } }] });
+    const contatos = async (ids: string[]) => ({ contatos: new Map(ids.map((i) => [i, contato(i.slice(2), "Pessoa V1", "61 97777-0000", "")])), falhas: new Set<string>() });
+    // Outro funil (ex.: Inadimplentes), com a leitura v2 indisponível: o funil vem do evento e a negociação é ignorada.
+    const fora = await importarDoWebhook(env, db, v1("V1FORA", FUNIL2), "t1", { contatos, lerDeal: async () => null });
+    expect(fora?.item).toMatchObject({ resultado: "ignorada", motivo: "Fora dos funis configurados." });
+    // Funil marcado: usa a negociação da v2 (campos por slug e contato).
+    const dentro = await importarDoWebhook(env, db, v1("V1DENTRO", FUNIL), "t2", { contatos, lerDeal: async (id) => deal(id, { status: "ongoing", custom_fields: { banco: "Banco V2" } }) });
+    expect(dentro?.item.resultado).toBe("criada");
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1DENTRO")).toMatchObject({ rd_pipeline_id: FUNIL, banco_local: "Banco V2", telefone: "61 97777-0000" });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1FORA")).toBeUndefined();
+    limparCacheConfig();
   });
 
   it("webhook usa o mesmo filtro e a mesma deduplicação", async () => {

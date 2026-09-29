@@ -39,6 +39,13 @@ function Aviso({ texto, tipo }: { texto: string | null; tipo: "ok" | "bad" }) {
   return <div style={{ marginTop: 8, borderRadius: 9, padding: "7px 9px", fontSize: 10.5, background: tipo === "ok" ? "var(--okbg)" : "var(--badbg)", color: tipo === "ok" ? "var(--ok)" : "var(--bad)" }}>{texto}</div>;
 }
 
+/** Importação em etapas: quanto da passada atual já foi lido no RD. */
+function textoPassada(p?: { concluida?: boolean; lidas?: number } | null) {
+  if (!p) return "";
+  const lidas = Number(p.lidas ?? 0).toLocaleString("pt-BR");
+  return p.concluida ? ` · leitura completa do RD (${lidas} negociações)` : ` · leitura em etapas: ${lidas} negociações até agora, continua sozinha a cada 5 min`;
+}
+
 // ------------------------------------------------------------------ formulário genérico por função
 
 export function FormularioFuncao({ provedor, funcao }: { provedor: string; funcao: string }) {
@@ -215,7 +222,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     setOcupado(true); setMsg(null);
     try {
       const r = await api("/api/admin/integrations/rd-station/importar", { method: "POST" });
-      setMsg({ t: `RD: ${r.totalRd} negociação(ões) · ${r.criadas} nova(s) em Aguardando cadastro · ${r.duplicadas + r.clienteExistente} para revisar · ${r.ignoradas} ignorada(s)${r.erros ? ` · ${r.erros} erro(s)` : ""}.`, ok: !r.erros });
+      setMsg({ t: `RD: ${r.totalRd} negociação(ões) · ${r.criadas} nova(s) em Aguardando cadastro · ${r.duplicadas + r.clienteExistente} para revisar · ${r.ignoradas} ignorada(s)${r.erros ? ` · ${r.erros} erro(s)` : ""}${textoPassada(r.passada)}.`, ok: !r.erros });
       await carregar();
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); } finally { setOcupado(false); }
   }
@@ -246,7 +253,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {(imps?.importacoes ?? []).map((i: Json) => <div key={i.id}>
         <button onClick={() => void abrir(i.id)} style={{ ...caixa, width: "100%", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <span><strong>{dataHora(i.iniciado_em)}</strong> · {i.origem}<br /><span style={muted}>{i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){i.erro ? ` · ${i.erro}` : ""}</span></span>
+          <span><strong>{dataHora(i.iniciado_em)}</strong> · {i.origem}<br /><span style={muted}>{i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){textoPassada(i.totais?.passada)}{i.erro ? ` · ${i.erro}` : ""}</span></span>
           <span style={chip(i.status === "concluida" ? "ok" : i.status === "erro" ? "bad" : "warn")}>{i.status}</span>
         </button>
         {aberta === i.id && <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "6px 0 4px 10px" }}>{itens.length ? itens.map((it) => <ItemImportacao key={it.id} it={it} />) : <span style={muted}>Sem itens (negociações só atualizadas não aparecem).</span>}</div>}

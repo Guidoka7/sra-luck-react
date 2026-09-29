@@ -413,6 +413,20 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
   return json(resultado);
 }
 
+/**
+ * Rodada curta (pg_cron a cada 5 min, migration_118): só continua uma importação do CRM feita em
+ * etapas que ainda não terminou. Sem passada em andamento, não lê nada no RD.
+ */
+async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
+  if (!rotinaAutorizada(request, env) && !(await cronAutorizadoPeloBanco(request, env))) return json({ erro: "Não autorizado." }, 401);
+  const crm = importacaoAgendadaSeDevida(env, { somenteContinuacao: true });
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(crm.then(() => undefined).catch(() => undefined));
+    return json({ crm: { agendada: true, processamento: "segundo_plano" } });
+  }
+  try { return json({ crm: await crm }); } catch { return json({ crm: { erro: "Falha na continuação da importação do CRM." } }); }
+}
+
 /** Padrão de integrações: registro + configuração por função + uso de hoje (sem segredos). */
 async function catalogoApi(request: Request, env: Env) {
   const authorization = await requireAdminPermission(request, env, PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS);
@@ -463,6 +477,7 @@ export async function integrationsApi(request: Request, env: Env, ctx?: Backgrou
   if (path === "/api/admin/integrations/testar-conexao" && request.method === "POST") return testarConexao(request, env);
   if (path === "/api/admin/integrations/estado" && request.method === "POST") return alterarEstadoIntegracao(request, env);
   if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env, ctx);
+  if (path === "/api/cron/integracoes/crm" && request.method === "POST") return cronContinuacaoCrm(request, env, ctx);
   const contaAzul = await contaAzulApi(request, env);
   if (contaAzul) return contaAzul;
   return null;
