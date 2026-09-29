@@ -343,6 +343,8 @@ export type ConfigCrm = {
    * Vazio = todos os funis usando o mapeamento padrão.
    */
   funis: ConfigCrmFunil[];
+  /** Lê todos os funis/etapas; funis selecionados conservam apenas mapeamentos próprios. */
+  todosFunis: boolean;
   /**
    * Compatibilidade com configurações antigas. Quando `funis` é salvo,
    * estes dois campos ficam limpos.
@@ -362,6 +364,7 @@ export const PADRAO_CRM: ConfigCrm = {
   ativo: false,
   frequenciaMinutos: 60,
   funis: [],
+  todosFunis: false,
   pipelineId: null,
   etapas: [],
   status: "won",
@@ -409,6 +412,10 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
   if (c.ativo !== undefined) {
     if (typeof c.ativo !== "boolean") return { ok: false, erro: "ativo deve ser verdadeiro ou falso." };
     out.ativo = c.ativo;
+  }
+  if (c.todosFunis !== undefined) {
+    if (typeof c.todosFunis !== "boolean") return { ok: false, erro: "todosFunis deve ser verdadeiro ou falso." };
+    out.todosFunis = c.todosFunis;
   }
   if (c.frequenciaMinutos !== undefined && c.frequenciaMinutos !== null) {
     const f = Number(c.frequenciaMinutos);
@@ -571,6 +578,7 @@ const ROTULO_CAMPO_CRM: Record<CampoCrm, string> = {
 
 const CAMPOS_CRM_FORM: CampoFormulario[] = [
   { chave: "ativo", rotulo: "Importação automática ligada", tipo: "booleano", ajuda: "A importação manual e o webhook funcionam mesmo desligada." },
+  { chave: "todosFunis", rotulo: "Trazer todas as clientes de todos os funis e etapas", tipo: "booleano", ajuda: "Os funis abaixo continuam com seu preenchimento próprio. Os demais usam o preenchimento padrão; nenhum filtro de etapa ou responsável limita a importação." },
   { chave: "frequenciaMinutos", rotulo: "Frequência", tipo: "selecao", opcoes: FREQUENCIAS_CRM.map((m) => ({ valor: String(m), rotulo: m < 60 ? `${m} min` : m < 1440 ? `${m / 60} h` : "1 vez por dia" })) },
   { chave: "status", rotulo: "Status da negociação", tipo: "selecao", opcoes: [{ valor: "won", rotulo: "Ganhas" }, { valor: "ongoing", rotulo: "Em andamento" }, { valor: "qualquer", rotulo: "Qualquer status" }] },
   { chave: "mapeamento", rotulo: "Preenchimento padrão", tipo: "mapeamento", opcoesDe: "rd_campos", itens: CAMPOS_CRM.map((c) => ({ chave: c, rotulo: ROTULO_CAMPO_CRM[c] })), ajuda: "Fallback para todos os funis. Cada funil selecionado pode sobrescrever este preenchimento campo a campo." },
