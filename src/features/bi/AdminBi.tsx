@@ -19,11 +19,11 @@ function Panel({ title, subtitle, action, children }: { title: string; subtitle:
     {children}
   </section>;
 }
-function EmptyVisual({ icon: Icon = BarChart3, label = 'Aguardando a primeira carga', detail = 'Os dados do RD Station aparecerão aqui.' }: { icon?: LucideIcon; label?: string; detail?: string }) {
+function EmptyVisual({ icon: Icon = BarChart3, label = 'Aguardando dados validados', detail = 'Os indicadores dependem da coleta e da conferência do CRM.' }: { icon?: LucideIcon; label?: string; detail?: string }) {
   return <div className={styles.emptyVisual}><div className={styles.plotGrid} aria-hidden="true"/><div className={styles.emptyVisualContent}><span><Icon size={22}/></span><strong>{label}</strong><p>{detail}</p></div></div>;
 }
 function EmptyTable({ columns }: { columns: string[] }) {
-  return <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Tabela do relatório, com rolagem horizontal"><table><thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead><tbody><tr><td colSpan={columns.length}><Database size={23}/><strong>Nenhum dado carregado ainda</strong><span>A coleta do CRM precisa ser ativada para preencher este relatório.</span></td></tr></tbody></table></div>;
+  return <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Tabela do relatório, com rolagem horizontal"><table><thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead><tbody><tr><td colSpan={columns.length}><Database size={23}/><strong>Nenhum indicador validado ainda</strong><span>A coleta e a validação comercial precisam ser concluídas para preencher este relatório.</span></td></tr></tbody></table></div>;
 }
 
 export default function AdminBi() {
@@ -59,6 +59,9 @@ export default function AdminBi() {
     return () => controller.abort();
   }, [revision]);
   const current = BI_AREAS.find(item => item.id === area)!;
+  const collectionLabels={not_configured:'Conexão pendente',configured:'Aguardando carga comercial',receiving:'Recebendo dados',paused:'Coleta pausada',received_unvalidated:'Carga recebida · em validação'};
+  const collectionLabel=data?collectionLabels[data.collection.state]:'Verificando coleta';
+  const syncedAt=data?.collection.lastSyncedAt?new Date(data.collection.lastSyncedAt).toLocaleString('pt-BR'):'Nenhuma carga concluída';
   const showPages = pagesOpen && !focusMode;
   const showFilters = filtersOpen && !focusMode;
   function navigate(id: BiArea) {
@@ -92,7 +95,7 @@ export default function AdminBi() {
       {showPages && <aside className={styles.pages} id="bi-pages" aria-label="Páginas do relatório">
         <div className={styles.pagesTitle}><span>PÁGINAS DO RELATÓRIO</span><button type="button" aria-label="Recolher páginas" onClick={() => setPagesOpen(false)}><PanelLeftClose size={16}/></button></div>
         <nav>{BI_AREAS.map((item, index) => { const Icon = AREA_ICONS[item.id]; return <button type="button" key={item.id} aria-current={area === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={17}/><span>{item.label}</span><small>{String(index + 1).padStart(2, '0')}</small></button>; })}</nav>
-        <div className={styles.dataset}><span className={styles.datasetIcon}><Database size={19}/></span><strong>RD Station CRM</strong><span>Base comercial da empresa</span><p><i/> Coleta não ativada</p></div>
+        <div className={styles.dataset}><span className={styles.datasetIcon}><Database size={19}/></span><strong>RD Station CRM</strong><span>Base comercial da empresa</span><p><i/> {collectionLabel}</p></div>
         <div className={styles.pagesFooter}>SRA. LUCK <span>INTELIGÊNCIA COMERCIAL</span></div>
       </aside>}
       <div className={styles.report} id="bi-report" tabIndex={-1}>
@@ -101,7 +104,7 @@ export default function AdminBi() {
           <div className={styles.period}><CalendarDays size={16}/><div><small>PERÍODO DE ANÁLISE</small><span>Aguardando carga</span></div><ChevronDown size={14}/></div>
         </section>
         {loading ? <section className={styles.state} role="status"><RefreshCw className={styles.spin} size={25}/><h3>Verificando disponibilidade…</h3><p>Consultando a base comercial.</p></section> : error ? <section className={styles.state} role="alert"><Info size={25}/><h3>Não foi possível abrir o relatório</h3><p>{error}</p><button type="button" onClick={() => setRevision(v => v + 1)}>Tentar novamente</button></section> : data && <>
-          <div className={styles.notice}><Info size={17}/><p><strong>O relatório ainda não recebeu dados.</strong> A carga histórica e a atualização contínua do CRM ainda precisam ser implementadas.</p><span>SEM CARGA</span></div>
+          <div className={styles.notice}><Info size={17}/><p><strong>{collectionLabel}.</strong> Os indicadores serão liberados após a conferência da cobertura, do mapeamento e das atribuições comerciais.</p><span>SEM INDICADORES VALIDADOS</span></div>
           <div className={styles.indicators}>{current.indicators.map((label, index) => <article key={label}><div><span>{label}</span>{index === 0 ? <Users size={17}/> : index === 1 ? <CalendarDays size={17}/> : index === 2 ? <Activity size={17}/> : <TrendingUp size={17}/>}</div><strong aria-label="Indicador indisponível">—</strong><small><span/> Dados indisponíveis</small></article>)}</div>
           {area === 'geral' ? <>
             <div className={styles.visualGrid}>
@@ -125,9 +128,9 @@ export default function AdminBi() {
             {area === 'vendas' && <p className={styles.ruleNote}><ShieldCheck size={16}/> Vendedora e SDR são papéis distintos. Vendas sem atribuição ou com nomes conflitantes permanecerão visíveis para conferência.</p>}
             {area === 'funis' && <p className={styles.ruleNote}><Info size={16}/> Conversão por coorte de entrada e resultados por data do evento terão denominadores próprios e explícitos.</p>}
           </>}
-          <details className={styles.dictionary}><summary><span><Database size={15}/> Cobertura e regras do relatório</span><ChevronDown size={15}/></summary><div className={styles.coverage}><div><span>Histórico do CRM</span><strong>Não carregado</strong></div><div><span>Novos leads e alterações</span><strong>Atualização não ativada</strong></div><div><span>Última sincronização</span><strong>Não realizada</strong></div></div><p>Vendedora: campos “Nome da vendedora” e “Vendedora que realizou a Reunião?” do CRM. Ausência ou conflito exige conferência; SDR e responsável do lead não substituem a vendedora.</p><p>Conexões e automações são administradas exclusivamente pelo painel Dev. O BI comercial funciona em paralelo ao sistema operacional Sra. Luck.</p></details>
+          <details className={styles.dictionary}><summary><span><Database size={15}/> Cobertura e regras do relatório</span><ChevronDown size={15}/></summary><div className={styles.coverage}><div><span>Histórico do CRM</span><strong>Cobertura ainda não validada</strong></div><div><span>Novos leads e alterações</span><strong>{collectionLabel}</strong></div><div><span>Última sincronização</span><strong>{syncedAt}</strong></div></div><p>Vendedora: campos “Nome da vendedora” e “Vendedora que realizou a Reunião?” do CRM. Ausência ou conflito exige conferência; SDR e responsável do lead não substituem a vendedora.</p><p>Conexões e automações são administradas exclusivamente pelo painel Dev. O BI comercial funciona em paralelo ao sistema operacional Sra. Luck.</p></details>
         </>}
-        <footer className={styles.reportFooter}><span>Página {BI_AREAS.indexOf(current) + 1} de {BI_AREAS.length}<i/>{current.label}</span><span><Clock3 size={13}/> Sem sincronização</span></footer>
+        <footer className={styles.reportFooter}><span>Página {BI_AREAS.indexOf(current) + 1} de {BI_AREAS.length}<i/>{current.label}</span><span><Clock3 size={13}/> {collectionLabel}</span></footer>
       </div>
       {showFilters && <aside className={styles.filters} id="bi-filters" aria-label="Filtros do relatório"><header><h2><Filter size={17}/> Filtros</h2><button type="button" aria-label="Fechar filtros" onClick={() => setFiltersOpen(false)}><X size={17}/></button></header><p>Refine o período e os recortes do relatório.</p><div className={styles.filterNotice}><Info size={15}/><span>Disponíveis após a primeira carga do CRM.</span></div><fieldset disabled><legend>Filtros deste relatório</legend>{FILTERS.map(label => <label key={label}>{label}<select><option>Aguardando dados</option></select></label>)}</fieldset><div className={styles.filterFoot}><Database size={15}/><span>Fonte de dados<br/><b>RD Station CRM</b></span></div></aside>}
     </div>
