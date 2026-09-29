@@ -2,7 +2,7 @@
 
 // Deploy guard: mantém o funil CRM alinhado ao HEAD atual da main.
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { ClienteDrawer, type AbaDrawer } from "@/components/admin/cliente-drawer/ClienteDrawer";
@@ -102,6 +102,8 @@ export default function ClientesPage() {
   const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
   const [totaisClientes, setTotaisClientes] = useState<TotaisClientes | null>(null);
   const [totalNovasVendas, setTotalNovasVendas] = useState<number | null>(null);
+  const [escopoRd, setEscopoRd] = useState<"atual" | "historico">("atual");
+  const carregarSeq = useRef(0);
   const [carregando, setCarregando] = useState(true);
   const [funil, setFunil] = useState<Funil>("cadastradas");
   const [busca, setBusca] = useState("");
@@ -114,8 +116,9 @@ export default function ClientesPage() {
   const [drawer, setDrawer] = useState<{ id: string | null; cliente: Cliente | null; venda: NovaVenda | null; aba: AbaDrawer } | null>(null);
 
   async function carregar(force = false) {
+    const seq = ++carregarSeq.current;
     const clientesUrl = "/api/admin/clientes";
-    const crmUrl = "/api/admin/novas-vendas?status=aguardando_cadastro";
+    const crmUrl = `/api/admin/novas-vendas?status=aguardando_cadastro${escopoRd === "atual" ? "&escopo=funil_atual" : ""}`;
     // A lista do RD já está persistida no nosso banco. Mostra o último snapshot
     // instantaneamente ao entrar/atualizar a página e revalida em paralelo.
     const cachedClientes = getInstantCache<{ clientes?: Cliente[]; totais?: TotaisClientes }>(clientesUrl, 24 * 60 * 60 * 1000);
@@ -139,6 +142,7 @@ export default function ClientesPage() {
       : fetchInstant<{ vendas?: NovaVenda[]; total?: number }>(crmUrl);
 
     const [resultadoClientes, resultadoCrm] = await Promise.allSettled([carregarClientes, carregarCrm]);
+    if (seq !== carregarSeq.current) return;
     if (resultadoClientes.status === "fulfilled") {
       setClientes(resultadoClientes.value.clientes ?? []);
       setTotaisClientes(resultadoClientes.value.totais ?? null);
@@ -147,7 +151,7 @@ export default function ClientesPage() {
     if (resultadoCrm.status === "fulfilled") {
       setNovasVendas(resultadoCrm.value.vendas ?? []);
       setTotalNovasVendas(typeof resultadoCrm.value.total === "number" ? resultadoCrm.value.total : null);
-    }
+    } else if (!cachedCrm) toast.error(resultadoCrm.reason instanceof Error ? resultadoCrm.reason.message : "Falha ao carregar vendas do RD.");
     // Se o RD/API estiver momentaneamente lento, mantém o snapshot já exibido.
     setCarregando(false);
   }
@@ -156,7 +160,7 @@ export default function ClientesPage() {
     if (termoInicial) setBusca(termoInicial);
   }, []);
 
-  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => window.clearInterval(intervalo); }, []);
+  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => { window.clearInterval(intervalo); carregarSeq.current++; }; }, [escopoRd]);
 
   useEffect(() => {
     if (!menuId) return;
@@ -277,6 +281,9 @@ export default function ClientesPage() {
           <div className={styles.cardSub}>{total} nesta página</div>
         </div>
         <div className={styles.cardTools}>
+          {ehAguardando && <button className={styles.clearBtn} type="button" onClick={() => { setNovasVendas([]); setTotalNovasVendas(null); setEscopoRd(escopoRd === "atual" ? "historico" : "atual"); }}>
+            {escopoRd === "atual" ? "Ver histórico de todos os funis" : "Ver apenas funil atual"}
+          </button>}
           <span className={styles.orderLabel}>Ordenar por</span>
           <label className={styles.smallSelect}>
             <select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as SortMode)} aria-label="Ordenar clientes">
