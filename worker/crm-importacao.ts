@@ -14,12 +14,13 @@
  */
 import { configDaFuncao, CAMPOS_CRM, type CampoCrm, type ConfigCrm, type ConfigCrmFunil } from "./integracoes-registro";
 import {
-  arrayValue, contatoParaCache, dataRdql, idsContatoDaNegociacao, lerContatosRd, listarDealsTodosFunis, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, paginaDeals, rdGet,
+  arrayValue, contatoParaCache, dataRdql, idsContatoDaNegociacao, lerContatosRd, lerDealsDosContatos, listarDealsTodosFunis, listarSeguro, listarTudo, mapById, normalizarDealRd, numberValue, objectValue, paginaDeals, rdGet,
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, TAMANHO_PAGINA_RD, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
+import { agruparPorContato, montarOrigem, origemParaColunas, type OrigemCliente } from "./crm-origem";
 
 /**
  * Contato guardado vale 24 h. TODOS os contatos dos funis configurados são lidos, sem cota; como o RD
@@ -285,7 +286,7 @@ function completudeDaLinha(linha: Json) {
 type Registro = { tipo: "cliente" | "venda"; id: string; nome: string | null; rdId?: string | null };
 /** Contato lido do RD guardado junto da venda (rd_snapshot._sra_contato): evita reler a cada sincronização. */
 export type ContatoEmCache = { dados: Json; lidoEm: string };
-type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json; contato?: ContatoEmCache | null };
+type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json; contato?: ContatoEmCache | null; origem?: OrigemCliente | null };
 export type IndiceDedupe = {
   porCpf: Map<string, Registro[]>; porTelefone: Map<string, Registro[]>; porEmail: Map<string, Registro[]>;
   vendaPorRd: Map<string, { id: string; status: string }>;
@@ -324,7 +325,7 @@ async function todasAsLinhas<T>(consulta: (de: number, ate: number) => PromiseLi
   return linhas;
 }
 
-const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,contato_cache:rd_snapshot->_sra_contato,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
+const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,contato_cache:rd_snapshot->_sra_contato,origem_cache:rd_snapshot->_sra_origem,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
 
 export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   const indice = indiceVazio();
@@ -341,7 +342,9 @@ export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
     if (v.rd_station_id) indice.vendaPorRd.set(String(v.rd_station_id), { id: v.id, status: v.status });
     const cache = objectValue(v.contato_cache ?? objectValue(v.rd_snapshot)._sra_contato);
     const contato = cache.dados && cache.lidoEm ? { dados: objectValue(cache.dados), lidoEm: String(cache.lidoEm) } : null;
-    indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v, contato });
+    const origemCache = objectValue(v.origem_cache ?? objectValue(v.rd_snapshot)._sra_origem);
+    const origem = origemCache.checadoEm ? origemCache as OrigemCliente : null;
+    indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v, contato, origem });
     if (!v.cliente_id) indexar(indice, { tipo: "venda", id: v.id, nome: v.nome_completo ?? null, rdId: v.rd_station_id ?? null }, v);
   }
   for (const e of edicoes) {
@@ -421,6 +424,16 @@ function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<strin
   return patch;
 }
 
+/**
+ * Origem e campanha vazias na própria negociação: completa com o registro real encontrado nas
+ * outras negociações da mesma cliente (crm-origem). Campo marcado "ignorar" no Console fica vazio.
+ */
+function completarOrigem(valores: ValoresVenda, origem: OrigemCliente, mapa: Partial<Record<CampoCrm, string>>) {
+  const doRd = origemParaColunas(origem);
+  if (!valores.origem && mapa.origem !== "ignorar" && doRd.origem) valores.origem = doRd.origem.slice(0, 240);
+  if (!valores.campanha && mapa.campanha !== "ignorar" && doRd.campanha) valores.campanha = doRd.campanha.slice(0, 240);
+}
+
 export async function processarNegociacao(db: Db, entrada: {
   deal: Json; snapshot: RdDealSnapshot; contato?: Json; config: ConfigCrm; indice: IndiceDedupe; importacaoId: string | null;
   /** A negociação tem contato no RD, mas ele não existe mais ou deu erro ao ler. */
@@ -429,6 +442,8 @@ export async function processarNegociacao(db: Db, entrada: {
   contatoAdiado?: boolean;
   /** Quando o contato foi lido do RD (para o cache); ausente = veio do cache e ele é mantido. */
   contatoLidoEm?: string | null;
+  /** De onde a cliente veio (crm-origem). Ausente = a busca não rodou agora; mantém a guardada. */
+  origem?: OrigemCliente | null;
 }): Promise<ItemImportacao> {
   const { deal, snapshot: s, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado } = entrada;
   const valores = aplicarMapeamento(s, deal, contato, config);
@@ -438,8 +453,10 @@ export async function processarNegociacao(db: Db, entrada: {
   const cacheContato: ContatoEmCache | null = contato && entrada.contatoLidoEm
     ? { dados: contatoParaCache(contato), lidoEm: entrada.contatoLidoEm }
     : cacheAnterior;
-  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores }, ...(cacheContato ? { _sra_contato: cacheContato } : {}) } };
-  const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda };
+  const origem = entrada.origem ?? (existenteIdx ? indice.vendaPorId?.get(existenteIdx.id)?.origem ?? null : null);
+  if (origem) completarOrigem(valores, origem, funilParaSnapshot(s, config)?.mapeamento ?? config.mapeamento);
+  const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores }, ...(cacheContato ? { _sra_contato: cacheContato } : {}), ...(origem ? { _sra_origem: origem } : {}) } };
+  const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda, origemSituacao: origem?.situacao ?? null };
   const base = { external_id: s.rdStationId, correspondencias: [] as Correspondencia[], nova_venda_id: null as string | null, dados };
 
   // O filtro configurado vale também para vendas já importadas. Caso contrário,
@@ -467,7 +484,7 @@ export async function processarNegociacao(db: Db, entrada: {
       ? patchLocal(venda, valores, indice.editadasNoAdmin?.get(existente.id), false, fonteVendedora === "deal:nome-da-vendedora") : {};
     const { error } = await db.from("novas_vendas").update({ ...snapshotUpdatePreservandoLocal(snapshotSelecionado), ...patch }).eq("id", existente.id);
     if (error) return { ...base, resultado: "erro", motivo: "Falha ao atualizar a venda com os dados do RD." };
-    if (venda) { Object.assign(venda.linha, patch); if (cacheContato) venda.contato = cacheContato; }
+    if (venda) { Object.assign(venda.linha, patch); if (cacheContato) venda.contato = cacheContato; if (origem) venda.origem = origem; }
     const colunas = Object.keys(patch);
     return {
       ...base, resultado: "atualizada", nova_venda_id: existente.id,
@@ -511,7 +528,7 @@ export async function processarNegociacao(db: Db, entrada: {
   const id = String((data as Json).id);
   indice.vendaPorRd.set(s.rdStationId, { id, status: "aguardando_cadastro" });
   const linha = linhaNovaVenda(snapshotSelecionado, valores, importacaoId) as Json;
-  indice.vendaPorId?.set(id, { id, status: "aguardando_cadastro", clienteId: null, linha: { ...linha, id }, contato: cacheContato });
+  indice.vendaPorId?.set(id, { id, status: "aguardando_cadastro", clienteId: null, linha: { ...linha, id }, contato: cacheContato, origem });
   indexar(indice, { tipo: "venda", id, nome: valores.nome, rdId: s.rdStationId }, valores, telefones);
   return { ...base, resultado: "criada", motivo: "Entrou em Aguardando cadastro.", nova_venda_id: id };
 }
@@ -521,11 +538,13 @@ export async function processarNegociacao(db: Db, entrada: {
 type LeituraContatos = { contatos: Map<string, Json>; falhas: Set<string>; limitadas?: Set<string> };
 type Fontes = {
   deals: (filtro: string) => Promise<Json[]>;
-  refs: () => Promise<{ contatos: Json[]; usuarios: Json[]; campanhas: Json[]; fontes: Json[] }>;
+  refs: () => Promise<{ contatos: Json[]; usuarios: Json[]; campanhas: Json[]; fontes: Json[]; funis?: Json[] }>;
   /** Contatos das negociações lidas, por id (até `prazoMs`). Sem esta fonte, usa `refs().contatos`. */
   contatos?: (ids: string[], prazoMs?: number) => Promise<LeituraContatos>;
   /** Uma página (100) em ordem de criação a partir de `desde`. Sem esta fonte, pagina `deals(filtro)` em memória. */
   pagina?: (filtro: string, desde: string | null, pagina: number) => Promise<Json[]>;
+  /** Todas as negociações (qualquer funil) destes contatos: origem da cliente. Sem esta fonte, só a própria negociação. */
+  dealsDosContatos?: (idsContato: string[]) => Promise<Json[]>;
 };
 
 
@@ -533,11 +552,12 @@ function fontesRd(env: Env): Fontes {
   return {
     deals: (filtro) => filtro ? listarTudo(env, "deals", filtro) : listarDealsTodosFunis(env),
     refs: async () => {
-      const [usuarios, campanhas, fontes] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources")]);
-      return { contatos: [], usuarios, campanhas, fontes };
+      const [usuarios, campanhas, fontes, funis] = await Promise.all([listarSeguro(env, "users"), listarSeguro(env, "campaigns"), listarSeguro(env, "sources"), listarSeguro(env, "pipelines")]);
+      return { contatos: [], usuarios, campanhas, fontes, funis };
     },
     contatos: (ids, prazoMs) => lerContatosRd(env, ids, prazoMs),
     pagina: (filtro, desde, pagina) => paginaDeals(env, filtro, desde, pagina),
+    dealsDosContatos: (ids) => lerDealsDosContatos(env, ids),
   };
 }
 
@@ -684,6 +704,8 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       : { passada: importacaoId, iniciadaEm: agoraIso, concluidaEm: null, assinatura: filtro, segmentos, indice: 0, desde: null, pagina: 1, tentativas: 0, lidas: 0, execucoes: 0 };
     progresso.execucoes++;
     const usuarios = mapById(r.usuarios), campanhas = mapById(r.campanhas), fontesRef = mapById(r.fontes);
+    const nomesFunis = new Map((r.funis ?? []).map((f) => [stringValue(f.id), stringValue(f.name)] as [string, string]).filter(([id, nome]) => id && nome));
+    const origens = { encontrada: 0, parcial: 0, sem_registro_no_rd: 0, sem_contato: 0, nao_verificada: 0 };
     const itens: ItemImportacao[] = [];
     const vistas = new Set<string>(progresso.noLimite ?? []);
     const jaVistas = vistas.size;
@@ -734,6 +756,18 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       const contatosLidos = leitura.contatos;
       const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
       const refs = { contatos: contatosTodos, usuarios, campanhas, fontes: fontesRef };
+      // De onde a cliente veio: todas as negociações do mesmo contato (qualquer funil), em lote.
+      // Falha na consulta não trava a importação: a origem guardada antes é mantida.
+      const idsContatos = [...new Set(lidas.map((d) => idsContatoDaNegociacao(d)[0]).filter(Boolean))] as string[];
+      let porContato: Map<string, Json[]> | null = new Map();
+      if (fontes.dealsDosContatos && idsContatos.length) {
+        try { porContato = agruparPorContato(await fontes.dealsDosContatos(idsContatos)); } catch { porContato = null; }
+      }
+      const origemDe = (d: Json): OrigemCliente | undefined => {
+        if (!porContato) return undefined;
+        const ct = idsContatoDaNegociacao(d)[0];
+        return montarOrigem(d, ct ? porContato.get(ct) ?? [] : [], { fontes: fontesRef, campanhas, funis: nomesFunis }, { semContato: !ct, agora: agoraIso });
+      };
       // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
       // viram duplicatas dela. Negociações já importadas mantêm a ordem.
       const pontos = new Map<Json, number>();
@@ -765,8 +799,10 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
             continue;
           }
           try {
+            const origem = origemDe(deal);
+            origens[origem?.situacao ?? "nao_verificada"]++;
             item = await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado,
-              contatoLidoEm: idC && contatosLidos.has(idC) ? agoraIso : null });
+              contatoLidoEm: idC && contatosLidos.has(idC) ? agoraIso : null, origem });
           } catch {
             item = { external_id: snapshot.rdStationId, resultado: "erro", motivo: "Falha inesperada ao processar.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus } };
           }
@@ -829,7 +865,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       concluida, iniciadaEm: progresso.iniciadaEm, lidas: progresso.lidas, execucoes: progresso.execucoes,
       lidoAte: progresso.desde, funil: Math.min(progresso.indice + 1, progresso.segmentos.length), funis: progresso.segmentos.length,
     };
-    const resumo = { ...totais(itens, vistas.size - jaVistas), adiadas, somenteLeitura: true, passada };
+    const resumo = { ...totais(itens, vistas.size - jaVistas), adiadas, somenteLeitura: true, passada, origens };
     const status = resumo.erros ? "parcial" : "concluida";
     await db.from("integracao_importacoes").update({ status, totais: resumo, concluido_em: new Date().toISOString() }).eq("id", importacaoId);
     await registrarEvento(db, { eventType: `importacao_${opcoes.origem}`, referencia: importacaoId, payload: resumo, status: resumo.erros ? "parcial" : "processado" });

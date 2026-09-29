@@ -46,6 +46,14 @@ function textoPassada(p?: { concluida?: boolean; lidas?: number } | null) {
   return p.concluida ? ` · leitura completa do RD (${lidas} negociações)` : ` · leitura em etapas: ${lidas} negociações até agora, continua sozinha a cada 5 min`;
 }
 
+/** Origem das clientes conferida no RD nesta execução (fonte/campanha/como ficou sabendo). */
+function textoOrigens(o?: { encontrada?: number; parcial?: number; sem_registro_no_rd?: number; sem_contato?: number } | null) {
+  if (!o) return "";
+  const com = Number(o.encontrada ?? 0) + Number(o.parcial ?? 0);
+  const sem = Number(o.sem_registro_no_rd ?? 0) + Number(o.sem_contato ?? 0);
+  return com + sem ? ` · origem: ${com} com registro no RD, ${sem} sem registro` : "";
+}
+
 // ------------------------------------------------------------------ formulário genérico por função
 
 export function FormularioFuncao({ provedor, funcao }: { provedor: string; funcao: string }) {
@@ -222,7 +230,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     setOcupado(true); setMsg(null);
     try {
       const r = await api("/api/admin/integrations/rd-station/importar", { method: "POST" });
-      setMsg({ t: `RD: ${r.totalRd} negociação(ões) · ${r.criadas} nova(s) em Aguardando cadastro · ${r.duplicadas + r.clienteExistente} para revisar · ${r.ignoradas} ignorada(s)${r.erros ? ` · ${r.erros} erro(s)` : ""}${textoPassada(r.passada)}.`, ok: !r.erros });
+      setMsg({ t: `RD: ${r.totalRd} negociação(ões) · ${r.criadas} nova(s) em Aguardando cadastro · ${r.duplicadas + r.clienteExistente} para revisar · ${r.ignoradas} ignorada(s)${r.erros ? ` · ${r.erros} erro(s)` : ""}${textoPassada(r.passada)}${textoOrigens(r.origens)}.`, ok: !r.erros });
       await carregar();
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); } finally { setOcupado(false); }
   }
@@ -253,7 +261,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {(imps?.importacoes ?? []).map((i: Json) => <div key={i.id}>
         <button onClick={() => void abrir(i.id)} style={{ ...caixa, width: "100%", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <span><strong>{dataHora(i.iniciado_em)}</strong> · {i.origem}<br /><span style={muted}>{i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){textoPassada(i.totais?.passada)}{i.erro ? ` · ${i.erro}` : ""}</span></span>
+          <span><strong>{dataHora(i.iniciado_em)}</strong> · {i.origem}<br /><span style={muted}>{i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){textoPassada(i.totais?.passada)}{textoOrigens(i.totais?.origens)}{i.erro ? ` · ${i.erro}` : ""}</span></span>
           <span style={chip(i.status === "concluida" ? "ok" : i.status === "erro" ? "bad" : "warn")}>{i.status}</span>
         </button>
         {aberta === i.id && <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "6px 0 4px 10px" }}>{itens.length ? itens.map((it) => <ItemImportacao key={it.id} it={it} />) : <span style={muted}>Sem itens (negociações só atualizadas não aparecem).</span>}</div>}

@@ -542,6 +542,19 @@ export async function paginaDeals(env: Env, filtro: string, desde: string | null
   return arrayValue(resposta.data).map(objectValue);
 }
 
+/**
+ * Todas as negociações (qualquer funil) dos contatos informados, em lotes de 25 contatos por
+ * consulta (`contact_id:(…)`). Usado para achar a origem da cliente na negociação de entrada.
+ */
+export async function lerDealsDosContatos(env: Env, ids: string[]): Promise<Json[]> {
+  const unicos = [...new Set(ids.map(stringValue).filter(Boolean))];
+  const deals: Json[] = [];
+  for (let i = 0; i < unicos.length; i += 25) {
+    deals.push(...await listarTudo(env, "deals", `contact_id:(${unicos.slice(i, i + 25).join(",")})`));
+  }
+  return deals;
+}
+
 /** IDs de todos os funis da conta (para ler funil por funil). */
 export async function idsFunisRd(env: Env): Promise<string[]> {
   const funis = await listarTudo(env, "pipelines");

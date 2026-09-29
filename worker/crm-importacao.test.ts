@@ -433,6 +433,39 @@ describe("importação", () => {
     });
   });
 
+  it("origem da cliente: completa fonte e campanha com a negociação de entrada do mesmo contato; nada inventado", async () => {
+    const { db, tabela } = cenario();
+    const SRC = "f".repeat(24), CAMP = "9".repeat(24);
+    const refsComNomes = async () => ({ contatos: [contato("O1", "Olga", "61 95555-0001", ""), contato("O2", "Otília", "61 95555-0002", "")] as never[], usuarios: [], campanhas: [{ id: CAMP, name: "Black Friday" }] as never[], fontes: [{ id: SRC, name: "Redes Sociais" }] as never[], funis: [{ id: FUNIL2, name: "Vendas" }] as never[] });
+    const lead = { id: "LEAD-O1", pipeline_id: FUNIL2, contact_ids: ["ctO1"], created_at: "2025-01-01T00:00:00Z", source_id: SRC, campaign_id: CAMP, custom_fields: {} };
+    const pedidos: string[][] = [];
+    const f = {
+      ...fontes([deal("O1"), deal("O2")], []),
+      refs: refsComNomes,
+      dealsDosContatos: async (ids: string[]) => { pedidos.push(ids); return [lead, deal("O1"), deal("O2")] as never[]; },
+    };
+    const cfg = config({ status: "qualquer", mapeamento: { ...PADRAO_CRM.mapeamento, origem: "deal_field:source_id", campanha: "deal_field:campaign_id" } });
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: cfg, fontes: f });
+    expect(r).toMatchObject({ ok: true, criadas: 2, origens: { encontrada: 1, sem_registro_no_rd: 1 } });
+    // Uma consulta em lote para os contatos da página.
+    expect(pedidos).toEqual([["ctO1", "ctO2"]]);
+    const o1 = tabela("novas_vendas").find((v) => v.rd_station_id === "O1")!;
+    expect(o1).toMatchObject({ origem_venda: "Redes Sociais", campanha_local: "Black Friday" });
+    expect(o1.rd_snapshot._sra_origem).toMatchObject({ situacao: "encontrada", evidencias: [expect.objectContaining({ negociacao: expect.objectContaining({ id: "LEAD-O1", funil: "Vendas" }) }), expect.anything()] });
+    const o2 = tabela("novas_vendas").find((v) => v.rd_station_id === "O2")!;
+    expect(o2).toMatchObject({ origem_venda: null, campanha_local: null });
+    expect(o2.rd_snapshot._sra_origem).toMatchObject({ situacao: "sem_registro_no_rd" });
+    // Falha na consulta das outras negociações: mantém a origem já guardada.
+    const falha = { ...f, dealsDosContatos: async () => { throw new Error("RD_HTTP_500"); } };
+    const r2 = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: cfg, fontes: falha });
+    expect(r2).toMatchObject({ ok: true, origens: { nao_verificada: 2 } });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "O1")!.rd_snapshot._sra_origem).toMatchObject({ situacao: "encontrada", fonte: "Redes Sociais" });
+    // "Ignorar" no Console é respeitado.
+    const { db: db2, tabela: t2 } = cenario();
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db: db2, config: config({ status: "qualquer", mapeamento: { ...PADRAO_CRM.mapeamento, origem: "ignorar", campanha: "ignorar" } }), fontes: f });
+    expect(t2("novas_vendas").find((v) => v.rd_station_id === "O1")).toMatchObject({ origem_venda: null, campanha_local: null });
+  });
+
   it("consulta vários funis e preserva o mapeamento de cada um", async () => {
     const { db, tabela } = cenario();
     const chamados: string[] = [];

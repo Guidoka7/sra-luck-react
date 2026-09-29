@@ -24,7 +24,38 @@ import styles from "./ClienteDrawer.module.css";
 
 export type AbaDrawer = "process" | "profile" | "finance" | "journey";
 type Central = { estagio: EstagioDrawer; cartao: CartaoCliente };
-type OrigemCrmBadge = { funil: string | null; etapa: string | null; campos?: { rotulo: string; valor: string | null; situacao: string }[] };
+type OrigemCliente = {
+  fonte: string | null; campanha: string | null; comoFicouSabendo: string | null; influencer: string | null;
+  situacao: string; negociacoesAnalisadas: number; checadoEm: string;
+  evidencias: { rotulo: string; valor: string; funil: string | null; criadaEm: string | null; propria: boolean }[];
+};
+type OrigemCrmBadge = { funil: string | null; etapa: string | null; campos?: { rotulo: string; valor: string | null; situacao: string }[]; origemCliente?: OrigemCliente | null };
+
+const SITUACAO_ORIGEM: Record<string, string> = {
+  encontrada: "Origem encontrada no RD",
+  parcial: "Origem parcial no RD",
+  sem_registro_no_rd: "Sem registro de origem no RD",
+  sem_contato: "Negociação sem contato no RD",
+};
+const dataCurta = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "");
+
+/** De onde a cliente veio: só o que está registrado no RD, com a negociação de onde cada dado saiu. */
+function OrigemDaCliente({ o }: { o: OrigemCliente }) {
+  const linhas: [string, string | null][] = [["Fonte", o.fonte], ["Campanha", o.campanha], ["Como ficou sabendo", o.comoFicouSabendo], ["Influencer", o.influencer]];
+  return <details open={o.situacao !== "encontrada"} style={{ marginTop: 8, fontSize: 12 }}>
+    <summary style={{ cursor: "pointer", opacity: 0.85 }}>De onde ela veio · {SITUACAO_ORIGEM[o.situacao] ?? o.situacao}</summary>
+    <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
+      {linhas.map(([rotulo, valor]) => <Fragment key={rotulo}>
+        <dt style={{ opacity: 0.7 }}>{rotulo}</dt>
+        <dd style={{ margin: 0, overflowWrap: "anywhere" }}>{valor ?? "Não registrado no RD"}</dd>
+      </Fragment>)}
+    </dl>
+    {o.evidencias.length ? <ul style={{ margin: "6px 0 0", paddingLeft: 16, opacity: 0.8 }}>
+      {o.evidencias.map((e, i) => <li key={i}>{e.rotulo}: <strong>{e.valor}</strong> — {e.propria ? "nesta negociação" : `negociação${e.funil ? ` do funil ${e.funil}` : ""}`}{e.criadaEm ? ` de ${dataCurta(e.criadaEm)}` : ""}</li>)}
+    </ul> : null}
+    <div style={{ marginTop: 4, opacity: 0.6 }}>{o.negociacoesAnalisadas} negociação(ões) desta cliente conferidas no RD em {dataCurta(o.checadoEm)}.</div>
+  </details>;
+}
 
 export interface ClienteDrawerProps {
   /** `null` abre o cadastro de uma nova cliente (somente Perfil). */
@@ -368,6 +399,7 @@ function DrawerConteudo(props: ClienteDrawerProps & {
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(estagio, concluido)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
         </div>}
+        {origemCrm?.origemCliente ? <OrigemDaCliente o={origemCrm.origemCliente} /> : null}
         {origemCrm?.campos?.length ? <details style={{ marginTop: 8, fontSize: 12 }}>
           <summary style={{ cursor: "pointer", opacity: 0.85 }}>Dados do RD escolhidos no Console ({origemCrm.campos.length})</summary>
           <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
