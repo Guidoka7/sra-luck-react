@@ -16,6 +16,7 @@ import { rotaExclusivaDoDev } from "./admin-rotas-dev";
 import { DEV_CONSOLE_ADMIN_PREFIX } from "./dev-console-auth";
 import { adminFinance } from "./admin-finance";
 import { adminReports } from "./admin-reports";
+import { adminBi } from "./admin-bi";
 import { adminRelatorios } from "./admin-relatorios";
 import { adminSurgeryFlow } from "./admin-surgery-flow";
 import { adminAgendaCentral } from "./admin-agenda-central";
@@ -531,6 +532,8 @@ async function handleRequest(request: Request, env: Env, ctx?: { waitUntil?: (p:
   if (finance) return finance;
   const reports = await adminReports(request, env);
   if (reports) return reports;
+  const bi = await adminBi(request, env);
+  if (bi) return bi;
   const relatorios = await adminRelatorios(request, env);
   if (relatorios) return relatorios;
   const parcelas = await adminParcelas(request, env);
