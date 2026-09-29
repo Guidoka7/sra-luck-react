@@ -282,7 +282,7 @@ export default function ClientesPage() {
         </div>
         <div className={styles.cardTools}>
           {ehAguardando && <button className={styles.clearBtn} type="button" onClick={() => { setNovasVendas([]); setTotalNovasVendas(null); setEscopoRd(escopoRd === "atual" ? "historico" : "atual"); }}>
-            {escopoRd === "atual" ? "Ver histórico de todos os funis" : "Ver apenas funil atual"}
+            {escopoRd === "atual" ? "Ver histórico anterior" : "Ver todos os funis sincronizados"}
           </button>}
           <span className={styles.orderLabel}>Ordenar por</span>
           <label className={styles.smallSelect}>
