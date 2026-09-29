@@ -288,6 +288,7 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
   const [dados, setDados] = useState<Json | null>(null);
   const [escolha, setEscolha] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ rdUserId: string; texto: string; ok: boolean } | null>(null);
   const carregar = useCallback(async () => {
     try { setDados(await api("/api/admin/integrations/rd-station/responsaveis")); } catch { setDados({ indisponivel: true }); }
   }, []);
@@ -298,27 +299,39 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
   const nomeDe = (id: string) => equipe.find((c) => c.id === id)?.nome ?? "—";
   async function vincular(rdUserId: string) {
     const colaboradorId = escolha[rdUserId];
-    if (!colaboradorId) return;
+    if (!colaboradorId) {
+      setAviso({ rdUserId, texto: "Escolha uma pessoa da equipe antes de vincular.", ok: false });
+      return;
+    }
+    setAviso(null);
     setSalvando(rdUserId);
     try {
       const r = await api("/api/admin/integrations/rd-station/responsaveis", { method: "POST", body: { rdUserId, colaboradorId } });
-      onMsg({ t: `Vínculo gravado com ${nomeDe(colaboradorId)}; ${r.vendasRecalculadas} venda(s) recalculada(s).`, ok: true });
+      const texto = `Vínculo gravado com ${nomeDe(colaboradorId)}; ${r.vendasRecalculadas} venda(s) recalculada(s).`;
+      setAviso({ rdUserId, texto, ok: true });
+      onMsg({ t: texto, ok: true });
       await carregar();
-    } catch (e) { onMsg({ t: (e as Error).message, ok: false }); } finally { setSalvando(null); }
+    } catch (e) {
+      const texto = (e as Error).message;
+      setAviso({ rdUserId, texto, ok: false });
+      onMsg({ t: texto, ok: false });
+    } finally { setSalvando(null); }
   }
   return <>
     <details style={{ marginTop: 12 }}>
     <summary style={{ ...titulo, cursor: "pointer" }}>Vincular responsáveis do RD à equipe · opcional ({sem.length} sem vínculo)</summary>
     <div style={{ ...caixa, marginBottom: 6 }}>Opcional. Sem vínculo, a venda é importada e conta normalmente, com o nome do responsável que vem do RD. Vincule só quem você quer ligar a uma pessoa da equipe.</div>
+    {aviso?.ok && <div role="status"><Aviso texto={aviso.texto} tipo="ok" /></div>}
     {sem.length === 0 ? <div style={caixa}>Todos os responsáveis do RD estão vinculados a uma pessoa da equipe.</div>
       : equipe.length === 0 ? <div style={caixa}>Cadastre vendedoras e SDRs em Equipe para vincular os responsáveis do RD.</div>
       : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{sem.map((r) => <div key={r.rdUserId} style={{ ...caixa, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 200px" }}><strong>{r.nomeNoRd ?? "Sem nome no RD"}</strong><div style={{ fontSize: 12, opacity: 0.7 }}>{r.vendas} venda(s) · usuário RD …{String(r.rdUserId).slice(-6)}</div></div>
-        <select aria-label="Pessoa da equipe" value={escolha[r.rdUserId] ?? ""} onChange={(e) => setEscolha({ ...escolha, [r.rdUserId]: e.target.value })}>
+        <select aria-label={`Pessoa da equipe para ${r.nomeNoRd ?? "responsável do RD"}`} value={escolha[r.rdUserId] ?? ""} onChange={(e) => { setEscolha((atual) => ({ ...atual, [r.rdUserId]: e.target.value })); setAviso(null); }} style={{ flex: "1 1 180px", minWidth: 0, minHeight: 36, maxWidth: "100%", background: "var(--s0)", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 8 }}>
           <option value="">Escolher pessoa da equipe…</option>
           {equipe.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.cargo === "sdr" ? "SDR" : "vendedora"})</option>)}
         </select>
-        <button style={btnPrim} disabled={!escolha[r.rdUserId] || salvando === r.rdUserId} title={escolha[r.rdUserId] ? undefined : "Escolha a pessoa da equipe para vincular"} onClick={() => void vincular(r.rdUserId)}>{salvando === r.rdUserId ? "Gravando…" : "Vincular"}</button>
+        <button style={{ ...btnPrim, minHeight: 36 }} disabled={salvando !== null} onClick={() => void vincular(r.rdUserId)}>{salvando === r.rdUserId ? "Gravando…" : "Vincular"}</button>
+        {aviso && aviso.rdUserId === r.rdUserId && !aviso.ok && <div role="alert" style={{ flexBasis: "100%" }}><Aviso texto={aviso.texto} tipo="bad" /></div>}
       </div>)}</div>}
     </details>
   </>;
