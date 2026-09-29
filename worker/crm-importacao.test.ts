@@ -27,6 +27,7 @@ describe("configuração do CRM", () => {
   it("filtro RDQL com funil, etapas e status", () => {
     expect(filtroRdql(config({ pipelineId: FUNIL, etapas: [ETAPA, OUTRA] }))).toBe(`pipeline_id:${FUNIL} stage_id:(${ETAPA},${OUTRA}) status:won`);
     expect(filtroRdql(config({ status: "qualquer" }))).toBe("");
+    expect(filtroRdql(config({ todosFunis: true, funis: [{ pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { ...PADRAO_CRM.mapeamento } }] }))).toBe("");
   });
 
   it("valida funil, etapas, fontes e frequência", () => {
@@ -104,6 +105,18 @@ describe("configuração do CRM", () => {
     expect(passaNoFiltro(normalizarDealRd(deal("F3", { pipeline_id: "f".repeat(24) }))!, cfg)).toMatch(/funis/);
   });
 
+  it("todos os funis mantêm o mapeamento próprio e usam nome da vendedora, sem herdar o responsável", () => {
+    const mapa = { ...PADRAO_CRM.mapeamento, vendedora: "deal:nome-da-vendedora" };
+    const cfg = config({ todosFunis: true, status: "won", mapeamento: mapa, funis: [{ pipelineId: FUNIL, etapas: [ETAPA], mapeamento: mapa }] });
+    const fora = deal("V1", { pipeline_id: FUNIL2, stage_id: OUTRA, status: "lost", owner_name: "Responsável RD", custom_fields: { "nome-da-vendedora": "Ana Comercial" } });
+    const semNome = deal("V2", { owner_name: "Responsável RD" });
+    const reuniao = deal("V3", { owner_name: "Responsável RD", custom_fields: { "nome-da-vendedora": "", "vendedora-que-realizou-a-reuniao": "Carla Comercial" } });
+    expect(passaNoFiltro(normalizarDealRd(fora)!, cfg)).toBeNull();
+    expect(aplicarMapeamento(normalizarDealRd(fora)!, fora, undefined, cfg).vendedora).toBe("Ana Comercial");
+    expect(aplicarMapeamento(normalizarDealRd(reuniao)!, reuniao, undefined, cfg).vendedora).toBe("Carla Comercial");
+    expect(aplicarMapeamento(normalizarDealRd(semNome)!, semNome, undefined, cfg).vendedora).toBeNull();
+  });
+
   it("telefone: +55, 0055, zero, operadora e DDD normalizados; sem DDD não vira chave", () => {
     const k = "61985701349";
     for (const v of ["+55 (61) 98570-1349", "5561985701349", "0055 61 98570-1349", "(061) 98570-1349", "0 15 61 98570-1349", "61 8570-1349", "+55 61 8570 1349"]) expect(chaveTelefone(v)).toBe(k);
@@ -177,6 +190,18 @@ describe("importação", () => {
       { id: "nv-1", rd_station_id: "D-PEND", cliente_id: null, nome_completo: "Caio Pendente", cpf: null, telefone: "61 98888-7777", email: null, status: "aguardando_cadastro" },
       { id: "nv-2", rd_station_id: "D-ANTIGA", cliente_id: "cli-9", nome_completo: "Editada no Admin", cpf: null, telefone: null, email: null, status: "aguardando_boletos" },
     ],
+  });
+
+  it("corrige a vendedora no pré cadastro e limpa o valor antigo quando o campo RD está vazio", async () => {
+    const { db, tabela } = cenario();
+    const venda = tabela("novas_vendas").find((v) => v.id === "nv-1")!;
+    venda.vendedora_responsavel = "Responsável antigo";
+    const cfg = config({ todosFunis: true, mapeamento: { ...PADRAO_CRM.mapeamento, vendedora: "deal:nome-da-vendedora" } });
+    const f = (custom_fields: Record<string, unknown>) => fontes([deal("D-PEND", { owner_name: "Responsável RD", custom_fields })], [contato("D-PEND", "Caio", "61 98888-7777", "")]);
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: cfg, fontes: f({ "nome-da-vendedora": "Beatriz Comercial" }) });
+    expect(venda.vendedora_responsavel).toBe("Beatriz Comercial");
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: cfg, fontes: f({}) });
+    expect(venda.vendedora_responsavel).toBeNull();
   });
 
   it("não conta venda antiga fora dos filtros como atualizada", async () => {
