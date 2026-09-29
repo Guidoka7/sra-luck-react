@@ -480,6 +480,24 @@ describe("importação", () => {
     expect(await importarMesmoAssim(db, item.id, "admin:2")).toMatchObject({ ok: false, status: 409 });
   });
 
+  it("webhook no formato antigo do RD (v1): relê a negociação na v2 e respeita só os funis marcados", async () => {
+    const { db, tabela } = cenario();
+    const { limparCacheConfig } = await import("./integracoes-registro");
+    tabela("integracoes_config").push({ provedor: "rd_station", funcao: "importacao", config: { status: "qualquer", funis: [{ pipelineId: FUNIL, etapas: [], mapeamento: { ...PADRAO_CRM.mapeamento, banco: "deal:banco" } }] }, versao: 1 });
+    limparCacheConfig();
+    const v1 = (id: string, funil: string) => ({ id, name: `V1 ${id}`, deal_pipeline: { id: funil, name: "Funil" }, deal_stage: { id: ETAPA }, user: { id: "u".repeat(24), name: "Raissa" }, deal_custom_fields: [{ value: "BRB", custom_field: { id: "x", label: "Banco" } }] });
+    const contatos = async (ids: string[]) => ({ contatos: new Map(ids.map((i) => [i, contato(i.slice(2), "Pessoa V1", "61 97777-0000", "")])), falhas: new Set<string>() });
+    // Outro funil (ex.: Inadimplentes), com a leitura v2 indisponível: o funil vem do evento e a negociação é ignorada.
+    const fora = await importarDoWebhook(env, db, v1("V1FORA", FUNIL2), "t1", { contatos, lerDeal: async () => null });
+    expect(fora?.item).toMatchObject({ resultado: "ignorada", motivo: "Fora dos funis configurados." });
+    // Funil marcado: usa a negociação da v2 (campos por slug e contato).
+    const dentro = await importarDoWebhook(env, db, v1("V1DENTRO", FUNIL), "t2", { contatos, lerDeal: async (id) => deal(id, { status: "ongoing", custom_fields: { banco: "Banco V2" } }) });
+    expect(dentro?.item.resultado).toBe("criada");
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1DENTRO")).toMatchObject({ rd_pipeline_id: FUNIL, banco_local: "Banco V2", telefone: "61 97777-0000" });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1FORA")).toBeUndefined();
+    limparCacheConfig();
+  });
+
   it("webhook usa o mesmo filtro e a mesma deduplicação", async () => {
     const { db, tabela } = cenario();
     const cfgRow = { provedor: "rd_station", funcao: "importacao", config: { pipelineId: FUNIL, etapas: [ETAPA] }, versao: 1 };

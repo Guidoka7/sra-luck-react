@@ -853,8 +853,41 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
 }
 
 /** Uma negociação do webhook: mesmo filtro, mesmo mapeamento, mesma deduplicação. */
-export async function importarDoWebhook(env: Env, db: Db, deal: Json, transacao: string | null,
-  deps: { contatos?: (ids: string[]) => Promise<LeituraContatos> } = {}) {
+/**
+ * O webhook do RD envia a negociação no formato antigo (v1): deal_pipeline/deal_stage/user como
+ * objetos e campos personalizados por rótulo, sem pipeline_id nem slugs. Sem conversão, o funil
+ * chegava vazio e o filtro de funis não valia para o webhook (em 29/09 entraram vendas de Vendas,
+ * Inadimplentes e Remarketing). Converte os ids para os nomes da v2.
+ */
+export function dealDoWebhookV1(deal: Json): Json {
+  const id = (v: unknown) => stringValue(objectValue(v).id) || null;
+  const out: Json = { ...deal };
+  if (!out.pipeline_id && id(deal.deal_pipeline)) out.pipeline_id = id(deal.deal_pipeline);
+  if (!out.stage_id && id(deal.deal_stage)) out.stage_id = id(deal.deal_stage);
+  if (!out.owner_id && id(deal.user)) out.owner_id = id(deal.user);
+  if (!out.source_id && id(deal.deal_source)) out.source_id = id(deal.deal_source);
+  if (!out.campaign_id && id(deal.campaign)) out.campaign_id = id(deal.campaign);
+  if (!out.contact_ids && Array.isArray(deal.contacts)) out.contact_ids = deal.contacts.map((c: unknown) => id(c)).filter(Boolean);
+  return out;
+}
+
+/** A negociação completa na v2 (funil, etapa, contatos e campos por slug), igual à importação. */
+async function lerDealRd(env: Env, id: string): Promise<Json | null> {
+  try {
+    const r = await rdGet(env, `/deals/${encodeURIComponent(id)}`);
+    const d = objectValue(r.data);
+    return stringValue(d.id) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, transacao: string | null,
+  deps: { contatos?: (ids: string[]) => Promise<LeituraContatos>; lerDeal?: (id: string) => Promise<Json | null> } = {}) {
+  // Mesmo formato da importação: relê a negociação na v2; sem ela, converte o evento (v1).
+  const idDeal = stringValue(dealEvento.id);
+  const v2 = idDeal ? await (deps.lerDeal ?? ((i: string) => lerDealRd(env, i)))(idDeal) : null;
+  const deal = v2 ?? dealDoWebhookV1(dealEvento);
   // O evento traz só a negociação: o contato é lido pelo id, como na importação.
   const idContato = idsContatoDaNegociacao(deal)[0];
   const leitura: LeituraContatos = idContato ? await (deps.contatos ?? ((ids: string[]) => lerContatosRd(env, ids)))([idContato]) : { contatos: new Map<string, Json>(), falhas: new Set<string>() };
