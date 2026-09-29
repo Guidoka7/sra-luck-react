@@ -53,6 +53,21 @@ function camposDoConsole(snapshot: unknown) {
     .map((c: any) => ({ rotulo: String(c.rotulo), valor: textoDoValor(c.valor), situacao: String(c.situacao ?? "") }));
 }
 
+/** De onde a cliente veio (rd_snapshot._sra_origem, montado pela importação a partir do RD). */
+function origemDaCliente(snapshot: unknown) {
+  const o = snapshot && typeof snapshot === "object" ? (snapshot as Record<string, any>)._sra_origem : null;
+  if (!o || typeof o !== "object" || !o.checadoEm) return null;
+  const txt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 240) : null);
+  return {
+    fonte: txt(o.fonte), campanha: txt(o.campanha), comoFicouSabendo: txt(o.comoFicouSabendo), influencer: txt(o.influencer),
+    situacao: String(o.situacao ?? ""), negociacoesAnalisadas: Number(o.negociacoesAnalisadas ?? 0), checadoEm: String(o.checadoEm),
+    evidencias: (Array.isArray(o.evidencias) ? o.evidencias : []).slice(0, 20).map((e: any) => ({
+      rotulo: txt(e?.rotulo) ?? "", valor: txt(e?.valor) ?? "",
+      funil: txt(e?.negociacao?.funil), criadaEm: txt(e?.negociacao?.criadaEm), propria: Boolean(e?.negociacao?.propria),
+    })),
+  };
+}
+
 async function opcoesCrmComCache(env: Env) {
   if (opcoesCrmCache && opcoesCrmCache.expiraEm > Date.now()) return opcoesCrmCache.valor;
   const valor = await opcoesCrm(env);
@@ -80,6 +95,7 @@ async function origemCrmDaVenda(env: Env, venda: Record<string, any>) {
     funil,
     etapa,
     campos: camposDoConsole(venda.rd_snapshot),
+    origemCliente: origemDaCliente(venda.rd_snapshot),
   };
 }
 
