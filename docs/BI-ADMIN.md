@@ -8,6 +8,10 @@ A implementação inicial que consultava clientes, novas_vendas e status contrat
 
 O nome da página é Power BI; continua sendo o BI interno solicitado anteriormente, sem dependência do Microsoft Power BI neste incremento.
 
+## Evolução da recepção
+
+O visual do PR #79 foi aprovado pelo usuário e mergeado em 29/09/2026 (`88caea7`). A fundação de recepção foi implementada em seguida; veja [BI-INGESTION.md](BI-INGESTION.md) para endpoints, schema, garantias, validação e limites. A disponibilidade agora vem das tabelas BI, mantendo métricas indisponíveis até a homologação comercial.
+
 ## Página
 
 - Rota principal `/admin/power-bi`, alias compatível `/admin/bi`.
@@ -69,7 +73,7 @@ Não fabricar eventos históricos. Se o RD não disponibilizar determinada trans
 - Ranking por vendedora: atribuição validada; grupo Sem atribuição conserva negócios sem vendedora, sem misturá-los com SDR.
 - Investimento publicitário, CPL e ROAS ficam fora desta primeira fase sem fonte de custos homologada.
 
-## Entregue neste PR
+## Entrega inicial do PR #79 (histórico)
 
 Estrutura da página comercial, navegação, tabelas e indicadores previstos, contrato de disponibilidade e endpoint protegido. A API devolve `source: rd_station`, `scope: company_commercial`, `metrics: null` e informa que o coletor não foi implementado. Não consulta tabelas operacionais para simular BI.
 

@@ -3,7 +3,7 @@ export type BiArea = 'geral' | 'origens' | 'funis' | 'agendamentos' | 'vendas' |
 export interface BiOverview {
   source: 'rd_station';
   scope: 'company_commercial';
-  collection: { state: 'not_implemented'; lastSyncedAt: null; historicalComplete: false };
+  collection: { state: 'not_configured' | 'configured' | 'receiving' | 'paused' | 'received_unvalidated'; lastSyncedAt: string | null; historicalComplete: false };
   metrics: null;
 }
 export const BI_AREAS: {id: BiArea; label: string; description: string; indicators: string[]; columns: string[]}[] = [
