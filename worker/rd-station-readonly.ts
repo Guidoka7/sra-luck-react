@@ -473,8 +473,13 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
     const atual = arrayValue(resposta.data).map(objectValue);
     if (atual.length === 0) break;
     itens.push(...atual);
-    const next = stringValue(objectValue(resposta.links).next);
+    const links = objectValue(resposta.links);
+    const next = stringValue(links.next);
     const total = Number(resposta.total ?? objectValue(resposta.meta).total ?? 0);
+    const ultimaPagina = Number(new URL(stringValue(links.last) || "/", "https://rd.invalid").searchParams.get("page[number]") ?? 0);
+    if (resource === "deals" && page === 1 && (total > MAX_PAGES * PAGE_SIZE || ultimaPagina > MAX_PAGES)) {
+      throw new Error("RD_RESULT_LIMIT_10000");
+    }
     // A API do RD só permite acessar os 10 mil primeiros registros de um filtro.
     // Nunca apresentar uma leitura interrompida como importação completa.
     if (page === MAX_PAGES && (next || total > itens.length || atual.length >= PAGE_SIZE)) {
