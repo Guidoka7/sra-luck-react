@@ -79,3 +79,13 @@ describe("RD Station CRM — normalização e separação snapshot/local", () =>
     expect(normalizarDealRd({ status: "won" })).toBeNull();
   });
 });
+
+describe("limite do RD (120/min)", () => {
+  it("Retry-After em segundos ou data; sem cabeçalho, espera prudente; teto de 30 s", async () => {
+    const { esperaDoRetryAfter } = await import("./rd-station-readonly");
+    expect(esperaDoRetryAfter("7")).toBe(7000);
+    expect(esperaDoRetryAfter(null)).toBe(5000);
+    expect(esperaDoRetryAfter("600")).toBe(30000);
+    expect(esperaDoRetryAfter("0")).toBe(1000);
+  });
+});

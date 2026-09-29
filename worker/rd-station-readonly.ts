@@ -291,15 +291,51 @@ async function accessToken(env: Env) {
   return rdCredential(env, "access_token", "api_access_token");
 }
 
+/**
+ * O CRM v2 aceita 120 requisições por minuto por CONTA (importação, webhook, catálogo e
+ * reprocessamento somam no mesmo limite). Todas as chamadas desta instância passam por este
+ * ritmo (~90/min, com folga) e, num 429, esperam o Retry-After antes de tentar de novo.
+ */
+const RD_INTERVALO_MS = typeof process !== "undefined" && process.env?.VITEST ? 0 : 650;
+const RD_TENTATIVAS_429 = 2;
+const RD_ESPERA_MAX_MS = 30_000;
+let rdProximaVez = 0;
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Reserva a próxima vez livre para chamar o RD (chamadas paralelas ficam em fila). */
+async function vezDoRd() {
+  const agora = Date.now();
+  const minha = Math.max(agora, rdProximaVez);
+  rdProximaVez = minha + RD_INTERVALO_MS;
+  if (minha > agora) await esperar(minha - agora);
+}
+
+/** Retry-After do RD em ms (segundos ou data HTTP); sem cabeçalho, espera um intervalo prudente. */
+export function esperaDoRetryAfter(valor: string | null, padraoMs = 5_000) {
+  if (!valor) return padraoMs;
+  const segundos = Number(valor);
+  const ms = Number.isFinite(segundos) ? segundos * 1000 : Date.parse(valor) - Date.now();
+  return Math.min(RD_ESPERA_MAX_MS, Math.max(1_000, Number.isFinite(ms) ? ms : padraoMs));
+}
+
 export async function rdGet(env: Env, path: string): Promise<Json> {
   assertRdCommercialReadOnly("GET");
   let token = await accessToken(env);
   if (!token) throw new Error("RD_ACCESS_TOKEN_MISSING");
-  const executar = (access: string) => fetch(`${RD_CRM_BASE}${path}`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${access}`, Accept: "application/json" },
-  });
+  const executar = async (access: string) => {
+    await vezDoRd();
+    return fetch(`${RD_CRM_BASE}${path}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${access}`, Accept: "application/json" },
+    });
+  };
   let response = await executar(token);
+  for (let tentativa = 0; response.status === 429 && tentativa < RD_TENTATIVAS_429; tentativa++) {
+    // Pausa TODAS as chamadas desta instância até o RD liberar.
+    const espera = esperaDoRetryAfter(response.headers?.get?.("Retry-After") ?? null);
+    rdProximaVez = Math.max(rdProximaVez, Date.now() + espera);
+    response = await executar(token);
+  }
   if (response.status === 401) {
     token = await tokenApos401(env, token);
     response = await executar(token);
@@ -313,7 +349,7 @@ async function rdWebhookRequest(env: Env, method: "GET" | "POST" | "PUT", path: 
   if (!path.startsWith("/webhooks")) throw new Error("RD_WEBHOOK_PATH_INVALID");
   let token = await rdCredentialConfiguracao(env, "access_token", "api_access_token");
   if (!token) throw new Error("RD_ACCESS_TOKEN_MISSING");
-  const executar = (access: string) => fetch(`${RD_CRM_BASE}${path}`, {
+  const executar = async (access: string) => { await vezDoRd(); return fetch(`${RD_CRM_BASE}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${access}`,
@@ -321,7 +357,7 @@ async function rdWebhookRequest(env: Env, method: "GET" | "POST" | "PUT", path: 
       ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
     },
     ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
-  });
+  }); };
   let response = await executar(token);
   if (response.status === 401) {
     token = await tokenApos401(env, token);
@@ -453,10 +489,12 @@ export async function lerContatosPorId(
   ids: string[],
   ler: (id: string) => Promise<Json>,
   opcoes: { concorrencia?: number; esperas?: number[] } = {},
-): Promise<{ contatos: Map<string, Json>; falhas: Set<string> }> {
+): Promise<{ contatos: Map<string, Json>; falhas: Set<string>; limitadas: Set<string> }> {
   const unicos = [...new Set(ids.map((id) => stringValue(id)).filter(Boolean))];
   const contatos = new Map<string, Json>();
   const falhas = new Set<string>();
+  /** Não lidas por limite do RD (429): não é problema do dado, tenta na próxima sincronização. */
+  const limitadas = new Set<string>();
   const esperas = opcoes.esperas ?? [1000, 3000, 6000];
   let proximo = 0;
   const trabalhador = async () => {
@@ -472,19 +510,30 @@ export async function lerContatosPorId(
         } catch (e) {
           const limite = e instanceof Error && e.message === "RD_HTTP_429";
           if (limite && tentativa < esperas.length) { await new Promise((r) => setTimeout(r, esperas[tentativa])); continue; }
-          // 404: o contato não existe mais no RD; qualquer outra falha também fica registrada.
-          falhas.add(id);
+          // 429 esgotado: adia. 404 (contato removido) ou outra falha: registra.
+          (limite ? limitadas : falhas).add(id);
           break;
         }
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(opcoes.concorrencia ?? 6, unicos.length) }, trabalhador));
-  return { contatos, falhas };
+  return { contatos, falhas, limitadas };
 }
 
+/** rdGet já espera o Retry-After; aqui só uma tentativa extra e concorrência baixa (o ritmo é global). */
 export async function lerContatosRd(env: Env, ids: string[]) {
-  return lerContatosPorId(ids, (id) => rdGet(env, `/contacts/${encodeURIComponent(id)}`));
+  return lerContatosPorId(ids, (id) => rdGet(env, `/contacts/${encodeURIComponent(id)}`), { concorrencia: 3, esperas: [2_000] });
+}
+
+/** Só o que a importação usa do contato (cache guardado junto da venda). */
+export function contatoParaCache(contato: Json) {
+  const c = objectValue(contato);
+  return {
+    id: stringValue(c.id) || null, name: c.name ?? null, phones: arrayValue(c.phones), emails: arrayValue(c.emails),
+    whatsapp_username: c.whatsapp_username ?? null, job_title: c.job_title ?? null, birthday: c.birthday ?? null,
+    custom_fields: objectValue(c.custom_fields), updated_at: c.updated_at ?? null,
+  };
 }
 
 /** IDs dos contatos ligados a uma negociação (v2: contact_ids; formatos antigos: contact/contacts). */
