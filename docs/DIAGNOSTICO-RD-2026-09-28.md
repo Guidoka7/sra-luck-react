@@ -128,6 +128,8 @@ Uma linha por **negociação + tipo** (não por evento), com contagem de ocorrê
 | `ganha_fora_do_funil` | negociação ganha num funil não configurado | incluir o funil ou importar manualmente | **não** |
 | `duplicidade_possivel` | mesmo CPF/telefone/e-mail de outra venda/cliente | escolher: mesma pessoa ou importar | **não** |
 
+> Atualização 29/09/2026 (migration_116): o vínculo com a equipe passou a ser **opcional**; `vendedora_nao_vinculada` não é mais aberta e não tira a venda do BI.
+
 Cada linha: tipo, motivo, campos faltantes, origem (agendada/manual/webhook), execução, negociação
 (`rd_station_id`), venda, primeira e última ocorrência, número de ocorrências, estado
 (aberta/resolvida/descartada), quem resolveu e quando.

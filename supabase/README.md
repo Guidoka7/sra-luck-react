@@ -58,7 +58,11 @@ As migrations `096` a `106` e `108` a `110` foram aplicadas no Supabase principa
 
 Opcional para o App funcionar: sem ela o catálogo fica em memória de cada instância (a primeira abertura após um deploy lê o RD, alguns segundos).
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre depois dela é a `116`.
+### 116: vínculo do responsável do RD com a equipe opcional (não aplicada em produção)
+
+`migration_116_rd_vinculo_equipe_opcional.sql` redefine `rd_recalcular_pendencias_venda` para não abrir mais `vendedora_nao_vinculada` (o vínculo, quando existe, continua preenchendo `vendedora_id`), tira a exigência de `vendedora_id` de `vw_vendas_validas_bi` e encerra como descartadas as pendências `vendedora_nao_vinculada` abertas. Decisão do responsável em 29/09/2026. Comissão continua exigindo a vendedora da cliente. Pré-requisito: 113. Rollback: `supabase/rollback/migration_116_rollback.sql` (as pendências reabrem no próximo recálculo).
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `117`.
 
 ## Campos históricos importantes
 

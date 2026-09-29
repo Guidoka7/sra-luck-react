@@ -71,7 +71,8 @@ const tem = (tipo: string, id: string, estado = "aberta") => P1.some((p) => p.ti
 provas.execucaoInterrompidaMarcada = r.zumbi === "erro / EXECUCAO_INTERROMPIDA";
 provas.falhasDeExecucaoResolvidasPelaOrigem = P1.filter((p) => p.tipo.startsWith("execucao_")).every((p) => p.estado === "resolvida");
 provas.camposAusentesD2 = P1.some((p) => p.tipo === "campos_ausentes" && p.id === "00d2" && p.estado === "aberta" && p.campos.includes("cpf") && p.campos.includes("valor_contrato"));
-provas.vendedoraSemVinculo = tem("vendedora_nao_vinculada", "00d1") && tem("vendedora_nao_vinculada", "00d3");
+// migration_116: vínculo com a equipe é opcional; responsável sem vínculo não abre pendência.
+provas.semVinculoNaoAbrePendencia = !P1.some((p) => p.tipo === "vendedora_nao_vinculada" && p.estado === "aberta");
 provas.statusNaoGanhaD4 = tem("status_nao_ganha", "00d4");
 // A importação agendada só lê os funis configurados (filtro RDQL): D5 não pode aparecer aqui;
 // negociação de funil não configurado só chega pelo webhook (passo 5).
@@ -82,7 +83,8 @@ provas.semIdNaoSomeEmSilencio = P1.some((p) => p.tipo === "negociacao_com_erro" 
 provas.erroDeGravacaoD9 = tem("negociacao_com_erro", "00d9");
 provas.parcelasLidasDoObjetoCustomFields = sql(`select quantidade_parcelas from novas_vendas where rd_station_id='${h(0xd1)}'`) === "24";
 provas.cpfLidoDoContato = sql(`select cpf from novas_vendas where rd_station_id='${h(0xd1)}'`) === CPF1;
-provas.nenhumaVendaValidaAinda = contar().validasBi === 0;
+provas.d1ValidaSemVinculo = sql(`select count(*) from vw_vendas_validas_bi where rd_station_id='${h(0xd1)}'`) === "1";
+provas.d2IncompletaForaDoBi = sql(`select count(*) from vw_vendas_validas_bi where rd_station_id='${h(0xd2)}'`) === "0";
 
 // 4) Repetição da mesma execução: nada duplica
 r.pendenciasAposExecucao1 = pend();
@@ -101,7 +103,9 @@ provas.webhookGanhaForaDoFunilUmaLinha = (r.webhookD5 as any[]).length === 1 && 
 const vendedora = sql("select id from colaboradores where cargo='vendedora' limit 1");
 r.vinculo = await vincularResponsavel(db, U_V, vendedora, "staff:qa");
 const P2 = pend() as any[];
-provas.vinculoResolveVendedora = P2.some((p) => p.tipo === "vendedora_nao_vinculada" && p.id === "00d1" && p.estado === "resolvida") && P2.some((p) => p.tipo === "vendedora_nao_vinculada" && p.id === "00d3" && p.estado === "aberta");
+provas.vinculoPreencheVendedora = sql(`select vendedora_id from novas_vendas where rd_station_id='${h(0xd1)}'`) === vendedora
+  && sql(`select coalesce(vendedora_id::text,'') from novas_vendas where rd_station_id='${h(0xd3)}'`) === ""
+  && !P2.some((p) => p.tipo === "vendedora_nao_vinculada" && p.estado === "aberta");
 provas.d1ValidaNoBi = sql(`select count(*) from vw_vendas_validas_bi where rd_station_id='${h(0xd1)}'`) === "1";
 
 // 7) Correção local da D2 (como o cadastro faria) + reprocessar a pendência → fecha
