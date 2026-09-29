@@ -77,6 +77,30 @@ describe("catálogo do RD por funil", () => {
     expect(gets.filter((g) => g.startsWith("/contacts"))).toEqual([]);
   });
 
+  it("conta as negociações de cada funil lendo a última página (o RD não informa o total)", async () => {
+    const pagina = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d${i}`, pipeline_id: "x" }));
+    const lidas: string[] = [];
+    const rd: LeitorRd = {
+      listar: async (recurso) => recurso === "pipelines" ? [{ id: "a".repeat(24), name: "Grande" }, { id: "b".repeat(24), name: "Pequeno" }, { id: "c".repeat(24), name: "Enorme" }] : [],
+      get: async (path) => {
+        if (path.includes("/stages")) return { data: [] };
+        lidas.push(path);
+        const funil = decodeURIComponent(path).match(/pipeline_id:(\w{24})/)![1];
+        const num = Number(new URLSearchParams(path.split("?")[1]).get("page[number]"));
+        const last = (n: number) => ({ last: `https://api.rd.services/crm/v2/deals?page[number]=${n}&page[size]=100` });
+        if (funil === "a".repeat(24)) return num === 1 ? { data: pagina(100), links: last(4) } : { data: pagina(37), links: last(4) };
+        if (funil === "c".repeat(24)) return { data: pagina(100), links: last(250) };
+        return { data: pagina(12), links: last(1) };
+      },
+    };
+    const funis = await montarCatalogoCrm(env, { rd });
+    expect(funis.find((f) => f.nome === "Grande")?.total).toEqual({ negociacoes: 337, exato: true });
+    expect(funis.find((f) => f.nome === "Pequeno")?.total).toEqual({ negociacoes: 12, exato: true });
+    // Acima de 10 mil o RD não deixa navegar: total aproximado pelo número de páginas.
+    expect(funis.find((f) => f.nome === "Enorme")?.total).toEqual({ negociacoes: 25000, exato: false });
+    expect(lidas.filter((p) => p.includes("aaaa") && p.includes("page[number]=4"))).toHaveLength(1);
+  });
+
   it("campos de cada funil vêm das regras do RD e da amostra, sem catálogo global", async () => {
     const { rd, contatos } = rdFalso();
     const contatosPorFunil = new Map([[F1, new Map(contatos.map((c) => [c.id, c]))]]);
