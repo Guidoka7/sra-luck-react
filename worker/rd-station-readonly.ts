@@ -465,6 +465,9 @@ export async function listarTudo(env: Env, resource: string, filter?: string) {
     const q = new URLSearchParams();
     q.set("page[number]", String(page));
     q.set("page[size]", String(PAGE_SIZE));
+    // Negociações mudam de posição na ordenação padrão durante a leitura de várias páginas.
+    // Uma ordem por criação evita pular ou repetir registros quando são atualizadas no RD.
+    if (resource === "deals") q.set("sort[created_at]", "asc");
     if (filter) q.set("filter", filter);
     const resposta = await rdGet(env, `/${resource}?${q.toString()}`);
     const atual = arrayValue(resposta.data).map(objectValue);
