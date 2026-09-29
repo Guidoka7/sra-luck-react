@@ -180,6 +180,18 @@ export async function integrationsStatusApi(request: Request, env: Env): Promise
     rdUltimaVerificacao = testeRd.created_at;
     rdConectado = Boolean((testeRd.detalhes as any)?.conectado);
   }
+  // A importação lê a API do RD de verdade a cada execução: uma concluída nas últimas 24 h é uma
+  // verificação real da conexão (o teste manual pode nunca ter sido feito).
+  if (!rdConectado) {
+    const { data: importacao } = await db.from("integracao_importacoes").select("concluido_em")
+      .eq("provedor", "rd_station").neq("origem", "webhook").in("status", ["concluida", "parcial"])
+      .gte("concluido_em", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+      .order("concluido_em", { ascending: false }).limit(1).maybeSingle();
+    if (importacao?.concluido_em) {
+      rdConectado = true;
+      rdUltimaVerificacao = String(importacao.concluido_em);
+    }
+  }
 
   const provedoresTeste = ["web_push", "mercado_pago", "conta_azul", "rd_station", "gemini", "brb", "bb", "santander", "sicredi", "efi"];
   const testes = new Map<string, any>();

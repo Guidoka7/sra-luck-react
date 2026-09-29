@@ -32,3 +32,12 @@ describe("falha de versão após deploy", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("rota carregada depois de um deploy", () => {
+  it("módulo presente segue normal; ausente sem recarga vira erro (não 'reading default')", async () => {
+    vi.resetModules();
+    const { moduloDaRota } = await import("./recargaVersao");
+    await expect(moduloDaRota(async () => ({ default: "ok" }))).resolves.toEqual({ default: "ok" });
+    await expect(moduloDaRota(async () => undefined)).rejects.toThrow(/dynamically imported module/);
+  });
+});

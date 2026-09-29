@@ -72,7 +72,8 @@ export async function clientConfigApi(request: Request, env: Env): Promise<Respo
         .eq("id", sessao.clienteId)
         .maybeSingle();
       if (error) return json({ erro: "Não foi possível carregar a foto de perfil." }, 500);
-      if (!cliente?.foto_perfil_path) return json({ erro: "Foto de perfil não cadastrada." }, 404);
+      // Sem foto é um estado normal (a cliente ainda não escolheu uma): 204, não erro.
+      if (!cliente?.foto_perfil_path) return new Response(null, { status: 204, headers: { "Cache-Control": "private, no-store" } });
 
       const etag = `"${String(cliente.foto_perfil_path).replace(/\"/g, "")}"`;
       const headers304 = cacheFotoHeaders(etag);

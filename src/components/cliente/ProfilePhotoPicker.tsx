@@ -61,6 +61,14 @@ function salvarCache(chave: string, cache: FotoCache) {
   }
 }
 
+function removerCache(chave: string) {
+  try {
+    localStorage.removeItem(chave);
+  } catch {
+    // Sem armazenamento local: nada a limpar.
+  }
+}
+
 function canvasParaBlob(canvas: HTMLCanvasElement, tipo: string, qualidade: number) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -130,17 +138,13 @@ export function ProfilePhotoPicker({
   const chave = useMemo(() => chaveCache(fallback), [fallback]);
   const cacheInicial = useMemo(() => lerCache(chave), [chave]);
   const [preview, setPreview] = useState<string | null>(() => cacheInicial?.preview ?? null);
-  const [fotoSrc, setFotoSrc] = useState(() => cacheInicial?.versao ? `${FOTO_URL}?v=${encodeURIComponent(cacheInicial.versao)}` : FOTO_URL);
-  const [fotoDisponivel, setFotoDisponivel] = useState(true);
-  const [fotoServidorPronta, setFotoServidorPronta] = useState(false);
+  const [versao, setVersao] = useState<string | null>(() => cacheInicial?.versao ?? null);
   const [processando, setProcessando] = useState(false);
 
   useEffect(() => {
     const cache = lerCache(chave);
     setPreview(cache?.preview ?? null);
-    setFotoSrc(cache?.versao ? `${FOTO_URL}?v=${encodeURIComponent(cache.versao)}` : FOTO_URL);
-    setFotoDisponivel(true);
-    setFotoServidorPronta(false);
+    setVersao(cache?.versao ?? null);
   }, [chave]);
 
   useEffect(() => {
@@ -148,36 +152,42 @@ export function ProfilePhotoPicker({
       const detalhe = (evento as CustomEvent<FotoAtualizada>).detail;
       if (!detalhe?.preview || !detalhe.versao) return;
       setPreview(detalhe.preview);
-      setFotoDisponivel(true);
-      setFotoServidorPronta(false);
-      setFotoSrc(`${FOTO_URL}?v=${encodeURIComponent(detalhe.versao)}`);
+      setVersao(detalhe.versao);
     };
     window.addEventListener(EVENTO_FOTO, atualizarFoto);
     return () => window.removeEventListener(EVENTO_FOTO, atualizarFoto);
   }, []);
 
+  // Uma consulta só: com foto (200) guarda a prévia; sem foto (204) mostra as iniciais.
+  // Antes a tela também montava <img src=/foto> para quem não tinha foto, e cada visita virava
+  // dois erros (imagem quebrada + 404) no monitoramento.
   useEffect(() => {
-    if (preview) return;
     let ativo = true;
-
-    // Clientes que já tinham foto ganham o preview persistente automaticamente.
-    fetch(FOTO_URL, { cache: "no-cache", credentials: "same-origin" })
-      .then((resposta) => (resposta.ok ? resposta.blob() : null))
-      .then(async (blob) => {
-        if (!ativo || !blob || !blob.type.startsWith("image/")) return;
+    const url = versao ? `${FOTO_URL}?v=${encodeURIComponent(versao)}` : FOTO_URL;
+    fetch(url, { cache: "no-cache", credentials: "same-origin" })
+      .then(async (resposta) => {
+        if (!ativo) return;
+        if (resposta.status === 204) {
+          // A foto foi removida (ou nunca existiu): limpa a prévia guardada neste aparelho.
+          removerCache(chave);
+          setPreview(null);
+          return;
+        }
+        if (!resposta.ok) return;
+        const blob = await resposta.blob();
+        if (!ativo || !blob.type.startsWith("image/")) return;
         const otimizada = await otimizarFoto(blob);
         const previewLocal = await arquivoParaDataUrl(otimizada);
         if (!ativo) return;
-        const versao = String(Date.now());
-        salvarCache(chave, { preview: previewLocal, versao });
+        salvarCache(chave, { preview: previewLocal, versao: versao ?? String(Date.now()) });
         setPreview(previewLocal);
       })
+      // Sem rede: fica a prévia guardada (ou as iniciais); a próxima abertura tenta de novo.
       .catch(() => {});
-
     return () => {
       ativo = false;
     };
-  }, [chave, preview]);
+  }, [chave, versao]);
 
   async function alterarFoto(arquivo: File, input: HTMLInputElement) {
     setProcessando(true);
@@ -191,14 +201,10 @@ export function ProfilePhotoPicker({
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.erro ?? "Não foi possível atualizar sua foto.");
 
-      const versao = String(corpo.versao ?? Date.now());
-      salvarCache(chave, { preview: previewLocal, versao });
+      const novaVersao = String(corpo.versao ?? Date.now());
+      salvarCache(chave, { preview: previewLocal, versao: novaVersao });
       setPreview(previewLocal);
-      setFotoDisponivel(true);
-      setFotoServidorPronta(false);
-      setFotoSrc(`${FOTO_URL}?v=${encodeURIComponent(versao)}`);
-      window.dispatchEvent(new CustomEvent<FotoAtualizada>(EVENTO_FOTO, { detail: { preview: previewLocal, versao } }));
-      void fetch(FOTO_URL, { cache: "reload", credentials: "same-origin" }).catch(() => {});
+      window.dispatchEvent(new CustomEvent<FotoAtualizada>(EVENTO_FOTO, { detail: { preview: previewLocal, versao: novaVersao } }));
       toast.success("Foto de perfil atualizada.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar sua foto.");
@@ -219,25 +225,7 @@ export function ProfilePhotoPicker({
       >
         <span className={avatarClassName}>
           {fallback}
-          {preview && <img src={preview} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />}
-          {fotoDisponivel && (
-            <img
-              src={fotoSrc}
-              alt={imageAlt}
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${fotoServidorPronta ? "opacity-100" : "opacity-0"}`}
-              onLoad={() => {
-                setFotoDisponivel(true);
-                setFotoServidorPronta(true);
-              }}
-              onError={() => {
-                setFotoDisponivel(false);
-                setFotoServidorPronta(false);
-              }}
-            />
-          )}
+          {preview && <img src={preview} alt={imageAlt} className="absolute inset-0 h-full w-full object-cover" />}
         </span>
         <span className={cameraClassName} aria-hidden="true">
           {processando ? <span className="h-[7px] w-[7px] animate-pulse rounded-full bg-current" /> : <CameraIcon />}

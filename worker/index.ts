@@ -1,3 +1,4 @@
+import { imagemRecompensaApi } from "./clube-imagens";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { homeCampanhasApi } from "./home-campanhas";
 import { criarTokenAdmin, criarTokenSessao, getCookie, setAdminSessionCookie, setSessionCookie, clearAdminSessionCookie, clearSessionCookie, verificarTokenAdmin, verificarTokenSessao } from "./session";
@@ -369,6 +370,13 @@ async function handleRequest(request: Request, env: Env, ctx?: { waitUntil?: (p:
     return json({ ok: true }, 200, { "Set-Cookie": clearAdminSessionCookie(secure), "Cache-Control": "no-store" });
   }
 
+  // "Estou logado?" não é erro quando a resposta é não: 200 com autenticado:false, como na
+  // sessão da cliente (antes a proteção geral respondia 401 e cada tela de login virava erro).
+  if (url.pathname === "/api/admin/session" && request.method === "GET" && env.CLIENTE_SESSION_SECRET
+    && !(await verificarTokenAdmin(getCookie(request, "admin_session"), env.CLIENTE_SESSION_SECRET))) {
+    return json({ autenticado: false }, 200, { "Cache-Control": "no-store" });
+  }
+
   if (url.pathname.startsWith("/api/admin/")) {
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
       const bad = bloquearCrossSite(request);
@@ -452,6 +460,8 @@ async function handleRequest(request: Request, env: Env, ctx?: { waitUntil?: (p:
   const regras = await regrasOperacionaisApi(request, env);
   if (regras) return regras;
 
+  const imagemRecompensa = await imagemRecompensaApi(request, env);
+  if (imagemRecompensa) return imagemRecompensa;
   const homeCampanhas = await homeCampanhasApi(request, env);
   if (homeCampanhas) return homeCampanhas;
   const push = await clientPushApi(request, env);

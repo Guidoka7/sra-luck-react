@@ -28,6 +28,7 @@ import { configDaFuncao, consumirUso, type ConfigGemini } from "./integracoes-re
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { requestLogger } from "./logger";
+import { rotinaAgendadaAutorizada } from "./cron-auth";
 import { DATAS_ESPECIAIS, TEMAS_SEMANA, fraseDoDia, type FraseDoDia } from "../src/lib/fraseDoDia";
 
 const MODELO_PADRAO = "gemini-3.5-flash-lite";
@@ -714,11 +715,11 @@ export async function fraseDoDiaApi(request: Request, env: Env): Promise<Respons
   const url = new URL(request.url);
 
   // Rotina diária (Vercel Cron) e execução manual pelo admin — ambas idempotentes.
-  const rotina = url.pathname === "/api/cron/mensagem-do-dia" && request.method === "GET";
+  const rotina = url.pathname === "/api/cron/mensagem-do-dia" && (request.method === "GET" || request.method === "POST");
   const manual = url.pathname === "/api/admin/integrations/gemini/mensagem-do-dia" && request.method === "POST";
   if (rotina || manual) {
     const log = requestLogger(request).child({ action: "daily_message.routine" });
-    if (rotina && !rotinaAutorizada(request, env)) return json({ erro: "Rotina não autorizada." }, 401);
+    if (rotina && !(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Rotina não autorizada." }, 401);
     if (manual) {
       const origem = request.headers.get("Origin");
       if (origem && origem !== url.origin) return json({ erro: "Requisição de origem não autorizada." }, 403);

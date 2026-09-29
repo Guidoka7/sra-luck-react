@@ -14,6 +14,45 @@ type EventoErro = {
   detalhes?: Record<string, unknown>;
 };
 
+/**
+ * Falhas que não são defeito do sistema e não entram na Central de Problemas (nível "info"):
+ * aparelho sem internet, app em segundo plano durante a chamada e os primeiros segundos após
+ * voltar dele (o iOS corta as conexões ao suspender o app). Continuam registradas como info.
+ */
+let ocultoEm = 0;
+let visivelEm = 0;
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") ocultoEm = Date.now();
+    else visivelEm = Date.now();
+  });
+}
+
+export function motivoFalhaDoAparelho(inicio: number): string | null {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "sem_internet";
+  if (typeof document === "undefined") return null;
+  if (document.visibilityState === "hidden") return "app_em_segundo_plano";
+  if (ocultoEm >= inicio) return "app_foi_para_segundo_plano_durante_a_chamada";
+  if (visivelEm && Date.now() - visivelEm < 5000) return "retorno_do_segundo_plano";
+  return null;
+}
+
+/** Chamada cancelada pelo próprio app (troca de tela, fechar gaveta): não é falha. */
+export function ehCancelamento(error: unknown) {
+  return error instanceof DOMException ? error.name === "AbortError" : (error as { name?: string } | null)?.name === "AbortError";
+}
+
+/** Respostas que fazem parte do fluxo normal (credencial errada, trava de importação em andamento). */
+const RESPOSTAS_ESPERADAS: { url: RegExp; status: number[] }[] = [
+  { url: /\/api\/(cliente|admin|equipe)\/auth$/, status: [401, 429] },
+  { url: /\/api\/admin\/integrations\/rd-station\/importar$/, status: [409] },
+];
+
+export function respostaEsperada(url: string, status: number) {
+  const caminho = url.split("?")[0];
+  return RESPOSTAS_ESPERADAS.some((r) => r.url.test(caminho) && r.status.includes(status));
+}
+
 let ultimo = "";
 let ultimoEm = 0;
 let instalado = false;
@@ -170,8 +209,19 @@ export function instalarMonitoramentoGlobal() {
   void reenviarFila();
   const originalConsoleError = console.error;
 
-  const onError = (event: ErrorEvent) => registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: "fatal", codigo: "GLOBAL_JS_ERROR", action: "frontend.global.error", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno } });
-  const onRejection = (event: PromiseRejectionEvent) => { const erro = normalizarErro(event.reason); registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "UNHANDLED_REJECTION", action: "frontend.promise.unhandled", nivel: "fatal" }); };
+  // "Script error." sem arquivo nem linha: o navegador esconde o erro de um script de outro domínio
+  // (extensão ou navegador embutido, como o do Instagram). O app não carrega scripts externos,
+  // então fica como aviso com o motivo, não como falha fatal do app.
+  const onError = (event: ErrorEvent) => {
+    const opaco = event.message === "Script error." && !event.filename && !event.error;
+    registrarErro({ mensagem: event.message || "Erro JavaScript não identificado", stack: event.error?.stack, nivel: opaco ? "warn" : "fatal", codigo: "GLOBAL_JS_ERROR", action: opaco ? "frontend.global.opaque" : "frontend.global.error", detalhes: { arquivo: event.filename, linha: event.lineno, coluna: event.colno, ...(opaco ? { motivo: "erro_de_script_externo_sem_detalhes" } : {}) } });
+  };
+  const onRejection = (event: PromiseRejectionEvent) => {
+    if (ehCancelamento(event.reason)) return;
+    const erro = normalizarErro(event.reason);
+    const motivo = event.reason instanceof TypeError ? motivoFalhaDoAparelho(Date.now()) : null;
+    registrarErro({ mensagem: erro.mensagem, stack: erro.stack, codigo: "UNHANDLED_REJECTION", action: "frontend.promise.unhandled", nivel: motivo ? "info" : "fatal", detalhes: motivo ? { motivo } : undefined });
+  };
   const onResourceError = (event: Event) => {
     const target = event.target as HTMLImageElement | HTMLScriptElement | HTMLLinkElement | null;
     if (!target || target === document.documentElement) return;
@@ -192,11 +242,18 @@ export function instalarMonitoramentoGlobal() {
     const inicio = Date.now();
     try {
       const response = await fetchOriginal!(input, init);
-      if (!response.ok) registrarErro({ origem: "api", nivel: response.status >= 500 ? "error" : "warn", codigo: "API_HTTP_ERROR", action: "api.request.failed", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, request_id: response.headers.get("x-request-id") || undefined, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      if (!response.ok) {
+        const esperada = respostaEsperada(url, response.status);
+        registrarErro({ origem: "api", nivel: esperada ? "info" : response.status >= 500 ? "error" : "warn", codigo: "API_HTTP_ERROR", action: esperada ? "api.request.expected" : "api.request.failed", mensagem: `API retornou HTTP ${response.status}`, status_http: response.status, metodo, request_id: response.headers.get("x-request-id") || undefined, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      }
       return response;
     } catch (error) {
+      if (ehCancelamento(error)) throw error;
+      // Tentativa que quem chamou vai repetir (apiJson): só a última falha é registrada.
+      if ((init as (RequestInit & { sraLuckVaiRepetir?: boolean }) | undefined)?.sraLuckVaiRepetir) throw error;
       const erro = normalizarErro(error);
-      registrarErro({ origem: "api", nivel: "error", codigo: "API_NETWORK_ERROR", action: "api.network.failed", mensagem: erro.mensagem, stack: erro.stack, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio } });
+      const motivo = motivoFalhaDoAparelho(inicio);
+      registrarErro({ origem: "api", nivel: motivo ? "info" : "error", codigo: motivo ? "CONEXAO_DO_APARELHO" : "API_NETWORK_ERROR", action: "api.network.failed", mensagem: erro.mensagem, stack: erro.stack, metodo, detalhes: { url: url.split("?")[0].slice(0, 700), duracao_ms: Date.now() - inicio, ...(motivo ? { motivo } : {}) } });
       throw error;
     }
   };

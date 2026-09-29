@@ -1,5 +1,6 @@
 "use client";
 
+import { registrarAcesso } from "@/lib/monitoramento";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { FileSignature, PartyPopper, Star } from "lucide-react";
@@ -105,7 +106,9 @@ export function MomentoEspecialCelebracao() {
         sessionStorage.setItem(chave, "1");
         setDataMomentoEspecial(evento);
         setMomentoEspecial(proximo);
-        fetch("/api/cliente/momentos-especiais", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ momento: proximo, dataEvento: evento }) }).catch(() => {});
+        // Fica no histórico de acesso da cliente (Admin > atividade). A rota
+        // /api/cliente/momentos-especiais nunca existiu no servidor e respondia 404.
+        registrarAcesso(`Momento especial: ${proximo} (${evento})`);
       } catch { /* silencioso: não deve interromper a navegação */ }
     }
     verificar();

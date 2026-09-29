@@ -53,6 +53,10 @@ export function useNotificacoesCliente() {
       const dados = await resposta.json() as { notificacoes?: NotificacaoCliente[]; naoLidas?: number };
       setNotificacoes(dados.notificacoes ?? []);
       setNaoLidas(dados.naoLidas ?? 0);
+    } catch {
+      // Sem rede (celular saindo do segundo plano): mantém as notificações já carregadas; a
+      // próxima consulta (15 s ou ao voltar para o app) atualiza. Antes, a falha escapava como
+      // promessa rejeitada sem tratamento (UNHANDLED_REJECTION "Load failed" no iPhone).
     } finally {
       carregouUmaVez.current = true;
       setCarregando(false);

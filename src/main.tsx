@@ -25,20 +25,20 @@ import "./styles/admin-desktop.css";
 import "./styles/admin-refinements.css";
 import "./styles/staff-real.css";
 import { MARK_SRC } from "@/assets/brand";
-import { instalarRecargaDeVersao } from "./lib/recargaVersao";
+import { instalarRecargaDeVersao, moduloDaRota } from "./lib/recargaVersao";
 
-const AgendaPage = lazy(() => import("./pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
-const StaffPwa = lazy(() => import("./features/staff/StaffPwa").then((m) => ({ default: m.StaffPwa })));
-const StaffLoginPage = lazy(() => import("./features/staff/StaffLoginPage").then((m) => ({ default: m.StaffLoginPage })));
-const AdminWorkspace = lazy(() => import("./features/admin/AdminWorkspace").then((m) => ({ default: m.AdminWorkspace })));
-const VisaoGeralPage = lazy(() => import("./features/admin/visao-geral/VisaoGeralPage"));
-const PrevisoesPage = lazy(() => import("./app/admin/(painel)/previsoes/page"));
-const AgendaAdminPage = lazy(() => import("./app/admin/(painel)/agenda/page"));
-const ClientesPage = lazy(() => import("./app/admin/(painel)/clientes/page"));
-const FinanceiroPage = lazy(() => import("./app/admin/(painel)/financeiro/page"));
-const FinanceiroAvancado = lazy(() => import("./features/financeiro/AdminFinanceiro"));
-const RelatoriosPage = lazy(() => import("./app/admin/(painel)/relatorios/page"));
-const ClubeAdminPage = lazy(() => import("./app/admin/(painel)/clube/page"));
+const AgendaPage = lazy(() => moduloDaRota(() => import("./pages/AgendaPage")).then((m) => ({ default: m.AgendaPage })));
+const StaffPwa = lazy(() => moduloDaRota(() => import("./features/staff/StaffPwa")).then((m) => ({ default: m.StaffPwa })));
+const StaffLoginPage = lazy(() => moduloDaRota(() => import("./features/staff/StaffLoginPage")).then((m) => ({ default: m.StaffLoginPage })));
+const AdminWorkspace = lazy(() => moduloDaRota(() => import("./features/admin/AdminWorkspace")).then((m) => ({ default: m.AdminWorkspace })));
+const VisaoGeralPage = lazy(() => moduloDaRota(() => import("./features/admin/visao-geral/VisaoGeralPage")));
+const PrevisoesPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/previsoes/page")));
+const AgendaAdminPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/agenda/page")));
+const ClientesPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/clientes/page")));
+const FinanceiroPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/financeiro/page")));
+const FinanceiroAvancado = lazy(() => moduloDaRota(() => import("./features/financeiro/AdminFinanceiro")));
+const RelatoriosPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/relatorios/page")));
+const ClubeAdminPage = lazy(() => moduloDaRota(() => import("./app/admin/(painel)/clube/page")));
 
 function CarregandoRota() {
   return <div className="flex min-h-[50vh] items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-burgundy/20 border-t-burgundy" /></div>;

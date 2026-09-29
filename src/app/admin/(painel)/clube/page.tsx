@@ -642,10 +642,20 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
   const [editando, setEditando] = useState<Recompensa | null>(null);
   const [form, setForm] = useState<FormCatalogo>(vazio);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [arquivoImagem, setArquivoImagem] = useState<File | null>(null);
+  const [previewArquivo, setPreviewArquivo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!arquivoImagem) { setPreviewArquivo(null); return; }
+    const url = URL.createObjectURL(arquivoImagem);
+    setPreviewArquivo(url);
+    return () => URL.revokeObjectURL(url);
+  }, [arquivoImagem]);
 
   function abrirNovo() {
     setEditando(null);
     setForm(vazio);
+    setArquivoImagem(null);
     setFormAberto(true);
   }
 
@@ -661,6 +671,7 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
       ordem: r.ordem ?? 0,
       instrucoesPosResgate: r.instrucoes_pos_resgate ?? "",
     });
+    setArquivoImagem(null);
     setFormAberto(true);
   }
 
@@ -668,6 +679,7 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
     setFormAberto(false);
     setEditando(null);
     setForm(vazio);
+    setArquivoImagem(null);
   }
 
   async function salvar() {
@@ -678,7 +690,7 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
     const chave = editando?.id ?? "novo";
     setOcupado(chave);
     try {
-      await api(editando ? `/api/admin/credit-ops/rewards/${encodeURIComponent(editando.id)}` : "/api/admin/credit-ops/rewards", {
+      const salvo = await api<{ recompensa?: Recompensa }>(editando ? `/api/admin/credit-ops/rewards/${encodeURIComponent(editando.id)}` : "/api/admin/credit-ops/rewards", {
         method: editando ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -687,12 +699,20 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
           categoria: form.categoria.trim() || null,
           pontos: Math.max(1, Math.floor(form.pontos)),
           estoque: form.estoque === "" ? null : Math.max(0, Math.floor(Number(form.estoque) || 0)),
-          imagemUrl: form.imagemUrl.trim() || null,
+          // Com arquivo escolhido, a imagem enviada substitui o link logo abaixo.
+          imagemUrl: arquivoImagem ? (editando?.imagem_url ?? null) : form.imagemUrl.trim() || null,
           ordem: Math.floor(form.ordem || 0),
           instrucoesPosResgate: form.instrucoesPosResgate.trim() || null,
           ativo: editando?.ativo ?? true,
         }),
       });
+      const id = salvo.recompensa?.id ?? editando?.id;
+      if (arquivoImagem && id) {
+        // Imagem guardada no próprio app: o endereço não expira (links temporários quebravam no app).
+        const dados = new FormData();
+        dados.append("imagem", arquivoImagem);
+        await api(`/api/admin/credit-ops/rewards/${encodeURIComponent(id)}/imagem`, { method: "POST", body: dados });
+      }
       toast.success(editando ? "Benefício atualizado no app das clientes." : "Benefício criado no catálogo.");
       fecharForm();
       await onAtualizado();
@@ -743,7 +763,7 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
     pontos: form.pontos || 0,
     estoque: form.estoque === "" ? null : Number(form.estoque),
     ativo: editando?.ativo ?? true,
-    imagem_url: form.imagemUrl || null,
+    imagem_url: previewArquivo ?? (form.imagemUrl || null),
     ordem: form.ordem,
   };
 
@@ -771,7 +791,12 @@ function PainelBeneficios({ recompensas, onAtualizado }: { recompensas: Recompen
         <label>Pontos<input type="number" min={1} value={form.pontos || ""} onChange={(e) => setForm((v) => ({ ...v, pontos: Math.max(0, Number(e.target.value) || 0) }))} /></label>
         <label>Estoque<input type="number" min={0} value={form.estoque} onChange={(e) => setForm((v) => ({ ...v, estoque: e.target.value }))} placeholder="Livre" /></label>
         <label>Ordem<input type="number" value={form.ordem} onChange={(e) => setForm((v) => ({ ...v, ordem: Number(e.target.value) || 0 }))} /></label>
-        <label className={styles.editorWide}>URL da imagem<input value={form.imagemUrl} onChange={(e) => setForm((v) => ({ ...v, imagemUrl: e.target.value }))} placeholder="https://..." /></label>
+        <label className={styles.editorWide}>Imagem (JPG, PNG ou WebP, até 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => {
+          const arquivo = e.currentTarget.files?.[0] ?? null;
+          if (arquivo && arquivo.size > 5 * 1024 * 1024) { toast.error("A imagem precisa ter até 5 MB."); e.currentTarget.value = ""; return; }
+          setArquivoImagem(arquivo);
+        }} /></label>
+        <label className={styles.editorWide}>Ou link público da imagem<input value={form.imagemUrl} disabled={Boolean(arquivoImagem)} onChange={(e) => setForm((v) => ({ ...v, imagemUrl: e.target.value }))} placeholder="https://... (links temporários, como miniaturas do Dropbox, não são aceitos)" /></label>
         <label className={styles.editorWide}>Descrição<textarea value={form.descricao} onChange={(e) => setForm((v) => ({ ...v, descricao: e.target.value }))} rows={3} /></label>
         <label className={styles.editorWide}>Orientação após o resgate<textarea value={form.instrucoesPosResgate} onChange={(e) => setForm((v) => ({ ...v, instrucoesPosResgate: e.target.value }))} rows={2} placeholder="Mensagem exibida à cliente após solicitar o prêmio." /></label>
       </div>

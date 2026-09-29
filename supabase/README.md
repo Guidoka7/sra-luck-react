@@ -70,7 +70,19 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_118_crm_importacao_continuacao.sql` cria `integracoes_disparar_continuacao_crm()` e o job `integracoes-crm-continuacao` (minutos 5, 10, 20, 25, 35, 40, 50 e 55), que chama `/api/cron/integracoes/crm` com o mesmo segredo do cofre. O App importa o RD em etapas (100 negociações por página, posição guardada em `integracao_catalogos`/`crm_importacao_progresso`); este job só continua uma passada que não terminou. Em 29/09/2026 todas as execuções com "todos os funis" eram encerradas no meio. Pré-requisitos: 091, 115, 117. Rollback: `supabase/rollback/migration_118_rollback.sql`.
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `119`.
+### 119: imagens das recompensas do Clube no próprio app
+
+`migration_119_clube_recompensas_imagens.sql` cria o bucket privado `clube-recompensas` (JPG/PNG/WebP, 5 MB) e a coluna `clube_recompensas.imagem_path`. O Admin envia a imagem e ela é servida por `/api/clube/recompensas/{id}/imagem` (endereço permanente). Em 25/09/2026 a imagem da "Nécessaire premium" era uma miniatura temporária do Dropbox e quebrou no app. Rollback: `supabase/rollback/migration_119_rollback.sql`.
+
+### 120: rotinas diárias pelo pg_cron
+
+`migration_120_rotinas_diarias_pg_cron.sql` cria `rotinas_disparar(rotina)` e os jobs `notificacoes-financeiras-diaria` (11:05 UTC) e `mensagem-do-dia-diaria` (03:05 UTC), que chamam o App com o segredo do cofre. Os crons da Vercel pararam em 23–24/09/2026 (sem mensagem do dia nem lembrete automático de parcela). Pré-requisito: 117. Rollback: `supabase/rollback/migration_120_rollback.sql`.
+
+### 121: entidade_id do log como texto
+
+`migration_121_logs_entidade_id_texto.sql` troca `logs_alteracoes.entidade_id` de uuid para texto. O App grava o identificador das integrações ("rd_station", "web_push", "gemini"…) e o banco recusava em silêncio: nenhum teste de conexão, importação do RD, OAuth ou chave VAPID ficava no histórico ("conexão nunca verificada" no Dev Console). Rollback: `supabase/rollback/migration_121_rollback.sql`.
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `122`.
 
 ## Campos históricos importantes
 
