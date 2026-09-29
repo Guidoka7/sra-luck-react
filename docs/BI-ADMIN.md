@@ -80,3 +80,16 @@ Estrutura da página comercial, navegação, tabelas e indicadores previstos, co
 Testes: negação de sessão/permissão, recusa de escrita e ausência de fallback para dados do app. TypeScript frontend/worker e build. QA visual não aprovado: navegador do ambiente bloqueou localhost (`ERR_BLOCKED_BY_CLIENT`). Preview deve ser revisado antes da promoção conforme AGENTS.md.
 
 Sem migração e sem escrita em dados reais. Rollback por reversão do commit. Desenvolvido na branch do PR #79; produção não alterada.
+
+## Refinamento visual — espaço próprio de relatórios
+
+Solicitado pelo usuário: aparência mais próxima de uma ferramenta de BI, com interface própria nesta aba. Classificação: REFINAR. Preservados a consulta de disponibilidade, as sete análises, a navegação por URL/histórico, os estados de carregamento/erro/ausência de carga e a permissão `relatorios.visualizar`.
+
+- A rota do BI usa uma composição independente da sidebar operacional, com barra superior compacta, retorno ao Admin, tema claro/escuro e saída da sessão. O alias `/admin/bi` também participa do redirecionamento por permissão.
+- Navegação por páginas à esquerda, área central com indicadores, espaços de gráficos sem séries inventadas, tabela por vendedora e acesso às pendências.
+- Painel de filtros recolhível à direita. Continua desabilitado, com explicação da dependência da coleta. Abrir/fechar filtros não altera dados.
+- Modo foco recolhe as laterais. Páginas e filtros podem ser restaurados. Em telas estreitas, as páginas viram navegação horizontal e os filtros aparecem acima do relatório.
+- Tipografia sem serifa, superfícies neutras, contornos discretos e acentos azul/dourado, restritos ao BI. Tema das outras páginas preservado.
+- A ação “Verificar dados” apenas repete o GET de disponibilidade; não inicia sincronização. Sem novos endpoints, migrations, credenciais ou escrita comercial.
+
+Validação desta revisão: TypeScript frontend/worker, build e 3 testes do endpoint passaram. Acesso ao Preview no navegador redirecionou para `/admin/login`; revisão visual autenticada e interações em mobile permanecem pendentes. Nenhum dado fictício introduzido no produto.

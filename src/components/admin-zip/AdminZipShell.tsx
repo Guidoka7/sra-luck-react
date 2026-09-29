@@ -57,6 +57,7 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
+  const biWorkspace = /^\/admin\/(?:power-bi|bi)(?:\/|$)/.test(pathname);
   const [perfil, setPerfil] = useState<({ nome: string; cargo: string } & AdminAccessProfile) | null>(null);
   // Em telas estreitas (≤760px) a sidebar vira um painel sobreposto.
   const [menuAberto, setMenuAberto] = useState(false);
@@ -92,9 +93,13 @@ export function AdminZipShell({ children }: { children: ReactNode }) {
   const permitidas = [...navOperacao, ...navGestao].map((item) => item.href).concat(configHref ? [configHref] : []);
   useEffect(() => {
     if (!perfil) return;
-    const naoLiberada = [...NAV_OPERACAO, ...NAV_GESTAO].some((item) => (pathname === item.href || pathname.startsWith(`${item.href}/`)) && !permitidas.includes(item.href));
+    const accessPath = biWorkspace ? "/admin/power-bi" : pathname;
+    const naoLiberada = [...NAV_OPERACAO, ...NAV_GESTAO].some((item) => (accessPath === item.href || accessPath.startsWith(`${item.href}/`)) && !permitidas.includes(item.href));
     if (naoLiberada && permitidas[0]) router.replace(permitidas[0]);
-  }, [perfil, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [perfil, pathname, biWorkspace]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // O relatório tem sua própria navegação; preserva sessão, tema e autorização do Admin.
+  if (biWorkspace) return <div className={`zip-admin${dark ? " dark" : ""}`}><main>{children}</main></div>;
 
   return (
     <div className={`zip-admin zip-shell${dark ? " dark" : ""}${menuAberto ? " zip-shell-menu-open" : ""}`} style={{ minHeight: "100vh", background: "var(--shell)", color: "var(--ink)", padding: 16, display: "flex", gap: 16, alignItems: "flex-start" }}>
