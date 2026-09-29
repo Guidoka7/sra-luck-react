@@ -637,13 +637,13 @@ export async function descartarRevisao(db: Db, itemId: string, ator: string) {
 export async function opcoesCrm(env: Env) {
   const [funis, catalogoBruto, contatos] = await Promise.all([
     listarTudo(env, "pipelines"),
-    listarSeguro(env, "custom_fields"),
-    listarSeguro(env, "contacts"),
+    listarTudo(env, "custom_fields"),
+    listarTudo(env, "contacts"),
   ]);
   const catalogo = catalogoBruto
     .filter((c) => ["deal", "contact"].includes(stringValue(c.entity)))
     .map((c) => ({ slug: stringValue(c.slug), nome: stringValue(c.name) || stringValue(c.slug), entidade: stringValue(c.entity) as "deal" | "contact", tipo: stringValue(c.type) }))
-    .filter((c) => /^[a-z0-9_]{1,60}$/.test(c.slug)) as CampoCatalogoCrm[];
+    .filter((c) => /^[a-z0-9_-]{1,100}$/.test(c.slug)) as CampoCatalogoCrm[];
   const contatosPorId = mapById(contatos);
   const comEtapas = await Promise.all(funis.map(async (f) => {
     const id = stringValue(f.id);
@@ -651,11 +651,9 @@ export async function opcoesCrm(env: Env) {
     let deals: Json[] = [];
     await Promise.all([
       rdGet(env, `/pipelines/${encodeURIComponent(id)}/stages?page[number]=1&page[size]=100`)
-        .then((r) => { etapas = arrayValue(r.data).map(objectValue); })
-        .catch(() => { etapas = []; }),
+        .then((r) => { etapas = arrayValue(r.data).map(objectValue); }),
       listarTudo(env, "deals", `pipeline_id:${id}`)
-        .then((r) => { deals = r; })
-        .catch(() => { deals = []; }),
+        .then((r) => { deals = r; }),
     ]);
     const disponiveis = camposDisponiveisDoFunil(deals, contatosPorId, catalogo);
     return {

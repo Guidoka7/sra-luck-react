@@ -263,6 +263,29 @@ async function renovarToken(env: Env) {
   return persistirTokens(env, "sistema:rd_station_refresh", token);
 }
 
+// Agrupa a renovação das chamadas paralelas da mesma conexão, sem expor tokens.
+const renovacoesEmCurso = new Map<string, Promise<string>>();
+async function tokenApos401(env: Env, anterior: string) {
+  const atual = await accessToken(env);
+  if (atual && atual !== anterior) return atual;
+  const existente = renovacoesEmCurso.get(anterior);
+  if (existente) return existente;
+  const tarefa = renovarToken(env);
+  renovacoesEmCurso.set(anterior, tarefa);
+  try { return await tarefa; }
+  finally { if (renovacoesEmCurso.get(anterior) === tarefa) renovacoesEmCurso.delete(anterior); }
+}
+
+export function erroOpcoesRd(error: unknown) {
+  const mensagem = error instanceof Error ? error.message : "";
+  const codigo = /^RD_[A-Z0-9_]+$/.test(mensagem) ? mensagem : "RD_OPTIONS_UNAVAILABLE";
+  const acao = /OAUTH|TOKEN|HTTP_401|HTTP_403/.test(codigo)
+    ? "Confira a conexão OAuth do RD no painel Dev e reconecte se necessário."
+    : codigo === "RD_HTTP_429" ? "O RD limitou as consultas. Aguarde um momento e tente novamente."
+    : "Tente carregar novamente. Se persistir, confira a conexão do RD no painel Dev.";
+  return { erro: `Não foi possível carregar funis e campos. ${acao} (${codigo})`, codigo };
+}
+
 async function accessToken(env: Env) {
   return rdCredential(env, "access_token", "api_access_token");
 }
@@ -277,7 +300,7 @@ export async function rdGet(env: Env, path: string): Promise<Json> {
   });
   let response = await executar(token);
   if (response.status === 401) {
-    token = await renovarToken(env);
+    token = await tokenApos401(env, token);
     response = await executar(token);
   }
   const data = await response.json().catch(() => ({})) as Json;
@@ -300,7 +323,7 @@ async function rdWebhookRequest(env: Env, method: "GET" | "POST" | "PUT", path: 
   });
   let response = await executar(token);
   if (response.status === 401) {
-    token = await renovarToken(env);
+    token = await tokenApos401(env, token);
     response = await executar(token);
   }
   const data = await response.json().catch(() => ({})) as Json;
@@ -625,7 +648,7 @@ async function rotasCrm(request: Request, env: Env, adminId: string, path: strin
   const db = createServiceSupabaseClient(env);
   const url = new URL(request.url);
   if (path.endsWith("/opcoes") && request.method === "GET") {
-    try { return json(await opcoesCrm(env)); } catch { return json({ erro: "Não foi possível ler funis e campos do RD Station agora." }, 502); }
+    try { return json(await opcoesCrm(env)); } catch (error) { return json(erroOpcoesRd(error), 502); }
   }
   if (path.endsWith("/importacoes") && request.method === "GET") return json(await listarImportacoes(db, Number(url.searchParams.get("limite") || 30), url.searchParams.get("webhook") === "1"));
   if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });
