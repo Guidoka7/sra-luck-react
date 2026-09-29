@@ -37,8 +37,29 @@ export function recarregarParaVersaoNova(): boolean {
     if (recarregouSemStorage) return false;
     recarregouSemStorage = true;
   }
+  recarregando = true;
   window.location.reload();
   return true;
+}
+
+let recarregando = false;
+
+/** true depois que a recarga para a versão nova foi pedida nesta aba. */
+export function recargaEmAndamento() {
+  return recarregando;
+}
+
+/**
+ * Quando a recarga é pedida (vite:preloadError + preventDefault), o Vite resolve o import()
+ * da rota com `undefined` em vez de falhar. React.lazy lia `.default` de undefined e a tela
+ * quebrava ("Cannot read properties of undefined (reading 'default')" em /admin/financeiro,
+ * 28/09). Aqui a rota fica carregando até a página recarregar; sem recarga, o erro sobe.
+ */
+export async function moduloDaRota<M>(carregar: () => Promise<M>): Promise<M> {
+  const modulo = await carregar();
+  if (modulo) return modulo;
+  if (recarregando) return new Promise<M>(() => undefined);
+  throw new Error("Failed to fetch dynamically imported module");
 }
 
 export function instalarRecargaDeVersao() {

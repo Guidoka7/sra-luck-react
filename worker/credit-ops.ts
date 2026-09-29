@@ -1,3 +1,4 @@
+import { normalizarUrlImagem, salvarImagemRecompensa } from "./clube-imagens";
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
@@ -176,13 +177,9 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       const imagemBruta = String(b.imagemUrl ?? b.imagem_url ?? "").trim();
       let imagemUrl: string | null = null;
       if (imagemBruta) {
-        try {
-          const urlImagem = new URL(imagemBruta);
-          if (!["http:", "https:"].includes(urlImagem.protocol)) throw new Error("protocolo");
-          imagemUrl = urlImagem.toString();
-        } catch {
-          return json({ erro: "Informe uma URL de imagem válida (http ou https)." }, 400);
-        }
+        const normalizada = normalizarUrlImagem(imagemBruta);
+        if (!normalizada.ok) return json({ erro: normalizada.erro }, 400);
+        imagemUrl = normalizada.url;
       }
       if (titulo.length < 2 || titulo.length > 160) return json({ erro: "Informe um nome de benefício entre 2 e 160 caracteres." }, 400);
       if (!Number.isInteger(pontos) || pontos <= 0 || pontos > 10_000_000) return json({ erro: "Informe uma pontuação inteira maior que zero." }, 400);
@@ -204,6 +201,24 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
       if (error) return json({ erro: publicError(error) }, 400);
       await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "criou_recompensa_clube", entidade: "clube_recompensas", entidade_id: data.id, detalhes: payload });
       return json({ recompensa: data }, 201);
+    }
+
+    const rewardImagem = path.match(/^\/api\/admin\/credit-ops\/rewards\/([0-9a-f-]{36})\/imagem$/i);
+    if (rewardImagem && request.method === "POST") {
+      if (!pode(PERMISSOES_ADMIN.CREDITO_GERENCIAR)) return json({ erro: "Seu papel não tem permissão para alterar recompensas." }, 403);
+      const id = rewardImagem[1];
+      const { data: atual, error: erroAtual } = await db.from("clube_recompensas").select("id,imagem_path").eq("id", id).is("excluido_em", null).maybeSingle();
+      if (erroAtual) return json({ erro: publicError(erroAtual) }, 500);
+      if (!atual) return json({ erro: "Benefício não encontrado." }, 404);
+      const form = await request.formData().catch(() => null);
+      const arquivo = form?.get("imagem");
+      if (!(arquivo instanceof File)) return json({ erro: "Selecione a imagem do benefício." }, 400);
+      const r = await salvarImagemRecompensa(db, id, arquivo, (atual as { imagem_path?: string | null }).imagem_path ?? null);
+      if (!r.ok) return json({ erro: r.erro }, r.status);
+      const { data, error } = await db.from("clube_recompensas").update({ imagem_path: r.caminho, imagem_url: r.url }).eq("id", id).select("*").single();
+      if (error) return json({ erro: publicError(error) }, 500);
+      await db.from("logs_alteracoes").insert({ usuario: `admin:${adminId}`, acao: "enviou_imagem_recompensa_clube", entidade: "clube_recompensas", entidade_id: id, detalhes: { imagem_path: r.caminho } });
+      return json({ recompensa: data });
     }
 
     const reward = path.match(/^\/api\/admin\/credit-ops\/rewards\/([^/]+)$/);
@@ -240,13 +255,9 @@ export async function creditOpsApi(request: Request, env: Env): Promise<Response
         const imagemBruta = String(b.imagemUrl ?? b.imagem_url ?? "").trim();
         if (!imagemBruta) patch.imagem_url = null;
         else {
-          try {
-            const urlImagem = new URL(imagemBruta);
-            if (!["http:", "https:"].includes(urlImagem.protocol)) throw new Error("protocolo");
-            patch.imagem_url = urlImagem.toString();
-          } catch {
-            return json({ erro: "Informe uma URL de imagem válida (http ou https)." }, 400);
-          }
+          const normalizada = normalizarUrlImagem(imagemBruta);
+          if (!normalizada.ok) return json({ erro: normalizada.erro }, 400);
+          patch.imagem_url = normalizada.url;
         }
       }
       if (b.instrucoesPosResgate !== undefined || b.instrucoes_pos_resgate !== undefined) {

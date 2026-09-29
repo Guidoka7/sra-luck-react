@@ -6,6 +6,7 @@ import { enviarWebPushParaCliente, type WebPushResultado } from "./web-push-send
 import { adicionarDiasCivil, hojeSaoPaulo, intervaloDiaOperacionalUtc } from "../src/lib/dataCivil";
 import { DEV_CONSOLE_SYNTHETIC_COLABORADOR_ID } from "./dev-console-auth";
 import { rotinaAutorizada } from "./frase-do-dia";
+import { rotinaAgendadaAutorizada } from "./cron-auth";
 import { DIA_RECORRENTE, TEMPLATES_PADRAO, VARIAVEIS_TEMPLATE } from "./notificacao-templates-padrao";
 import { EVENTOS_PADRAO, NOMES_CATEGORIA } from "./notificacao-eventos-padrao";
 import { despacharPushPendentes } from "./notificacoes-despacho";
@@ -14,7 +15,7 @@ import {
   listarLotes, prepararLote, reprocessarFalhas, rotinaFinanceira, SEGMENTOS, validarAlteracaoConfig, type Contexto,
 } from "./notificacoes-lotes";
 
-const DEFAULT_CONFIG = { atraso_habilitado: true, frequencia_atraso_horas: 24, max_tentativas: 3, atraso_recorrente_intervalo_dias: 1 };
+const DEFAULT_CONFIG = { atraso_habilitado: true, parcela_habilitada: true, frequencia_atraso_horas: 24, max_tentativas: 3, atraso_recorrente_intervalo_dias: 1 };
 
 type Db = ReturnType<typeof createServiceSupabaseClient>;
 type AcaoAutomacao = "verificar_atrasos" | "verificar_momentos_especiais" | "enviar_agora_todas" | "central_rotina";
@@ -290,6 +291,8 @@ export async function registrarNotificacao(env: Env, db: Db, input: {
 }
 
 async function executarVencimentos(env: Env, db: Db) {
+  // Chave "Enviar notificações de parcela a vencer" desligada: nada é enviado.
+  if (!(await carregarConfig(db)).parcela_habilitada) return { executado: true, habilitado: false, enviadas: 0 };
   const hoje = hojeSaoPaulo();
   const limite = adicionarDiasCivil(hoje, 2);
   const { inicio: inicioHoje, fimExclusivo: fimHoje } = intervaloDiaOperacionalUtc(hoje);
@@ -469,12 +472,19 @@ export async function adminNotificacoes(request: Request, env: Env): Promise<Res
     return json(await despacharPushPendentes(env, { notificacaoId, limite: notificacaoId ? 1 : 50 }));
   }
 
-  // Vercel Cron: rotina diária da Central (libera a fila e prepara o lote do dia; não aprova sozinha por padrão).
+  // Rotina diária (pg_cron do banco, migration_120; ou Vercel Cron). Com a Central de lotes ligada,
+  // libera a fila e prepara o lote do dia (aprovação conforme a Central). Com ela desligada, envia os
+  // lembretes de atraso e de vencimento pela automação direta, que respeita as chaves
+  // atraso_habilitado/parcela_habilitada e o intervalo entre avisos. Antes, com a Central desligada,
+  // a rotina não fazia nada e nenhum lembrete automático saiu desde 24/09/2026.
   if (path === "/api/cron/notificacoes-financeiras") {
-    if (request.method !== "GET") return json({ erro: "Método não suportado." }, 405);
-    if (!rotinaAutorizada(request, env)) return json({ erro: "Rotina não autorizada." }, 401);
+    if (request.method !== "GET" && request.method !== "POST") return json({ erro: "Método não suportado." }, 405);
+    if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Rotina não autorizada." }, 401);
     try {
-      const central = await executarAutomacaoNotificacoes(env, "central_rotina");
+      const db = createServiceSupabaseClient(env);
+      const central = (await carregarConfigCentral(db)).ativa
+        ? { central: await executarAutomacaoNotificacoes(env, "central_rotina") }
+        : { atrasos: await executarAutomacaoNotificacoes(env, "verificar_atrasos"), vencimentos: await executarAutomacaoNotificacoes(env, "verificar_momentos_especiais") };
       const push = await despacharPushPendentes(env, { limite: 50 }).catch(() => null);
       return json({ ...central, pushPendentes: push });
     }

@@ -102,7 +102,8 @@ create table if not exists logs_alteracoes (
   usuario text not null,
   acao text not null,
   entidade text not null,
-  entidade_id uuid,
+  -- Texto: UUID de cliente/boleto ou o identificador da integração (migration_121).
+  entidade_id text,
   detalhes jsonb,
   created_at timestamptz not null default now()
 );

@@ -1,3 +1,4 @@
+import { rotinaAgendadaAutorizada } from "./cron-auth";
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
@@ -6,7 +7,7 @@ import { CATALOGO_PROVEDORES, credenciaisApi, integracaoDesativada, obterCredenc
 import { garantirWebhooksRd, rdStationReadonlyApi } from "./rd-station-readonly";
 import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
-import { rotinaAutorizada, testarGemini } from "./frase-do-dia";
+import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
 import { atualizarCatalogoSeVencido } from "./crm-catalogo";
@@ -369,24 +370,10 @@ async function alterarEstadoIntegracao(request: Request, env: Env) {
  */
 type BackgroundContext = { waitUntil?: (p: Promise<unknown>) => void };
 
-/**
- * O pg_cron do Supabase chama esta rota com o segredo guardado no cofre do próprio banco
- * (sra_luck_cron_secret). Se o CRON_SECRET da hospedagem não estiver igual, o banco confirma o token
- * pela RPC integracoes_cron_autorizado (migration_117): o segredo nunca sai do cofre.
- */
-export async function cronAutorizadoPeloBanco(request: Request, env: Env, db?: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> }) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-  if (token.length < 32) return false;
-  try {
-    const { data, error } = await (db ?? createServiceSupabaseClient(env)).rpc("integracoes_cron_autorizado", { p_token: token });
-    return !error && data === true;
-  } catch {
-    return false;
-  }
-}
+export { cronAutorizadoPeloBanco } from "./cron-auth";
 
 async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundContext) {
-  if (!rotinaAutorizada(request, env) && !(await cronAutorizadoPeloBanco(request, env))) return json({ erro: "Não autorizado." }, 401);
+  if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
   const resultado: Record<string, unknown> = {};
 
   try { resultado.rdWebhooks = await garantirWebhooksRd(env, "sistema:agendador"); }
@@ -418,7 +405,7 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
  * etapas que ainda não terminou. Sem passada em andamento, não lê nada no RD.
  */
 async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
-  if (!rotinaAutorizada(request, env) && !(await cronAutorizadoPeloBanco(request, env))) return json({ erro: "Não autorizado." }, 401);
+  if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
   const crm = importacaoAgendadaSeDevida(env, { somenteContinuacao: true });
   if (ctx?.waitUntil) {
     ctx.waitUntil(crm.then(() => undefined).catch(() => undefined));

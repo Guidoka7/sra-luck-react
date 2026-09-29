@@ -27,6 +27,9 @@ vi.mock("./supabase", () => ({
         consultas.push({ tabela, coluna });
         const query = {
           eq: () => query,
+          neq: () => query,
+          in: () => query,
+          gte: () => query,
           order: () => query,
           limit: () => query,
           maybeSingle: async () => ({ data: null, error: null }),
