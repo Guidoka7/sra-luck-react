@@ -179,6 +179,17 @@ describe("importação", () => {
     ],
   });
 
+  it("não conta venda antiga fora dos filtros como atualizada", async () => {
+    const { db, tabela } = cenario();
+    const cfg = config({ funis: [{ pipelineId: FUNIL, etapas: [ETAPA], mapeamento: { ...PADRAO_CRM.mapeamento }, filtros: [{ fonte: "deal_field:owner_id", valores: ["1".repeat(24)] }] }] });
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, {
+      db, config: cfg,
+      fontes: fontes([deal("D-PEND", { owner_id: "2".repeat(24) })], [contato("D-PEND", "Caio", "61 98888-7777", "")]),
+    });
+    expect(r).toMatchObject({ ok: true, totalRd: 1, ignoradas: 1, atualizadas: 0 });
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")?.rd_snapshot).toBeUndefined();
+  });
+
   it("duplicata é SÓ mesmo telefone: CPF, e-mail e nome iguais não bastam; +55 e zero não enganam", async () => {
     const { db, tabela } = cenario();
     const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, {
