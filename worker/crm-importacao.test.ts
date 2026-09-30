@@ -402,6 +402,40 @@ describe("importação", () => {
       expect(tabela("novas_vendas").find((v) => v.rd_station_id === "N2")).toMatchObject({ telefone: "61 92222-2222" });
     });
 
+    it("sem limite: contato que não carrega em 3 tentativas não deixa a negociação de fora; é completado depois", async () => {
+      const { db, tabela } = cenario();
+      const deals = [deal("SEMLIM", { created_at: "2026-01-01T00:00:00Z" })];
+      let ler = false;
+      const f = { ...paginado(deals), contatos: async (ids: string[]) => ler
+        ? { contatos: new Map(ids.map((i) => [i, contato("SEMLIM", "Sara Sem Limite", "61 93333-4444", "")])), falhas: new Set<string>() }
+        : { contatos: new Map(), falhas: new Set<string>(), limitadas: new Set(ids) } };
+      const cfg = config({ todosFunis: true, status: "qualquer" });
+      expect(await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f })).toMatchObject({ criadas: 0, adiadas: 1 });
+      expect(await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f })).toMatchObject({ criadas: 0, adiadas: 1 });
+      // Terceira tentativa: entra com os dados da negociação.
+      expect(await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f })).toMatchObject({ criadas: 1, adiadas: 0, passada: { concluida: true } });
+      expect(tabela("novas_vendas").find((v) => v.rd_station_id === "SEMLIM")).toMatchObject({ status: "aguardando_cadastro" });
+      // Próxima leitura: o contato é lido e o telefone completado.
+      ler = true;
+      await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f });
+      expect(tabela("novas_vendas").find((v) => v.rd_station_id === "SEMLIM")).toMatchObject({ telefone: "61 93333-4444", nome_completo: "Sara Sem Limite" });
+    });
+
+    it("sem cota de renovação: todos os contatos guardados vencidos são relidos", async () => {
+      const { db, tabela } = cenario();
+      const deals = Array.from({ length: 90 }, (_, i) => deal(`R${i}`, { created_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString() }));
+      const todos = new Map(deals.map((d, i) => { const c = contato(String(d.id), `Pessoa ${i}`, `61 9${String(20000000 + i)}`, ""); return [c.id, c]; }));
+      const pedidos: string[][] = [];
+      const f = { ...paginado(deals), contatos: async (ids: string[]) => { pedidos.push(ids); return { contatos: new Map(ids.map((i) => [i, todos.get(i)!])), falhas: new Set<string>() }; } };
+      const cfg = config({ todosFunis: true, status: "qualquer" });
+      await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f });
+      // Todos os contatos guardados vencem (mais de 24 h).
+      for (const v of tabela("novas_vendas")) if (v.rd_snapshot?._sra_contato) v.rd_snapshot._sra_contato.lidoEm = "2020-01-01T00:00:00.000Z";
+      pedidos.length = 0;
+      await importarCrm(env, { origem: "agendada", ator: "s" }, { db, config: cfg, fontes: f });
+      expect(pedidos.flat()).toHaveLength(90);
+    });
+
     it("RD recusa o filtro por data: segue pelo número da página", async () => {
       const { db, tabela } = cenario();
       const deals = muitas(150);
