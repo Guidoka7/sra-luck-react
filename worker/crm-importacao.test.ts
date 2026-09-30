@@ -3,7 +3,7 @@ import { bancoFalso } from "./banco-falso.testutil";
 import {
   aplicarMapeamento, chaveTelefone, filtroRdql, importacaoAgendadaSeDevida, importarCrm, importarDoWebhook, importarMesmoAssim, passaNoFiltro, revisarEmLote, usarPerfilDaDuplicata,
 } from "./crm-importacao";
-import { PADRAO_CRM, validarConfigCrm, type ConfigCrm } from "./integracoes-registro";
+import { limparCacheConfig, PADRAO_CRM, validarConfigCrm, type ConfigCrm } from "./integracoes-registro";
 import { normalizarDealRd } from "./rd-station-readonly";
 import type { Env } from "./supabase";
 
@@ -613,6 +613,22 @@ describe("importação", () => {
     expect(dentro?.item.resultado).toBe("criada");
     expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1DENTRO")).toMatchObject({ rd_pipeline_id: FUNIL, banco_local: "Banco V2", telefone: "61 97777-0000" });
     expect(tabela("novas_vendas").find((v) => v.rd_station_id === "V1FORA")).toBeUndefined();
+    limparCacheConfig();
+  });
+
+  it("webhook: venda nova já nasce com a origem resolvida no espelho (nunca sem fonte/campanha)", async () => {
+    const { db, tabela } = cenario();
+    tabela("integracoes_config").push({ provedor: "rd_station", funcao: "importacao", config: { todosFunis: true, status: "qualquer" }, versao: 1 });
+    limparCacheConfig();
+    const origem = {
+      fonte: "Social | instagram", campanha: "Leads Site para CRM", comoFicouSabendo: null, influencer: null, situacao: "encontrada" as const,
+      negociacoesAnalisadas: 1, checadoEm: "2026-09-30T13:05:00.000Z", evidencias: [], ampliada: { em: "2026-09-30T13:05:00.000Z", contatos: [], negociacoes: 0 },
+    };
+    const espelho = { contatos: async () => new Map(), origens: async (ids: string[]) => new Map(ids.map((id) => [id, origem])), guardarContatos: async () => undefined };
+    const contatos = async (ids: string[]) => ({ contatos: new Map(ids.map((id) => [id, contato("WH", "Lorena Webhook", "61 96666-1111", "lorena@x.com")])), falhas: new Set<string>() });
+    const r = await importarDoWebhook(env, db, deal("WH"), "t9", { contatos, lerDeal: async (id) => deal(id), espelho });
+    expect(r?.item.resultado).toBe("criada");
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "WH")).toMatchObject({ origem_venda: "Social | instagram", campanha_local: "Leads Site para CRM" });
     limparCacheConfig();
   });
 

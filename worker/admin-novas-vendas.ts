@@ -160,10 +160,15 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     const funis = config && !config.todosFunis ? (config.funis.length ? config.funis.map((f) => f.pipelineId) : config.pipelineId ? [config.pipelineId] : []) : [];
     let ultimaImportacao: string | null = null;
     if (escopoAtual && config) {
-      const { data } = await db.from("integracao_importacoes").select("iniciado_em")
+      // Início da última PASSADA completa (todas as etapas). Antes era o início da última execução:
+      // com a importação em etapas de 5 min, a lista mostrava só as ~200 vendas da última etapa e
+      // "oscilava" a cada 5 min. Sem passada completa ainda (primeira leitura), mostra todas.
+      const { data } = await db.from("integracao_importacoes").select("iniciado_em,totais")
         .eq("provedor", "rd_station").eq("filtro", filtroRdql(config)).eq("status", "concluida")
-        .neq("origem", "webhook").order("iniciado_em", { ascending: false }).limit(1).maybeSingle();
-      ultimaImportacao = data?.iniciado_em ?? null;
+        .neq("origem", "webhook").eq("totais->passada->>concluida", "true")
+        .order("iniciado_em", { ascending: false }).limit(1).maybeSingle();
+      const inicioPassada = (data as Record<string, any> | null)?.totais?.passada?.iniciadaEm;
+      ultimaImportacao = typeof inicioPassada === "string" ? inicioPassada : null;
     }
     const vendas: Record<string, any>[] = [];
     let total: number | null = null;

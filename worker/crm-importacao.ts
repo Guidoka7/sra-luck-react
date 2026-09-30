@@ -980,7 +980,7 @@ async function lerDealRd(env: Env, id: string): Promise<Json | null> {
 }
 
 export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, transacao: string | null,
-  deps: { contatos?: (ids: string[]) => Promise<LeituraContatos>; lerDeal?: (id: string) => Promise<Json | null> } = {}) {
+  deps: { contatos?: (ids: string[]) => Promise<LeituraContatos>; lerDeal?: (id: string) => Promise<Json | null>; espelho?: EspelhoImportacao | null } = {}) {
   // Mesmo formato da importação: relê a negociação na v2; sem ela, converte o evento (v1).
   const idDeal = stringValue(dealEvento.id);
   const v2 = idDeal ? await (deps.lerDeal ?? ((i: string) => lerDealRd(env, i)))(idDeal) : null;
@@ -1012,7 +1012,9 @@ export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, tran
   const importacaoId = imp ? String((imp as Json).id) : null;
   const item: ItemImportacao = contatoAdiado && !vendaIdx
     ? { external_id: snapshot.rdStationId, resultado: "ignorada", motivo: "Contato ainda não lido (limite de consultas do RD); a negociação entra na próxima sincronização.", correspondencias: [], nova_venda_id: null, dados: { rdStatus: snapshot.rdStatus, rdPipelineId: snapshot.rdPipelineId, rdStageId: snapshot.rdStageId } }
-    : await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado, contatoLidoEm });
+    : await processarNegociacao(db, { deal, snapshot, contato, config, indice, importacaoId, contatoIndisponivel, contatoAdiado, contatoLidoEm,
+      // Origem já resolvida no espelho (todos os cadastros da pessoa): a venda nova não nasce sem fonte/campanha.
+      origem: (await (deps.espelho === undefined ? espelhoDoBanco(db) : deps.espelho)?.origens([snapshot.rdStationId]).catch(() => null))?.get(snapshot.rdStationId) ?? undefined });
   await registrarPendenciasDoItem(db, item, "webhook", importacaoId);
   if (importacaoId) {
     if (item.resultado !== "atualizada") await gravarItens(db, importacaoId, [item]);
