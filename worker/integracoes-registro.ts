@@ -118,15 +118,20 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
     documentacao: "https://developers.contaazul.com",
     autenticacao: "OAuth2 authorization code (login.contaazul.com) com renovação automática: access token de 1 h, refresh token trocado a cada renovação e guardado cifrado no cofre.",
     funcoes: [
+      { id: "conexao", nome: "Conexão (ambiente e endereços)", descricao: "Ambiente teste/produção e URLs OAuth/API (só HTTPS em *.contaazul.com). Client ID/Secret e tokens ficam no cofre cifrado.", direcao: "interna", origem: "Dev Console", destino: "integracoes_config", situacao: "disponivel", configuravel: true },
+      { id: "vinculo_pessoa", nome: "Vínculo da cliente pelo CPF", descricao: "Busca a pessoa pelo CPF (documento idêntico), a equipe confirma e o ID da pessoa fica gravado. Nunca por nome; mais de uma pessoa ou CPF diferente não vinculam.", direcao: "entrada", origem: "Conta Azul: GET /v1/pessoas?documentos= e GET /v1/pessoas/{id}", destino: "cliente_vinculos_externos", situacao: "disponivel" },
+      { id: "importar_financeiro", nome: "Financeiro a partir da Conta Azul", descricao: "Cliente sem parcelas no Sra Luck: monta o financeiro com os lançamentos da pessoa (pagas com a composição das baixas, abertas, vencidas), numa transação, sem duplicar.", direcao: "entrada", origem: "Conta Azul: contas-a-receber/buscar + parcelas/{id}", destino: "boletos + financeiro_recebimentos + conta_azul_vinculos", situacao: "disponivel" },
+      { id: "conciliacao", nome: "Conferência de vínculos", descricao: "Cliente com financeiro: compara valores, vencimentos e status e separa correspondências, divergências, só no Sra Luck e só na Conta Azul. A equipe confirma cada par; vencimento diferente pode ser aceito sem alterar nenhum dos lados.", direcao: "interna", origem: "Sra Luck × Conta Azul", destino: "conta_azul_vinculos", situacao: "disponivel" },
       { id: "sincronizacao", nome: "Sincronização de parcelas", descricao: "A cada 15 min e sob demanda: envia alterações do Sra Luck, lê as alterações da Conta Azul, processa a fila e abre conflitos.", direcao: "bidirecional", origem: "Sra Luck (boletos) e Conta Azul (/alteracoes)", destino: "Conta Azul e Sra Luck", situacao: "disponivel", configuravel: true },
       { id: "criar_conta_receber", nome: "Criar conta a receber vinculada", descricao: "Cria o lançamento da parcela com um marcador único; como a API devolve só protocolo, o vínculo é confirmado lendo a Conta Azul (busca pelo marcador).", direcao: "saida", origem: "Parcela (boletos) do Sra Luck", destino: "Conta Azul: POST /v1/financeiro/eventos-financeiros/contas-a-receber", situacao: "disponivel" },
       { id: "vinculo", nome: "Vínculo permanente", descricao: "Cada parcela guarda o ID do evento e da parcela na Conta Azul. Também é possível vincular um lançamento já existente (só se valor e vencimento baterem).", direcao: "interna", origem: "Sra Luck", destino: "conta_azul_vinculos", situacao: "disponivel" },
       { id: "alterar_parcela", nome: "Valor, vencimento e encargos", descricao: "O Sra Luck é a fonte: mudança de valor ou vencimento no Sra Luck atualiza a Conta Azul com controle de versão. Mudança feita na Conta Azul vira conflito.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul: PATCH .../parcelas/{id} (versao)", situacao: "disponivel" },
-      { id: "baixa_sra_para_ca", nome: "Baixa no Sra Luck → Conta Azul", descricao: "Parcela paga no Sra Luck registra a baixa na Conta Azul com juros e multa calculados pelo Sra Luck, sem duplicar.", direcao: "saida", origem: "Baixa da parcela no Sra Luck", destino: "Conta Azul: POST .../parcelas/{id}/baixa", situacao: "disponivel" },
-      { id: "baixa_ca_para_sra", nome: "Baixa na Conta Azul → Sra Luck e app", descricao: "Parcela quitada na Conta Azul dá baixa no Sra Luck (e aparece no app) quando o vínculo é seguro; caso contrário, vai para revisão.", direcao: "entrada", origem: "Conta Azul: GET /alteracoes + GET /{evento}/parcelas", destino: "boletos.status = pago", situacao: "disponivel" },
+      { id: "baixa_sra_para_ca", nome: "Baixa no Sra Luck → Conta Azul", descricao: "Parcela paga no Sra Luck registra a baixa na Conta Azul com a composição do recebimento (principal, juros, multa, desconto e forma), sem duplicar. Pagamento que veio da Conta Azul não volta para lá.", direcao: "saida", origem: "Baixa da parcela no Sra Luck", destino: "Conta Azul: POST .../parcelas/{id}/baixa", situacao: "disponivel" },
+      { id: "baixa_ca_para_sra", nome: "Baixa na Conta Azul → Sra Luck e app", descricao: "Parcela quitada na Conta Azul entra no ledger do Sra Luck com juros, multa e desconto das baixas (e aparece no app) quando o vínculo é seguro; caso contrário, vai para revisão.", direcao: "entrada", origem: "Conta Azul: GET /alteracoes + GET /{evento}/parcelas", destino: "financeiro_recebimentos (origem conta_azul) + boletos.status = pago", situacao: "disponivel" },
       { id: "estorno_baixa", nome: "Estorno de baixa", descricao: "Baixa desfeita no Sra Luck apaga a baixa que o Sra Luck criou na Conta Azul. Baixa removida na Conta Azul vira conflito (nunca estorna sozinho no Sra Luck).", direcao: "bidirecional", origem: "Sra Luck / Conta Azul", destino: "Conta Azul: DELETE .../parcelas/baixa/{id}", situacao: "disponivel" },
       { id: "webhook_baixa", nome: "Aviso imediato da Conta Azul", descricao: "Ser avisado na hora de uma baixa feita na Conta Azul.", direcao: "entrada", origem: "Conta Azul", destino: "Sra Luck", situacao: "api_nao_permite", motivo: "A Conta Azul não tem webhooks (\"ainda não está disponível nativamente\"). O Sra Luck lê /alteracoes a cada 15 min." },
       { id: "cancelar_renegociar", nome: "Cancelar ou renegociar na Conta Azul", descricao: "Cancelar evento/parcela ou renegociar pela API.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "Não há endpoint de cancelamento/exclusão de evento; renegociação é só leitura. Cancelado/renegociado/perdido na Conta Azul vira conflito para revisão." },
+      { id: "anexos", nome: "Comprovante como anexo na Conta Azul", descricao: "Enviar o comprovante da cliente para o lançamento.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "A parcela só lista anexos (campo anexos); não há endpoint para enviar arquivo a um lançamento. O comprovante continua no Sra Luck." },
       { id: "id_externo", nome: "ID externo na Conta Azul", descricao: "Gravar o ID do Sra Luck num campo próprio da Conta Azul.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "A API não tem campo de ID externo. O Sra Luck usa um marcador na descrição/nota e guarda os IDs da Conta Azul no vínculo." },
     ],
     webhooks: [
@@ -140,16 +145,17 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
     mapeamento: [
       { origem: "boletos.data_vencimento", destino: "parcela.data_vencimento / vencimento", observacao: "Fonte: Sra Luck." },
       { origem: "boletos.valor", destino: "detalhe_valor.valor_bruto / composicao_valor.valor_bruto", observacao: "Fonte: Sra Luck." },
-      { origem: "juros e multa do atraso (calcularEncargosAtraso na data do pagamento)", destino: "composicao_valor.juros / multa da baixa", observacao: "Fonte: Sra Luck." },
+      { origem: "recebimento validado (valor_original, juros, multa, desconto, forma)", destino: "baixa: composicao_valor.valor_bruto / juros / multa / desconto + metodo_pagamento", observacao: "Nos dois sentidos; nada é recalculado." },
       { origem: "boletos.data_pagamento", destino: "baixa.data_pagamento" },
-      { origem: "cliente (CPF)", destino: "contato: GET /v1/pessoas?documentos=CPF", observacao: "A pessoa precisa existir na Conta Azul." },
+      { origem: "cliente (CPF) → pessoa confirmada", destino: "cliente_vinculos_externos.id_externo = pessoa.id", observacao: "Busca por documento exato + confirmação humana." },
       { origem: "marcador SLK-… (id da parcela)", destino: "descrição e nota da parcela", observacao: "Usado para localizar o lançamento criado (a API devolve só protocolo)." },
       { origem: "IDs da Conta Azul (evento, parcela, versão, baixa)", destino: "conta_azul_vinculos" },
     ],
     limites: ["600 chamadas/min e 10/s por conta conectada.", "Criação assíncrona (202 + protocolo, sem ID).", "Consulta de alterações por período (data/hora de Brasília)."],
     regras: [
       "Sra Luck é a fonte de valor, vencimento e encargos.",
-      "Baixa da Conta Azul só é aplicada sozinha com vínculo seguro: vínculo confirmado, parcela quitada por inteiro, mesmo valor bruto, parcela do Sra Luck em aberto ou aguardando confirmação.",
+      "Baixa da Conta Azul só é aplicada sozinha com vínculo seguro: vínculo confirmado, parcela quitada por inteiro, mesmo valor bruto, soma das baixas fechando o valor e parcela do Sra Luck em aberto (com comprovante aguardando conferência, vai para revisão).",
+      "Vencimento diferente entre os sistemas pode ser aceito no vínculo; nenhum vencimento é alterado para \"fazer bater\".",
       "Qualquer divergência vai para a fila de revisão; nada é sobrescrito em silêncio.",
       "Baixas idempotentes: o Sra Luck confere as baixas existentes antes de criar e só apaga baixa que ele mesmo criou.",
       "Parcela vinculada não pode ser excluída no Sra Luck.",
@@ -543,6 +549,65 @@ export function validarConfigContaAzul(bruto: unknown): Validacao<ConfigContaAzu
   return { ok: true, config: out };
 }
 
+// ------------------------------------------------------------------ Conta Azul → conexão (ambiente e endereços)
+
+export type ConfigConexaoContaAzul = {
+  /** teste = conta ERP do App de Desenvolvimento (30 dias); producao = conta real da Sra. Luck. */
+  ambiente: "teste" | "producao";
+  authorizeUrl: string;
+  tokenUrl: string;
+  apiBaseUrl: string;
+};
+
+/** Endereços oficiais (developers.contaazul.com, changelog de 14/08/2026). */
+export const PADRAO_CONEXAO_CONTA_AZUL: ConfigConexaoContaAzul = {
+  ambiente: "teste",
+  authorizeUrl: "https://login.contaazul.com/#/oauth/authorize",
+  tokenUrl: "https://api-v2.contaazul.com/oauth/token",
+  apiBaseUrl: "https://api-v2.contaazul.com",
+};
+
+/**
+ * Só HTTPS em hosts da Conta Azul: o Client Secret vai no cabeçalho da troca de token, então um
+ * endereço livre seria um jeito de vazar a credencial.
+ */
+function urlContaAzul(v: unknown, comHash: boolean): string | null {
+  if (typeof v !== "string" || v.length > 300) return null;
+  let u: URL;
+  try { u = new URL(v); } catch { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || u.port) return null;
+  if (!(u.hostname === "contaazul.com" || u.hostname.endsWith(".contaazul.com"))) return null;
+  if (u.search || (!comHash && u.hash)) return null;
+  return v.replace(/\/$/, "");
+}
+
+export function validarConfigConexaoContaAzul(bruto: unknown): Validacao<ConfigConexaoContaAzul> {
+  const c = objeto(bruto);
+  if (!c) return { ok: false, erro: "Configuração inválida." };
+  const extra = Object.keys(c).find((k) => !(k in PADRAO_CONEXAO_CONTA_AZUL));
+  if (extra) return { ok: false, erro: `Campo não permitido: ${extra}.` };
+  const out: ConfigConexaoContaAzul = { ...PADRAO_CONEXAO_CONTA_AZUL };
+  if (c.ambiente !== undefined) {
+    if (c.ambiente !== "teste" && c.ambiente !== "producao") return { ok: false, erro: "Ambiente deve ser teste ou produção." };
+    out.ambiente = c.ambiente;
+  }
+  const rotulos = { authorizeUrl: "URL de autorização", tokenUrl: "URL de token", apiBaseUrl: "URL base da API" } as const;
+  for (const k of ["authorizeUrl", "tokenUrl", "apiBaseUrl"] as const) {
+    if (c[k] === undefined || c[k] === null || c[k] === "") continue;
+    const url = urlContaAzul(c[k], k === "authorizeUrl");
+    if (!url) return { ok: false, erro: `${rotulos[k]} precisa ser HTTPS num endereço *.contaazul.com.` };
+    out[k] = url;
+  }
+  return { ok: true, config: out };
+}
+
+const CAMPOS_CONEXAO_CONTA_AZUL: CampoFormulario[] = [
+  { chave: "ambiente", rotulo: "Ambiente", tipo: "selecao", opcoes: [{ valor: "teste", rotulo: "Teste (conta ERP de desenvolvimento)" }, { valor: "producao", rotulo: "Produção (conta real)" }], ajuda: "A conta conectada pelo OAuth define os dados; troque para Produção só com autorização." },
+  { chave: "authorizeUrl", rotulo: "URL de autorização (OAuth)", tipo: "texto", placeholder: PADRAO_CONEXAO_CONTA_AZUL.authorizeUrl, maxLength: 300 },
+  { chave: "tokenUrl", rotulo: "URL de token (OAuth)", tipo: "texto", placeholder: PADRAO_CONEXAO_CONTA_AZUL.tokenUrl, maxLength: 300 },
+  { chave: "apiBaseUrl", rotulo: "URL base da API", tipo: "texto", placeholder: PADRAO_CONEXAO_CONTA_AZUL.apiBaseUrl, maxLength: 300 },
+];
+
 // ------------------------------------------------------------------ descrição dos formulários (telas genéricas)
 
 /** Como as telas desenham o formulário de cada função. opcoesDe = lista lida na hora do provedor. */
@@ -609,6 +674,7 @@ export const ESQUEMAS_CONFIG: Record<string, Record<string, Esquema>> = {
   },
   conta_azul: {
     sincronizacao: { padrao: PADRAO_CONTA_AZUL, validar: validarConfigContaAzul, campos: CAMPOS_CONTA_AZUL_FORM, permissao: "financeiro" },
+    conexao: { padrao: PADRAO_CONEXAO_CONTA_AZUL, validar: validarConfigConexaoContaAzul, campos: CAMPOS_CONEXAO_CONTA_AZUL },
   },
 };
 

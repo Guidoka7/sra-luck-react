@@ -136,7 +136,10 @@ export function bancoFalso(inicial: Record<string, Linha[]> = {}, rpcs: Record<s
   const db = {
     from: (nome: string) => construtor(nome),
     rpc: async (nome: string, args: Linha) => {
-      if (rpcs[nome]) return { data: rpcs[nome](args), error: null };
+      if (rpcs[nome]) {
+        // Função falsa que lança = erro do Postgres (ex.: RAISE EXCEPTION da RPC).
+        try { return { data: rpcs[nome](args), error: null }; } catch (e) { return { data: null, error: { message: (e as Error).message } }; }
+      }
       if (nome === "integracao_tentar_trava") return { data: true, error: null };
       return { data: null, error: null };
     },

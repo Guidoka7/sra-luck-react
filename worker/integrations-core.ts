@@ -9,6 +9,7 @@ import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
+import { contaAzulVinculosApi } from "./conta-azul-vinculos";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
 import { avancarOrigemGeral } from "./crm-origem-geral";
 import { carregarContatosDoEspelho } from "./crm-espelho";
@@ -496,6 +497,8 @@ export async function integrationsApi(request: Request, env: Env, ctx?: Backgrou
   if (path === "/api/admin/integrations/estado" && request.method === "POST") return alterarEstadoIntegracao(request, env);
   if (path === "/api/cron/integracoes" && (request.method === "GET" || request.method === "POST")) return cronIntegracoes(request, env, ctx);
   if (path === "/api/cron/integracoes/crm" && request.method === "POST") return cronContinuacaoCrm(request, env, ctx);
+  const contaAzulVinculos = await contaAzulVinculosApi(request, env);
+  if (contaAzulVinculos) return contaAzulVinculos;
   const contaAzul = await contaAzulApi(request, env);
   if (contaAzul) return contaAzul;
   return null;

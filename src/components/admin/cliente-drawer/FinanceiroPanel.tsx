@@ -7,6 +7,8 @@ import { DrawerIcon } from "./DrawerIcons";
 import { PARCELA_LABEL, descreverHistorico, ehHistoricoFinanceiro, formatCurrency, formatDate, hojeSaoPaulo, statusParcela, type ParcelaStatus } from "./drawerFormat";
 import styles from "./ClienteDrawer.module.css";
 import { LeitorCarneModal, type LeituraCarneConcluida } from "@/features/leitor-carne/LeitorCarneModal";
+import { ADMIN_PERMISSIONS, usePermissaoAdmin } from "@/lib/adminAccess";
+import { ContaAzulVinculo } from "./ContaAzulVinculo";
 
 export interface FinanceiroPanelHandle { salvar: () => Promise<void>; editando: () => boolean }
 
@@ -26,6 +28,7 @@ const FORMAS_BAIXA: Array<[string, string]> = [["pix", "PIX"], ["cartao", "Cart√
  */
 export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteCadastro; modo?: "completo" | "parcelas" }>(function FinanceiroPanel({ cad, modo = "completo" }, ref) {
   const completo = modo === "completo";
+  const podeContaAzul = usePermissaoAdmin(ADMIN_PERMISSIONS.INTEGRACOES_OPERAR_FINANCEIRO);
   const hoje = hojeSaoPaulo();
   const [editandoPlano, setEditandoPlano] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
@@ -165,6 +168,8 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
     <input ref={anexoRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; const alvo = anexoAlvo; setAnexoAlvo(null); if (f && alvo) void cad.anexarComprovante(alvo, f); }} />
 
     <ComprovanteBanner cad={cad} onConfirmar={(b) => setModal({ tipo: "confirmar", b })} onRejeitar={(b) => { setMotivo(""); setModal({ tipo: "rejeitar", b }); }} />
+
+    {completo && podeContaAzul && cad.cliente?.id ? <ContaAzulVinculo clienteId={cad.cliente.id} cpf={cad.cpf} temFinanceiro={total > 0} modo="financeiro" onAlterado={() => void cad.carregarBoletos()} /> : null}
 
     {completo && total > 0 && <>
       <article className={`${styles.card} ${styles.financeCard}`}>

@@ -35,12 +35,31 @@ function credenciais(inicial: Record<string, string>) {
 const AGORA = new Date("2026-09-24T15:00:00Z");
 const TOKEN_OK = { access_token: "tok", token_expires_at: "2026-09-24T16:00:00Z", refresh_token: "r1", client_id: "cid", client_secret: "csec" };
 
+/** RPC conta_azul_registrar_baixa (migration_124) em memória; o SQL real é validado à parte. */
+function rpcsContaAzul(ref: { tabela?: (n: string) => any[] }) {
+  return {
+    conta_azul_registrar_baixa: (a: any) => {
+      const recs = ref.tabela!("financeiro_recebimentos");
+      const ja = recs.find((r) => r.idempotency_key === a.p_idempotency_key);
+      if (ja) return ja;
+      const b = ref.tabela!("boletos").find((x) => x.id === a.p_boleto_id);
+      if (!b || !["nao_pago", "rejeitado"].includes(b.status)) throw new Error("Parcela nao esta em aberto");
+      const rec = { boleto_id: b.id, valor_original: b.valor, juros: a.p_juros, multa: a.p_multa, desconto: a.p_desconto, valor_recebido: b.valor + a.p_juros + a.p_multa - a.p_desconto, forma_pagamento: a.p_forma_pagamento, origem: "conta_azul", status_validacao: "validado", external_payment_id: a.p_ca_baixa_id, idempotency_key: a.p_idempotency_key, data_pagamento: a.p_data_pagamento };
+      recs.push(rec);
+      Object.assign(b, { status: "pago", data_pagamento: a.p_data_pagamento });
+      return rec;
+    },
+  };
+}
+
 function montar(rotas: [string, (c: Chamada) => [number, unknown]][], tabelas: Record<string, any[]> = {}, config = cfg()) {
+  const ref: { tabela?: (n: string) => any[] } = {};
   const banco = bancoFalso({
     clientes: [{ id: CLIENTE, nome_completo: "Ana Souza", cpf: "12345678909" }],
     boletos: [{ id: BOLETO, cliente_id: CLIENTE, numero_parcela: 1, total_parcelas: 3, valor: 100, data_vencimento: "2026-09-10", status: "nao_pago", data_pagamento: null, observacoes: null, suspensa: false }],
     ...tabelas,
-  });
+  }, rpcsContaAzul(ref));
+  ref.tabela = banco.tabela;
   const p = provedor(rotas);
   const cred = credenciais(TOKEN_OK);
   const deps: Partial<Deps> = { db: banco.db, fetch: p.f, credenciais: cred.c, agora: () => AGORA, config };
@@ -163,16 +182,19 @@ describe("Sra Luck → Conta Azul", () => {
     expect(m.tabela("conta_azul_vinculos")[0].estado).toBe("conflito");
   });
 
-  it("baixa no Sra Luck: envia juros e multa do Sra Luck, uma vez só", async () => {
+  it("baixa no Sra Luck: envia a composição registrada (principal + juros + multa), uma vez só", async () => {
     const m = montar([
       ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, parcelaCa()]],
       ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1/baixa", () => [200, { id: "BX1", versao: 1 }]],
-    ], { conta_azul_vinculos: [vinculo()] });
+    ], {
+      conta_azul_vinculos: [vinculo()],
+      financeiro_recebimentos: [{ boleto_id: BOLETO, valor_original: 100, juros: 20, multa: 10, desconto: 0, forma_pagamento: "pix", data_pagamento: "2026-09-20", origem: "manual", status_validacao: "validado" }],
+    });
     Object.assign(m.tabela("boletos")[0], { status: "pago", data_pagamento: "2026-09-20" });
     await detectarMudancasSra(env, m.deps);
     await processarFila(env, m.deps);
     const baixa = m.chamadas.find((c) => c.url.endsWith("/baixa"))!;
-    expect(baixa.corpo).toMatchObject({ data_pagamento: "2026-09-20", conta_financeira: CONTA, composicao_valor: { valor_bruto: 100, juros: 2, multa: 2 } });
+    expect(baixa.corpo).toMatchObject({ data_pagamento: "2026-09-20", conta_financeira: CONTA, metodo_pagamento: "PIX_PAGAMENTO_INSTANTANEO", composicao_valor: { valor_bruto: 100, juros: 20, multa: 10, desconto: 0 } });
     expect(baixa.corpo.observacao).toContain(marcadorDe(BOLETO));
     expect(m.tabela("conta_azul_vinculos")[0]).toMatchObject({ ca_baixa_id: "BX1", baixa_origem: "sra" });
     expect(await detectarMudancasSra(env, m.deps)).toMatchObject({ enfileiradas: 0 });
@@ -208,7 +230,7 @@ describe("Sra Luck → Conta Azul", () => {
 });
 
 describe("Conta Azul → Sra Luck", () => {
-  const quitadaCa = (p: Record<string, unknown> = {}) => parcelaCa({ status: "QUITADO", valor_pago: 100, nao_pago: 0, baixas: [{ id: "BXCA", data_pagamento: "2026-09-18", valor_composicao: { valor_bruto: 100 } }], ...p });
+  const quitadaCa = (p: Record<string, unknown> = {}) => parcelaCa({ status: "QUITADO", valor_pago: 106, nao_pago: 0, baixas: [{ id: "BXCA", data_pagamento: "2026-09-18", metodo_pagamento: "PIX_PAGAMENTO_INSTANTANEO", valor_composicao: { valor_bruto: 100, juros: 4, multa: 2, desconto: 0 } }], ...p });
   let m: ReturnType<typeof montar>;
   beforeEach(() => { m = montar([], { conta_azul_vinculos: [vinculo()] }); });
 
@@ -216,7 +238,11 @@ describe("Conta Azul → Sra Luck", () => {
     const v = m.tabela("conta_azul_vinculos")[0], b = m.tabela("boletos")[0];
     expect(await avaliarParcelaCa(env, m.deps, v, b, quitadaCa())).toBe("baixa_aplicada");
     expect(m.tabela("boletos")[0]).toMatchObject({ status: "pago", data_pagamento: "2026-09-18" });
-    expect(m.tabela("boletos")[0].observacoes).toContain("[Conta Azul baixa BXCA]");
+    // Entra no ledger com a composição das baixas, origem conta_azul e chave pelo ID da baixa.
+    expect(m.tabela("financeiro_recebimentos")[0]).toMatchObject({ origem: "conta_azul", valor_original: 100, juros: 4, multa: 2, desconto: 0, valor_recebido: 106, forma_pagamento: "pix", idempotency_key: "conta_azul:baixa:BXCA" });
+    // Ler a mesma alteração de novo não duplica.
+    expect(await avaliarParcelaCa(env, m.deps, m.tabela("conta_azul_vinculos")[0], m.tabela("boletos")[0], quitadaCa())).toBe("sem_mudanca");
+    expect(m.tabela("financeiro_recebimentos")).toHaveLength(1);
     expect(m.tabela("conta_azul_vinculos")[0]).toMatchObject({ baixa_origem: "conta_azul", ca_baixa_id: "BXCA" });
     expect(await detectarMudancasSra(env, m.deps)).toMatchObject({ enfileiradas: 0 });
   });
