@@ -256,14 +256,19 @@ const RESULTADO: Record<string, [string, ZipKind]> = {
 
 type AcaoRevisao = "importar" | "descartar" | "usar-perfil";
 
-function ItemImportacao({ it, onAcao }: { it: Json; onAcao?: (id: string, acao: AcaoRevisao) => void }) {
+function ItemImportacao({ it, onAcao, selecionado, onSelecionar }: { it: Json; onAcao?: (id: string, acao: AcaoRevisao) => void; selecionado?: boolean; onSelecionar?: (id: string, marcado: boolean) => void }) {
   const [r, k] = RESULTADO[it.resultado] ?? [it.resultado, "neutral"];
   const minha = typeof it.dados?.completude === "number" ? it.dados.completude as number : null;
   const vendaPendente = (it.correspondencias ?? []).find((c: Json) => c.tipo === "venda");
   const deles = typeof vendaPendente?.completude === "number" ? vendaPendente.completude as number : null;
   const estaMaisCompleta = minha != null && deles != null && minha > deles;
   return <div style={{ ...caixa, display: "flex", flexDirection: "column", gap: 4 }}>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong>{it.dados?.nome ?? it.externalId}</strong><span style={chip(k)}>{r}</span></div>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      {onSelecionar
+        ? <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={Boolean(selecionado)} onChange={(e) => onSelecionar(it.id, e.target.checked)} /><strong>{it.dados?.nome ?? it.externalId}</strong></label>
+        : <strong>{it.dados?.nome ?? it.externalId}</strong>}
+      <span style={chip(k)}>{r}</span>
+    </div>
     <span style={muted}>{[it.dados?.cpf, it.dados?.telefone, it.dados?.email].filter(Boolean).join(" · ") || "Sem contato"}{it.motivo ? ` — ${it.motivo}` : ""}{it.repeticoes > 1 ? ` · vista em ${it.repeticoes} execuções` : ""}</span>
     {(it.correspondencias ?? []).map((c: Json) => <span key={`${c.tipo}${c.id}`} style={muted}>↳ {c.tipo === "cliente" ? "Cliente" : "Venda pendente"} {c.nome ?? c.id} (mesmo {c.por.join(", ")}){typeof c.completude === "number" ? ` · ${c.completude} dado(s) preenchido(s)` : ""}</span>)}
     {minha != null && <span style={muted}>Este perfil: {minha} dado(s) preenchido(s){deles != null ? (estaMaisCompleta ? " · mais completo que a venda pendente" : minha === deles ? " · igual à venda pendente" : " · a venda pendente é mais completa") : ""}</span>}
@@ -283,11 +288,16 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
   const [itens, setItens] = useState<Json[]>([]);
   const [msg, setMsg] = useState<{ t: string; ok: boolean } | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [lote, setLote] = useState<{ feitos: number; total: number } | null>(null);
 
   const carregar = useCallback(async () => {
     try {
       const [a, b] = await Promise.all([api("/api/admin/integrations/rd-station/importacoes"), api("/api/admin/integrations/rd-station/importacoes/revisao")]);
       setImps(a); setRevisao(b.itens ?? []);
+      // Seleção só com o que ainda está na lista.
+      const ids = new Set(((b.itens ?? []) as Json[]).map((x) => String(x.id)));
+      setSelecionados((atual) => new Set([...atual].filter((id) => ids.has(id))));
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); }
   }, []);
   useEffect(() => { void carregar(); }, [carregar]);
@@ -299,6 +309,37 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
       setMsg({ t: `RD: ${r.totalRd} negociação(ões) · ${r.criadas} nova(s) em Aguardando cadastro · ${r.duplicadas + r.clienteExistente} para revisar · ${r.ignoradas} ignorada(s)${r.erros ? ` · ${r.erros} erro(s)` : ""}${textoPassada(r.passada)}${textoOrigens(r.origens)}.`, ok: !r.erros });
       await carregar();
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); } finally { setOcupado(false); }
+  }
+  const revisaveis = revisao.filter((it) => !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado));
+  const todosMarcados = revisaveis.length > 0 && revisaveis.every((it) => selecionados.has(String(it.id)));
+  function selecionar(id: string, marcado: boolean) {
+    setSelecionados((atual) => { const n = new Set(atual); if (marcado) n.add(id); else n.delete(id); return n; });
+  }
+  async function revisarSelecionados(acao: "mais-completo" | "descartar" | "usar-perfil" | "importar") {
+    const ids = revisaveis.map((it) => String(it.id)).filter((id) => selecionados.has(id));
+    if (!ids.length) return;
+    const texto = {
+      "mais-completo": `Aplicar o perfil mais completo em ${ids.length} item(ns)? Quando a negociação nova tem mais dados, o perfil dela vai para a venda pendente; senão, a venda pendente é mantida. Nada é apagado.`,
+      descartar: `Marcar ${ids.length} item(ns) como "é a mesma pessoa" e manter as vendas pendentes como estão?`,
+      "usar-perfil": `Usar o perfil da negociação nova nas vendas pendentes de ${ids.length} item(ns)? Os valores anteriores ficam no histórico.`,
+      importar: `Importar mesmo assim ${ids.length} item(ns)? Cada um vira uma venda nova em Aguardando cadastro, mesmo com o telefone repetido.`,
+    }[acao];
+    if (!window.confirm(texto)) return;
+    setOcupado(true); setMsg(null);
+    const soma = { feitos: 0, usarPerfil: 0, mesmaPessoa: 0, importadas: 0, falhas: [] as Json[] };
+    try {
+      // Em partes de 40: cada chamada termina rápido e a tela mostra o andamento.
+      for (let i = 0; i < ids.length; i += 40) {
+        setLote({ feitos: i, total: ids.length });
+        const r = await api("/api/admin/integrations/rd-station/importacoes/itens/lote", { method: "POST", body: { acao, ids: ids.slice(i, i + 40) } });
+        soma.feitos += r.feitos ?? 0; soma.usarPerfil += r.usarPerfil ?? 0; soma.mesmaPessoa += r.mesmaPessoa ?? 0; soma.importadas += r.importadas ?? 0;
+        soma.falhas.push(...(r.falhas ?? []));
+      }
+      const partes = [soma.usarPerfil && `${soma.usarPerfil} com o perfil novo aplicado`, soma.mesmaPessoa && `${soma.mesmaPessoa} mantida(s) como mesma pessoa`, soma.importadas && `${soma.importadas} importada(s)`].filter(Boolean).join(" · ");
+      setMsg({ t: `Revisão em lote: ${soma.feitos} de ${ids.length} concluída(s)${partes ? ` (${partes})` : ""}${soma.falhas.length ? ` · ${soma.falhas.length} não puderam ser revisadas: ${soma.falhas[0].erro}` : ""}.`, ok: !soma.falhas.length });
+      setSelecionados(new Set());
+    } catch (e) { setMsg({ t: `${(e as Error).message} (${soma.feitos} revisada(s) antes da falha)`, ok: false }); }
+    finally { setLote(null); setOcupado(false); await carregar(); }
   }
   async function abrir(id: string) {
     if (aberta === id) { setAberta(null); return; }
@@ -320,7 +361,20 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     <div style={{ ...caixa, lineHeight: 1.5 }}>Toda cliente nova entra em <strong>Aguardando cadastro</strong>. A importação nunca cria cliente nem encaminha ao Financeiro; a venda só avança quando a cliente tem parcelas e acesso ao app liberado.</div>
     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button style={btnPrim} disabled={ocupado} onClick={() => void importar()}>{ocupado ? "Importando…" : "Importar agora"}</button></div>
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
-    {revisao.length > 0 && <><div style={titulo}>Aguardando revisão ({revisao.length})</div><div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{revisao.map((it) => <ItemImportacao key={it.id} it={it} onAcao={(id, a) => void revisar(id, a)} />)}</div></>}
+    {revisao.length > 0 && <><div style={titulo}>Aguardando revisão ({revisao.length})</div>
+      {revisaveis.length > 0 && <div style={{ ...caixa, position: "sticky", top: 0, zIndex: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700 }}>
+          <input type="checkbox" checked={todosMarcados} onChange={(e) => setSelecionados(e.target.checked ? new Set(revisaveis.map((it) => String(it.id))) : new Set())} />
+          Selecionar todos ({revisaveis.length})
+        </label>
+        <span style={muted}>{selecionados.size} selecionado(s){lote ? ` · revisando ${lote.feitos} de ${lote.total}…` : ""}</span>
+        <span style={{ flex: 1 }} />
+        <button style={btnPrim} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("mais-completo")}>Manter o perfil mais completo</button>
+        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("descartar")}>É a mesma pessoa</button>
+        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("usar-perfil")}>Usar o perfil novo</button>
+        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("importar")}>Importar mesmo assim</button>
+      </div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{revisao.map((it) => <ItemImportacao key={it.id} it={it} onAcao={(id, a) => void revisar(id, a)} selecionado={selecionados.has(String(it.id))} onSelecionar={!it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado) ? selecionar : undefined} />)}</div></>}
     <ResponsaveisRd onMsg={setMsg} />
     {imps?.origens ? <CoberturaOrigens c={imps.origens} /> : null}
     <div style={titulo}>Histórico de importações</div>

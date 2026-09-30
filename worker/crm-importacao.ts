@@ -1212,3 +1212,36 @@ async function lerNegociacaoRd(env: Env, id: string) {
   }
   return { deal, contato };
 }
+
+// ------------------------------------------------------------------ revisão em lote
+
+export type AcaoRevisaoLote = "importar" | "descartar" | "usar-perfil" | "mais-completo";
+
+/**
+ * A mesma revisão para vários itens de uma vez (a lista chegava a centenas). "mais-completo" aplica a
+ * regra da importação item a item: se esta negociação tem mais dados que a venda pendente, o perfil
+ * dela vai para a venda; senão, mantém a venda pendente (mesma pessoa). Nada é apagado e cada item
+ * fica no histórico como se tivesse sido revisado um por um.
+ */
+export async function revisarEmLote(db: Db, acao: AcaoRevisaoLote, ids: string[], ator: string) {
+  const unicos = [...new Set(ids)].slice(0, 1000);
+  const resultado = { total: unicos.length, feitos: 0, usarPerfil: 0, mesmaPessoa: 0, importadas: 0, falhas: [] as { id: string; erro: string }[] };
+  for (const id of unicos) {
+    let efetiva: Exclude<AcaoRevisaoLote, "mais-completo"> = acao === "mais-completo" ? "descartar" : acao;
+    if (acao === "mais-completo") {
+      const { data: item } = await db.from("integracao_importacao_itens").select("resultado,dados,correspondencias").eq("id", id).maybeSingle();
+      const it = objectValue(item);
+      const minha = Number(objectValue(it.dados).completude);
+      const venda = arrayValue(it.correspondencias).map(objectValue).find((c) => c.tipo === "venda");
+      if (it.resultado === "duplicada" && venda && Number.isFinite(minha) && minha > Number(venda.completude ?? Infinity)) efetiva = "usar-perfil";
+    }
+    const r = efetiva === "importar" ? await importarMesmoAssim(db, id, ator)
+      : efetiva === "usar-perfil" ? await usarPerfilDaDuplicata(db, id, ator)
+      : await descartarRevisao(db, id, ator);
+    if (r.ok) {
+      resultado.feitos++;
+      if (efetiva === "usar-perfil") resultado.usarPerfil++; else if (efetiva === "importar") resultado.importadas++; else resultado.mesmaPessoa++;
+    } else resultado.falhas.push({ id, erro: r.erro });
+  }
+  return resultado;
+}

@@ -4,7 +4,7 @@ import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { atualizarCatalogoCrm } from "./crm-catalogo";
 import { listarNegociacoesDoFunil } from "./crm-origem-geral";
-import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm, usarPerfilDaDuplicata } from "./crm-importacao";
+import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm, revisarEmLote, usarPerfilDaDuplicata, type AcaoRevisaoLote } from "./crm-importacao";
 
 const RD_CRM_BASE = "https://api.rd.services/crm/v2";
 const RD_OAUTH_TOKEN = "https://api.rd.services/oauth2/token";
@@ -885,6 +885,15 @@ async function rotasCrm(request: Request, env: Env, adminId: string, path: strin
   if (path.endsWith("/importacoes/revisao") && request.method === "GET") return json({ itens: await itensDaImportacao(db, null, true) });
   const itens = path.match(/\/importacoes\/([0-9a-f-]{36})\/itens$/);
   if (itens && request.method === "GET") return json({ itens: await itensDaImportacao(db, itens[1]) });
+  if (path.endsWith("/importacoes/itens/lote") && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+    const corpo = await request.json().catch(() => ({})) as { acao?: unknown; ids?: unknown };
+    const acao = String(corpo.acao ?? "");
+    const ids = Array.isArray(corpo.ids) ? corpo.ids.map(String).filter((x) => /^[0-9a-f-]{36}$/.test(x)) : [];
+    if (!["importar", "descartar", "usar-perfil", "mais-completo"].includes(acao)) return json({ erro: "Ação inválida." }, 400);
+    if (!ids.length || ids.length > 1000) return json({ erro: "Selecione de 1 a 1000 itens." }, 400);
+    return json(await revisarEmLote(db, acao as AcaoRevisaoLote, ids, `admin:${adminId}`));
+  }
   const revisar = path.match(/\/importacoes\/itens\/([0-9a-f-]{36})\/(importar|descartar|usar-perfil)$/);
   if (revisar && request.method === "POST") {
     if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
