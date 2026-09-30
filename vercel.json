@@ -6,6 +6,7 @@
       "claude/*": false
     }
   },
+  "ignoreCommand": "case \"$VERCEL_PROJECT_PRODUCTION_URL\" in sra-luck-react*) echo 'Projeto duplicado: so o sraluckapp publica.'; exit 0;; *) exit 1;; esac",
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist/client",

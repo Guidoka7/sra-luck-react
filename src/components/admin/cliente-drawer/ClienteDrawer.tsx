@@ -1,4 +1,4 @@
-import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import type { Cliente, NovaVenda, StatusContratoCliente } from "@/types/database";
@@ -42,26 +42,58 @@ const SITUACAO_ORIGEM: Record<string, string> = {
 const dataCurta = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "");
 
 /** De onde a cliente veio: só o que está registrado no RD, com a negociação de onde cada dado saiu. */
-function OrigemDaCliente({ o }: { o: OrigemCliente }) {
-  const linhas: [string, string | null][] = [["Fonte", o.fonte], ["Campanha", o.campanha], ["Como ficou sabendo", o.comoFicouSabendo], ["Influencer", o.influencer]];
-  if (o.cupom) linhas.push(["Cupom", o.cupom]);
-  if (o.landingPage) linhas.push(["Landing page", "Veio pelo formulário do site"]);
-  return <details open={o.situacao !== "encontrada"} style={{ marginTop: 8, fontSize: 12 }}>
-    <summary style={{ cursor: "pointer", opacity: 0.85 }}>De onde ela veio · {SITUACAO_ORIGEM[o.situacao] ?? o.situacao}</summary>
-    <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
-      {linhas.map(([rotulo, valor]) => <Fragment key={rotulo}>
-        <dt style={{ opacity: 0.7 }}>{rotulo}</dt>
-        <dd style={{ margin: 0, overflowWrap: "anywhere" }}>{valor ?? "Não registrado no RD"}</dd>
-      </Fragment>)}
-    </dl>
-    {o.evidencias.length ? <ul style={{ margin: "6px 0 0", paddingLeft: 16, opacity: 0.8 }}>
-      {o.evidencias.map((e, i) => <li key={i}>{e.rotulo}: <strong>{e.valor}</strong> — {e.propria ? "nesta negociação" : `negociação${e.funil ? ` do funil ${e.funil}` : ""}`}{e.criadaEm ? ` de ${dataCurta(e.criadaEm)}` : ""}{e.outroContato ? ` (outro cadastro no RD com o mesmo ${e.outroContato === "email" ? "e-mail" : "telefone"})` : ""}</li>)}
-    </ul> : null}
-    <div style={{ marginTop: 4, opacity: 0.6 }}>{o.negociacoesAnalisadas} negociação(ões) desta cliente conferidas no RD em {dataCurta(o.checadoEm)}.</div>
-    {o.ampliada?.em ? <div style={{ marginTop: 2, opacity: 0.6 }}>
-      Busca por outros cadastros com o mesmo e-mail/telefone em {dataCurta(o.ampliada.em)}: {o.ampliada.contatos ? `${o.ampliada.contatos} cadastro(s) e ${o.ampliada.negociacoes} negociação(ões) encontrados` : "nenhum outro cadastro"}.
-    </div> : o.situacao !== "encontrada" ? <div style={{ marginTop: 2, opacity: 0.6 }}>A busca por outros cadastros com o mesmo e-mail/telefone ainda vai rodar.</div> : null}
-  </details>;
+const COR_SITUACAO: Record<string, string> = { encontrada: "#3E9B6E", parcial: "#C9A15A", sem_registro_no_rd: "#B07A86", sem_contato: "#B07A86" };
+const naoInformativo = (v: string | null | undefined) => !v || /^(desconhecid[oa]|unknown)$/i.test(v.trim());
+const campoCompacto: CSSProperties = { display: "inline-flex", alignItems: "baseline", gap: 5, minWidth: 0, maxWidth: "100%" };
+const rotuloCompacto: CSSProperties = { fontSize: 9.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" };
+
+/**
+ * De onde a cliente veio, em uma linha: origem (canal) e campanha registrados no RD. A prova
+ * (de qual negociação saiu cada dado), o que foi conferido e os dados do Console ficam em "Detalhes".
+ */
+function OrigemCompacta({ o, campos }: { o: OrigemCliente | null; campos: { rotulo: string; valor: string | null; situacao: string }[] }) {
+  const [aberto, setAberto] = useState(false);
+  const canal = o ? (!naoInformativo(o.comoFicouSabendo) ? o.comoFicouSabendo : !naoInformativo(o.fonte) ? o.fonte : o.landingPage ? "Landing page do site" : null) : null;
+  // A fonte técnica do RD (UTM) aparece junto quando é diferente do "como ficou sabendo".
+  const fonteExtra = o && !naoInformativo(o.fonte) && o.fonte !== canal ? o.fonte : null;
+  const campanha = o ? (o.campanha ?? (o.influencer ? `Influencer: ${o.influencer}` : null) ?? (o.cupom ? `Cupom: ${o.cupom}` : null)) : null;
+  const semRegistro = (v: string) => <span style={{ fontWeight: 600, color: "var(--muted)" }}>{v}</span>;
+  return <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 10, background: "var(--soft)", fontSize: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "4px 14px", flexWrap: "wrap", padding: "7px 10px" }}>
+      {o && <span title={SITUACAO_ORIGEM[o.situacao] ?? o.situacao} aria-label={SITUACAO_ORIGEM[o.situacao] ?? o.situacao}
+        style={{ width: 8, height: 8, borderRadius: 999, background: COR_SITUACAO[o.situacao] ?? "var(--muted)", flex: "none" }} />}
+      <span style={campoCompacto}><span style={rotuloCompacto}>Origem</span>
+        <strong style={{ overflowWrap: "anywhere" }}>{canal ?? semRegistro("não registrada no RD")}</strong>
+        {fonteExtra && <span style={{ color: "var(--muted)", overflowWrap: "anywhere" }}>· {fonteExtra}</span>}</span>
+      <span style={campoCompacto}><span style={rotuloCompacto}>Campanha</span>
+        <strong style={{ overflowWrap: "anywhere" }}>{campanha ?? semRegistro(canal ? "sem campanha registrada no RD" : "não registrada no RD")}</strong></span>
+      <button type="button" onClick={() => setAberto(!aberto)} aria-expanded={aberto}
+        style={{ marginLeft: "auto", border: 0, background: "transparent", color: "var(--wine)", fontSize: 11, fontWeight: 800, cursor: "pointer", padding: "2px 0" }}>
+        {aberto ? "Ocultar" : "Detalhes"}
+      </button>
+    </div>
+    {aberto && <div style={{ borderTop: "1px solid var(--border)", padding: "8px 10px", display: "grid", gap: 8 }}>
+      {o && <div style={{ display: "grid", gap: 3 }}>
+        <span style={rotuloCompacto}>De onde saiu cada dado · {SITUACAO_ORIGEM[o.situacao] ?? o.situacao}</span>
+        {o.evidencias.length ? o.evidencias.map((e, i) => <span key={i} style={{ overflowWrap: "anywhere" }}>
+          {e.rotulo}: <strong>{e.valor}</strong> <span style={{ color: "var(--muted)" }}>— {e.propria ? "nesta negociação" : `negociação${e.funil ? ` do funil ${e.funil}` : ""}`}{e.criadaEm ? ` de ${dataCurta(e.criadaEm)}` : ""}{e.outroContato ? ` · outro cadastro com o mesmo ${e.outroContato === "email" ? "e-mail" : "telefone"}` : ""}</span>
+        </span>) : <span style={{ color: "var(--muted)" }}>Nenhum registro de origem no RD.</span>}
+        <span style={{ color: "var(--muted)", fontSize: 11 }}>
+          {o.negociacoesAnalisadas} negociação(ões) conferidas em {dataCurta(o.checadoEm)}
+          {o.ampliada?.em ? ` · outros cadastros com o mesmo e-mail/telefone: ${o.ampliada.contatos ? `${o.ampliada.contatos} (${o.ampliada.negociacoes} negociação(ões))` : "nenhum"}` : ""}.
+        </span>
+      </div>}
+      {campos.length ? <div style={{ display: "grid", gap: 3 }}>
+        <span style={rotuloCompacto}>Dados do RD escolhidos no Console</span>
+        <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "4px 14px", margin: 0 }}>
+          {campos.map((campo, i) => <div key={`${campo.rotulo}-${i}`} style={{ minWidth: 0 }}>
+            <dt style={{ color: "var(--muted)", fontSize: 10.5 }}>{campo.rotulo}</dt>
+            <dd style={{ margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>{campo.valor ?? (campo.situacao === "origem_nao_carregada" ? "Não lido do RD" : "Vazio no RD")}</dd>
+          </div>)}
+        </dl>
+      </div> : null}
+    </div>}
+  </div>;
 }
 
 export interface ClienteDrawerProps {
@@ -395,27 +427,15 @@ function DrawerConteudo(props: ClienteDrawerProps & {
       <div className={styles.clientHead}>
         <h2 className={styles.title} id="client-drawer-title">{criando ? cad.nome || "Nova cliente" : cad.nome || c?.nome || "Cliente"}</h2>
         {props.preCadastro ? <div className={styles.subtitle}>
-          <span className={styles.chip}>Pré-cadastro · RD Station</span>
-          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
-          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
+          <span className={styles.chip}>Pré-cadastro</span>
+          <span className={styles.chip}>RD{origemCrm?.funil ? ` · ${origemCrm.funil}` : ""}{origemCrm?.etapa ? ` › ${origemCrm.etapa}` : ""}</span>
         </div> : !criando && <div className={styles.subtitle}>
-          {origemCrm && <span className={styles.chip}>RD Station</span>}
-          {origemCrm?.funil && <span className={styles.chip}>Funil · {origemCrm.funil}</span>}
-          {origemCrm?.etapa && <span className={styles.chip}>Etapa · {origemCrm.etapa}</span>}
+          {origemCrm && <span className={styles.chip}>RD{origemCrm.funil ? ` · ${origemCrm.funil}` : ""}{origemCrm.etapa ? ` › ${origemCrm.etapa}` : ""}</span>}
           <span>{cad.procedimento || c?.procedimento || "Procedimento não informado"}</span>
           {c && estagio && <span className={styles.chip}>{statusDoDrawer(estagio, concluido)}</span>}
           {parcelasChip && <span className={styles.chip}>{parcelasChip}</span>}
         </div>}
-        {origemCrm?.origemCliente ? <OrigemDaCliente o={origemCrm.origemCliente} /> : null}
-        {origemCrm?.campos?.length ? <details style={{ marginTop: 8, fontSize: 12 }}>
-          <summary style={{ cursor: "pointer", opacity: 0.85 }}>Dados do RD escolhidos no Console ({origemCrm.campos.length})</summary>
-          <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
-            {origemCrm.campos.map((campo, i) => <Fragment key={`${campo.rotulo}-${i}`}>
-              <dt style={{ opacity: 0.7 }}>{campo.rotulo}</dt>
-              <dd style={{ margin: 0, overflowWrap: "anywhere" }}>{campo.valor ?? (campo.situacao === "origem_nao_carregada" ? "Não lido do RD" : "Vazio no RD")}</dd>
-            </Fragment>)}
-          </dl>
-        </details> : null}
+        {origemCrm && (origemCrm.origemCliente || origemCrm.campos?.length) ? <OrigemCompacta o={origemCrm.origemCliente ?? null} campos={origemCrm.campos ?? []} /> : null}
       </div>
       <div className={styles.actions}>
         {!criando && <div className={styles.statusWrap} data-client-status-control>
