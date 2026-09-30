@@ -54,3 +54,32 @@ describe("guardrails de integrações e regras críticas", () => {
     expect(cirurgia).not.toContain("ORCAMENTO_MENSAL_EXCEDIDO");
   });
 });
+
+describe("Conta Azul: o Sra Luck não escreve no financeiro da Conta Azul", () => {
+  const contaAzul = readFileSync(new URL("./conta-azul.ts", import.meta.url), "utf8");
+  const vinculos = readFileSync(new URL("./conta-azul-vinculos.ts", import.meta.url), "utf8");
+  const adminFinanceiro = readFileSync(new URL("./admin-financeiro.ts", import.meta.url), "utf8");
+  const chamadas = (fonte: string) => [...fonte.matchAll(/caRequest(?:ComCabecalhos)?\(\s*d\s*,\s*"(GET|POST|PATCH|DELETE|PUT)"\s*,\s*([^,)]+)/g)].map((m) => [m[1], m[2].trim()]);
+
+  it("toda chamada à API é GET, exceto revogar a conexão OAuth", () => {
+    const escritas = [...chamadas(contaAzul), ...chamadas(vinculos)].filter(([metodo]) => metodo !== "GET");
+    expect(escritas).toEqual([["DELETE", expect.stringContaining("/oauth/connections/")]]);
+  });
+
+  it("nenhum endpoint de escrita financeira aparece no código da integração", () => {
+    // O cliente HTTP só aceita GET e DELETE, e o DELETE só em /oauth/connections/{id}.
+    expect(contaAzul).toContain('type MetodoPermitido = "GET" | "DELETE";');
+    expect(contaAzul).toContain('throw new ErroContaAzul("escrita_bloqueada"');
+    for (const fonte of [contaAzul, vinculos]) {
+      expect(fonte).not.toMatch(/caRequest(ComCabecalhos)?\(\s*d\s*,\s*"(POST|PATCH|PUT)"/);
+      expect(fonte).not.toMatch(/parcelas\/baixa\//);
+      expect(fonte).not.toMatch(/\/baixa`/);
+      expect(fonte).not.toMatch(/gerar-cobranca|contas-a-receber"|contas-a-receber`,/);
+    }
+  });
+
+  it("o Admin bloqueia baixa manual e confirmação de comprovante em parcela vinculada", () => {
+    expect(adminFinanceiro.match(/parcelaControladaPelaContaAzul\(/g)?.length).toBe(2);
+    expect(adminFinanceiro).toContain('codigo: "PAGAMENTO_CONTA_AZUL"');
+  });
+});

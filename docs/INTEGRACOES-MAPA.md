@@ -125,24 +125,27 @@ referência v2 do RD CRM (pipelines, /pipelines/{id}/stages, custom_fields com s
 | Sincronização automática | Frequência 15 min a 24 h; o agendador (pg_cron a cada 15 min → `/api/cron/integracoes`) roda quando venceu. Manual e webhook usam o mesmo fluxo. |
 | Histórico | `integracao_importacoes` + `integracao_importacao_itens` (dados pessoais mascarados nas telas). |
 
-### Conta Azul — `worker/conta-azul.ts`
+### Conta Azul — `worker/conta-azul.ts` e `worker/conta-azul-vinculos.ts` (30/09/2026)
+
+**A Conta Azul é a única fonte da confirmação de pagamento.** O Sra Luck só LÊ a Conta Azul; o
+cliente HTTP aceita só `GET` (e `DELETE /oauth/connections/{id}` para revogar a conexão) e recusa
+qualquer outra chamada antes de sair do servidor (`escrita_bloqueada`; guardrail em
+`integrations-guardrails.test.ts`). Nada de baixa, estorno, pagamento, lançamento ou alteração lá.
 
 | Pedido | Como ficou |
 |---|---|
-| OAuth com renovação | Conectar no Admin; token renovado 2 min antes de vencer, com trava no banco (o refresh token é de uso único). `access_revoked`/`invalid_refresh_token` pedem reconexão. |
-| Vínculo permanente | `conta_azul_vinculos`: parcela ↔ evento/parcela da Conta Azul, versão e últimos estados dos dois lados. Criação com marcador `SLK-…` na descrição e na nota; o vínculo só é confirmado ao achar exatamente um lançamento com o marcador. Também dá para vincular um lançamento existente (seguro só se valor e vencimento baterem). Parcela vinculada não pode ser excluída. |
-| Sra Luck como fonte | Mudança de valor/vencimento no Sra Luck → `PATCH` com a versão atual. Mudança feita na Conta Azul → conflito. Juros e multa da baixa calculados pelo Sra Luck na data do pagamento. |
-| Baixa CA → Sra Luck e app | Polling de `/alteracoes` a cada 15 min + conferência dos vínculos mais antigos. Aplicada sozinha só com vínculo seguro: vínculo confirmado, quitada por inteiro, mesmo valor bruto, parcela em aberto ou aguardando confirmação, não suspensa, baixa automática ligada. |
-| Baixa/estorno Sra Luck → CA | `POST …/baixa` (confere antes se já existe baixa com o marcador) e `DELETE …/baixa/{id}` só para baixa que o Sra Luck criou. |
-| Conflitos | `integracao_conflitos` (um aberto por parcela e tipo). Ações: reaplicar Sra Luck, dar baixa no Sra Luck, estornar no Sra Luck, manter, desvincular — todas auditadas; as que mexem no status da parcela exigem a permissão de baixa manual. |
-| Fila e retentativa | `integracao_fila` com chave de idempotência, até 6 tentativas com espera exponencial; erro final visível e reprocessável. |
-| Cancelamento, renegociação, ID externo, webhooks | A API não permite: cancelado/renegociado/perdido na Conta Azul vira conflito; sem ID externo (marcador); sem webhook (polling). |
-
-Mutações financeiras da Conta Azul só por sessão humana do Admin; a guarda M2M do Dev Console
-não libera nenhuma rota `conta-azul/*` nem a configuração `conta_azul.sincronizacao`.
+| OAuth com renovação | Dev Console → Central: Client ID/Secret, Redirect URI, ambiente e URLs; Conectar e (App de Desenvolvimento) Concluir conexão com o endereço de retorno. Token renovado 2 min antes de vencer, com trava; `access_revoked`/`invalid_refresh_token` pedem reconexão. |
+| Pessoa | CPF da cliente → `GET /v1/pessoas?documentos=` (documento idêntico) → confirmação humana → `cliente_vinculos_externos`. Nunca só por nome. |
+| Parcela | `conta_azul_vinculos`: parcela ↔ parcela/evento da Conta Azul (IDs persistidos). Conferência mostra correspondências, divergências (valor, vencimento, status), só no Sra Luck e só na Conta Azul; divergência só vincula com aceite, sem alterar nada. |
+| Financeiro que nasce da Conta Azul | Cliente sem parcelas: prévia selecionável (pagas, abertas, vencidas, valores, juros, multa, desconto); avulsos ficam de fora; uma transação (`conta_azul_importar_financeiro`). Cliente sem lançamentos na Conta Azul: nada é criado lá. |
+| Pagamento CA → Sra Luck | `/alteracoes` (cursor) → parcela vinculada → releitura → `conta_azul_registrar_baixa`: ledger com principal, juros, multa, desconto, total, data, IDs da baixa e do evento, origem `conta_azul`; chave `conta_azul:baixa:<id>` (nunca duplica). Fecha parcela em aberto, **em conferência** (preserva o comprovante) ou com comprovante rejeitado. É sincronização normal, não divergência. |
+| Revisão | Paga só no Sra Luck (fecha sozinha quando a Conta Azul confirmar); baixa que não corresponde com segurança (valor, soma das baixas, parcela suspensa); cancelada/renegociada/perdida/parcial/excluída na Conta Azul; baixa removida lá. |
+| Admin | Parcela vinculada: sem "Registrar pagamento" nem "Confirmar comprovante" (a API também recusa: `PAGAMENTO_CONTA_AZUL`). Ações: Pagamento controlado pela Conta Azul, Sincronizar agora, Ver vínculo, Ver detalhes, Ver comprovante. |
+| Comprovantes | Ficam no Sra Luck (a API não tem upload de anexo). Cliente envia → Financeiro analisa → baixa feita na Conta Azul → sincronização. Receber comprovante nunca marca parcela como paga. |
+| Ambientes | Production: desligada até `CONTA_AZUL_PRODUCAO_PERMITIDA=1`. Preview: só com `CONTA_AZUL_PREVIEW_PERMITIDO=1` (banco de teste). Sem a `migration_124`, o bloco da cliente some e o Financeiro segue igual. |
 
 ### Para ligar
 1. Aplicar `migration_091` (depois da 090).
 2. No cofre (Admin → Integrações): Client ID, Client Secret e, se preciso, Redirect URI da Conta Azul; conectar.
 3. No Vault do Supabase: `sra_luck_app_url` e `sra_luck_cron_secret` (= `CRON_SECRET`).
-4. Escolher a conta financeira e ligar a sincronização; configurar funil/etapas do CRM e ligar a importação automática.
+4. Conta Azul: aplicar a `migration_124`, definir `CONTA_AZUL_PRODUCAO_PERMITIDA=1` (só com autorização), conectar e ligar a leitura automática; configurar funil/etapas do CRM e ligar a importação automática.

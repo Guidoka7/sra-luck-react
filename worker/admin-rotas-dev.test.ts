@@ -28,7 +28,7 @@ describe("áreas exclusivas do Dev", () => {
       ["/api/admin/integrations/rd-station/importar", "POST"],
       ["/api/admin/integrations/rd-station/responsaveis", "GET"], ["/api/admin/integrations/rd-station/responsaveis", "POST"],
       ["/api/admin/integrations/conta-azul/painel", "GET"], ["/api/admin/integrations/conta-azul/conflitos", "GET"],
-      [`/api/admin/integrations/conta-azul/conflitos/${ID}/resolver`, "POST"], [`/api/admin/integrations/conta-azul/fila/${ID}/reprocessar`, "POST"],
+      [`/api/admin/integrations/conta-azul/conflitos/${ID}/resolver`, "POST"], [`/api/admin/integrations/conta-azul/parcelas/${ID}/sincronizar`, "POST"],
       ["/api/admin/integrations/conta-azul/sincronizar", "POST"], ["/api/admin/integrations/conta-azul/vincular", "POST"],
       [`/api/admin/integrations/conta-azul/clientes/${ID}/pessoas`, "GET"], [`/api/admin/integrations/conta-azul/clientes/${ID}/conciliacao`, "GET"],
       [`/api/admin/integrations/conta-azul/clientes/${ID}/pessoa`, "POST"], [`/api/admin/integrations/conta-azul/clientes/${ID}/vinculos`, "POST"], [`/api/admin/integrations/conta-azul/clientes/${ID}/importar`, "POST"],

@@ -13,7 +13,7 @@ import { ContaAzulVinculo } from "./ContaAzulVinculo";
 export interface FinanceiroPanelHandle { salvar: () => Promise<void>; editando: () => boolean }
 
 type Modal =
-  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar" | "reabrir"; b: Boleto }
+  | { tipo: "detalhes" | "editar" | "excluir" | "rejeitar" | "confirmar" | "reabrir" | "vinculo"; b: Boleto }
   | { tipo: "excluir-carne"; carne: Carne }
   | { tipo: "ajuste" }
   | null;
@@ -92,7 +92,9 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
       setModal({ tipo: "editar", b });
     }
     if (a === "excluir") { if (st === "paid" || st === "review") toast.error("Parcelas pagas ou em conferência não podem ser excluídas."); else setModal({ tipo: "excluir", b }); }
-    if (a === "baixa") cad.abrirBaixaManual(b);
+    if (a === "baixa") { if (b.conta_azul) { toast.info("Pagamento controlado pela Conta Azul: confirme a baixa lá e use Sincronizar agora."); return; } cad.abrirBaixaManual(b); }
+    if (a === "vinculo") setModal({ tipo: "vinculo", b });
+    if (a === "sincronizar") void sincronizarComContaAzul(b);
     if (a === "anexar") { setAnexoAlvo(b); requestAnimationFrame(() => anexoRef.current?.click()); }
     if (a === "confirmar") setModal({ tipo: "confirmar", b });
     if (a === "rejeitar") { setMotivo(""); setModal({ tipo: "rejeitar", b }); }
@@ -100,6 +102,18 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
       if (b.status === "nao_pago" && !b.suspensa) { toast.info("Esta parcela já está em aberto."); return; }
       setModal({ tipo: "reabrir", b });
     }
+  }
+
+  /** Relê a parcela na Conta Azul (só leitura lá) e aplica a confirmação de pagamento, se houver. */
+  async function sincronizarComContaAzul(b: Boleto) {
+    try {
+      const r = await fetch(`/api/admin/integrations/conta-azul/parcelas/${b.id}/sincronizar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro ?? "Não foi possível sincronizar com a Conta Azul.");
+      const texto: Record<string, string> = { baixa_aplicada: "Pagamento confirmado na Conta Azul: parcela atualizada.", conflito: "Divergência encontrada: enviada para revisão.", sem_mudanca: "Nada novo na Conta Azul para esta parcela." };
+      toast.success(texto[d.resultado] ?? "Sincronizado.");
+      await cad.carregarBoletos();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao sincronizar."); }
   }
 
   async function salvarEdicao(b: Boleto) {
@@ -318,6 +332,15 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
         qualquer ancestral com transform/animação (ex.: .financeStack) o
         deslocaria para fora da área visível. */}
     {menu && typeof document !== "undefined" && createPortal(<div className={styles.root}><div className={styles.menu} data-parcela-menu role="menu" style={{ left: menu.left, top: menu.top }}>
+      {menu.b.conta_azul ? <>
+        {/* Parcela vinculada: o pagamento é confirmado na Conta Azul e sincronizado para cá. */}
+        <div className={styles.statusMenuNote} role="note">Pagamento controlado pela Conta Azul</div>
+        <button type="button" role="menuitem" onClick={() => acao("sincronizar", menu.b)}>Sincronizar agora</button>
+        <button type="button" role="menuitem" onClick={() => acao("vinculo", menu.b)}>Ver vínculo</button>
+        <button type="button" role="menuitem" onClick={() => acao("detalhes", menu.b)}>Ver detalhes</button>
+        {menu.b.comprovante_url && <a role="menuitem" className={styles.menuLink} href={cad.comprovanteHref(menu.b)} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>Ver comprovante</a>}
+        {menu.b.status === "pendente_confirmacao" && <button type="button" role="menuitem" onClick={() => acao("rejeitar", menu.b)}>Rejeitar comprovante</button>}
+      </> : <>
       <button type="button" role="menuitem" onClick={() => acao("detalhes", menu.b)}>Ver detalhes</button>
       <button type="button" role="menuitem" onClick={() => acao("editar", menu.b)}>Editar parcela</button>
       {menu.b.status === "pendente_confirmacao" ? <>
@@ -330,7 +353,20 @@ export const FinanceiroPanel = forwardRef<FinanceiroPanelHandle, { cad: ClienteC
       </>}
       {(menu.b.status !== "nao_pago" || menu.b.suspensa) && <button type="button" role="menuitem" onClick={() => acao("reabrir", menu.b)}>Voltar para em aberto</button>}
       <div className={styles.separator} /><button className={styles.danger} type="button" role="menuitem" onClick={() => acao("excluir", menu.b)}>Excluir parcela</button>
+      </>}
     </div></div>, document.body)}
+
+    {modal?.tipo === "vinculo" && modal.b.conta_azul && <Shell titulo={`Vínculo Conta Azul · parcela ${modal.b.numero_parcela}/${modal.b.total_parcelas || total}`} onClose={() => setModal(null)}>
+      <div className={styles.modalGrid}>
+        <Info label="Situação" value={modal.b.conta_azul.estado === "conflito" ? "Em revisão" : "Vinculada"} />
+        <Info label="Última sincronização" value={formatDate(modal.b.conta_azul.ultimaSincronizacao)} />
+        <Info wide label="Parcela na Conta Azul" value={modal.b.conta_azul.parcelaId} />
+        <Info wide label="Evento na Conta Azul" value={modal.b.conta_azul.eventoId ?? ""} />
+        <Info wide label="Baixa registrada" value={modal.b.conta_azul.baixaId ? `${modal.b.conta_azul.baixaId} (${modal.b.conta_azul.baixaOrigem === "conta_azul" ? "confirmada na Conta Azul" : "registrada antes do vínculo"})` : "Ainda sem baixa na Conta Azul"} />
+        <div className={`${styles.modalValue} ${styles.span2}`}>O pagamento desta parcela é confirmado na Conta Azul. O comprovante da cliente continua sendo analisado aqui; depois da baixa na Conta Azul, use Sincronizar agora (ou aguarde a leitura automática).</div>
+      </div>
+      <div className={styles.modalActions}><button className={`${styles.modalBtn} ${styles.secondary}`} type="button" onClick={() => setModal(null)}>Fechar</button><button className={`${styles.modalBtn} ${styles.primary}`} type="button" onClick={() => { const b = modal.b; setModal(null); void sincronizarComContaAzul(b); }}>Sincronizar agora</button></div>
+    </Shell>}
 
     {modal?.tipo === "detalhes" && <Shell titulo="Detalhes da parcela" onClose={() => setModal(null)}>
       <div className={styles.modalGrid}>
@@ -424,7 +460,9 @@ export function ComprovanteBanner({ cad, onConfirmar, onRejeitar }: { cad: Clien
       <div className={styles.bannerActions}>
         {aguardando.comprovante_url && <a className={`${styles.modalBtn} ${styles.secondary} ${styles.linkLike}`} href={cad.comprovanteHref(aguardando)} target="_blank" rel="noreferrer"><DrawerIcon name="document" width={14} height={14} aria-hidden="true" />Ver comprovante</a>}
         <button type="button" className={`${styles.modalBtn} ${styles.secondary}`} disabled={cad.validando} onClick={() => onRejeitar(aguardando)}>Rejeitar</button>
-        <button type="button" className={`${styles.modalBtn} ${styles.primary}`} disabled={cad.validando} onClick={() => onConfirmar(aguardando)}>Confirmar pagamento</button>
+        {aguardando.conta_azul
+          ? <span className={styles.muted}>Pagamento controlado pela Conta Azul: depois de conferir, confirme a baixa lá; a sincronização atualiza esta parcela.</span>
+          : <button type="button" className={`${styles.modalBtn} ${styles.primary}`} disabled={cad.validando} onClick={() => onConfirmar(aguardando)}>Confirmar pagamento</button>}
       </div>
     </div>;
 }

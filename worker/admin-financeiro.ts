@@ -1,5 +1,6 @@
 import { publicError } from "./http-security";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { MENSAGEM_PAGAMENTO_CONTA_AZUL, parcelaControladaPelaContaAzul } from "./conta-azul";
 import { adminParcelas } from "./admin-parcelas";
 import { ADMIN_COOKIE_NAME, getCookie, verificarTokenAdmin, type AdminSessionPayload } from "./session";
 import { buscarColaboradorAdminAtivo, temPermissaoAdmin, PERMISSOES_ADMIN } from "./admin-auth";
@@ -433,6 +434,7 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
       if (!dataValida(dataPagamento)) return json({ erro: "Informe uma data de pagamento válida." }, 400);
       if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
       if (!['pix', 'dinheiro', 'transferencia', 'boleto', 'cartao', 'cheque', 'outro'].includes(forma)) return json({ erro: "Forma de pagamento inválida." }, 400);
+      if (await parcelaControladaPelaContaAzul(db, decodeURIComponent(baixaMatch[1]))) return json({ erro: MENSAGEM_PAGAMENTO_CONTA_AZUL, codigo: "PAGAMENTO_CONTA_AZUL" }, 409);
       const juros = dinheiro(b.juros); const multa = dinheiro(b.multa); const desconto = dinheiro(b.desconto);
       if ([juros, multa, desconto].some((value) => value < 0)) return json({ erro: "Juros, multa e desconto não podem ser negativos." }, 400);
       const { data, error } = await db.rpc("financeiro_baixar_boleto", {
@@ -485,6 +487,8 @@ export async function adminFinanceiro(request: Request, env: Env): Promise<Respo
       const acao = validacaoMatch[2]; const observacao = texto(b.observacao); const idempotencyKey = texto(b.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 120) return json({ erro: "Chave de idempotência inválida." }, 400);
       if (acao === "rejeitar" && !observacao) return json({ erro: "Informe o motivo da rejeição ou divergência." }, 400);
+      // Comprovante de parcela vinculada: a análise continua aqui, mas a confirmação é a baixa na Conta Azul.
+      if (acao === "confirmar" && await parcelaControladaPelaContaAzul(db, decodeURIComponent(validacaoMatch[1]))) return json({ erro: MENSAGEM_PAGAMENTO_CONTA_AZUL, codigo: "PAGAMENTO_CONTA_AZUL" }, 409);
       const { data, error } = await db.rpc("financeiro_validar_comprovante", {
         p_boleto_id: decodeURIComponent(validacaoMatch[1]), p_acao: acao, p_observacao: observacao,
         p_usuario: usuario, p_idempotency_key: idempotencyKey,

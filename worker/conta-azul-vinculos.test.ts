@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bancoFalso } from "./banco-falso.testutil";
-import { caAtual, caRequest, detectarMudancasSra, marcadorDe, processarFila, type Deps } from "./conta-azul";
+import { caAtual, caRequest, marcadorDe, type Deps } from "./conta-azul";
 import {
   buscarPessoasPorCpf, conciliar, confirmarVinculos, desconectar, importarFinanceiro, previaImportacao, statusCentral, vincularPessoa,
   type BoletoConc, type Lancamento,
@@ -26,6 +26,17 @@ function montar(rotas: [string, (c: Chamada) => [number, unknown]][], tabelas: R
     ...tabelas,
   }, {
     conta_azul_importar_financeiro: (a: any) => { (rpcArgs.importar ??= []).push(a); return { parcelas: a.p_parcelas.length, pagas: a.p_parcelas.filter((p: any) => p.pago).length }; },
+    // RPC da migration_124 em memória (o SQL real é validado à parte, em Postgres).
+    conta_azul_registrar_baixa: (a: any) => {
+      (rpcArgs.baixa ??= []).push(a);
+      const recs = banco.tabela("financeiro_recebimentos");
+      if (recs.some((r) => r.idempotency_key === a.p_idempotency_key)) return null;
+      const b = banco.tabela("boletos").find((x) => x.id === a.p_boleto_id);
+      if (!b || !["nao_pago", "pendente_confirmacao", "rejeitado"].includes(b.status)) throw new Error("Parcela nao esta em aberto");
+      recs.push({ boleto_id: b.id, origem: "conta_azul", status_validacao: "validado", valor_original: b.valor, juros: a.p_juros, multa: a.p_multa, desconto: a.p_desconto, external_payment_id: a.p_ca_baixa_id, external_reference: `conta_azul:evento:${a.p_ca_evento_id}`, comprovante_url: b.comprovante_url ?? null, idempotency_key: a.p_idempotency_key });
+      Object.assign(b, { status: "pago", data_pagamento: a.p_data_pagamento });
+      return null;
+    },
   });
   const chamadas: Chamada[] = [];
   const f = (async (url: string, init: RequestInit = {}) => {
@@ -124,30 +135,48 @@ describe("confirmar vínculo de parcela", () => {
     expect(v).toMatchObject({ estado: "vinculado", ca_parcela_id: "CP8", ca_contato_id: "PESSOA", origem_vinculo: "confirmado_manual", confirmado_por: "col-1", marcador: marcadorDe(B1) });
     expect(v.divergencias_aceitas[0]).toMatchObject({ campo: "vencimento", sraLuck: "2026-10-15", contaAzul: "2026-10-20" });
     expect(m.tabela("boletos")[0].data_vencimento).toBe("2026-10-15");
-    // Nada vai para a Conta Azul só por causa da divergência aceita.
-    expect(await detectarMudancasSra(env, m.deps)).toMatchObject({ enfileiradas: 0 });
+    // Nada vai para a Conta Azul: o vínculo só lê.
     expect(m.chamadas.some((c) => c.metodo !== "GET")).toBe(false);
   });
 
-  it("mudança de valor depois do vínculo não 'corrige' o vencimento aceito", async () => {
-    const m = montar([
-      ...rotas({ data_vencimento: "2026-10-20" }),
-      ["PATCH https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/CP8", () => [200, { versao: 3 }]],
-    ], { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8)] });
-    await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8", aceitarDivergencias: true }], "col-1", m.deps);
-    m.tabela("boletos")[0].valor = 520;
-    await detectarMudancasSra(env, m.deps);
-    await processarFila(env, m.deps);
-    const patch = m.chamadas.find((c) => c.metodo === "PATCH")!;
-    expect(patch.corpo).toMatchObject({ vencimento: "2026-10-20", composicao_valor: { valor_bruto: 520 } });
+  const quitadaNaConta = { data_vencimento: "2026-10-15", status: "QUITADO", valor_pago: 530, nao_pago: 0, evento: { id: "EV8" }, baixas: [{ id: "BX8", data_pagamento: "2026-10-14", metodo_pagamento: "PIX_PAGAMENTO_INSTANTANEO", valor_composicao: { valor_bruto: 500, juros: 20, multa: 10, desconto: 0 } }] };
+
+  it("paga na Conta Azul e aberta aqui: vincula e sincroniza o pagamento (não é divergência)", async () => {
+    const m = montar(rotas(quitadaNaConta), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8)] });
+    expect(await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8" }], "col-1", m.deps)).toMatchObject({ vinculadas: 1, resultados: [{ ok: true, baixaSincronizada: true }] });
+    expect(m.tabela("boletos")[0]).toMatchObject({ status: "pago", data_pagamento: "2026-10-14" });
+    expect(m.tabela("financeiro_recebimentos")[0]).toMatchObject({ origem: "conta_azul", juros: 20, multa: 10, external_payment_id: "BX8", external_reference: "conta_azul:evento:EV8" });
+    expect(m.tabela("integracao_conflitos")).toHaveLength(0);
+    expect(m.chamadas.some((c) => c.metodo !== "GET")).toBe(false);
   });
 
-  it("quitada só na Conta Azul: vincula e abre conflito; nada é baixado sozinho", async () => {
-    const m = montar(rotas({ data_vencimento: "2026-10-15", status: "QUITADO", valor_pago: 500, nao_pago: 0, baixas: [{ id: "BX", data_pagamento: "2026-10-14", valor_composicao: { valor_bruto: 500 } }] }), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8)] });
-    expect(await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8" }], "col-1", m.deps)).toMatchObject({ vinculadas: 1, resultados: [{ conflito: "baixa_na_conta_azul" }] });
+  it("em conferência (comprovante enviado) e paga na Conta Azul: fecha como paga e preserva o comprovante", async () => {
+    const m = montar(rotas(quitadaNaConta), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8, { status: "pendente_confirmacao", comprovante_url: "cliente/x/comp.pdf" })] });
+    await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8" }], "col-1", m.deps);
+    expect(m.tabela("boletos")[0]).toMatchObject({ status: "pago", comprovante_url: "cliente/x/comp.pdf" });
+    expect(m.tabela("financeiro_recebimentos")[0].comprovante_url).toBe("cliente/x/comp.pdf");
+  });
+
+  it("paga na Conta Azul mas a baixa não corresponde com segurança (valor aceito diferente): revisão", async () => {
+    const m = montar(rotas({ ...quitadaNaConta, valor_composicao: { valor_bruto: 480 }, baixas: [{ id: "BX8", data_pagamento: "2026-10-14", valor_composicao: { valor_bruto: 480 } }] }), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8)] });
+    expect(await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8", aceitarDivergencias: true }], "col-1", m.deps)).toMatchObject({ vinculadas: 1, resultados: [{ conflito: "baixa_na_conta_azul" }] });
     expect(m.tabela("boletos")[0].status).toBe("nao_pago");
-    expect(m.tabela("integracao_conflitos")[0]).toMatchObject({ tipo: "baixa_na_conta_azul", estado: "aberto" });
-    expect(m.tabela("conta_azul_vinculos")[0].estado).toBe("conflito");
+    expect(m.tabela("financeiro_recebimentos")).toHaveLength(0);
+  });
+
+  it("paga só no Sra Luck e aberta na Conta Azul: revisão, nada enviado", async () => {
+    const m = montar(rotas({ data_vencimento: "2026-10-15" }), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8, { status: "pago", data_pagamento: "2026-10-10" })] });
+    expect(await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8" }], "col-1", m.deps)).toMatchObject({ resultados: [{ conflito: "paga_so_no_sra" }] });
+    expect(m.tabela("integracao_conflitos")[0].descricao).toMatch(/não altera a Conta Azul/);
+    expect(m.chamadas.some((c) => c.metodo !== "GET")).toBe(false);
+  });
+
+  it("a mesma baixa confirmada de novo não duplica o recebimento", async () => {
+    const m = montar(rotas(quitadaNaConta), { cliente_vinculos_externos: [pessoaAtiva], boletos: [boleto(B1, 8)] });
+    await confirmarVinculos(env, CLIENTE, [{ boletoId: B1, caParcelaId: "CP8" }], "col-1", m.deps);
+    const { sincronizarParcela } = await import("./conta-azul-vinculos");
+    expect(await sincronizarParcela(env, B1, "col-1", m.deps)).toMatchObject({ ok: true, resultado: "sem_mudanca" });
+    expect(m.tabela("financeiro_recebimentos")).toHaveLength(1);
   });
 
   it("lançamento de outra pessoa não vincula", async () => {
@@ -195,29 +224,33 @@ describe("financeiro que nasce da Conta Azul", () => {
   });
 });
 
-describe("baixas sem loop", () => {
-  it("pagamento que veio da Conta Azul não volta para a Conta Azul", async () => {
-    const m = montar([["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, parcelaCa("P1")]]], {
-      boletos: [boleto(B1, 1, { status: "pago", data_pagamento: "2026-10-14" })],
+describe("Sincronizar agora (parcela)", () => {
+  it("relê a parcela vinculada na Conta Azul (só GET) e aplica a confirmação", async () => {
+    const { sincronizarParcela } = await import("./conta-azul-vinculos");
+    const m = montar([["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, parcelaCa("P1", { status: "QUITADO", valor_pago: 500, nao_pago: 0, baixas: [{ id: "BXP", data_pagamento: "2026-10-12", valor_composicao: { valor_bruto: 500 } }] })]]], {
+      boletos: [boleto(B1, 1)],
       conta_azul_vinculos: [{ id: "v1", boleto_id: B1, cliente_id: CLIENTE, marcador: marcadorDe(B1), estado: "vinculado", ca_parcela_id: "P1", ca_evento_id: "EV1", ca_snapshot: caAtual(parcelaCa("P1")), sra_snapshot: { valor: 500, vencimento: "2026-10-15", status: "nao_pago", dataPagamento: null } }],
-      financeiro_recebimentos: [{ boleto_id: B1, valor_original: 500, juros: 0, multa: 0, desconto: 0, origem: "conta_azul", status_validacao: "validado", data_pagamento: "2026-10-14" }],
     });
-    await detectarMudancasSra(env, m.deps);
-    await processarFila(env, m.deps);
-    expect(m.chamadas.some((c) => c.metodo === "POST")).toBe(false);
-    expect(m.tabela("conta_azul_vinculos")[0]).toMatchObject({ baixa_origem: "conta_azul" });
+    expect(await sincronizarParcela(env, B1, "col-1", m.deps)).toMatchObject({ ok: true, resultado: "baixa_aplicada" });
+    expect(m.tabela("boletos")[0].status).toBe("pago");
+    expect(m.chamadas.every((c) => c.metodo === "GET")).toBe(true);
+    expect(await sincronizarParcela(env, "b0000000-0000-4000-8000-00000000009f", "col-1", m.deps)).toMatchObject({ ok: false, status: 404 });
   });
 });
 
 describe("trava de ambiente", () => {
-  it("Preview sem permissão explícita não fala com a Conta Azul", async () => {
+  it("Production sem autorização e Preview sem banco de teste não falam com a Conta Azul", async () => {
     const { contaAzulBloqueadaNoAmbiente, sincronizarContaAzul } = await import("./conta-azul");
     expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "preview" } as Env)).toBe(true);
     expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "preview", CONTA_AZUL_PREVIEW_PERMITIDO: "1" } as Env)).toBe(false);
-    expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "production" } as Env)).toBe(false);
-    expect(await sincronizarContaAzul({ VERCEL_ENV: "preview" } as Env, { origem: "agendada", ator: "x" })).toMatchObject({ executada: false, motivo: "preview_sem_permissao" });
-    const r = await (await import("./conta-azul-vinculos")).contaAzulVinculosApi(new Request("https://p.vercel.app/api/admin/integrations/conta-azul/central/status"), { VERCEL_ENV: "preview" } as Env);
+    expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "production" } as Env)).toBe(true);
+    expect(await sincronizarContaAzul({ VERCEL_ENV: "production" } as Env, { origem: "agendada", ator: "x" })).toMatchObject({ executada: false, motivo: "ambiente_desligado" });
+    const api = (await import("./conta-azul-vinculos")).contaAzulVinculosApi;
+    const r = await api(new Request("https://p.vercel.app/api/admin/integrations/conta-azul/central/status"), { VERCEL_ENV: "preview" } as Env);
     expect(r?.status).toBe(503);
+    // Tela da cliente em Production sem autorização: o bloco só some.
+    const tela = await api(new Request(`https://sraluckapp.vercel.app/api/admin/integrations/conta-azul/clientes/${CLIENTE}/conta-azul`), { VERCEL_ENV: "production" } as Env);
+    expect(await tela?.json()).toEqual({ ativa: false, motivo: "ambiente_desligado" });
   });
 });
 
@@ -302,5 +335,17 @@ describe("OAuth do App de Desenvolvimento (endereço colado) e diagnóstico real
     expect(texto).toContain('"status":"RECEBIDO"');
     expect(texto).toContain('"juros":20');
     for (const pessoal of ["Ana Souza", "12345678909", "123.456.789-09", "ana@x.com", "Empresa Teste"]) expect(texto).not.toContain(pessoal);
+  });
+});
+
+describe("cliente HTTP da Conta Azul só lê", () => {
+  it("recusa qualquer escrita financeira antes de sair do servidor; revogar o OAuth continua possível", async () => {
+    const m = montar([["DELETE https://api-v2.contaazul.com/oauth/connections/EMP", () => [204, null]]]);
+    for (const caminho of ["/v1/financeiro/eventos-financeiros/parcelas/baixa/BX1", "/v1/financeiro/eventos-financeiros/parcelas/P1"]) {
+      await expect(caRequest(m.deps, "DELETE", caminho)).rejects.toMatchObject({ codigo: "escrita_bloqueada" });
+    }
+    await expect(caRequest(m.deps, "POST" as never, "/v1/financeiro/eventos-financeiros/contas-a-receber")).rejects.toMatchObject({ codigo: "escrita_bloqueada" });
+    expect(m.chamadas).toHaveLength(0);
+    expect(await caRequest(m.deps, "DELETE", "/oauth/connections/EMP")).toBeNull();
   });
 });

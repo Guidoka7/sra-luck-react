@@ -1,23 +1,20 @@
 /**
- * Conta Azul — sincronização bidirecional das parcelas (API v2).
+ * Conta Azul → Sra Luck (API v2). A Conta Azul é a ÚNICA fonte de confirmação de pagamento:
+ * o Sra Luck não envia baixa, pagamento, estorno, lançamento nem alteração para lá.
  *
- * O que a API permite e é usado aqui (docs/INTEGRACOES-MAPA.md):
+ * O que é usado (docs/INTEGRACOES-MAPA.md, developers.contaazul.com):
  * - OAuth2 authorization code em login.contaazul.com; token em api-v2.contaazul.com/oauth/token
  *   com Basic(client_id:client_secret). Access token de 1 h; o refresh token MUDA a cada
  *   renovação e é gravado cifrado no cofre. Renovação serializada por trava no banco.
- * - POST contas-a-receber → 202 + protocolo (sem ID). O vínculo é confirmado lendo
- *   GET contas-a-receber/buscar (descrição com o marcador + vencimento) e a parcela.
- * - GET/PATCH parcelas/{id} (PATCH exige a versão atual).
- * - POST/GET parcelas/{id}/baixa e DELETE parcelas/baixa/{id}.
- * - GET eventos-financeiros/alteracoes (período) + GET {evento}/parcelas: polling.
- * O que a API NÃO permite: webhooks, cancelar/excluir evento, renegociar, ID externo.
+ * - GET eventos-financeiros/alteracoes (período, com cursor) + GET {evento}/parcelas e
+ *   GET parcelas/{id}: detecção das baixas. A API não tem webhook: é leitura periódica.
  *
  * Regras:
- * - Sra Luck é a fonte de valor, vencimento e encargos.
- * - Baixa da Conta Azul só é aplicada sozinha com vínculo seguro (ver vinculoSeguroParaBaixa).
- * - Toda divergência vira conflito em integracao_conflitos; nada é sobrescrito em silêncio.
- * - Mutação financeira só por sessão humana do Admin (a guarda M2M do Dev Console não libera
- *   nenhuma rota daqui) ou pelo agendador autenticado.
+ * - Baixa confirmada na Conta Azul entra no ledger do Sra Luck (principal, juros, multa,
+ *   desconto, data, IDs da baixa e do evento, origem conta_azul), uma única vez.
+ * - Só é aplicada sozinha com vínculo seguro (vinculoSeguroParaBaixa); o resto vira revisão.
+ * - Parcela vinculada não recebe baixa manual nem confirmação de comprovante no Admin.
+ * - O Sra Luck segue dono da jornada, contrato, elegibilidade, comprovantes e plano exibido.
  */
 import { buscarColaboradorAdminAtivo, PERMISSOES_ADMIN, temPermissaoAdmin } from "./admin-auth";
 import { isDevConsoleSyntheticAdminId } from "./dev-console-auth";
@@ -98,7 +95,7 @@ async function comPrazo(d: Deps, url: string, init: RequestInit) {
   }
 }
 
-async function configCa(env: Env, d: Deps) {
+export async function configCa(env: Env, d: Deps) {
   return d.config ?? await configDaFuncao<ConfigContaAzul>(env, PROVEDOR, "sincronizacao", { db: d.db });
 }
 
@@ -194,20 +191,29 @@ export async function urlDeAutorizacao(env: Env, adminId: string, d: Deps) {
 
 // ------------------------------------------------------------------ cliente HTTP
 
-export async function caRequest(d: Deps, metodo: "GET" | "POST" | "PATCH" | "DELETE", caminho: string, corpo?: unknown): Promise<Json | Json[] | null> {
-  return (await caRequestComCabecalhos(d, metodo, caminho, corpo)).dados;
+export async function caRequest(d: Deps, metodo: MetodoPermitido, caminho: string): Promise<Json | Json[] | null> {
+  return (await caRequestComCabecalhos(d, metodo, caminho)).dados;
+}
+
+/**
+ * O Sra Luck só LÊ a Conta Azul. A única escrita permitida é administrar a própria conexão
+ * (revogar o OAuth). Qualquer outra tentativa é recusada aqui, antes de sair do servidor.
+ */
+type MetodoPermitido = "GET" | "DELETE";
+function escritaPermitida(metodo: MetodoPermitido, caminho: string) {
+  return metodo === "GET" || /^\/oauth\/connections\/[^/?#]+$/.test(caminho);
 }
 
 /** Cabeçalhos de limite/paginação que interessam ao diagnóstico (nunca Authorization). */
 const CABECALHOS_UTEIS = /^(x-ratelimit|ratelimit|retry-after|x-rate-limit|x-total|x-request-id)/i;
 
-export async function caRequestComCabecalhos(d: Deps, metodo: "GET" | "POST" | "PATCH" | "DELETE", caminho: string, corpo?: unknown): Promise<{ dados: any; status: number; cabecalhos: Record<string, string> }> {
+export async function caRequestComCabecalhos(d: Deps, metodo: MetodoPermitido, caminho: string): Promise<{ dados: any; status: number; cabecalhos: Record<string, string> }> {
+  if (!escritaPermitida(metodo, caminho)) throw new ErroContaAzul("escrita_bloqueada", "O Sra Luck não altera o financeiro da Conta Azul.");
   let token = await tokenAtual(d);
   const { apiBaseUrl } = await conexaoCa(d);
   const executar = (t: string) => comPrazo(d, `${apiBaseUrl}${caminho}`, {
     method: metodo,
-    headers: { Authorization: `Bearer ${t}`, Accept: "application/json", ...(corpo !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
+    headers: { Authorization: `Bearer ${t}`, Accept: "application/json" },
   });
   let resposta = await executar(token);
   if (resposta.status === 401) {
@@ -271,11 +277,6 @@ export const marcadorDe = (boletoId: string) => `SLK-${boletoId.replace(/-/g, ""
 export const quitada = (c: CaParcela) => c.status === "QUITADO" || (c.valorPago > 0 && c.naoPago === 0 && c.status !== "RECEBIDO_PARCIAL");
 export const aberta = (c: CaParcela) => c.status === "PENDENTE" || c.status === "ATRASADO";
 
-/** Formas do ledger do Sra Luck ↔ metodo_pagamento da Conta Azul (enum oficial das baixas). */
-const METODO_POR_FORMA: Record<string, string> = {
-  pix: "PIX_PAGAMENTO_INSTANTANEO", dinheiro: "DINHEIRO", transferencia: "TRANSFERENCIA_BANCARIA",
-  boleto: "BOLETO_BANCARIO", cartao: "CARTAO_CREDITO", cheque: "CHEQUE",
-};
 export function formaDoMetodo(metodo: string | null): string {
   const m = String(metodo || "");
   if (m.startsWith("PIX")) return "pix";
@@ -315,23 +316,14 @@ export function vinculoSeguroParaBaixa(v: Json, boleto: Json, ca: CaParcela, con
   if (!ca.baixas.length) motivos.push("Sem baixa registrada na Conta Azul.");
   if (centavos(ca.valorBruto) !== centavos(boleto.valor)) motivos.push(`Valor diferente (Conta Azul ${ca.valorBruto.toFixed(2)} × Sra Luck ${Number(boleto.valor).toFixed(2)}).`);
   if (ca.baixas.length && centavos(composicaoDasBaixas(ca).principal) !== centavos(ca.valorBruto)) motivos.push("A soma das baixas não fecha o valor da parcela.");
-  if (String(boleto.status) === "pendente_confirmacao") motivos.push("Há comprovante da cliente aguardando conferência no Financeiro.");
-  else if (String(boleto.status) !== "nao_pago") motivos.push(`Parcela do Sra Luck está ${boleto.status}.`);
+  // Em aberto, em conferência (comprovante enviado) ou com comprovante rejeitado: a confirmação da
+  // Conta Azul é o que vale. Já paga no Sra Luck não é baixada de novo.
+  if (!["nao_pago", "pendente_confirmacao", "rejeitado"].includes(String(boleto.status))) motivos.push(`Parcela do Sra Luck está ${boleto.status}.`);
   if (boleto.suspensa) motivos.push("Parcela suspensa no Sra Luck.");
   return motivos;
 }
 
 // ------------------------------------------------------------------ fila, conflitos e vínculos
-
-export async function enfileirar(db: Db, op: { operacao: string; referencia: string; chave: string; payload?: Json; atrasoMin?: number; ator?: string; maxTentativas?: number; agora?: Date }) {
-  const { error } = await db.from("integracao_fila").insert({
-    provedor: PROVEDOR, operacao: op.operacao, referencia: op.referencia, payload: op.payload ?? {}, chave_idempotencia: op.chave,
-    proxima_tentativa_em: new Date((op.agora ?? new Date()).getTime() + (op.atrasoMin ?? 0) * 60_000).toISOString(), criado_por: op.ator ?? "sistema:conta_azul",
-    ...(op.maxTentativas ? { max_tentativas: op.maxTentativas } : {}),
-  });
-  if (error && (error as { code?: string }).code !== "23505") throw new ErroContaAzul("fila", "Não foi possível enfileirar a operação.", true);
-  return !error;
-}
 
 export async function abrirConflito(db: Db, c: { referencia: string; vinculoId: string | null; tipo: string; descricao: string; dadosSra?: Json; dadosExternos?: Json }) {
   const { error } = await db.from("integracao_conflitos").insert({
@@ -354,290 +346,28 @@ async function vinculoComBoleto(db: Db, boletoId: string) {
 
 export const agoraIso = (d: Deps) => d.agora().toISOString();
 
+/**
+ * Parcela cujo pagamento é controlado pela Conta Azul (vínculo ativo com parcela confirmada).
+ * Nela o Admin não registra baixa nem confirma comprovante. Falha de leitura = não bloqueia
+ * (sem a estrutura da integração, o Financeiro segue como antes).
+ */
+export async function parcelaControladaPelaContaAzul(db: Db, boletoId: string): Promise<boolean> {
+  try {
+    const { data, error } = await db.from("conta_azul_vinculos").select("estado,ca_parcela_id").eq("boleto_id", boletoId).maybeSingle();
+    if (error || !data) return false;
+    return (data as Json).estado !== "desvinculado" && Boolean((data as Json).ca_parcela_id);
+  } catch {
+    return false;
+  }
+}
+export const MENSAGEM_PAGAMENTO_CONTA_AZUL = "Pagamento controlado pela Conta Azul: confirme a baixa na Conta Azul e use Sincronizar agora.";
+
 export async function atualizarVinculo(d: Deps, id: string, patch: Json) {
   await d.db.from("conta_azul_vinculos").update({ ...patch, updated_at: agoraIso(d) }).eq("id", id);
 }
 
 export async function lerParcela(d: Deps, parcelaId: string) {
   return caAtual(await caRequest(d, "GET", `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(parcelaId)}`) as Json);
-}
-
-// ------------------------------------------------------------------ operações
-
-type Resultado = { reagendarMin?: number; nota?: string };
-
-async function opCriar(env: Env, d: Deps, op: Json): Promise<Resultado> {
-  const r = await vinculoComBoleto(d.db, op.referencia);
-  if (!r || !r.boleto) return { nota: "Vínculo ou parcela não existe mais." };
-  const { v, boleto, cliente } = r;
-  if (v.ca_parcela_id) return { nota: "Já vinculada." };
-  if (v.estado === "enviando" || v.estado === "aguardando_protocolo") {
-    await enfileirar(d.db, { agora: d.agora(), operacao: "localizar", referencia: v.boleto_id, chave: `localizar:${v.boleto_id}` });
-    return { nota: "Já enviada antes; localizando." };
-  }
-  const config = await configCa(env, d);
-  if (!config.contaFinanceiraId) throw new ErroContaAzul("config", "Escolha a conta financeira da Conta Azul nas Integrações.");
-  if (!v.ca_contato_id) throw new ErroContaAzul("contato", "Cliente sem pessoa correspondente na Conta Azul.");
-  const s = sraAtual(boleto);
-  const rotulo = `Parcela ${boleto.numero_parcela}/${boleto.total_parcelas || ""}`;
-  const primeiroNome = String(cliente?.nome_completo || "Cliente").split(/\s+/)[0];
-  const payload = {
-    data_competencia: s.vencimento,
-    valor: s.valor,
-    observacao: `Sra. Luck ${v.marcador}`,
-    descricao: `${rotulo} · ${primeiroNome} · ${v.marcador}`,
-    contato: v.ca_contato_id,
-    conta_financeira: config.contaFinanceiraId,
-    rateio: config.categoriaId ? [{ id_categoria: config.categoriaId, valor: s.valor }] : [],
-    condicao_pagamento: { parcelas: [{
-      descricao: `${rotulo} ${v.marcador}`, data_vencimento: s.vencimento, nota: `Sra Luck ${v.marcador}`,
-      conta_financeira: config.contaFinanceiraId,
-      detalhe_valor: { valor_bruto: s.valor, valor_liquido: s.valor, multa: 0, juros: 0, desconto: 0, taxa: 0 },
-      metodo_pagamento: config.metodoPagamento,
-    }] },
-  };
-  // Marca ANTES de enviar: se cair no meio, a próxima tentativa localiza em vez de duplicar.
-  await atualizarVinculo(d, v.id, { estado: "enviando", enviado_em: agoraIso(d), sra_snapshot: s, ultimo_erro: null });
-  let resposta: Json;
-  try {
-    resposta = await caRequest(d, "POST", "/v1/financeiro/eventos-financeiros/contas-a-receber", payload) as Json;
-  } catch (e) {
-    const erro = e as ErroContaAzul;
-    if (erro.retentavel) {
-      await enfileirar(d.db, { agora: d.agora(), operacao: "localizar", referencia: v.boleto_id, chave: `localizar:${v.boleto_id}`, atrasoMin: 2 });
-      return { nota: "Envio sem confirmação; o lançamento será procurado pelo marcador." };
-    }
-    await atualizarVinculo(d, v.id, { estado: "erro_criacao", ultimo_erro: erro.message });
-    throw erro;
-  }
-  if (String(resposta?.status) === "ERROR") {
-    await atualizarVinculo(d, v.id, { estado: "erro_criacao", protocolo: resposta?.protocolo ?? null, ultimo_erro: "Conta Azul devolveu protocolo com erro." });
-    throw new ErroContaAzul("protocolo_erro", "A Conta Azul não criou o lançamento (protocolo com ERROR).");
-  }
-  await atualizarVinculo(d, v.id, { estado: "aguardando_protocolo", protocolo: resposta?.protocolo ?? null });
-  await enfileirar(d.db, { agora: d.agora(), operacao: "localizar", referencia: v.boleto_id, chave: `localizar:${v.boleto_id}`, atrasoMin: 1 });
-  return { nota: `Protocolo ${resposta?.protocolo ?? "—"} (${resposta?.status ?? "?"}).` };
-}
-
-async function opLocalizar(env: Env, d: Deps, op: Json): Promise<Resultado> {
-  const r = await vinculoComBoleto(d.db, op.referencia);
-  if (!r || !r.boleto) return { nota: "Vínculo não existe mais." };
-  const { v } = r;
-  if (v.ca_parcela_id) return { nota: "Já vinculada." };
-  const venc = v.sra_snapshot?.vencimento ?? dia(r.boleto.data_vencimento);
-  const q = new URLSearchParams({ pagina: "1", tamanho_pagina: "10", data_vencimento_de: venc, data_vencimento_ate: venc, descricao: v.marcador });
-  const busca = await caRequest(d, "GET", `/v1/financeiro/eventos-financeiros/contas-a-receber/buscar?${q}`) as Json;
-  const candidatos = (Array.isArray(busca?.itens) ? busca.itens : []).filter((i: Json) => String(i.descricao || "").includes(v.marcador));
-  if (candidatos.length === 0) throw new ErroContaAzul("ainda_nao_localizado", "Lançamento ainda não aparece na Conta Azul.", true);
-  if (candidatos.length > 1) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "marcador_duplicado", descricao: `Há ${candidatos.length} lançamentos com o marcador ${v.marcador} na Conta Azul. Nenhum foi vinculado.`, dadosExternos: { ids: candidatos.map((c: Json) => c.id) } });
-    return { nota: "Mais de um lançamento com o marcador: conflito aberto." };
-  }
-  const id = String(candidatos[0].id);
-  let parcela: CaParcela | null = null, parcelaId = id;
-  try {
-    parcela = await lerParcela(d, id);
-  } catch (e) {
-    if ((e as ErroContaAzul).codigo !== "nao_encontrado") throw e;
-    // O id da busca pode ser do evento: procura a parcela com o marcador.
-    const lista = await caRequest(d, "GET", `/v1/financeiro/eventos-financeiros/${encodeURIComponent(id)}/parcelas`) as Json[];
-    const achada = (Array.isArray(lista) ? lista : []).find((p) => `${p.nota || ""} ${p.descricao || ""}`.includes(v.marcador));
-    if (achada) { parcela = caAtual(achada); parcelaId = String(achada.id); }
-  }
-  if (!parcela || !`${parcela.nota} ${parcela.descricao}`.includes(v.marcador)) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "nao_confirmado", descricao: "O lançamento encontrado não tem o marcador na parcela. Vínculo não confirmado.", dadosExternos: { id } });
-    return { nota: "Parcela sem marcador: conflito aberto." };
-  }
-  await atualizarVinculo(d, v.id, { estado: "vinculado", ca_parcela_id: parcelaId, ca_evento_id: parcela.eventoId ?? id, ca_versao: parcela.versao, ca_snapshot: parcela, ultima_sincronizacao_em: agoraIso(d) });
-  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "vinculou_parcela_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { marcador: v.marcador, caParcelaId: parcelaId, caEventoId: parcela.eventoId ?? id } });
-  const enviado = v.sra_snapshot as SraParcela;
-  if (enviado?.valor != null && (centavos(parcela.valorBruto) !== centavos(enviado.valor) || parcela.vencimento !== enviado.vencimento)) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "divergente_na_criacao", descricao: "O lançamento vinculado tem valor ou vencimento diferente do enviado.", dadosSra: enviado, dadosExternos: parcela });
-  }
-  return { nota: `Vinculada à parcela ${parcelaId}.` };
-}
-
-async function opAtualizar(env: Env, d: Deps, op: Json): Promise<Resultado> {
-  const r = await vinculoComBoleto(d.db, op.referencia);
-  if (!r || !r.boleto || !r.v.ca_parcela_id) return { nota: "Sem vínculo confirmado." };
-  const { v, boleto } = r;
-  const s = sraAtual(boleto);
-  if (s.status === "pago") return { nota: "Parcela já paga no Sra Luck; valor não é mais alterado." };
-  const ca = await lerParcela(d, v.ca_parcela_id);
-  const anterior = v.ca_snapshot as CaParcela;
-  if (!aberta(ca)) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "parcela_nao_editavel", descricao: `A parcela na Conta Azul está ${ca.status}; valor/vencimento do Sra Luck não foram enviados.`, dadosSra: s, dadosExternos: ca });
-    return { nota: "Parcela não editável: conflito aberto." };
-  }
-  const mudouNaConta = anterior?.versao != null && (centavos(ca.valorBruto) !== centavos(anterior.valorBruto) || ca.vencimento !== anterior.vencimento);
-  if (mudouNaConta && !op.payload?.forcar) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "alterada_nos_dois_lados", descricao: "Valor ou vencimento mudou no Sra Luck e também na Conta Azul. Nada foi enviado.", dadosSra: s, dadosExternos: ca });
-    return { nota: "Alterada nos dois lados: conflito aberto." };
-  }
-  // Só vai o campo que mudou no Sra Luck: uma divergência aceita na confirmação do vínculo
-  // (ex.: vencimento diferente) não é "corrigida" de carona numa mudança de valor.
-  const snap = (v.sra_snapshot ?? {}) as Partial<SraParcela>;
-  const forcar = Boolean(op.payload?.forcar);
-  const vencimento = forcar || snap.vencimento !== s.vencimento ? s.vencimento : ca.vencimento;
-  const valor = forcar || centavos(snap.valor) !== centavos(s.valor) ? s.valor : ca.valorBruto;
-  const resposta = await caRequest(d, "PATCH", `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(v.ca_parcela_id)}`, {
-    versao: ca.versao, vencimento,
-    composicao_valor: { valor_bruto: valor, valor_liquido: valor, multa: 0, juros: 0, desconto: 0, taxa: 0 },
-  }) as Json;
-  const novo = { ...ca, valorBruto: valor, vencimento, versao: resposta?.versao ?? ca.versao };
-  await atualizarVinculo(d, v.id, { ca_versao: novo.versao, ca_snapshot: novo, sra_snapshot: { ...(v.sra_snapshot ?? {}), valor: s.valor, vencimento: s.vencimento }, ultima_sincronizacao_em: agoraIso(d) });
-  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "atualizou_parcela_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { valor, vencimento, forcado: forcar } });
-  return { nota: `Valor ${valor.toFixed(2)} e vencimento ${vencimento} enviados.` };
-}
-
-/**
- * Composição do pagamento no Sra Luck: o recebimento validado do ledger (baixa manual, comprovante
- * confirmado ou integração); na falta dele (pagamentos antigos), as colunas de recebimento da parcela.
- */
-export async function composicaoDoRecebimento(d: Deps, boleto: Json, s: SraParcela) {
-  const r2 = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
-  const { data } = await d.db.from("financeiro_recebimentos").select("valor_original,juros,multa,desconto,forma_pagamento,data_pagamento,origem")
-    .eq("boleto_id", boleto.id).eq("status_validacao", "validado").maybeSingle();
-  const rec = data as Json | null;
-  if (rec) return { fonte: "recebimento", origem: String(rec.origem || ""), principal: r2(rec.valor_original ?? s.valor), juros: r2(rec.juros), multa: r2(rec.multa), desconto: r2(rec.desconto), forma: rec.forma_pagamento ? String(rec.forma_pagamento) : null, dataPagamento: dia(rec.data_pagamento) };
-  return { fonte: "parcela", origem: String(boleto.origem_baixa || ""), principal: r2(s.valor), juros: r2(boleto.juros_recebidos), multa: r2(boleto.multa_recebida), desconto: r2(boleto.desconto_recebido), forma: null, dataPagamento: s.dataPagamento };
-}
-
-async function opBaixar(env: Env, d: Deps, op: Json): Promise<Resultado> {
-  const r = await vinculoComBoleto(d.db, op.referencia);
-  if (!r || !r.boleto || !r.v.ca_parcela_id) return { nota: "Sem vínculo confirmado." };
-  const { v, boleto } = r;
-  const s = sraAtual(boleto);
-  if (s.status !== "pago") return { nota: "A parcela não está mais paga no Sra Luck; baixa não enviada." };
-  const config = await configCa(env, d);
-  if (!config.contaFinanceiraId) throw new ErroContaAzul("config", "Escolha a conta financeira da Conta Azul nas Integrações.");
-  const ca = await lerParcela(d, v.ca_parcela_id);
-  // Idempotência: baixa com o marcador já existe (tentativa anterior chegou lá).
-  const nossa = ca.baixas.find((b) => b.id === v.ca_baixa_id || b.observacao.includes(v.marcador));
-  if (nossa) {
-    await atualizarVinculo(d, v.id, { ca_baixa_id: nossa.id, baixa_origem: "sra", ca_snapshot: ca, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: s.dataPagamento } });
-    return { nota: "Baixa já existia na Conta Azul." };
-  }
-  if (quitada(ca)) {
-    await atualizarVinculo(d, v.id, { ca_baixa_id: ca.baixas.at(-1)?.id ?? null, baixa_origem: "conta_azul", ca_snapshot: ca, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: s.dataPagamento } });
-    return { nota: "A parcela já estava quitada na Conta Azul; nada enviado." };
-  }
-  if (!aberta(ca)) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "baixa_nao_enviada", descricao: `Paga no Sra Luck, mas a parcela na Conta Azul está ${ca.status}.`, dadosSra: s, dadosExternos: ca });
-    return { nota: "Conflito aberto." };
-  }
-  // A composição é a registrada no recebimento do Sra Luck (ledger): nada é recalculado aqui.
-  const comp = await composicaoDoRecebimento(d, boleto, s);
-  if (comp.origem === "conta_azul") {
-    // Anti-loop: este pagamento nasceu na Conta Azul; não volta para lá.
-    await atualizarVinculo(d, v.id, { baixa_origem: "conta_azul", sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: s.dataPagamento } });
-    return { nota: "Recebimento veio da Conta Azul; nada enviado." };
-  }
-  const pagoEm = comp.dataPagamento ?? s.dataPagamento ?? agoraIso(d).slice(0, 10);
-  const resposta = await caRequest(d, "POST", `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(v.ca_parcela_id)}/baixa`, {
-    data_pagamento: pagoEm,
-    composicao_valor: { valor_bruto: comp.principal, juros: comp.juros, multa: comp.multa, desconto: comp.desconto, taxa: 0 },
-    conta_financeira: config.contaFinanceiraId,
-    metodo_pagamento: (comp.forma && METODO_POR_FORMA[comp.forma]) || config.metodoPagamento,
-    observacao: `Sra Luck ${v.marcador} baixa`,
-  }) as Json;
-  // 2xx não basta: relê a parcela e confere a baixa gravada (composição e data).
-  const depois = await lerParcela(d, v.ca_parcela_id);
-  const gravada = depois.baixas.find((b) => (resposta?.id && b.id === String(resposta.id)) || b.observacao.includes(v.marcador)) ?? null;
-  const confere = gravada && gravada.dataPagamento === pagoEm && [
-    [gravada.valor, comp.principal], [gravada.juros, comp.juros], [gravada.multa, comp.multa], [gravada.desconto, comp.desconto],
-  ].every(([a, b]) => centavos(a) === centavos(b));
-  await atualizarVinculo(d, v.id, { ca_baixa_id: gravada?.id ?? (resposta?.id ? String(resposta.id) : null), baixa_origem: "sra", ca_snapshot: depois, ca_versao: depois.versao, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: pagoEm }, ultima_sincronizacao_em: agoraIso(d) });
-  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "enviou_baixa_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { caBaixaId: gravada?.id ?? resposta?.id ?? null, dataPagamento: pagoEm, principal: comp.principal, juros: comp.juros, multa: comp.multa, desconto: comp.desconto, fonteComposicao: comp.fonte, conferidaNaContaAzul: Boolean(confere), statusDepois: depois.status, camposResposta: resposta && typeof resposta === "object" ? Object.keys(resposta).slice(0, 30) : null } });
-  if (!confere) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "baixa_divergente_apos_envio", descricao: gravada ? "A baixa foi aceita, mas relida na Conta Azul está com composição ou data diferente da enviada." : "A Conta Azul respondeu, mas a baixa não aparece na parcela relida.", dadosSra: { ...comp, dataPagamento: pagoEm }, dadosExternos: depois });
-    return { nota: "Baixa enviada, mas a releitura não confere: conflito aberto." };
-  }
-  return { nota: `Baixa ${resposta?.id ?? ""} registrada na Conta Azul (principal ${comp.principal.toFixed(2)} + juros ${comp.juros.toFixed(2)} + multa ${comp.multa.toFixed(2)} − desconto ${comp.desconto.toFixed(2)}).` };
-}
-
-async function opEstornar(env: Env, d: Deps, op: Json): Promise<Resultado> {
-  const r = await vinculoComBoleto(d.db, op.referencia);
-  if (!r || !r.boleto || !r.v.ca_parcela_id) return { nota: "Sem vínculo confirmado." };
-  const { v, boleto } = r;
-  const s = sraAtual(boleto);
-  if (s.status === "pago") return { nota: "A parcela voltou a ficar paga no Sra Luck; estorno cancelado." };
-  if (v.baixa_origem !== "sra" || !v.ca_baixa_id) {
-    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "estorno_de_baixa_externa", descricao: "A baixa foi desfeita no Sra Luck, mas ela veio da Conta Azul. O Sra Luck não apaga baixa que não criou.", dadosSra: s, dadosExternos: v.ca_snapshot });
-    return { nota: "Conflito aberto." };
-  }
-  try {
-    await caRequest(d, "DELETE", `/v1/financeiro/eventos-financeiros/parcelas/baixa/${encodeURIComponent(v.ca_baixa_id)}`);
-  } catch (e) {
-    if ((e as ErroContaAzul).codigo !== "nao_encontrado") throw e;
-  }
-  const ca = await lerParcela(d, v.ca_parcela_id).catch(() => null);
-  await atualizarVinculo(d, v.id, { ca_baixa_id: null, baixa_origem: null, ca_snapshot: ca ?? v.ca_snapshot, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: s.status, dataPagamento: null }, ultima_sincronizacao_em: agoraIso(d) });
-  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "estornou_baixa_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { caBaixaId: v.ca_baixa_id } });
-  return { nota: "Baixa removida da Conta Azul." };
-}
-
-const OPERACOES: Record<string, (env: Env, d: Deps, op: Json) => Promise<Resultado>> = {
-  criar_receber: opCriar, localizar: opLocalizar, atualizar_parcela: opAtualizar, registrar_baixa: opBaixar, estornar_baixa: opEstornar,
-};
-
-/** Processa a fila dentro do orçamento de tempo. Retentativa com espera exponencial. */
-export async function processarFila(env: Env, d: Deps, limite = 30, prazo = Date.now() + ORCAMENTO_MS) {
-  const { data } = await d.db.from("integracao_fila").select("*").eq("provedor", PROVEDOR).eq("estado", "pendente")
-    .lte("proxima_tentativa_em", agoraIso(d)).order("created_at", { ascending: true }).limit(limite);
-  const res = { processadas: 0, concluidas: 0, reagendadas: 0, erros: 0 };
-  for (const op of (data ?? []) as Json[]) {
-    if (Date.now() > prazo) break;
-    const { data: pegou } = await d.db.from("integracao_fila").update({ estado: "processando", tentativas: Number(op.tentativas) + 1, updated_at: agoraIso(d) })
-      .eq("id", op.id).eq("estado", "pendente").select("id").maybeSingle();
-    if (!pegou) continue;
-    res.processadas++;
-    const tentativa = Number(op.tentativas) + 1;
-    try {
-      const executar = OPERACOES[op.operacao];
-      if (!executar) throw new ErroContaAzul("operacao", `Operação desconhecida: ${op.operacao}.`);
-      const r = await executar(env, d, op);
-      await d.db.from("integracao_fila").update({ estado: "concluida", ultimo_erro: r.nota ?? null, concluida_em: agoraIso(d), updated_at: agoraIso(d) }).eq("id", op.id);
-      res.concluidas++;
-    } catch (e) {
-      const erro = e instanceof ErroContaAzul ? e : new ErroContaAzul("inesperado", "Falha inesperada.", true);
-      if (erro.retentavel && tentativa < Number(op.max_tentativas || 6)) {
-        const espera = Math.min(360, 2 ** tentativa);
-        await d.db.from("integracao_fila").update({ estado: "pendente", ultimo_erro: erro.message, proxima_tentativa_em: new Date(d.agora().getTime() + espera * 60_000).toISOString(), updated_at: agoraIso(d) }).eq("id", op.id);
-        res.reagendadas++;
-      } else {
-        await d.db.from("integracao_fila").update({ estado: "erro", ultimo_erro: erro.message, updated_at: agoraIso(d) }).eq("id", op.id);
-        res.erros++;
-        if (op.operacao === "localizar" && erro.codigo === "ainda_nao_localizado") {
-          await abrirConflito(d.db, { referencia: op.referencia, vinculoId: null, tipo: "nao_localizado", descricao: "O lançamento enviado não apareceu na Conta Azul depois de várias buscas. Confira antes de reenviar para não duplicar." });
-        }
-      }
-    }
-  }
-  return res;
-}
-
-// ------------------------------------------------------------------ detecção Sra Luck → Conta Azul
-
-export async function detectarMudancasSra(env: Env, d: Deps) {
-  const config = await configCa(env, d);
-  const { data } = await d.db.from("conta_azul_vinculos").select("id,boleto_id,sra_snapshot,ca_baixa_id,baixa_origem,boletos(valor,data_vencimento,status,data_pagamento)").eq("estado", "vinculado").limit(2000);
-  let enfileiradas = 0;
-  for (const v of (data ?? []) as Json[]) {
-    const b = Array.isArray(v.boletos) ? v.boletos[0] : v.boletos;
-    if (!b) continue;
-    const s = sraAtual(b), snap = (v.sra_snapshot ?? {}) as Partial<SraParcela>;
-    if (config.enviarAlteracoes && s.status !== "pago" && (centavos(s.valor) !== centavos(snap.valor) || s.vencimento !== snap.vencimento)) {
-      if (await enfileirar(d.db, { agora: d.agora(), operacao: "atualizar_parcela", referencia: v.boleto_id, chave: `atualizar:${v.boleto_id}:${s.valor}:${s.vencimento}` })) enfileiradas++;
-    }
-    if (config.enviarBaixas && s.status === "pago" && snap.status !== "pago") {
-      if (await enfileirar(d.db, { agora: d.agora(), operacao: "registrar_baixa", referencia: v.boleto_id, chave: `baixa:${v.boleto_id}:${s.dataPagamento}` })) enfileiradas++;
-    }
-    if (config.enviarBaixas && s.status !== "pago" && snap.status === "pago") {
-      if (await enfileirar(d.db, { agora: d.agora(), operacao: "estornar_baixa", referencia: v.boleto_id, chave: `estorno:${v.boleto_id}:${v.ca_baixa_id ?? "externa"}:${snap.dataPagamento ?? ""}` })) enfileiradas++;
-    }
-  }
-  return { enfileiradas };
 }
 
 // ------------------------------------------------------------------ leitura Conta Azul → Sra Luck
@@ -653,12 +383,13 @@ export function horaSaoPaulo(d: Date) {
  * trava e idempotência da baixa manual, origem 'conta_azul' e a composição somada das baixas.
  * Devolve false quando a parcela não está mais em aberto no Sra Luck.
  */
-async function aplicarBaixaDaConta(d: Deps, v: Json, boleto: Json, ca: CaParcela, ator: string) {
+export async function aplicarBaixaDaConta(d: Deps, v: Json, boleto: Json, ca: CaParcela, ator: string) {
   const comp = composicaoDasBaixas(ca);
   if (!comp.baixaId || !comp.dataPagamento) return false;
   const { error } = await d.db.rpc("conta_azul_registrar_baixa", {
     p_boleto_id: boleto.id, p_data_pagamento: comp.dataPagamento, p_juros: comp.juros, p_multa: comp.multa, p_desconto: comp.desconto,
-    p_forma_pagamento: comp.forma, p_ca_baixa_id: comp.baixaId, p_usuario: ator, p_idempotency_key: `conta_azul:baixa:${comp.baixaId}`,
+    p_forma_pagamento: comp.forma, p_ca_baixa_id: comp.baixaId, p_ca_evento_id: ca.eventoId ?? v.ca_evento_id ?? null,
+    p_usuario: ator, p_idempotency_key: `conta_azul:baixa:${comp.baixaId}`,
   });
   if (error) {
     if (/nao esta em aberto|ja liquidada/i.test(String(error.message))) return false;
@@ -689,7 +420,12 @@ export async function avaliarParcelaCa(env: Env, d: Deps, v: Json, boleto: Json,
     }
   } else if (quitada(ca)) {
     const nossa = v.ca_baixa_id && ca.baixas.some((b) => b.id === v.ca_baixa_id);
-    if (s.status !== "pago" && !nossa) {
+    if (s.status === "pago") {
+      // A confirmação chegou na Conta Azul para uma parcela que já estava paga aqui: concilia.
+      const { data: abertos } = await d.db.from("integracao_conflitos").update({ estado: "resolvido", resolucao: "confirmado_na_conta_azul", resolvido_por: "sistema:conta_azul", resolvido_em: agoraIso(d) })
+        .eq("provedor", PROVEDOR).eq("referencia", v.boleto_id).eq("tipo", "paga_so_no_sra").eq("estado", "aberto").select("id");
+      if ((abertos ?? []).length) await atualizarVinculo(d, v.id, { estado: "vinculado", ca_baixa_id: composicaoDasBaixas(ca).baixaId });
+    } else if (!nossa) {
       const motivos = vinculoSeguroParaBaixa(v, boleto, ca, config);
       if (!motivos.length && await aplicarBaixaDaConta(d, v, boleto, ca, "sistema:conta_azul")) return "baixa_aplicada";
       await abrirConflito(d.db, { ...ref, tipo: "baixa_na_conta_azul", descricao: `Quitada na Conta Azul e em aberto no Sra Luck. Não aplicada sozinha: ${motivos.join(" ") || "a parcela mudou durante a aplicação."}`, dadosSra: s, dadosExternos: ca });
@@ -777,12 +513,15 @@ export async function lerMudancasContaAzul(env: Env, d: Deps, prazo: number) {
  * de produção fale com a Conta Azul usando dados reais.
  */
 export function contaAzulBloqueadaNoAmbiente(env: Env) {
-  return env.VERCEL_ENV === "preview" && env.CONTA_AZUL_PREVIEW_PERMITIDO !== "1";
+  if (env.VERCEL_ENV === "preview") return env.CONTA_AZUL_PREVIEW_PERMITIDO !== "1";
+  // Produção: DESLIGADA até autorização explícita (CONTA_AZUL_PRODUCAO_PERMITIDA=1 na Vercel).
+  if (env.VERCEL_ENV === "production") return env.CONTA_AZUL_PRODUCAO_PERMITIDA !== "1";
+  return false;
 }
-export const MENSAGEM_PREVIEW_BLOQUEADO = "Conta Azul desligada neste Preview: só funciona no Preview do banco de teste (CONTA_AZUL_PREVIEW_PERMITIDO=1).";
+export const MENSAGEM_PREVIEW_BLOQUEADO = "Conta Azul desligada neste ambiente (Production só com autorização; Preview só no banco de teste).";
 
 export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" | "agendada"; ator: string }, parcial: Partial<Deps> = {}) {
-  if (contaAzulBloqueadaNoAmbiente(env)) return { executada: false, motivo: "preview_sem_permissao" };
+  if (contaAzulBloqueadaNoAmbiente(env)) return { executada: false, motivo: "ambiente_desligado" };
   const d = depsPadrao(env, parcial);
   const prazo = Date.now() + ORCAMENTO_MS;
   const config = await configCa(env, d);
@@ -793,10 +532,7 @@ export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" 
   let status = "processado", erro: string | null = null;
   try {
     await tokenAtual(d);
-    resumo.envio = await detectarMudancasSra(env, d);
     resumo.leitura = await lerMudancasContaAzul(env, d, prazo);
-    resumo.fila = await processarFila(env, d, 40, prazo);
-    if (resumo.fila.erros) status = "parcial";
   } catch (e) {
     status = "erro";
     erro = e instanceof ErroContaAzul ? e.message : "Falha inesperada na sincronização.";
@@ -810,30 +546,7 @@ export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" 
 
 // ------------------------------------------------------------------ ações do Admin
 
-export async function enviarParcelasCliente(env: Env, clienteId: string, ator: string, parcial: Partial<Deps> = {}) {
-  const d = depsPadrao(env, parcial);
-  const config = await configCa(env, d);
-  if (!config.contaFinanceiraId) return { ok: false as const, status: 409, erro: "Escolha a conta financeira da Conta Azul antes de enviar." };
-  const { data: cliente } = await d.db.from("clientes").select("id,nome_completo,cpf").eq("id", clienteId).maybeSingle();
-  if (!cliente) return { ok: false as const, status: 404, erro: "Cliente não encontrada." };
-  // Só com a pessoa confirmada pela equipe (vínculo pelo CPF no drawer da cliente).
-  const { data: pessoa } = await d.db.from("cliente_vinculos_externos").select("id_externo").eq("provedor", PROVEDOR).eq("cliente_id", clienteId).eq("estado", "vinculado").maybeSingle();
-  if (!pessoa) return { ok: false as const, status: 409, erro: "Vincule a cliente à pessoa da Conta Azul primeiro (busca pelo CPF, com confirmação)." };
-  const contato = String((pessoa as Json).id_externo);
-  const { data: boletos } = await d.db.from("boletos").select("id,status").eq("cliente_id", clienteId);
-  const { data: existentes } = await d.db.from("conta_azul_vinculos").select("boleto_id").eq("cliente_id", clienteId);
-  const ja = new Set(((existentes ?? []) as Json[]).map((x) => x.boleto_id));
-  const novos = ((boletos ?? []) as Json[]).filter((b) => !ja.has(b.id) && b.status !== "pago");
-  for (const b of novos) {
-    const { error } = await d.db.from("conta_azul_vinculos").insert({ boleto_id: b.id, cliente_id: clienteId, marcador: marcadorDe(b.id), ca_contato_id: contato, criado_por: ator });
-    if (!error) await enfileirar(d.db, { agora: d.agora(), operacao: "criar_receber", referencia: b.id, chave: `criar:${b.id}`, ator });
-  }
-  await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "enviou_parcelas_conta_azul", entidade: "clientes", entidade_id: clienteId, detalhes: { parcelas: novos.length, jaVinculadas: ja.size, pagasNaoEnviadas: ((boletos ?? []) as Json[]).filter((b) => b.status === "pago" && !ja.has(b.id)).length } });
-  const fila = novos.length ? await processarFila(env, d, 12) : null;
-  return { ok: true as const, enfileiradas: novos.length, jaVinculadas: ja.size, fila };
-}
-
-export const ACOES_CONFLITO = ["aplicar_sra", "aplicar_baixa_conta_azul", "estornar_no_sra", "manter", "desvincular"] as const;
+export const ACOES_CONFLITO = ["aplicar_baixa_conta_azul", "estornar_no_sra", "manter", "desvincular"] as const;
 export type AcaoConflito = typeof ACOES_CONFLITO[number];
 /** Ações que mexem no status financeiro da parcela no Sra Luck exigem a permissão de baixa manual. */
 export const ACOES_QUE_ALTERAM_SRA: readonly AcaoConflito[] = ["aplicar_baixa_conta_azul", "estornar_no_sra"];
@@ -848,13 +561,7 @@ export async function resolverConflito(env: Env, id: string, acao: AcaoConflito,
     if (acao !== "manter") return { ok: false as const, status: 409, erro: "Sem vínculo: só dá para marcar como verificado." };
   }
   const v = r?.v, boleto = r?.boleto;
-  if (acao === "aplicar_sra") {
-    if (!v?.ca_parcela_id) return { ok: false as const, status: 409, erro: "Vínculo sem parcela confirmada." };
-    await atualizarVinculo(d, v.id, { estado: "vinculado" });
-    const s = sraAtual(boleto!);
-    if (s.status === "pago") await enfileirar(d.db, { agora: d.agora(), operacao: "registrar_baixa", referencia: v.boleto_id, chave: `baixa:${v.boleto_id}:${s.dataPagamento}:resolucao:${id}`, ator });
-    else await enfileirar(d.db, { agora: d.agora(), operacao: "atualizar_parcela", referencia: v.boleto_id, chave: `atualizar:${v.boleto_id}:resolucao:${id}`, payload: { forcar: true }, ator });
-  } else if (acao === "aplicar_baixa_conta_azul") {
+  if (acao === "aplicar_baixa_conta_azul") {
     if (!v?.ca_parcela_id) return { ok: false as const, status: 409, erro: "Vínculo sem parcela confirmada." };
     const ca = await lerParcela(d, v.ca_parcela_id);
     if (!quitada(ca) || !ca.baixas.length) return { ok: false as const, status: 409, erro: `A parcela não está quitada na Conta Azul agora (${ca.status}).` };
@@ -888,10 +595,8 @@ export async function painel(env: Env, d: Deps) {
     d.db.from("integracao_eventos").select("event_type,status,erro,payload,created_at").eq("provedor", PROVEDOR).like("event_type", "sync_%").order("created_at", { ascending: false }).limit(1),
     d.db.from("integracao_cursores").select("valor").eq("provedor", PROVEDOR).eq("nome", "alteracoes").maybeSingle(),
   ]);
-  const contar = async (tabela: "conta_azul_vinculos" | "integracao_fila", valores: string[]) => Object.fromEntries(await Promise.all(valores.map(async (e) => {
-    let q = d.db.from(tabela).select("id", { count: "exact", head: true }).eq("estado", e);
-    if (tabela === "integracao_fila") q = q.eq("provedor", PROVEDOR);
-    const { count, error } = await q;
+  const contar = async (valores: string[]) => Object.fromEntries(await Promise.all(valores.map(async (e) => {
+    const { count, error } = await d.db.from("conta_azul_vinculos").select("id", { count: "exact", head: true }).eq("estado", e);
     return [e, error ? null : count ?? 0];
   })));
   const estrutura = await d.db.from("conta_azul_vinculos").select("id", { count: "exact", head: true });
@@ -899,22 +604,16 @@ export async function painel(env: Env, d: Deps) {
     estruturaAplicada: !estrutura.error,
     conexao: { clientConfigurado: Boolean(clientId), autorizada: Boolean(refresh), tokenManual: Boolean(token && !refresh), expiraEm: expira ?? null },
     config: cfg,
-    vinculos: await contar("conta_azul_vinculos", ["aguardando_criacao", "enviando", "aguardando_protocolo", "vinculado", "conflito", "erro_criacao", "desvinculado"]),
-    fila: await contar("integracao_fila", ["pendente", "processando", "erro"]),
+    vinculos: await contar(["vinculado", "conflito", "desvinculado"]),
     conflitosAbertos: (await d.db.from("integracao_conflitos").select("id", { count: "exact", head: true }).eq("provedor", PROVEDOR).eq("estado", "aberto")).count ?? null,
     ultimaSincronizacao: (eventos.data ?? [])[0] ?? null,
     cursorAlteracoes: (cursor.data as Json | null)?.valor ?? null,
   };
 }
 
-export async function listar(d: Deps, tipo: "vinculos" | "fila" | "conflitos" | "historico", filtro: string | null) {
+export async function listar(d: Deps, tipo: "vinculos" | "conflitos" | "historico", filtro: string | null) {
   if (tipo === "vinculos") {
     let q = d.db.from("conta_azul_vinculos").select("id,boleto_id,cliente_id,marcador,estado,ca_parcela_id,ca_evento_id,baixa_origem,ultima_sincronizacao_em,ultimo_erro,updated_at,boletos(numero_parcela,total_parcelas,valor,data_vencimento,status),clientes(nome_completo)").order("updated_at", { ascending: false }).limit(300);
-    if (filtro) q = q.eq("estado", filtro);
-    return (await q).data ?? [];
-  }
-  if (tipo === "fila") {
-    let q = d.db.from("integracao_fila").select("id,operacao,referencia,estado,tentativas,max_tentativas,proxima_tentativa_em,ultimo_erro,criado_por,created_at,concluida_em").eq("provedor", PROVEDOR).order("created_at", { ascending: false }).limit(200);
     if (filtro) q = q.eq("estado", filtro);
     return (await q).data ?? [];
   }
@@ -924,15 +623,6 @@ export async function listar(d: Deps, tipo: "vinculos" | "fila" | "conflitos" | 
     return (await q).data ?? [];
   }
   return (await d.db.from("integracao_eventos").select("id,event_type,status,erro,payload,created_at,processado_em").eq("provedor", PROVEDOR).order("created_at", { ascending: false }).limit(60)).data ?? [];
-}
-
-export async function opcoesContaAzul(d: Deps) {
-  const contas = await caRequest(d, "GET", `/v1/conta-financeira?${new URLSearchParams({ pagina: "1", tamanho_pagina: "100", apenas_ativo: "true" })}`) as Json;
-  const categorias = await caRequest(d, "GET", `/v1/categorias?${new URLSearchParams({ pagina: "1", tamanho_pagina: "200", tipo: "RECEITA", permite_apenas_filhos: "false" })}`).catch(() => ({ itens: [] })) as Json;
-  return {
-    contas: (Array.isArray(contas?.itens) ? contas.itens : []).map((c: Json) => ({ id: String(c.id), nome: String(c.nome || c.id), tipo: c.tipo ?? null })),
-    categorias: (Array.isArray(categorias?.itens) ? categorias.itens : []).map((c: Json) => ({ id: String(c.id), nome: String(c.nome || c.id) })),
-  };
 }
 
 // ------------------------------------------------------------------ rotas
@@ -995,8 +685,7 @@ export async function contaAzulApi(request: Request, env: Env): Promise<Response
     const auth = await exigir(request, env, [PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO]);
     if (auth instanceof Response) return auth;
     if (rota === "painel") return json(await painel(env, d));
-    if (rota === "vinculos" || rota === "fila" || rota === "conflitos" || rota === "historico") return json({ itens: await listar(d, rota, url.searchParams.get("estado")) });
-    if (rota === "opcoes") { try { return json(await opcoesContaAzul(d)); } catch (e) { return json({ erro: (e as Error).message }, 502); } }
+    if (rota === "vinculos" || rota === "conflitos" || rota === "historico") return json({ itens: await listar(d, rota, url.searchParams.get("estado")) });
     if (rota === "authorize-url") {
       const cred = await exigir(request, env, [PERMISSOES_ADMIN.INTEGRACOES_GERENCIAR_CREDENCIAIS]);
       if (cred instanceof Response) return cred;
@@ -1020,10 +709,6 @@ export async function contaAzulApi(request: Request, env: Env): Promise<Response
   if (isDevConsoleSyntheticAdminId(auth.adminId)) return json({ erro: "Operações da Conta Azul são feitas no Admin do Sra Luck." }, 403);
   const ator = auth.colaboradorId;
 
-  if (rota === "enviar-cliente") {
-    const r = await enviarParcelasCliente(env, String(body.clienteId || ""), ator);
-    return r.ok ? json(r) : json({ erro: r.erro }, r.status);
-  }
   const resolver = rota.match(/^conflitos\/([0-9a-f-]{36})\/resolver$/);
   if (resolver) {
     const acao = String(body.acao || "") as AcaoConflito;
@@ -1039,14 +724,6 @@ export async function contaAzulApi(request: Request, env: Env): Promise<Response
     } catch (e) {
       return json({ erro: e instanceof ErroContaAzul ? e.message : "Falha ao resolver o conflito." }, 502);
     }
-  }
-  const reprocessar = rota.match(/^fila\/([0-9a-f-]{36})\/reprocessar$/);
-  if (reprocessar) {
-    const { data } = await d.db.from("integracao_fila").update({ estado: "pendente", tentativas: 0, proxima_tentativa_em: agoraIso(d), updated_at: agoraIso(d) })
-      .eq("id", reprocessar[1]).eq("provedor", PROVEDOR).eq("estado", "erro").select("id,operacao,referencia").maybeSingle();
-    if (!data) return json({ erro: "Operação não encontrada ou não está em erro." }, 409);
-    await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "reprocessou_fila_conta_azul", entidade: "integracoes", entidade_id: reprocessar[1], detalhes: data });
-    return json({ ok: true, fila: await processarFila(env, d, 5) });
   }
   return json({ erro: "Rota da Conta Azul não encontrada." }, 404);
 }

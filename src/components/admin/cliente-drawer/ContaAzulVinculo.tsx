@@ -53,6 +53,7 @@ const dif = (d: Dif | null) => d ? [d.vencimento && `vencimento ${d.diasVencimen
 
 export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAlterado }: { clienteId: string; cpf: string; temFinanceiro: boolean; modo: "perfil" | "financeiro"; onAlterado?: () => void }) {
   const [pessoa, setPessoa] = useState<Json | null | undefined>(undefined);
+  const [ativa, setAtiva] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [busca, setBusca] = useState<{ situacao: string; pessoas: Pessoa[] } | null>(null);
@@ -66,7 +67,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
   const cpfValido = cpf.replace(/\D/g, "").length === 11;
 
   async function carregar() {
-    try { const r = await api<{ pessoa: Json | null }>(`${BASE}/${clienteId}/conta-azul`); setPessoa(r.pessoa); setErro(null); }
+    try { const r = await api<{ ativa?: boolean; pessoa?: Json | null }>(`${BASE}/${clienteId}/conta-azul`); setAtiva(r.ativa !== false); setPessoa(r.pessoa ?? null); setErro(null); }
     catch (e) { setPessoa(null); setErro((e as Error).message); }
   }
   useEffect(() => { void carregar(); }, [clienteId]);
@@ -102,9 +103,9 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
     setPrevia(null); onAlterado?.(); await conferir();
   });
   const confirmarPares = (pares: { boletoId: string; caParcelaId: string; aceitarDivergencias?: boolean }[]) => executar("pares", async () => {
-    const r = await api<{ vinculadas: number; falhas: number; resultados: { ok: boolean; erro?: string; conflito?: string }[] }>(`${BASE}/${clienteId}/vinculos`, { pares });
-    const conflitos = r.resultados.filter((x) => x.conflito).length;
-    if (r.vinculadas) toast.success(`${r.vinculadas} parcela(s) vinculada(s).${conflitos ? ` ${conflitos} com status diferente foram para revisão.` : ""}`);
+    const r = await api<{ vinculadas: number; falhas: number; resultados: { ok: boolean; erro?: string; conflito?: string; baixaSincronizada?: boolean }[] }>(`${BASE}/${clienteId}/vinculos`, { pares });
+    const conflitos = r.resultados.filter((x) => x.conflito).length, pagas = r.resultados.filter((x) => x.baixaSincronizada).length;
+    if (r.vinculadas) toast.success(`${r.vinculadas} parcela(s) vinculada(s).${pagas ? ` ${pagas} já paga(s) na Conta Azul: pagamento sincronizado.` : ""}${conflitos ? ` ${conflitos} em revisão.` : ""}`);
     r.resultados.filter((x) => !x.ok).forEach((x) => toast.error(x.erro ?? "Vínculo não gravado."));
     onAlterado?.(); await conferir();
   });
@@ -120,6 +121,8 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
     };
   }, [previa, importarIds]);
 
+  // Conta Azul desligada neste ambiente (ex.: Production sem autorização) ou sem estrutura: nada a mostrar.
+  if (!ativa) return null;
   if (pessoa === undefined) return <article className={`${styles.card} ${styles.financeCard}`}><div className={styles.cardBody}><span className={styles.muted}>Consultando vínculo com a Conta Azul…</span></div></article>;
 
   return <article className={`${styles.card} ${styles.financeCard}`} aria-label="Conta Azul">
@@ -184,7 +187,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
           <span className={styles.label}>Lançamentos da cliente na Conta Azul ({lancamentos.length})</span>
           <div className={styles.tableWrap}><table className={styles.table}>
             <thead><tr><th>Vencimento</th><th>Descrição</th><th>Valor</th><th>Status</th></tr></thead>
-            <tbody>{lancamentos.length ? lancamentos.map((l) => <tr key={l.id}><td>{formatDate(l.vencimento)}</td><td>{l.descricao || "—"}</td><td>{formatCurrency(l.valor)}</td><td><StatusCa s={l.status} /></td></tr>) : <tr><td colSpan={4}><div className={styles.empty}>Nenhum lançamento a receber desta pessoa.</div></td></tr>}</tbody>
+            <tbody>{lancamentos.length ? lancamentos.map((l) => <tr key={l.id}><td>{formatDate(l.vencimento)}</td><td>{l.descricao || "—"}</td><td>{formatCurrency(l.valor)}</td><td><StatusCa s={l.status} /></td></tr>) : <tr><td colSpan={4}><div className={styles.empty}>Não existem lançamentos na Conta Azul disponíveis para vínculo. Nada é criado lá pelo Sra. Luck.</div></td></tr>}</tbody>
           </table></div>
         </div> : null}
 
@@ -204,7 +207,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
                 <td><input type="checkbox" aria-label={`Vincular parcela ${c.boleto.numero}`} checked={marcadas.has(c.boleto.id)} onChange={(e) => setMarcadas((m) => { const n = new Set(m); if (e.target.checked) n.add(c.boleto.id); else n.delete(c.boleto.id); return n; })} /></td>
                 <td>{c.boleto.numero}/{c.boleto.total} · {formatDate(c.boleto.vencimento)} · {formatCurrency(c.boleto.valor)}</td>
                 <td>{formatDate(c.lancamento.vencimento)} · {formatCurrency(c.lancamento.valor)}</td>
-                <td><StatusSra s={c.boleto.status} /> <StatusCa s={c.lancamento.status} />{c.diferencas.status ? <><br /><small className={styles.muted}>Status diferente: vai para revisão ao vincular.</small></> : null}</td>
+                <td><StatusSra s={c.boleto.status} /> <StatusCa s={c.lancamento.status} />{c.diferencas.status ? <><br /><small className={styles.muted}>{c.lancamento.quitado ? "Paga na Conta Azul: o pagamento será sincronizado ao vincular." : "Paga só no Sra. Luck: vai para revisão (nada é enviado à Conta Azul)."}</small></> : null}</td>
               </tr>)}</tbody>
             </table></div>
             <button type="button" className={`${styles.modalBtn} ${styles.primary}`} disabled={!marcadas.size || ocupado === "pares"} onClick={() => void confirmarPares(conc.correspondencias.filter((c) => marcadas.has(c.boleto.id)).map((c) => ({ boletoId: c.boleto.id, caParcelaId: c.lancamento.id })))}>Vincular {marcadas.size} selecionada(s)</button>
@@ -238,7 +241,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
         </>}
       </>}
 
-      {pessoa && <p className={styles.readOnlyNote} style={{ margin: 0 }}>Pagamentos das parcelas vinculadas sincronizam nos dois sentidos (principal, juros, multa e desconto). Comprovantes continuam no Sra. Luck: a API da Conta Azul não permite anexar arquivos aos lançamentos.</p>}
+      {pessoa && <p className={styles.readOnlyNote} style={{ margin: 0 }}>O pagamento das parcelas vinculadas é confirmado na Conta Azul e sincronizado para cá (principal, juros, multa e desconto). O Sra. Luck não envia nada para a Conta Azul. Comprovantes continuam no Sra. Luck: a API da Conta Azul não permite anexar arquivos.</p>}
     </div>
   </article>;
 }

@@ -23,7 +23,7 @@
  */
 import { PERMISSOES_ADMIN } from "./admin-auth";
 import {
-  abrirConflito, agoraIso, aberta, caRequest, caRequestComCabecalhos, centavos, composicaoDasBaixas, conexaoCa, credenciaisDeConfiguracao, depsPadrao, dia,
+  abrirConflito, agoraIso, aberta, aplicarBaixaDaConta, avaliarParcelaCa, configCa, vinculoSeguroParaBaixa, caRequest, caRequestComCabecalhos, centavos, composicaoDasBaixas, conexaoCa, credenciaisDeConfiguracao, depsPadrao, dia,
   contaAzulBloqueadaNoAmbiente, ErroContaAzul, exigir, gravarTokens, MENSAGEM_PREVIEW_BLOQUEADO, horaSaoPaulo, json, lerParcela, marcadorDe, pedirToken, quitada, registrarEvento, renovarToken, sameOrigin, sraAtual,
   type CaParcela, type Deps,
 } from "./conta-azul";
@@ -259,8 +259,8 @@ export type ParConfirmado = { boletoId: string; caParcelaId: string; aceitarDive
 /**
  * Grava os pares escolhidos pela equipe. A Conta Azul é relida parcela a parcela (o que vale é o
  * que está lá agora). Divergência de valor/vencimento só com aceite explícito, e fica registrada;
- * nenhum vencimento é alterado. Pago só de um lado vira conflito para revisão (nada é baixado ou
- * estornado automaticamente no vínculo).
+ * nenhum vencimento é alterado. Quitada na Conta Azul e aberta aqui = sincronização normal (se a
+ * baixa corresponder com segurança); paga só no Sra Luck = revisão. Nada é escrito na Conta Azul.
  */
 export async function confirmarVinculos(env: Env, clienteId: string, pares: ParConfirmado[], ator: string, parcial: Partial<Deps> = {}) {
   const d = depsPadrao(env, parcial);
@@ -270,7 +270,7 @@ export async function confirmarVinculos(env: Env, clienteId: string, pares: ParC
   const lancamentos = await lancamentosDaPessoa(d, String(pessoa.id_externo));
   const daPessoa = new Set(lancamentos.map((l) => l.id));
   const vistos = { boleto: new Set<string>(), ca: new Set<string>() };
-  const resultados: { boletoId: string; caParcelaId: string; ok: boolean; erro?: string; conflito?: string; divergencias?: string[] }[] = [];
+  const resultados: { boletoId: string; caParcelaId: string; ok: boolean; erro?: string; conflito?: string; divergencias?: string[]; baixaSincronizada?: boolean }[] = [];
 
   for (const par of pares) {
     const boletoId = String(par?.boletoId || ""), caParcelaId = String(par?.caParcelaId || "");
@@ -279,7 +279,7 @@ export async function confirmarVinculos(env: Env, clienteId: string, pares: ParC
     if (vistos.boleto.has(boletoId) || vistos.ca.has(caParcelaId)) { falha("Parcela repetida na mesma confirmação."); continue; }
     vistos.boleto.add(boletoId); vistos.ca.add(caParcelaId);
     if (!daPessoa.has(caParcelaId)) { falha("Esse lançamento não pertence à pessoa vinculada na Conta Azul."); continue; }
-    const { data: boleto } = await d.db.from("boletos").select("id,cliente_id,numero_parcela,valor,data_vencimento,status,data_pagamento").eq("id", boletoId).maybeSingle();
+    const { data: boleto } = await d.db.from("boletos").select("id,cliente_id,numero_parcela,valor,data_vencimento,status,data_pagamento,suspensa,comprovante_url").eq("id", boletoId).maybeSingle();
     if (!boleto || (boleto as Json).cliente_id !== clienteId) { falha("Parcela não é desta cliente."); continue; }
     const { data: existentes } = await d.db.from("conta_azul_vinculos").select("id,boleto_id,ca_parcela_id,estado").or(`boleto_id.eq.${boletoId},ca_parcela_id.eq.${caParcelaId}`);
     const lista = (existentes ?? []) as Json[];
@@ -312,16 +312,23 @@ export async function confirmarVinculos(env: Env, clienteId: string, pares: ParC
       : await d.db.from("conta_azul_vinculos").insert({ ...linha, criado_por: ator }).select("id").single();
     if (gravado.error || !gravado.data) { falha("Não foi possível gravar o vínculo."); continue; }
     const vinculoId = String((gravado.data as Json).id);
-    let conflito: string | undefined;
+    let conflito: string | undefined, baixaSincronizada = false;
     if (caPago && !sraPago) {
-      conflito = "baixa_na_conta_azul";
-      await abrirConflito(d.db, { referencia: boletoId, vinculoId, tipo: conflito, descricao: "Vínculo confirmado: a parcela está quitada na Conta Azul e em aberto no Sra Luck. Nada foi baixado sozinho; confira e aplique a baixa se estiver correta.", dadosSra: s, dadosExternos: ca });
+      // Conta Azul é a fonte do pagamento: com correspondência segura, é sincronização normal.
+      const v = { ...linha, id: vinculoId };
+      const motivos = vinculoSeguroParaBaixa(v, boleto as Json, ca, await configCa(env, d));
+      if (!motivos.length && await aplicarBaixaDaConta(d, v, boleto as Json, ca, ator)) baixaSincronizada = true;
+      else {
+        conflito = "baixa_na_conta_azul";
+        await abrirConflito(d.db, { referencia: boletoId, vinculoId, tipo: conflito, descricao: `Vínculo confirmado, mas a baixa da Conta Azul não corresponde com segurança à parcela: ${motivos.join(" ") || "a parcela mudou durante a aplicação."}`, dadosSra: s, dadosExternos: ca });
+      }
     } else if (sraPago && !caPago) {
+      // O Sra Luck não é fonte de baixa: nada vai para a Conta Azul; a equipe confirma lá.
       conflito = "paga_so_no_sra";
-      await abrirConflito(d.db, { referencia: boletoId, vinculoId, tipo: conflito, descricao: "Vínculo confirmado: a parcela está paga no Sra Luck e em aberto na Conta Azul. Nada foi enviado sozinho; use 'aplicar Sra Luck' para registrar a baixa lá.", dadosSra: s, dadosExternos: ca });
+      await abrirConflito(d.db, { referencia: boletoId, vinculoId, tipo: conflito, descricao: "Paga no Sra Luck e em aberto na Conta Azul. O Sra Luck não altera a Conta Azul: confirme o pagamento lá; a próxima sincronização concilia e fecha esta revisão.", dadosSra: s, dadosExternos: ca });
     }
-    await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "vinculou_parcela_conta_azul_manual", entidade: "boletos", entidade_id: boletoId, detalhes: { caParcelaId, caEventoId: ca.eventoId, divergencias: div, conflito: conflito ?? null } });
-    resultados.push({ boletoId, caParcelaId, ok: true, conflito, divergencias: div });
+    await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "vinculou_parcela_conta_azul_manual", entidade: "boletos", entidade_id: boletoId, detalhes: { caParcelaId, caEventoId: ca.eventoId, divergencias: div, conflito: conflito ?? null, baixaSincronizada } });
+    resultados.push({ boletoId, caParcelaId, ok: true, conflito, divergencias: div, baixaSincronizada });
   }
   return { ok: true as const, resultados, vinculadas: resultados.filter((r) => r.ok).length, falhas: resultados.filter((r) => !r.ok).length };
 }
@@ -624,6 +631,35 @@ export async function statusCentral(env: Env, d: Deps) {
 // ------------------------------------------------------------------ rotas
 
 /**
+ * "Sincronizar agora" de UMA parcela vinculada (Admin): relê a parcela na Conta Azul e aplica o
+ * mesmo critério da sincronização periódica. Só leitura na Conta Azul.
+ */
+export async function sincronizarParcela(env: Env, boletoId: string, ator: string, parcial: Partial<Deps> = {}) {
+  const d = depsPadrao(env, parcial);
+  const { data } = await d.db.from("conta_azul_vinculos").select("*, boletos(id,valor,data_vencimento,status,data_pagamento,observacoes,suspensa,comprovante_url)").eq("boleto_id", boletoId).maybeSingle();
+  const v = data as Json | null;
+  if (!v || v.estado === "desvinculado" || !v.ca_parcela_id) return { ok: false as const, status: 404, erro: "Parcela sem vínculo com a Conta Azul." };
+  const boleto = Array.isArray(v.boletos) ? v.boletos[0] : v.boletos;
+  const bruto = await caRequest(d, "GET", `/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(v.ca_parcela_id)}`) as Json;
+  const resultado = await avaliarParcelaCa(env, d, v, boleto, bruto);
+  await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "sincronizou_parcela_conta_azul", entidade: "boletos", entidade_id: boletoId, detalhes: { resultado } });
+  return { ok: true as const, resultado };
+}
+
+async function sincronizarParcelaApi(request: Request, env: Env, boletoId: string) {
+  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const auth = await exigir(request, env, [PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO]);
+  if (auth instanceof Response) return auth;
+  if (isDevConsoleSyntheticAdminId(auth.adminId)) return json({ erro: "Use Sincronizar agora na Central do Dev Console." }, 403);
+  try {
+    const r = await sincronizarParcela(env, boletoId, auth.colaboradorId);
+    return r.ok ? json(r) : json({ erro: r.erro }, r.status);
+  } catch (e) {
+    return json({ erro: e instanceof ErroContaAzul ? e.message : "Falha ao falar com a Conta Azul." }, 502);
+  }
+}
+
+/**
  * Vínculo avulso de UMA parcela (painel de operação): mesmas regras da conferência da cliente —
  * a pessoa precisa estar confirmada e o lançamento precisa ser dela. Nunca só por ID digitado.
  */
@@ -656,8 +692,14 @@ export async function contaAzulVinculosApi(request: Request, env: Env): Promise<
   const url = new URL(request.url);
   const base = "/api/admin/integrations/conta-azul/";
   if (!url.pathname.startsWith(base)) return null;
-  if (contaAzulBloqueadaNoAmbiente(env)) return json({ erro: MENSAGEM_PREVIEW_BLOQUEADO, codigo: "CONTA_AZUL_PREVIEW_BLOQUEADO" }, 503);
   const rota = url.pathname.slice(base.length);
+  if (contaAzulBloqueadaNoAmbiente(env)) {
+    // A tela da cliente só esconde o bloco; as demais rotas explicam que o ambiente está desligado.
+    if (request.method === "GET" && /^clientes\/[0-9a-f-]{36}\/conta-azul$/.test(rota)) return json({ ativa: false, motivo: "ambiente_desligado" });
+    return json({ erro: MENSAGEM_PREVIEW_BLOQUEADO, codigo: "CONTA_AZUL_AMBIENTE_DESLIGADO" }, 503);
+  }
+  const sincParcela = rota.match(/^parcelas\/([0-9a-f-]{36})\/sincronizar$/);
+  if (sincParcela && request.method === "POST") return sincronizarParcelaApi(request, env, sincParcela[1]);
   const central = rota.match(/^central\/(status|testar-conexao|renovar-token|desconectar|concluir-oauth|diagnostico)$/);
   const cliente = rota.match(/^clientes\/([0-9a-f-]{36})\/(conta-azul|pessoas|pessoa|pessoa\/desvincular|conciliacao|vinculos|importacao|importar)$/);
   if (rota === "vincular" && request.method === "POST") return vincularAvulso(request, env);
@@ -693,6 +735,9 @@ export async function contaAzulVinculosApi(request: Request, env: Env): Promise<
   const d = depsPadrao(env);
   try {
     if (acao === "conta-azul") {
+      // Sem a estrutura (migration_124) ou sem conexão: o bloco some da tela da cliente.
+      const estrutura = await d.db.from("cliente_vinculos_externos").select("id", { count: "exact", head: true }).limit(1);
+      if (estrutura.error) return json({ ativa: false, motivo: "estrutura_ausente" });
       const pessoa = await vinculoPessoa(d, clienteId);
       const [{ count: parcelas }, { data: vinculos }] = await Promise.all([
         d.db.from("boletos").select("id", { count: "exact", head: true }).eq("cliente_id", clienteId),
@@ -700,7 +745,7 @@ export async function contaAzulVinculosApi(request: Request, env: Env): Promise<
       ]);
       const porEstado: Record<string, number> = {};
       for (const v of (vinculos ?? []) as Json[]) porEstado[v.estado] = (porEstado[v.estado] ?? 0) + 1;
-      return json({ pessoa, parcelasSra: parcelas ?? 0, vinculos: porEstado });
+      return json({ ativa: true, pessoa, parcelasSra: parcelas ?? 0, vinculos: porEstado });
     }
     if (acao === "pessoas") { const r = await buscarPessoasPorCpf(d, clienteId); return r.ok ? json(r) : json({ erro: r.erro }, r.status); }
     if (acao === "conciliacao") { const r = await conciliacaoDaCliente(d, clienteId); return r.ok ? json(r) : json({ erro: r.erro }, r.status); }

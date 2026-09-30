@@ -13,8 +13,10 @@
 --     pessoa (desenho de docs/INTEGRACOES-CONSOLE-CONCILIACAO.md §5).
 --   conta_azul_vinculos: como o vínculo nasceu e as divergências aceitas na confirmação
 --     (ex.: vencimento diferente). Nada é alterado para "fazer bater".
---   conta_azul_registrar_baixa: baixa vinda da Conta Azul entra no ledger com a composição
---     (principal, juros, multa, desconto) e a mesma trava/idempotência da baixa manual.
+--   conta_azul_registrar_baixa: pagamento confirmado na Conta Azul (única fonte de baixa das
+--     parcelas vinculadas) entra no ledger com a composição (principal, juros, multa, desconto),
+--     IDs da baixa e do evento, e a mesma trava/idempotência da baixa manual. Fecha também parcela
+--     em conferência, preservando o comprovante da cliente.
 --   conta_azul_importar_financeiro: monta o financeiro de uma cliente SEM parcelas a partir dos
 --     lançamentos da Conta Azul, numa única transação (nada pela metade, nada duplicado).
 --
@@ -74,6 +76,7 @@ create or replace function public.conta_azul_registrar_baixa(
   p_desconto numeric,
   p_forma_pagamento text,
   p_ca_baixa_id text,
+  p_ca_evento_id text,
   p_usuario text,
   p_idempotency_key text
 )
@@ -104,9 +107,9 @@ begin
   select * into v_recebimento from public.financeiro_recebimentos where idempotency_key = p_idempotency_key;
   if found then return v_recebimento; end if;
 
-  -- 'pendente_confirmacao' fica de fora: há comprovante da cliente aguardando conferência,
-  -- e o fluxo de comprovantes não é alterado (vira conflito para a equipe).
-  if v_boleto.status::text not in ('nao_pago', 'rejeitado') then raise exception 'Parcela nao esta em aberto'; end if;
+  -- A Conta Azul é a fonte da confirmação: fecha parcela em aberto, em conferência (comprovante
+  -- enviado pela cliente, que é preservado no recebimento e na parcela) ou com comprovante rejeitado.
+  if v_boleto.status::text not in ('nao_pago', 'pendente_confirmacao', 'rejeitado') then raise exception 'Parcela nao esta em aberto'; end if;
 
   v_total := round(v_boleto.valor + v_juros + v_multa - v_desconto, 2);
   if v_total < 0 then raise exception 'Desconto superior ao valor devido'; end if;
@@ -118,22 +121,23 @@ begin
   ) values (
     v_boleto.id, v_boleto.cliente_id, v_boleto.valor, v_juros, v_multa, v_desconto, v_total,
     p_data_pagamento, p_forma_pagamento, 'conta_azul', 'validado', v_boleto.comprovante_url,
-    p_ca_baixa_id, 'conta_azul:baixa', 'Baixa registrada na Conta Azul.', p_idempotency_key, p_usuario, p_usuario, now()
+    p_ca_baixa_id, 'conta_azul:evento:' || coalesce(nullif(btrim(p_ca_evento_id), ''), '?'), 'Pagamento confirmado na Conta Azul.', p_idempotency_key, p_usuario, p_usuario, now()
   ) returning * into v_recebimento;
 
   update public.boletos set status = 'pago', data_pagamento = p_data_pagamento where id = v_boleto.id;
 
   insert into public.logs_alteracoes (usuario, acao, entidade, entidade_id, detalhes)
   values (p_usuario, 'baixa_vinda_da_conta_azul', 'boletos', v_boleto.id,
-    jsonb_build_object('recebimento_id', v_recebimento.id, 'cliente_id', v_boleto.cliente_id, 'ca_baixa_id', p_ca_baixa_id,
+    jsonb_build_object('recebimento_id', v_recebimento.id, 'cliente_id', v_boleto.cliente_id, 'ca_baixa_id', p_ca_baixa_id, 'ca_evento_id', p_ca_evento_id,
+      'status_anterior', v_boleto.status::text,
       'valor_original', v_boleto.valor, 'juros', v_juros, 'multa', v_multa, 'desconto', v_desconto,
       'valor_recebido', v_total, 'forma_pagamento', p_forma_pagamento));
 
   return v_recebimento;
 end;
 $$;
-revoke all on function public.conta_azul_registrar_baixa(uuid, date, numeric, numeric, numeric, text, text, text, text) from public, anon, authenticated;
-grant execute on function public.conta_azul_registrar_baixa(uuid, date, numeric, numeric, numeric, text, text, text, text) to service_role;
+revoke all on function public.conta_azul_registrar_baixa(uuid, date, numeric, numeric, numeric, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.conta_azul_registrar_baixa(uuid, date, numeric, numeric, numeric, text, text, text, text, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Financeiro que nasce da Conta Azul (cliente sem nenhuma parcela)

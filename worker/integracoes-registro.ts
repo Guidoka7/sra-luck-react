@@ -122,13 +122,11 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
       { id: "vinculo_pessoa", nome: "Vínculo da cliente pelo CPF", descricao: "Busca a pessoa pelo CPF (documento idêntico), a equipe confirma e o ID da pessoa fica gravado. Nunca por nome; mais de uma pessoa ou CPF diferente não vinculam.", direcao: "entrada", origem: "Conta Azul: GET /v1/pessoas?documentos= e GET /v1/pessoas/{id}", destino: "cliente_vinculos_externos", situacao: "disponivel" },
       { id: "importar_financeiro", nome: "Financeiro a partir da Conta Azul", descricao: "Cliente sem parcelas no Sra Luck: monta o financeiro com os lançamentos da pessoa (pagas com a composição das baixas, abertas, vencidas), numa transação, sem duplicar.", direcao: "entrada", origem: "Conta Azul: contas-a-receber/buscar + parcelas/{id}", destino: "boletos + financeiro_recebimentos + conta_azul_vinculos", situacao: "disponivel" },
       { id: "conciliacao", nome: "Conferência de vínculos", descricao: "Cliente com financeiro: compara valores, vencimentos e status e separa correspondências, divergências, só no Sra Luck e só na Conta Azul. A equipe confirma cada par; vencimento diferente pode ser aceito sem alterar nenhum dos lados.", direcao: "interna", origem: "Sra Luck × Conta Azul", destino: "conta_azul_vinculos", situacao: "disponivel" },
-      { id: "sincronizacao", nome: "Sincronização de parcelas", descricao: "A cada 15 min e sob demanda: envia alterações do Sra Luck, lê as alterações da Conta Azul, processa a fila e abre conflitos.", direcao: "bidirecional", origem: "Sra Luck (boletos) e Conta Azul (/alteracoes)", destino: "Conta Azul e Sra Luck", situacao: "disponivel", configuravel: true },
-      { id: "criar_conta_receber", nome: "Criar conta a receber vinculada", descricao: "Cria o lançamento da parcela com um marcador único; como a API devolve só protocolo, o vínculo é confirmado lendo a Conta Azul (busca pelo marcador).", direcao: "saida", origem: "Parcela (boletos) do Sra Luck", destino: "Conta Azul: POST /v1/financeiro/eventos-financeiros/contas-a-receber", situacao: "disponivel" },
-      { id: "vinculo", nome: "Vínculo permanente", descricao: "Cada parcela guarda o ID do evento e da parcela na Conta Azul. Também é possível vincular um lançamento já existente (só se valor e vencimento baterem).", direcao: "interna", origem: "Sra Luck", destino: "conta_azul_vinculos", situacao: "disponivel" },
-      { id: "alterar_parcela", nome: "Valor, vencimento e encargos", descricao: "O Sra Luck é a fonte: mudança de valor ou vencimento no Sra Luck atualiza a Conta Azul com controle de versão. Mudança feita na Conta Azul vira conflito.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul: PATCH .../parcelas/{id} (versao)", situacao: "disponivel" },
-      { id: "baixa_sra_para_ca", nome: "Baixa no Sra Luck → Conta Azul", descricao: "Parcela paga no Sra Luck registra a baixa na Conta Azul com a composição do recebimento (principal, juros, multa, desconto e forma), sem duplicar. Pagamento que veio da Conta Azul não volta para lá.", direcao: "saida", origem: "Baixa da parcela no Sra Luck", destino: "Conta Azul: POST .../parcelas/{id}/baixa", situacao: "disponivel" },
+      { id: "sincronizacao", nome: "Leitura das baixas (Conta Azul → Sra Luck)", descricao: "A cada 15 min e com \"Sincronizar agora\": lê /alteracoes a partir do cursor, relê as parcelas vinculadas e aplica as baixas confirmadas. Não envia nada para a Conta Azul.", direcao: "entrada", origem: "Conta Azul (/alteracoes + parcelas)", destino: "Sra Luck (ledger e parcelas)", situacao: "disponivel", configuravel: true },
+      { id: "pagamento_pela_conta_azul", nome: "Pagamento controlado pela Conta Azul", descricao: "Parcela vinculada só é paga pela confirmação da Conta Azul: o Admin não registra baixa nem confirma comprovante nela; comprovante continua sendo analisado no Sra Luck e a baixa é feita na Conta Azul.", direcao: "interna", origem: "Conta Azul", destino: "Sra Luck", situacao: "disponivel" },
+      { id: "envio_sra_para_ca", nome: "Enviar baixas, estornos ou lançamentos para a Conta Azul", descricao: "O Sra Luck não escreve na Conta Azul.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "Desligado por decisão de arquitetura (30/09/2026): a Conta Azul é a única fonte da confirmação de pagamento." },
+      { id: "vinculo", nome: "Vínculo permanente", descricao: "Cada parcela guarda o ID do evento e da parcela na Conta Azul, confirmado pela equipe (divergências aparecem e só entram com aceite).", direcao: "interna", origem: "Sra Luck", destino: "conta_azul_vinculos", situacao: "disponivel" },
       { id: "baixa_ca_para_sra", nome: "Baixa na Conta Azul → Sra Luck e app", descricao: "Parcela quitada na Conta Azul entra no ledger do Sra Luck com juros, multa e desconto das baixas (e aparece no app) quando o vínculo é seguro; caso contrário, vai para revisão.", direcao: "entrada", origem: "Conta Azul: GET /alteracoes + GET /{evento}/parcelas", destino: "financeiro_recebimentos (origem conta_azul) + boletos.status = pago", situacao: "disponivel" },
-      { id: "estorno_baixa", nome: "Estorno de baixa", descricao: "Baixa desfeita no Sra Luck apaga a baixa que o Sra Luck criou na Conta Azul. Baixa removida na Conta Azul vira conflito (nunca estorna sozinho no Sra Luck).", direcao: "bidirecional", origem: "Sra Luck / Conta Azul", destino: "Conta Azul: DELETE .../parcelas/baixa/{id}", situacao: "disponivel" },
       { id: "webhook_baixa", nome: "Aviso imediato da Conta Azul", descricao: "Ser avisado na hora de uma baixa feita na Conta Azul.", direcao: "entrada", origem: "Conta Azul", destino: "Sra Luck", situacao: "api_nao_permite", motivo: "A Conta Azul não tem webhooks (\"ainda não está disponível nativamente\"). O Sra Luck lê /alteracoes a cada 15 min." },
       { id: "cancelar_renegociar", nome: "Cancelar ou renegociar na Conta Azul", descricao: "Cancelar evento/parcela ou renegociar pela API.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "Não há endpoint de cancelamento/exclusão de evento; renegociação é só leitura. Cancelado/renegociado/perdido na Conta Azul vira conflito para revisão." },
       { id: "anexos", nome: "Comprovante como anexo na Conta Azul", descricao: "Enviar o comprovante da cliente para o lançamento.", direcao: "saida", origem: "Sra Luck", destino: "Conta Azul", situacao: "api_nao_permite", motivo: "A parcela só lista anexos (campo anexos); não há endpoint para enviar arquivo a um lançamento. O comprovante continua no Sra Luck." },
@@ -138,27 +136,26 @@ export const REGISTRO_INTEGRACOES: Integracao[] = [
       { direcao: "entrada", descricao: "Eventos da Conta Azul", eventos: [], autenticacao: "—", situacao: "api_nao_permite", motivo: "A API não oferece webhooks; o Sra Luck faz polling em /alteracoes." },
     ],
     sincronizacao: [
-      { modo: "polling", descricao: "A cada 15 min: /v1/financeiro/eventos-financeiros/alteracoes desde a última leitura + verificação dos vínculos mais antigos.", situacao: "disponivel" },
-      { modo: "manual", descricao: "Sincronizar agora, enviar as parcelas de uma cliente, vincular lançamento existente, reprocessar a fila.", situacao: "disponivel" },
-      { modo: "webhook", descricao: "Aviso imediato da Conta Azul.", situacao: "api_nao_permite", motivo: "Sem webhooks na API." },
+      { modo: "polling", descricao: "A cada 15 min: /v1/financeiro/eventos-financeiros/alteracoes desde o cursor, releitura das parcelas vinculadas e conferência dos vínculos mais antigos.", situacao: "disponivel" },
+      { modo: "manual", descricao: "Sincronizar agora (Dev Console ou parcela a parcela no Admin).", situacao: "disponivel" },
+      { modo: "webhook", descricao: "Aviso imediato da Conta Azul.", situacao: "api_nao_permite", motivo: "A API não oferece esse recurso; a detecção é a leitura periódica de /alteracoes." },
     ],
     mapeamento: [
-      { origem: "boletos.data_vencimento", destino: "parcela.data_vencimento / vencimento", observacao: "Fonte: Sra Luck." },
-      { origem: "boletos.valor", destino: "detalhe_valor.valor_bruto / composicao_valor.valor_bruto", observacao: "Fonte: Sra Luck." },
-      { origem: "recebimento validado (valor_original, juros, multa, desconto, forma)", destino: "baixa: composicao_valor.valor_bruto / juros / multa / desconto + metodo_pagamento", observacao: "Nos dois sentidos; nada é recalculado." },
-      { origem: "boletos.data_pagamento", destino: "baixa.data_pagamento" },
+      { origem: "baixas da parcela (composicao_valor.valor_bruto / juros / multa / desconto)", destino: "financeiro_recebimentos: valor_original / juros / multa / desconto / valor_recebido", observacao: "Somadas; nada é recalculado." },
+      { origem: "baixa.data_pagamento (a mais recente)", destino: "boletos.data_pagamento e recebimento.data_pagamento" },
+      { origem: "baixa.id e evento.id", destino: "recebimento.external_payment_id / external_reference", observacao: "Chave de idempotência conta_azul:baixa:<id>." },
       { origem: "cliente (CPF) → pessoa confirmada", destino: "cliente_vinculos_externos.id_externo = pessoa.id", observacao: "Busca por documento exato + confirmação humana." },
-      { origem: "marcador SLK-… (id da parcela)", destino: "descrição e nota da parcela", observacao: "Usado para localizar o lançamento criado (a API devolve só protocolo)." },
       { origem: "IDs da Conta Azul (evento, parcela, versão, baixa)", destino: "conta_azul_vinculos" },
     ],
-    limites: ["600 chamadas/min e 10/s por conta conectada.", "Criação assíncrona (202 + protocolo, sem ID).", "Consulta de alterações por período (data/hora de Brasília)."],
+    limites: ["600 chamadas/min e 10/s por conta conectada.", "Consulta de alterações por período (data/hora de Brasília).", "Sem upload de anexos: o comprovante fica no Sra Luck."],
     regras: [
-      "Sra Luck é a fonte de valor, vencimento e encargos.",
-      "Baixa da Conta Azul só é aplicada sozinha com vínculo seguro: vínculo confirmado, parcela quitada por inteiro, mesmo valor bruto, soma das baixas fechando o valor e parcela do Sra Luck em aberto (com comprovante aguardando conferência, vai para revisão).",
-      "Vencimento diferente entre os sistemas pode ser aceito no vínculo; nenhum vencimento é alterado para \"fazer bater\".",
-      "Qualquer divergência vai para a fila de revisão; nada é sobrescrito em silêncio.",
-      "Baixas idempotentes: o Sra Luck confere as baixas existentes antes de criar e só apaga baixa que ele mesmo criou.",
-      "Parcela vinculada não pode ser excluída no Sra Luck.",
+      "A Conta Azul é a única fonte da confirmação de pagamento; o Sra Luck não escreve no financeiro dela.",
+      "Paga na Conta Azul e aberta/em conferência no Sra Luck: sincronização normal (ledger + parcela paga + app), preservando o comprovante.",
+      "Paga no Sra Luck e aberta na Conta Azul: revisão; nada é enviado. Fecha sozinha quando a Conta Azul confirmar.",
+      "Baixa que não corresponde com segurança à parcela vinculada (valor, soma das baixas, parcela suspensa): revisão.",
+      "A mesma baixa (ID) nunca entra duas vezes no ledger.",
+      "Divergência de vencimento ou valor aparece e só vincula com aceite; nenhum dado é alterado para \"fazer bater\".",
+      "Parcela vinculada: sem baixa manual nem confirmação de comprovante no Admin; não pode ser excluída.",
     ],
   },
   {
@@ -502,50 +499,27 @@ export function validarConfigCrm(bruto: unknown): Validacao<ConfigCrm> {
 
 // ------------------------------------------------------------------ Conta Azul → sincronização
 
-export const METODOS_CONTA_AZUL = ["BOLETO_BANCARIO", "PIX_PAGAMENTO_INSTANTANEO", "TRANSFERENCIA_BANCARIA", "CARTAO_CREDITO", "CARTAO_DEBITO", "DINHEIRO", "DEPOSITO_BANCARIO", "OUTRO"] as const;
-
 export type ConfigContaAzul = {
-  /** Sincronização automática a cada 15 min (a manual funciona sempre). */
+  /** Leitura automática das alterações a cada 15 min (a manual funciona sempre). */
   ativo: boolean;
-  contaFinanceiraId: string | null;
-  categoriaId: string | null;
-  metodoPagamento: typeof METODOS_CONTA_AZUL[number];
-  /** Sra Luck → Conta Azul: valor e vencimento. */
-  enviarAlteracoes: boolean;
-  /** Sra Luck → Conta Azul: baixas e estornos. */
-  enviarBaixas: boolean;
-  /** Conta Azul → Sra Luck: baixa automática quando o vínculo é seguro. */
+  /** Conta Azul → Sra Luck: baixa automática quando o vínculo é seguro (senão, revisão). */
   baixaAutomatica: boolean;
 };
 
-export const PADRAO_CONTA_AZUL: ConfigContaAzul = {
-  ativo: false, contaFinanceiraId: null, categoriaId: null, metodoPagamento: "BOLETO_BANCARIO",
-  enviarAlteracoes: true, enviarBaixas: true, baixaAutomatica: true,
-};
+export const PADRAO_CONTA_AZUL: ConfigContaAzul = { ativo: false, baixaAutomatica: true };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Campos da versão bidirecional (conta financeira, categoria, envio): ignorados, não recusados. */
+const LEGADO_CONTA_AZUL = new Set(["contaFinanceiraId", "categoriaId", "metodoPagamento", "enviarAlteracoes", "enviarBaixas"]);
 
 export function validarConfigContaAzul(bruto: unknown): Validacao<ConfigContaAzul> {
   const c = objeto(bruto);
   if (!c) return { ok: false, erro: "Configuração inválida." };
-  const extra = Object.keys(c).find((k) => !(k in PADRAO_CONTA_AZUL));
+  const extra = Object.keys(c).find((k) => !(k in PADRAO_CONTA_AZUL) && !LEGADO_CONTA_AZUL.has(k));
   if (extra) return { ok: false, erro: `Campo não permitido: ${extra}.` };
   const out: ConfigContaAzul = { ...PADRAO_CONTA_AZUL };
-  for (const k of ["ativo", "enviarAlteracoes", "enviarBaixas", "baixaAutomatica"] as const) {
+  for (const k of ["ativo", "baixaAutomatica"] as const) {
     if (c[k] !== undefined) { if (typeof c[k] !== "boolean") return { ok: false, erro: `${k} deve ser verdadeiro ou falso.` }; out[k] = c[k] as boolean; }
   }
-  for (const k of ["contaFinanceiraId", "categoriaId"] as const) {
-    const v = c[k];
-    if (v !== undefined && v !== null && v !== "") {
-      if (typeof v !== "string" || !UUID.test(v)) return { ok: false, erro: `${k === "contaFinanceiraId" ? "Conta financeira" : "Categoria"} inválida.` };
-      out[k] = v.toLowerCase();
-    }
-  }
-  if (c.metodoPagamento !== undefined && c.metodoPagamento !== null) {
-    if (!(METODOS_CONTA_AZUL as readonly string[]).includes(String(c.metodoPagamento))) return { ok: false, erro: "Método de pagamento inválido." };
-    out.metodoPagamento = c.metodoPagamento as ConfigContaAzul["metodoPagamento"];
-  }
-  if (out.ativo && !out.contaFinanceiraId) return { ok: false, erro: "Escolha a conta financeira antes de ligar a sincronização." };
   return { ok: true, config: out };
 }
 
@@ -652,12 +626,7 @@ const CAMPOS_CRM_FORM: CampoFormulario[] = [
 ];
 
 const CAMPOS_CONTA_AZUL_FORM: CampoFormulario[] = [
-  { chave: "ativo", rotulo: "Sincronização automática (a cada 15 min)", tipo: "booleano" },
-  { chave: "contaFinanceiraId", rotulo: "Conta financeira", tipo: "selecao", opcoesDe: "ca_contas", ajuda: "Usada na criação dos lançamentos e nas baixas enviadas." },
-  { chave: "categoriaId", rotulo: "Categoria de receita", tipo: "selecao", opcoesDe: "ca_categorias", ajuda: "Opcional." },
-  { chave: "metodoPagamento", rotulo: "Método de pagamento", tipo: "selecao", opcoes: METODOS_CONTA_AZUL.map((m) => ({ valor: m, rotulo: m.replace(/_/g, " ").toLowerCase() })) },
-  { chave: "enviarAlteracoes", rotulo: "Enviar valor e vencimento do Sra Luck", tipo: "booleano" },
-  { chave: "enviarBaixas", rotulo: "Enviar baixas e estornos do Sra Luck", tipo: "booleano" },
+  { chave: "ativo", rotulo: "Leitura automática das alterações (a cada 15 min)", tipo: "booleano", ajuda: "Busca na Conta Azul as baixas confirmadas. Não envia nada para lá." },
   { chave: "baixaAutomatica", rotulo: "Aplicar baixas da Conta Azul quando o vínculo for seguro", tipo: "booleano", ajuda: "Desligado, toda baixa vinda da Conta Azul vai para revisão." },
 ];
 

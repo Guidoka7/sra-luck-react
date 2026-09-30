@@ -49,8 +49,8 @@ Dev Console → Integrações → Conta Azul → **Central**:
 |---|---|---|
 | 1–3 | pessoa por CPF, pessoa por ID, receitas da pessoa | diagnóstico (etapas `pessoas_por_cpf`, `pessoa_por_id`, `receitas_da_pessoa_*`) |
 | 4–10 | estrutura da parcela, status, vencimentos, valores, juros, multa, desconto | diagnóstico (`parcela_por_id`) + prévia de importação |
-| 11 | `versao` para `PATCH` | diagnóstico (`parcela_por_id`: `versao=`) + log `atualizou_parcela_conta_azul` |
-| 12 | resposta do `POST` de baixa | log `enviou_baixa_conta_azul` (`camposResposta`, `conferidaNaContaAzul`) |
+| 11 | `versao` da parcela (o Sra Luck não faz `PATCH`) | diagnóstico (`parcela_por_id`: `versao=`) |
+| 12 | baixa feita no ERP lida pelo Sra Luck | recebimento `conta_azul` (`external_payment_id`, `external_reference`) + log `baixa_vinda_da_conta_azul` |
 | 13 | `/alteracoes` | diagnóstico (`alteracoes_24h`) + evento `sync_manual` |
 | 14 | limites/paginação | cabeçalhos de cada etapa do diagnóstico, `itens_totais` |
 | 15 | refresh token | eventos `token_renovado` / `token_falhou` |
@@ -63,12 +63,13 @@ Fluxos no Admin do Preview (clientes **de teste** criadas no banco de teste):
   e juros/multa no ledger (`financeiro_recebimentos`, origem `conta_azul`).
 - Cliente com financeiro: correspondência exata, vencimento divergente (vincular sem alterar datas), valor
   divergente, só Sra Luck, só Conta Azul, paga só de um lado (vai para revisão, nunca baixa sozinha).
-- Sra Luck → Conta Azul: baixa manual com principal + juros + multa (+ desconto) → Sincronização manual →
-  a baixa é relida na Conta Azul e conferida (`conferidaNaContaAzul: true`), senão abre conflito.
-- Conta Azul → Sra Luck: baixa feita no ERP de teste → Sincronização manual → recebimento `conta_azul`
-  na parcela certa; repetir a sincronização não duplica nem devolve a baixa (anti-loop).
-- Falhas: token expirado (renova sozinho), revogado (sync em erro, fila intacta), indisponível/timeout/429
-  (operação local fica válida e a fila tenta de novo sem duplicar).
+- Pagamento (só Conta Azul → Sra Luck): baixar a parcela no ERP de teste (principal + juros + multa + desconto) →
+  Sincronizar agora → recebimento `conta_azul` com a composição, IDs da baixa e do evento; parcela paga no app.
+  Repetir a sincronização não duplica. Parcela em conferência (comprovante) fecha como paga e mantém o comprovante.
+- Paga só no Sra Luck: vai para revisão e nada é enviado; ao baixar no ERP, a revisão fecha sozinha.
+- Admin: parcela vinculada não mostra Registrar pagamento/Confirmar comprovante; a API recusa (409).
+- Falhas: token expirado (renova sozinho), revogado (sync em erro, nada perdido), indisponível/timeout/429
+  (a leitura falha, o cursor não avança e a próxima rodada relê o mesmo período).
 
 ## 4. Depois da validação
 
