@@ -1058,7 +1058,7 @@ export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, tran
  * (importação em etapas) continua a cada chamada, sem esperar a frequência. `somenteContinuacao`
  * (rodada de 5 min) só continua uma passada; nunca começa outra.
  */
-export async function importacaoAgendadaSeDevida(env: Env, deps: { db?: Db; agora?: Date; fontes?: Fontes; somenteContinuacao?: boolean } = {}) {
+export async function importacaoAgendadaSeDevida(env: Env, deps: { db?: Db; agora?: Date; fontes?: Fontes; somenteContinuacao?: boolean; orcamentoMs?: number } = {}) {
   const db = deps.db ?? createServiceSupabaseClient(env);
   const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
   if (!config.ativo) return { executada: false, motivo: "desligada" };
@@ -1070,7 +1070,7 @@ export async function importacaoAgendadaSeDevida(env: Env, deps: { db?: Db; agor
   const desde = ultima ? agora - new Date(String((ultima as Json).iniciado_em)).getTime() : Infinity;
   // 1 min de folga: o agendador não bate exatamente no mesmo segundo.
   if (!emAndamento && desde < (config.frequenciaMinutos - 1) * 60_000) return { executada: false, motivo: "ainda_nao_venceu" };
-  const r = await importarCrm(env, { origem: "agendada", ator: "sistema:agendador" }, { db, fontes: deps.fontes, config });
+  const r = await importarCrm(env, { origem: "agendada", ator: "sistema:agendador" }, { db, fontes: deps.fontes, config, orcamentoMs: deps.orcamentoMs });
   return { executada: true, resultado: r };
 }
 

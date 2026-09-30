@@ -382,7 +382,7 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
   try { resultado.rdWebhooks = await garantirWebhooksRd(env, "sistema:agendador"); }
   catch { resultado.rdWebhooks = { erro: "Falha ao garantir webhooks do RD Station." }; }
 
-  const crm = importacaoAgendadaSeDevida(env);
+  const crm = importacaoAgendadaSeDevida(env, { orcamentoMs: ORCAMENTO_IMPORTACAO_MS });
   if (ctx?.waitUntil) {
     ctx.waitUntil(crm.then(() => undefined).catch(() => undefined));
     resultado.crm = { agendada: true, processamento: "segundo_plano" };
@@ -408,7 +408,13 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
  * etapas que ainda não terminou. Sem passada em andamento, não lê nada no RD.
  */
 /** Margem abaixo dos 300 s da hospedagem para a rodada terminar e gravar a posição. */
-const LIMITE_EXECUCAO_MS = 260_000;
+/**
+ * Tempo máximo de cada rodada de 5 min. Era 260 s (quase a rodada inteira ocupando uma função)
+ * e, com todos os funis, o uso do plano da hospedagem estourou e o projeto foi pausado (30/09/2026).
+ * Rodadas curtas: a importação anda um pouco mais devagar, mas cabe no limite.
+ */
+const LIMITE_EXECUCAO_MS = 110_000;
+const ORCAMENTO_IMPORTACAO_MS = 75_000;
 
 async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
@@ -417,18 +423,18 @@ async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundCo
   const inicio = Date.now();
   // Antes de tudo, a carga única dos contatos do RD no espelho (100 por consulta): enquanto ela não
   // termina, a importação gastaria uma consulta por cliente nova. Termina em poucas rodadas e não volta.
-  const tarefa = carregarContatosDoEspelho(env, { orcamentoMs: 200_000 }).catch(() => ({ executada: false, concluida: true, lidos: 0 })).then(async (carga) => {
+  const tarefa = carregarContatosDoEspelho(env, { orcamentoMs: ORCAMENTO_IMPORTACAO_MS }).catch(() => ({ executada: false, concluida: true, lidos: 0 })).then(async (carga) => {
     if (carga.executada && !carga.concluida) return { carga };
-    return importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => {
+    return importacaoAgendadaSeDevida(env, { somenteContinuacao: true, orcamentoMs: ORCAMENTO_IMPORTACAO_MS }).then(async (crm) => {
       let restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
       const contagens = restante < 20_000
         ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
-        : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" }));
+        : await avancarContagens(env, { orcamentoMs: Math.min(40_000, restante) }).catch(() => ({ executada: false, motivo: "falha" }));
       // Por último, no tempo que sobra: fonte e campanha de todas as negociações (espelho do RD) e das vendas.
       restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
       const origem = restante < 30_000
         ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
-        : await avancarOrigemGeral(env, { orcamentoMs: Math.min(200_000, restante - 20_000) }).catch(() => ({ executada: false, motivo: "falha" }));
+        : await avancarOrigemGeral(env, { orcamentoMs: Math.min(40_000, restante - 15_000) }).catch(() => ({ executada: false, motivo: "falha" }));
       return { carga, crm, contagens, origem };
     });
   });
