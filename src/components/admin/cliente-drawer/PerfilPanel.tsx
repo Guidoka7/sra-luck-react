@@ -7,6 +7,8 @@ import type { ClienteCadastro } from "../useClienteCadastro";
 import { DrawerIcon } from "./DrawerIcons";
 import { formatCurrency, formatDate, formatDateTime, descreverHistorico } from "./drawerFormat";
 import styles from "./ClienteDrawer.module.css";
+import { ADMIN_PERMISSIONS, usePermissaoAdmin } from "@/lib/adminAccess";
+import { ContaAzulVinculo } from "./ContaAzulVinculo";
 
 type Secao = "personal" | "procedure" | "sale" | "notes";
 
@@ -20,6 +22,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
   formId: string;
   onPedirExclusao: () => void;
 }) {
+  const podeContaAzul = usePermissaoAdmin(ADMIN_PERMISSIONS.INTEGRACOES_OPERAR_FINANCEIRO);
   const criando = !cad.editando;
   const [editando, setEditando] = useState<Record<Secao, boolean>>({ personal: criando, procedure: criando, sale: criando, notes: criando });
   const [snapshot, setSnapshot] = useState<Record<string, string>>({});
@@ -72,6 +75,7 @@ export function PerfilPanel({ cad, formId, onPedirExclusao }: {
         </div>}
       </div>
     </article>
+    {podeContaAzul && cad.cliente?.id ? <ContaAzulVinculo clienteId={cad.cliente.id} cpf={cad.cpf} temFinanceiro={cad.boletos.length > 0} modo="perfil" onAlterado={() => void cad.carregarBoletos()} /> : null}
 
     {!criando && <article className={styles.card}>
       <SectionHead titulo="Acesso ao aplicativo" icone="usercard" />

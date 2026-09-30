@@ -55,6 +55,12 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
   if (clienteError) return { resposta: json({ erro: publicError(clienteError) }, 500), cliente: null, boletos: [] as any[] };
   if (!cliente) return { resposta: json({ erro: "Cliente não encontrada." }, 404), cliente: null, boletos: [] as any[] };
 
+  // Vínculo com a Conta Azul (migration_091): pagamento dessas parcelas vem de lá. Falha = sem vínculo.
+  const { data: vinculos } = await db.from("conta_azul_vinculos")
+    .select("boleto_id,estado,ca_parcela_id,ca_evento_id,ca_baixa_id,baixa_origem,ultima_sincronizacao_em")
+    .eq("cliente_id", clienteId).neq("estado", "desvinculado");
+  const porBoleto = new Map(((vinculos ?? []) as any[]).filter((v) => v.ca_parcela_id).map((v) => [v.boleto_id, v]));
+
   return {
     resposta: null,
     cliente: {
@@ -63,7 +69,13 @@ async function listarPlano(db: ReturnType<typeof createServiceSupabaseClient>, c
       custo_total: cliente.custo_total == null ? null : Number(cliente.custo_total),
       taxa_administrativa_percentual: cliente.taxa_administrativa_percentual == null ? null : Number(cliente.taxa_administrativa_percentual),
     },
-    boletos: (boletos ?? []).map((boleto: any) => ({ ...boleto, valor: Number(boleto.valor) })),
+    boletos: (boletos ?? []).map((boleto: any) => {
+      const v = porBoleto.get(boleto.id);
+      return {
+        ...boleto, valor: Number(boleto.valor),
+        conta_azul: v ? { estado: v.estado, parcelaId: v.ca_parcela_id, eventoId: v.ca_evento_id, baixaId: v.ca_baixa_id, baixaOrigem: v.baixa_origem, ultimaSincronizacao: v.ultima_sincronizacao_em } : null,
+      };
+    }),
   };
 }
 

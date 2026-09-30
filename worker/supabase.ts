@@ -10,6 +10,12 @@ export interface Env {
   // Segredo compartilhado exclusivamente entre os backends do Dev Console e
   // do Sra. Luck. Nunca deve ser exposto ao navegador.
   DEV_CONSOLE_SERVICE_TOKEN?: string;
+  /** "production" | "preview" | "development" (Vercel). */
+  VERCEL_ENV?: string;
+  /** "1" só no Preview que aponta para o banco de TESTE: libera a integração Conta Azul lá. */
+  CONTA_AZUL_PREVIEW_PERMITIDO?: string;
+  /** "1" só depois da autorização: liga a Conta Azul em Production. Sem ela, fica desligada. */
+  CONTA_AZUL_PRODUCAO_PERMITIDA?: string;
 
   // Web Push. A chave pública pode ser exposta ao navegador; subject e chave privada
   // permanecem exclusivamente no backend/cofre de integrações.

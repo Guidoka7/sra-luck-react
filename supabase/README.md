@@ -90,7 +90,11 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_123_crm_espelho_contato_dados.sql` adiciona `crm_rd_contatos.dados` (o contato no formato do cache da venda). A importação usa o espelho em vez de consultar o RD uma vez por cliente nova: com todos os funis marcados, a passada levava horas. Rollback: `supabase/rollback/migration_123_rollback.sql`.
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `124`.
+### 124: Conta Azul — parcela única com dois IDs
+
+`migration_124_conta_azul_parcela_unica.sql` cria `cliente_vinculos_externos` (cliente ↔ pessoa da Conta Azul, confirmado pela equipe a partir do CPF; um vínculo ativo por cliente e por pessoa), acrescenta a `conta_azul_vinculos` a origem do vínculo, as divergências aceitas na confirmação e quem confirmou, e cria duas RPCs: `conta_azul_registrar_baixa` (baixa vinda da Conta Azul entra no ledger `financeiro_recebimentos` com principal, juros, multa e desconto, com trava e idempotência iguais às da baixa manual) e `conta_azul_importar_financeiro` (monta, numa transação, o financeiro de uma cliente que ainda não tem nenhuma parcela a partir dos lançamentos da Conta Azul). Não altera parcelas existentes. Rollback: `supabase/rollback/migration_124_rollback.sql`.
+
+- A `114` continua reservada ao modelo de lotes/conciliação do Console (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`); a `124` implementa a parte de vínculos daquele desenho (`cliente_vinculos_externos`, `origem_vinculo`, `confirmado_por`). A próxima livre é a `125`.
 
 ## Campos históricos importantes
 

@@ -76,3 +76,11 @@ export function useAcessoTotalAdmin() {
   useEffect(() => { let ativo = true; void carregarPerfilAdmin().then((p) => { if (ativo) setTotal(Boolean(p?.acessoTotal)); }); return () => { ativo = false; }; }, []);
   return total;
 }
+
+/** true quando o perfil da sessão tem todas as permissões (o backend confere de novo). */
+export function usePermissaoAdmin(...permissoes: string[]) {
+  const [ok, setOk] = useState(false);
+  const chave = permissoes.join("|");
+  useEffect(() => { let ativo = true; void carregarPerfilAdmin().then((p) => { if (ativo) setOk(pode(p, ...permissoes)); }); return () => { ativo = false; }; }, [chave]);
+  return ok;
+}

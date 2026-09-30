@@ -238,6 +238,20 @@ export async function salvarCredencialInterna(env: Env, provedor: string, chave:
   if (error) throw new Error("FALHA_SALVAR_CREDENCIAL_INTERNA");
 }
 
+/**
+ * Remoção server-side de tokens OAuth (desconectar). Desliga a integração até nova validação,
+ * igual à remoção pelo painel.
+ */
+export async function removerCredenciaisInternas(env: Env, provedor: string, chaves: string[], actor: string) {
+  const validas = chaves.filter((chave) => campoDoProvedor(provedor, chave));
+  if (!validas.length) return;
+  const db = createServiceSupabaseClient(env);
+  if (!(await tabelaDisponivel(db))) throw new Error("TABELA_CREDENCIAIS_INDISPONIVEL");
+  const { error } = await db.from("integracoes_credenciais").delete().eq("provedor", provedor).in("chave", validas);
+  if (error) throw new Error("FALHA_REMOVER_CREDENCIAL_INTERNA");
+  await invalidarAtivacao(db, provedor, actor, `credenciais_removidas:${validas.join(",")}`);
+}
+
 export async function credenciaisApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/admin/integrations/credenciais") return null;

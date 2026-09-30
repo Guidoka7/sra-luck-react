@@ -8,8 +8,11 @@
  *   - status das conexões (leitura, usado por Notificações e Configurações);
  *   - revisão das vendas importadas do RD Station e "Importar agora";
  *   - vínculo responsável do RD ↔ vendedora/SDR (equipe.gerenciar; 28/09/2026);
- *   - conflitos, fila, vínculos, histórico, sincronização e envio/vínculo
- *     de parcelas da Conta Azul.
+ *   - conflitos, vínculos, histórico e sincronização da Conta Azul (só leitura
+ *     de lá; o Sra Luck não escreve no financeiro da Conta Azul);
+ *   - vínculo da cliente com a Conta Azul (pessoa pelo CPF, parcelas,
+ *     importação do financeiro). A central técnica (/conta-azul/central/*)
+ *     fica só com o Dev.
  * Callbacks OAuth (/api/integrations/...) e webhooks não passam por aqui.
  */
 const OPERACAO_EQUIPE: readonly { metodo: "GET" | "POST"; rota: RegExp }[] = [
@@ -26,10 +29,13 @@ const OPERACAO_EQUIPE: readonly { metodo: "GET" | "POST"; rota: RegExp }[] = [
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/responsaveis$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/responsaveis$/ },
   // Conta Azul: operação financeira (conexão e configuração são do Dev).
-  { metodo: "GET", rota: /^\/api\/admin\/integrations\/conta-azul\/(painel|conflitos|fila|vinculos|historico)$/ },
+  { metodo: "GET", rota: /^\/api\/admin\/integrations\/conta-azul\/(painel|conflitos|vinculos|historico)$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/conflitos\/[0-9a-f-]{36}\/resolver$/ },
-  { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/fila\/[0-9a-f-]{36}\/reprocessar$/ },
-  { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/(sincronizar|enviar-cliente|vincular)$/ },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/(sincronizar|vincular)$/ },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/parcelas\/[0-9a-f-]{36}\/sincronizar$/ },
+  // Conta Azul: vínculo da cliente (pessoa pelo CPF, parcelas, importação do financeiro).
+  { metodo: "GET", rota: /^\/api\/admin\/integrations\/conta-azul\/clientes\/[0-9a-f-]{36}\/(conta-azul|pessoas|conciliacao|importacao)$/ },
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/conta-azul\/clientes\/[0-9a-f-]{36}\/(pessoa|pessoa\/desvincular|vinculos|importar)$/ },
 ];
 
 export function rotaExclusivaDoDev(pathname: string, method: string): boolean {
