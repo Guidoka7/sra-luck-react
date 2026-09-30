@@ -57,7 +57,7 @@ function textoOrigens(o?: { encontrada?: number; parcial?: number; sem_registro_
 /** Fonte e campanha das vendas do RD: o que foi achado, o que o RD não registra e a busca em outros cadastros. */
 function CoberturaOrigens({ c }: { c: Json }) {
   const s = c.porSituacao ?? {};
-  const r = c.ultimaRodada as Json | null;
+  const r = c.resolucao as Json | null;
   return <>
     <div style={titulo}>Origem das clientes (fonte e campanha)</div>
     <div style={{ ...caixa, lineHeight: 1.6 }}>
@@ -67,8 +67,9 @@ function CoberturaOrigens({ c }: { c: Json }) {
       <span style={muted}>
         Sem registro, o Admin mostra o que o RD tem (ex.: “Orgânico — sem campanha paga”, “Não registrada no RD”), nunca um dado inventado
         {c.colunasEmBranco ? ` · ${c.colunasEmBranco} venda(s) ainda com a coluna em branco (preenchidas na próxima passada)` : ""}.<br />
-        Busca em outros cadastros do RD com o mesmo e-mail/telefone: {c.buscaAmpliadaFeita ?? 0} conferida(s), {c.buscaAmpliadaPendente ?? 0} na fila
-        {r?.em ? ` · última rodada ${dataHora(r.em)}: ${r.analisadas ?? 0} analisada(s), ${r.comOutrosContatos ?? 0} com outro cadastro, ${r.melhoradas ?? 0} completada(s)` : ""}
+        Busca em outros cadastros do RD com o mesmo e-mail/telefone (todos os 15 funis): {c.buscaAmpliadaFeita ?? 0} conferida(s), {c.buscaAmpliadaPendente ?? 0} aguardando
+        {c.espelho?.concluidoEm ? ` · leitura completa do RD ${dataHora(c.espelho.concluidoEm)} (${c.espelho.negociacoes ?? 0} negociações, ${c.espelho.contatos ?? 0} contatos)` : " · primeira leitura completa do RD em andamento"}
+        {r?.em ? ` · origem resolvida em ${dataHora(r.em)}${r.vendasPendentes ? `, ${r.vendasPendentes} venda(s) ainda sendo atualizadas` : ""}` : ""}
         {r?.erro ? ` · ${r.erro}` : ""}.
       </span>
     </div>
@@ -179,7 +180,7 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
               <input type="checkbox" checked={ativo} onChange={(e) => atualizarFunil(funil.id, e.target.checked)} />
               <strong>{funil.nome}</strong>
             </span>
-            <ResumoContagemFunil funil={funil} contagem={opcoes?.contagens?.porFunil?.[funil.id] ?? null} atualizadoEm={opcoes?.contagens?.atualizadoEm ?? null} />
+            <ResumoContagemFunil funil={funil} contagem={opcoes?.contagens?.porFunil?.[funil.id] ?? null} atualizadoEm={opcoes?.contagens?.atualizadoEm ?? null} origem={opcoes?.origens?.porFunil?.[funil.id] ?? null} />
             {ativo && <>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {(funil.etapas ?? []).map((etapa: Json) => {
@@ -215,7 +216,7 @@ const STATUS_RD: Record<string, string> = { won: "ganhas", ongoing: "em andament
  * Quantas negociações o funil tem no RD: total exato (catálogo) e a contagem de todas as negociações
  * por status, responsável e mês (varredura do Sra Luck). Sem contagem, não mostra número nenhum.
  */
-function ResumoContagemFunil({ funil, contagem, atualizadoEm }: { funil: Json; contagem: Json | null; atualizadoEm: string | null }) {
+function ResumoContagemFunil({ funil, contagem, atualizadoEm, origem }: { funil: Json; contagem: Json | null; atualizadoEm: string | null; origem?: Json | null }) {
   const total = contagem?.total ?? (funil.total?.exato ? funil.total.negociacoes : null);
   if (total == null) return null;
   const status = contagem ? Object.entries(STATUS_RD).filter(([k]) => contagem.status?.[k]).map(([k, rotulo]) => `${numero(contagem.status[k])} ${rotulo}`).join(" · ") : "";
@@ -224,6 +225,9 @@ function ResumoContagemFunil({ funil, contagem, atualizadoEm }: { funil: Json; c
   </ul>;
   return <div style={{ fontSize: 10.5 }}>
     <span style={muted}><strong>{numero(total)}</strong> negociações no RD{status ? ` · ${status}` : ""}</span>
+    {origem && <span style={{ ...muted, display: "block" }}>
+      {numero(origem.clientes)} cliente(s) · <strong>{numero(origem.porSituacao?.encontrada)}</strong> com fonte e campanha · {numero(origem.porSituacao?.parcial)} só com o canal · {numero((origem.porSituacao?.sem_registro_no_rd ?? 0) + (origem.porSituacao?.sem_contato ?? 0))} sem registro no RD
+    </span>}
     {contagem && <details style={{ marginTop: 4 }}>
       <summary style={{ cursor: "pointer", ...muted }}>Ver por responsável e por mês</summary>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginTop: 6 }}>

@@ -35,7 +35,7 @@ describe("contagem exata de todos os funis do RD", () => {
     let t = 0;
     const pagina = rdFalso(deals);
     const deps = { db, relogio: () => t, orcamentoMs: 100, funis: async () => [F1, F2], usuarios: async () => [{ id: U1, name: "Raissa" }],
-      pagina: async (f: string, d: string | null, p: number) => { t += 60; return pagina(f, d, p); } };
+      pagina: async (f: string, d: string | null, p: number) => { t += 60; return pagina(f, d, p); }, paginaContatos: async () => [] };
     const r1 = await avancarContagens(env, deps);
     expect(r1).toMatchObject({ executada: true, concluida: false });
     t = 0;
@@ -61,12 +61,64 @@ describe("contagem exata de todos os funis do RD", () => {
   it("contagem concluída vale 6 h; depois recomeça mantendo o último resultado até terminar", async () => {
     const { db } = bancoFalso();
     let agora = Date.UTC(2026, 8, 30, 12);
-    const deps = { db, relogio: () => agora, funis: async () => [F2], usuarios: async () => [], pagina: rdFalso(gerar(7, F2, Date.UTC(2026, 5, 1))) };
+    const deps = { db, relogio: () => agora, funis: async () => [F2], usuarios: async () => [], pagina: rdFalso(gerar(7, F2, Date.UTC(2026, 5, 1))), paginaContatos: async () => [] };
     expect(await avancarContagens(env, deps)).toMatchObject({ concluida: true });
     expect(await avancarContagens(env, deps)).toMatchObject({ executada: false, motivo: "em_dia" });
     agora += 6 * 60 * 60_000 + 1;
     const antes = (await lerContagens(db))!.resultado;
     expect(await avancarContagens(env, { ...deps, orcamentoMs: 0 })).toMatchObject({ executada: true, concluida: false });
     expect((await lerContagens(db))!.resultado).toEqual(antes);
+  });
+
+  it("a mesma leitura grava o espelho do RD: negociações de todos os funis, todos os contatos, e apaga o que sumiu", async () => {
+    const { db, tabela } = bancoFalso({
+      crm_rd_negociacoes: [{ id: "sumiu", pipeline_id: F1, vista_em: "2026-01-01T00:00:00.000Z", contact_ids: [] }],
+      crm_rd_contatos: [{ id: "ct-sumiu", visto_em: "2026-01-01T00:00:00.000Z", emails: [], telefones: [] }],
+    });
+    const deals = [
+      { id: "d1", pipeline_id: F1, status: "won", stage_id: E1, owner_id: U1, created_at: "2026-02-01T10:00:00Z", contact_ids: ["c1"], source_id: "s1", campaign_id: null,
+        custom_fields: { "como-ficou-sabendo-da-sra-luck": "INSTAGRAM ORGÂNICO", procedimento: "Lipo", "valor-parcela-lp": "Até R$ 500", cupom: "" } },
+      { id: "d2", pipeline_id: F2, status: "ongoing", created_at: "2026-03-01T10:00:00Z", contact_ids: ["c2"] },
+    ];
+    // 150 contatos, 2 por segundo: a paginação por data não repete nem pula nenhum.
+    const contatos = Array.from({ length: 150 }, (_, i) => ({
+      id: `c${i}`, name: `Pessoa ${i}`, emails: [{ email: `P${i}@X.com` }], phones: [{ phone: i === 1 ? "+55 (61) 98403-5758" : `55619${String(i).padStart(8, "0")}` }],
+      created_at: new Date(Date.UTC(2025, 0, 1) + Math.floor(i / 2) * 1000).toISOString(),
+    }));
+    const seg = (v: unknown) => new Date(String(v)).toISOString().slice(0, 19).replace("T", " ");
+    const paginaContatos = async (desde: string | null, p: number) => contatos.filter((c) => !desde || seg(c.created_at) >= desde).slice((p - 1) * 100, p * 100) as never[];
+    const r = await avancarContagens(env, { db, relogio: () => Date.UTC(2026, 8, 30, 12), funis: async () => [F1, F2], usuarios: async () => [], pagina: rdFalso(deals), paginaContatos });
+    expect(r).toMatchObject({ concluida: true, contatos: 150 });
+    const negs = tabela("crm_rd_negociacoes");
+    expect(negs.map((n) => n.id).sort()).toEqual(["d1", "d2"]);
+    expect(negs.find((n) => n.id === "d1")).toMatchObject({
+      pipeline_id: F1, stage_id: E1, status: "won", owner_id: U1, contact_ids: ["c1"], source_id: "s1", criada_em: "2026-02-01T10:00:00.000Z",
+      // Só os campos de origem; vazios ficam de fora.
+      campos_origem: { "como-ficou-sabendo-da-sra-luck": "INSTAGRAM ORGÂNICO", "valor-parcela-lp": "Até R$ 500" },
+    });
+    const cts = tabela("crm_rd_contatos");
+    expect(cts).toHaveLength(150);
+    expect(cts.find((c) => c.id === "c1")).toMatchObject({ nome: "Pessoa 1", emails: ["p1@x.com"], telefones: ["61984035758"] });
+    const estado = await lerContagens(db);
+    expect(estado!.espelho).toMatchObject({ negociacoes: 2, contatos: 150, erro: null });
+    expect(estado!.espelho!.concluidoEm).toBeTruthy();
+  });
+
+  it("RD que recusa filtro e ordenação nos contatos: a varredura termina assim mesmo (nunca trava a contagem)", async () => {
+    const { db } = bancoFalso();
+    const chamadas: string[] = [];
+    const paginaContatos = async (desde: string | null, p: number, ordenar?: boolean) => {
+      chamadas.push(`${desde ?? "-"}|${p}|${ordenar}`);
+      if (ordenar !== false) throw new Error("RD_HTTP_400");
+      return p === 1 ? [{ id: "c1", name: "Ana", emails: [], phones: [] }] as never[] : [];
+    };
+    const r = await avancarContagens(env, { db, relogio: () => Date.UTC(2026, 8, 30, 12), funis: async () => [F2], usuarios: async () => [], pagina: rdFalso(gerar(3, F2, Date.UTC(2026, 5, 1))), paginaContatos });
+    expect(r).toMatchObject({ concluida: true, contatos: 1 });
+    expect(chamadas).toEqual(["-|1|true", "-|1|false"]);
+    const nada = async () => { throw new Error("RD_HTTP_422"); };
+    const { db: db2 } = bancoFalso();
+    expect(await avancarContagens(env, { db: db2, relogio: () => Date.UTC(2026, 8, 30, 12), funis: async () => [F2], usuarios: async () => [], pagina: rdFalso(gerar(3, F2, Date.UTC(2026, 5, 1))), paginaContatos: nada })).toMatchObject({ concluida: true });
+    expect((await lerContagens(db2))!.espelho!.erro).toMatch(/não permitiu/);
+    expect((await lerContagens(db2))!.resultado!.porFunil[F2].total).toBe(3);
   });
 });

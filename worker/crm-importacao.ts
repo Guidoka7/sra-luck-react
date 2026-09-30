@@ -18,6 +18,8 @@ import {
   registrarEvento, snapshotUpdatePreservandoLocal, stringValue, TAMANHO_PAGINA_RD, type RdDealSnapshot,
 } from "./rd-station-readonly";
 import { createServiceSupabaseClient, type Env } from "./supabase";
+import { chaveCpf, chaveEmail, chaveTelefone } from "./crm-chaves";
+import { gravarContatos, gravarNegociacoes } from "./crm-espelho";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
 import { contagensParaTela, lerContagens } from "./crm-contagens";
@@ -234,27 +236,7 @@ export function aplicarMapeamento(s: RdDealSnapshot, deal: Json, contato: Json |
 
 // ------------------------------------------------------------------ deduplicação (somente telefone)
 
-/**
- * Chave do telefone brasileiro: DDD + número (11 dígitos no celular, 10 no fixo).
- * Aceita +55, 0055, zero de longa distância, código de operadora (0 + 2 dígitos) e o
- * celular antigo de 8 dígitos (ganha o 9). Sem DDD não há chave: número local é ambíguo.
- */
-export function chaveTelefone(bruto: unknown): string | null {
-  let d = stringValue(bruto).replace(/\D/g, "");
-  if (d.startsWith("0")) {
-    d = d.replace(/^0+/, "");
-    // 0 + operadora (2 dígitos) + DDD + número.
-    if (!d.startsWith("55") && (d.length === 12 || d.length === 13)) d = d.slice(2);
-  }
-  if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
-  if (!/^[1-9][0-9]/.test(d)) return null;
-  if (d.length === 11) return d;
-  // Celular no formato antigo (8 dígitos começando com 6–9) ganha o 9; fixo (2–5) fica como está.
-  if (d.length === 10) return /^[6-9]$/.test(d[2]) ? `${d.slice(0, 2)}9${d.slice(2)}` : d;
-  return null;
-}
-export const chaveCpf = (v: unknown) => { const d = stringValue(v).replace(/\D/g, ""); return d.length === 11 ? d : null; };
-export const chaveEmail = (v: unknown) => { const e = stringValue(v).trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e : null; };
+export { chaveCpf, chaveEmail, chaveTelefone } from "./crm-chaves";
 
 /** Todas as chaves de telefone da negociação: o telefone preenchido e todos os telefones do contato. */
 export function chavesTelefone(valores: { telefone?: unknown }, contato?: Json): string[] {
@@ -461,7 +443,7 @@ export async function processarNegociacao(db: Db, entrada: {
     ? { dados: contatoParaCache(contato), lidoEm: entrada.contatoLidoEm }
     : cacheAnterior;
   const origemGuardada = existenteIdx ? indice.vendaPorId?.get(existenteIdx.id)?.origem ?? null : null;
-  // Recalculada agora só com o próprio contato: mantém o que a busca ampliada (e-mail/telefone) achou.
+  // Recalculada agora só com o próprio contato: mantém o que veio de outros cadastros da mesma pessoa (crm-origem-geral).
   const origem = entrada.origem ? manterAmpliada(entrada.origem, origemGuardada) : origemGuardada;
   if (origem) completarOrigem(valores, origem, funilParaSnapshot(s, config)?.mapeamento ?? config.mapeamento);
   const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores }, ...(cacheContato ? { _sra_contato: cacheContato } : {}), ...(origem ? { _sra_origem: origem } : {}) } };
@@ -945,6 +927,12 @@ export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, tran
   const cache = vendaIdx ? indice.vendaPorId?.get(vendaIdx.id)?.contato : null;
   const contatos = new Map(leitura.contatos);
   if (idContato && !contatos.has(idContato) && cache && stringValue(cache.dados.id) === idContato) contatos.set(idContato, cache.dados);
+  // Espelho do RD (todos os funis): a negociação nova/alterada entra já, sem esperar a varredura de 6 h.
+  if (v2) {
+    const agora = new Date().toISOString();
+    await gravarNegociacoes(db, [v2], agora).catch(() => undefined);
+    await gravarContatos(db, [...leitura.contatos.values()], agora).catch(() => undefined);
+  }
   const snapshot = normalizarDealRd(deal, { contatos });
   if (!snapshot) return null;
   const contato = snapshot.rdContactId ? contatos.get(snapshot.rdContactId) : undefined;
@@ -1039,11 +1027,13 @@ export async function coberturaOrigens(db: Db) {
     }
     if (vazio(l.origem_venda) || vazio(l.campanha_local)) colunasEmBranco++;
   }
-  const { data } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", "crm_origem_ampliada").maybeSingle();
-  const estado = objectValue((data as Json | null)?.dados);
+  const { data } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", "crm_origem_resolucao").maybeSingle();
+  const r = objectValue((data as Json | null)?.dados);
+  const espelho = (await lerContagens(db))?.espelho ?? null;
   return {
     total: linhas.length, porSituacao, colunasEmBranco, buscaAmpliadaFeita, buscaAmpliadaPendente,
-    ultimaRodada: estado.ultimaRodada ?? null, formas: estado.formas ?? null,
+    resolucao: { em: r.em ?? null, negociacoes: Number(r.negociacoes ?? 0), vendasPendentes: Array.isArray(r.vendasPendentes) ? r.vendasPendentes.length : 0, erro: r.erro ?? null },
+    espelho,
   };
 }
 
@@ -1170,8 +1160,17 @@ export async function descartarRevisao(db: Db, itemId: string, ator: string) {
 export async function opcoesCrm(env: Env) {
   const catalogo = await catalogoCrm(env);
   // Contagem exata por status, etapa, responsável e mês (crm-contagens). Sem ela, o catálogo segue igual.
-  const contagens = await lerContagens(createServiceSupabaseClient(env)).catch(() => null);
-  return { ...catalogo, contagens: contagensParaTela(contagens, catalogo.funis) };
+  const db = createServiceSupabaseClient(env);
+  const contagens = await lerContagens(db).catch(() => null);
+  // Fonte e campanha por funil, de todas as clientes de todos os funis (crm-origem-geral).
+  const origens = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", "crm_origem_funis").maybeSingle()
+    .then(({ data }) => objectValue((data as Json | null)?.dados), () => ({} as Json));
+  return {
+    ...catalogo,
+    contagens: contagensParaTela(contagens, catalogo.funis),
+    origens: { atualizadoEm: origens.atualizadoEm ?? null, porFunil: objectValue(origens.porFunil) },
+    espelho: contagens?.espelho ?? null,
+  };
 }
 
 /**

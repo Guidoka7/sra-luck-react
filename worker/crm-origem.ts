@@ -73,6 +73,16 @@ const NAO_INFORMATIVO = /^(desconhecid[oa]|unknown|\(?not set\)?|\(?none\)?|nenh
 /** Resposta negativa no campo de cupom ("Não tenho", "não"): não é cupom. */
 const CUPOM_VAZIO = /^(n[aã]o( tenho| possuo| tem)?|nenhum|sem cupom|-+|\.+)$/i;
 
+/** Só os campos personalizados que registram origem (para o espelho do RD). */
+export function camposDeOrigem(cf: Json): Json {
+  const out: Json = {};
+  for (const [slug, valor] of Object.entries(cf)) {
+    if (valor === null || valor === undefined || valor === "" || (Array.isArray(valor) && !valor.length)) continue;
+    if (CAMPO_LP.test(slug) || PERSONALIZADOS.some((d) => d.slug.test(slug))) out[slug] = valor;
+  }
+  return out;
+}
+
 function texto(v: unknown): string | null {
   if (Array.isArray(v)) return v.map((x) => stringValue(x).trim()).filter(Boolean).join(", ") || null;
   if (v && typeof v === "object") return stringValue((v as Json).name ?? (v as Json).value).trim() || null;
