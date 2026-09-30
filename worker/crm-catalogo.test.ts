@@ -77,28 +77,36 @@ describe("catálogo do RD por funil", () => {
     expect(gets.filter((g) => g.startsWith("/contacts"))).toEqual([]);
   });
 
-  it("conta as negociações de cada funil lendo a última página (o RD não informa o total)", async () => {
-    const pagina = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d${i}`, pipeline_id: "x" }));
-    const lidas: string[] = [];
+  it("conta exatamente as negociações de cada funil, inclusive acima de 10 mil (divide por período)", async () => {
+    // RD simulado: respeita pipeline_id e created_at, página de 100 e o limite de 100 páginas.
+    const criar = (n: number, inicio: number) => Array.from({ length: n }, (_, i) => new Date(inicio + i * 60_000).toISOString());
+    const base: Record<string, string[]> = {
+      ["a".repeat(24)]: criar(337, Date.UTC(2024, 0, 1)),
+      ["b".repeat(24)]: criar(12, Date.UTC(2025, 0, 1)),
+      ["c".repeat(24)]: criar(23_457, Date.UTC(2023, 5, 1)),
+    };
+    const nomes: Record<string, string> = { ["a".repeat(24)]: "Grande", ["b".repeat(24)]: "Pequeno", ["c".repeat(24)]: "Enorme" };
+    const seg = (iso: string) => iso.slice(0, 19).replace("T", " ");
     const rd: LeitorRd = {
-      listar: async (recurso) => recurso === "pipelines" ? [{ id: "a".repeat(24), name: "Grande" }, { id: "b".repeat(24), name: "Pequeno" }, { id: "c".repeat(24), name: "Enorme" }] : [],
+      listar: async (recurso) => recurso === "pipelines" ? Object.keys(base).map((id) => ({ id, name: nomes[id] })) : [],
       get: async (path) => {
         if (path.includes("/stages")) return { data: [] };
-        lidas.push(path);
-        const funil = decodeURIComponent(path).match(/pipeline_id:(\w{24})/)![1];
-        const num = Number(new URLSearchParams(path.split("?")[1]).get("page[number]"));
-        const last = (n: number) => ({ last: `https://api.rd.services/crm/v2/deals?page[number]=${n}&page[size]=100` });
-        if (funil === "a".repeat(24)) return num === 1 ? { data: pagina(100), links: last(4) } : { data: pagina(37), links: last(4) };
-        if (funil === "c".repeat(24)) return { data: pagina(100), links: last(250) };
-        return { data: pagina(12), links: last(1) };
+        const q = new URLSearchParams(path.split("?")[1]);
+        const filtro = q.get("filter") ?? "";
+        const funil = filtro.match(/pipeline_id:(\w{24})/)![1];
+        const desde = filtro.match(/created_at:>="([^"]+)"/)?.[1];
+        const ate = filtro.match(/created_at:<"([^"]+)"/)?.[1];
+        const lista = base[funil].filter((c) => (!desde || seg(c) >= desde) && (!ate || seg(c) < ate));
+        const num = Number(q.get("page[number]"));
+        if (num > 100) throw new Error("RD_HTTP_400");
+        const paginas = Math.max(1, Math.ceil(lista.length / 100));
+        return { data: lista.slice((num - 1) * 100, num * 100).map((c, i) => ({ id: `${funil}-${num}-${i}`, created_at: c })), links: { last: `https://api.rd.services/crm/v2/deals?page[number]=${paginas}&page[size]=100` } };
       },
     };
     const funis = await montarCatalogoCrm(env, { rd });
     expect(funis.find((f) => f.nome === "Grande")?.total).toEqual({ negociacoes: 337, exato: true });
     expect(funis.find((f) => f.nome === "Pequeno")?.total).toEqual({ negociacoes: 12, exato: true });
-    // Acima de 10 mil o RD não deixa navegar: total aproximado pelo número de páginas.
-    expect(funis.find((f) => f.nome === "Enorme")?.total).toEqual({ negociacoes: 25000, exato: false });
-    expect(lidas.filter((p) => p.includes("aaaa") && p.includes("page[number]=4"))).toHaveLength(1);
+    expect(funis.find((f) => f.nome === "Enorme")?.total).toEqual({ negociacoes: 23_457, exato: true });
   });
 
   it("campos de cada funil vêm das regras do RD e da amostra, sem catálogo global", async () => {

@@ -124,7 +124,7 @@ function funisDaRegra(campo: Json): string[] | null {
   return regras.map((r) => stringValue(r.value)).filter(Boolean);
 }
 
-/** Total de negociações do funil no RD (todas as etapas e status). */
+/** Total de negociações do funil no RD (todas as etapas e status). Sempre exato; null se o RD falhar. */
 export type TotalFunil = { negociacoes: number | null; exato: boolean };
 
 /** Número da página em links.last (o RD não devolve o total). */
@@ -135,34 +135,50 @@ function ultimaPagina(resposta: Json): number | null {
   return Number.isFinite(n) && n >= 1 ? n : null;
 }
 
+const dataRdqlMs = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+
+/**
+ * Conta exatamente as negociações de um filtro. O RD não informa o total e só navega os 10 mil
+ * primeiros registros de cada filtro: com até 100 páginas, lê a última (total = páginas cheias +
+ * a última); acima disso divide por período de criação (início inclusivo, fim exclusivo, sem
+ * sobreposição) até cada pedaço caber no limite, e soma.
+ */
+export async function contarNegociacoes(rd: LeitorRd, filtro: string, primeira?: Json,
+  inicio = Date.UTC(2000, 0, 1), fim = Date.UTC(2100, 0, 1), dividido = false): Promise<number> {
+  const completo = dividido ? `${filtro} created_at:>="${dataRdqlMs(inicio)}" created_at:<"${dataRdqlMs(fim)}"` : filtro;
+  const consulta = `/deals?filter=${encodeURIComponent(completo)}&page[size]=${AMOSTRA_NEGOCIACOES}`;
+  const resposta = primeira ?? await comRetentativa(() => rd.get(`${consulta}&page[number]=1`));
+  const n1 = arrayValue(resposta.data).length;
+  if (n1 < AMOSTRA_NEGOCIACOES) return n1;
+  const ultima = ultimaPagina(resposta);
+  if (ultima === 1) return n1;
+  if (ultima && ultima <= 100) {
+    const fimPagina = await comRetentativa(() => rd.get(`${consulta}&page[number]=${ultima}`));
+    return (ultima - 1) * AMOSTRA_NEGOCIACOES + arrayValue(fimPagina.data).length;
+  }
+  // Mais de 10 mil (ou sem links.last): divide o período ao meio.
+  const meio = Math.floor((inicio + fim) / 2000) * 1000;
+  if (meio <= inicio || meio >= fim) throw new Error("RD_CONTAGEM_INDIVISIVEL");
+  return await contarNegociacoes(rd, filtro, undefined, inicio, meio, true) + await contarNegociacoes(rd, filtro, undefined, meio, fim, true);
+}
+
 async function amostraDoFunil(rd: LeitorRd, pipelineId: string): Promise<{ deals: Json[]; total: TotalFunil }> {
-  const base = `/deals?filter=${encodeURIComponent(`pipeline_id:${pipelineId}`)}&page[size]=${AMOSTRA_NEGOCIACOES}`;
-  let consulta = `${base}&sort[updated_at]=desc`;
+  const filtro = `pipeline_id:${pipelineId}`;
+  const base = `/deals?filter=${encodeURIComponent(filtro)}&page[size]=${AMOSTRA_NEGOCIACOES}`;
   let resposta: Json;
   try {
-    resposta = await comRetentativa(() => rd.get(`${consulta}&page[number]=1`));
+    resposta = await comRetentativa(() => rd.get(`${base}&sort[updated_at]=desc&page[number]=1`));
   } catch (e) {
     // Conta em que a ordenação por updated_at não é aceita: amostra sem ordenação.
     if (!(e instanceof Error) || e.message !== "RD_HTTP_400") throw e;
-    consulta = base;
-    resposta = await comRetentativa(() => rd.get(`${consulta}&page[number]=1`));
+    resposta = await comRetentativa(() => rd.get(`${base}&page[number]=1`));
   }
   const deals = arrayValue(resposta.data).map(objectValue);
-  // Total: com menos de uma página, é o que veio; senão, lê a última página (1 consulta a mais).
-  // O RD só navega os 10 mil primeiros: acima disso o total é aproximado pelo número de páginas.
-  let total: TotalFunil = { negociacoes: deals.length, exato: true };
-  const ultima = ultimaPagina(resposta);
-  if (deals.length >= AMOSTRA_NEGOCIACOES && ultima && ultima > 1) {
-    if (ultima > 100) total = { negociacoes: ultima * AMOSTRA_NEGOCIACOES, exato: false };
-    else {
-      try {
-        const fim = await comRetentativa(() => rd.get(`${consulta}&page[number]=${ultima}`));
-        total = { negociacoes: (ultima - 1) * AMOSTRA_NEGOCIACOES + arrayValue(fim.data).length, exato: true };
-      } catch {
-        total = { negociacoes: ultima * AMOSTRA_NEGOCIACOES, exato: false };
-      }
-    }
-  } else if (deals.length >= AMOSTRA_NEGOCIACOES && !ultima) {
+  let total: TotalFunil;
+  try {
+    // A ordem não muda o total: a primeira página da amostra já serve para a contagem.
+    total = { negociacoes: await contarNegociacoes(rd, filtro, resposta), exato: true };
+  } catch {
     total = { negociacoes: null, exato: false };
   }
   return { deals, total };
