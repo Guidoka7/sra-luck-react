@@ -20,6 +20,7 @@ import {
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
+import { contagensParaTela, lerContagens } from "./crm-contagens";
 import { agruparPorContato, montarOrigem, origemParaColunas, type OrigemCliente } from "./crm-origem";
 
 /**
@@ -1130,7 +1131,10 @@ export async function descartarRevisao(db: Db, itemId: string, ator: string) {
  * Vem do catálogo pré-calculado (crm-catalogo.ts): a tela não espera o RD.
  */
 export async function opcoesCrm(env: Env) {
-  return catalogoCrm(env);
+  const catalogo = await catalogoCrm(env);
+  // Contagem exata por status, etapa, responsável e mês (crm-contagens). Sem ela, o catálogo segue igual.
+  const contagens = await lerContagens(createServiceSupabaseClient(env)).catch(() => null);
+  return { ...catalogo, contagens: contagensParaTela(contagens, catalogo.funis) };
 }
 
 /**

@@ -9,7 +9,8 @@ import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
-import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
+import { importacaoAgendadaSeDevida, importarCrm, passadaEmAndamento, reprocessarNegociacao } from "./crm-importacao";
+import { avancarContagens } from "./crm-contagens";
 import { atualizarCatalogoSeVencido } from "./crm-catalogo";
 import { pendenciasApi } from "./integracao-pendencias";
 import { catalogo, ESQUEMAS_CONFIG, salvarConfig } from "./integracoes-registro";
@@ -406,12 +407,19 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
  */
 async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
-  const crm = importacaoAgendadaSeDevida(env, { somenteContinuacao: true });
+  // Primeiro a importação; sem importação em andamento, avança a contagem dos funis (as duas não
+  // disputam o limite de 120 consultas/min do RD).
+  const tarefa = importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => ({
+    crm,
+    contagens: (await passadaEmAndamento(createServiceSupabaseClient(env)))
+      ? { executada: false, motivo: "importacao_em_andamento" }
+      : await avancarContagens(env).catch(() => ({ executada: false, motivo: "falha" })),
+  }));
   if (ctx?.waitUntil) {
-    ctx.waitUntil(crm.then(() => undefined).catch(() => undefined));
+    ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
     return json({ crm: { agendada: true, processamento: "segundo_plano" } });
   }
-  try { return json({ crm: await crm }); } catch { return json({ crm: { erro: "Falha na continuação da importação do CRM." } }); }
+  try { return json(await tarefa); } catch { return json({ crm: { erro: "Falha na continuação da importação do CRM." } }); }
 }
 
 /** Padrão de integrações: registro + configuração por função + uso de hoje (sem segredos). */
