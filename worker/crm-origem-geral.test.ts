@@ -113,17 +113,22 @@ describe("origem de todas as negociações do RD (espelho)", () => {
     expect(lista.itens[0].provas[0]).toMatchObject({ valor: "INSTAGRAM ORGÂNICO", funil: "Vendas" });
   });
 
-  it("vendas só são gravadas fora das passadas da importação", async () => {
+  it("vendas são gravadas entre as etapas da importação; nunca enquanto uma etapa está gravando (trava)", async () => {
     const { negs, contatos } = cenario();
-    const { db, tabela } = bancoFalso({
+    const inicial = () => ({
       crm_rd_negociacoes: negs.map((n) => ({ ...n })), crm_rd_contatos: contatos,
       integracao_catalogos: [
         { provedor: "rd_station", chave: "crm_contagens", dados: { passada: "p", funis: [], espelho: { concluidoEm: "2026-09-30T11:00:00.000Z" } } },
+        // Passada longa em andamento (todos os funis): antes isso bloqueava as vendas para sempre.
         { provedor: "rd_station", chave: "crm_importacao_progresso", dados: { passada: "x", segmentos: [""], concluidaEm: null } },
       ],
       novas_vendas: [{ id: "nv-1", rd_station_id: "D-CONTRATO", rd_pipeline_id: CONTRATOS, origem_venda: null, campanha_local: null, rd_snapshot: {} }],
     });
-    expect(await avancarOrigemGeral(env, { db, config: config(), refs: async () => refsBrutas })).toMatchObject({ vendasGravadas: 0, vendasPendentes: 1, motivo: "importacao_em_andamento" });
-    expect(tabela("novas_vendas")[0].campanha_local).toBeNull();
+    const ocupado = bancoFalso(inicial(), { integracao_tentar_trava: (a) => a.p_nome !== "crm_importacao" });
+    expect(await avancarOrigemGeral(env, { db: ocupado.db, config: config(), refs: async () => refsBrutas })).toMatchObject({ vendasGravadas: 0, vendasPendentes: 1, motivo: "importacao_em_andamento" });
+    expect(ocupado.tabela("novas_vendas")[0].campanha_local).toBeNull();
+    const livre = bancoFalso(inicial());
+    expect(await avancarOrigemGeral(env, { db: livre.db, config: config(), refs: async () => refsBrutas })).toMatchObject({ vendasGravadas: 1, vendasPendentes: 0 });
+    expect(livre.tabela("novas_vendas")[0]).toMatchObject({ origem_venda: "Busca Paga | instagram", campanha_local: "Black Friday" });
   });
 });

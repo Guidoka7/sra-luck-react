@@ -276,6 +276,39 @@ describe("importação", () => {
     expect(await usarPerfilDaDuplicata(db, item.id, "admin:2")).toMatchObject({ ok: false, status: 409 });
   });
 
+  it("espelho do RD: contato já lido não custa consulta, contato lido agora vai para o espelho, e a origem de outros cadastros chega na venda", async () => {
+    const { db, tabela } = cenario();
+    const pedidosRd: string[][] = [];
+    const guardados: string[] = [];
+    const origemEspelho = {
+      fonte: "Busca Paga | instagram", campanha: "Black Friday", comoFicouSabendo: null, influencer: null, situacao: "encontrada" as const,
+      negociacoesAnalisadas: 2, checadoEm: "2026-09-30T13:00:00.000Z", ampliada: { em: "2026-09-30T13:00:00.000Z", contatos: [{ id: "ctOUTRO", via: "telefone" as const }], negociacoes: 1 },
+      evidencias: [
+        { campo: "fonte" as const, rotulo: "Fonte", valor: "Busca Paga | instagram", negociacao: { id: "LEAD", funilId: null, funil: "Vendas", criadaEm: "2025-01-01T00:00:00Z", propria: false, outroContato: { id: "ctOUTRO", via: "telefone" as const } } },
+        { campo: "campanha" as const, rotulo: "Campanha", valor: "Black Friday", negociacao: { id: "LEAD", funilId: null, funil: "Vendas", criadaEm: "2025-01-01T00:00:00Z", propria: false, outroContato: { id: "ctOUTRO", via: "telefone" as const } } },
+      ],
+    };
+    const f = {
+      ...fontes([deal("E1"), deal("E2")], []),
+      contatos: async (ids: string[]) => { pedidosRd.push(ids); return { contatos: new Map(ids.map((id) => [id, contato(id.slice(2), "Elisa RD", "61 97777-0002", "e2@x.com")])), falhas: new Set<string>() }; },
+      dealsDosContatos: async () => [],
+      espelho: {
+        contatos: async (ids: string[]) => new Map(ids.filter((id) => id === "ctE1").map((id) => [id, contato("E1", "Eva Espelho", "61 97777-0001", "e1@x.com")])),
+        origens: async (ids: string[]) => new Map(ids.filter((id) => id === "E1").map((id) => [id, origemEspelho])),
+        guardarContatos: async (cs: Record<string, unknown>[]) => { guardados.push(...cs.map((c) => String(c.id))); },
+      },
+    };
+    const r = await importarCrm(env, { origem: "manual", ator: "admin:1" }, { db, config: config({ status: "qualquer" }), fontes: f as never });
+    expect(r).toMatchObject({ ok: true, criadas: 2 });
+    // Só o contato que não estava no espelho foi lido do RD, e ele foi guardado no espelho.
+    expect(pedidosRd).toEqual([["ctE2"]]);
+    expect(guardados).toEqual(["ctE2"]);
+    const e1 = tabela("novas_vendas").find((v) => v.rd_station_id === "E1")!;
+    expect(e1).toMatchObject({ nome_completo: "Eva Espelho", origem_venda: "Busca Paga | instagram", campanha_local: "Black Friday" });
+    expect(e1.rd_snapshot._sra_origem).toMatchObject({ situacao: "encontrada", ampliada: { contatos: [{ id: "ctOUTRO", via: "telefone" }] } });
+    expect(tabela("novas_vendas").find((v) => v.rd_station_id === "E2")).toMatchObject({ nome_completo: "Elisa RD", campanha_local: "Não registrada no RD" });
+  });
+
   it("revisão em lote: \"perfil mais completo\" decide item a item; itens já revisados voltam como falha, sem repetir", async () => {
     const { db, tabela } = cenario();
     await importarCrm(env, { origem: "manual", ator: "admin:1" }, {

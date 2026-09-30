@@ -22,7 +22,7 @@
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { arrayValue, listarSeguro, mapById, objectValue, stringValue } from "./rd-station-readonly";
 import { configDaFuncao, type ConfigCrm } from "./integracoes-registro";
-import { funisConfigurados, passadaEmAndamento } from "./crm-importacao";
+import { funisConfigurados } from "./crm-importacao";
 import { lerContagens } from "./crm-contagens";
 import {
   evidenciasDaNegociacao, origemParaColunas, resumirOrigem, valorDescritivoDeOrigem, valorNaoInformativo,
@@ -341,7 +341,8 @@ const ordemVenda = (o: Json) => (o.situacao === "encontrada" ? 1 : 0);
 
 async function etapaB(env: Env, db: Db, estado: EstadoResolucao, deps: Deps, prazo: number, relogio: () => number) {
   if (!estado.vendasPendentes.length) return { vendasGravadas: 0, vendasPendentes: 0 };
-  if (await passadaEmAndamento(db)) return { vendasGravadas: 0, vendasPendentes: estado.vendasPendentes.length, motivo: "importacao_em_andamento" };
+  // Entre as etapas da importação (a trava dela garante que nunca gravam ao mesmo tempo; cada etapa
+  // relê as vendas ao começar). Antes esperava a passada inteira acabar e, com todos os funis, nunca rodava.
   const { data: trava } = await db.rpc("integracao_tentar_trava", { p_nome: "crm_importacao", p_segundos: 290 });
   if (trava === false) return { vendasGravadas: 0, vendasPendentes: estado.vendasPendentes.length, motivo: "importacao_em_andamento" };
   let gravadas = 0;
