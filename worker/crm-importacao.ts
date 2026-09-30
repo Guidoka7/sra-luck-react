@@ -615,9 +615,11 @@ async function gravarItens(db: Db, importacaoId: string, itens: ItemImportacao[]
 export const ORCAMENTO_EXECUCAO_MS = 200_000;
 /** Trava maior que o orçamento; se a função morrer, libera antes da próxima rodada de 5 min. */
 const TRAVA_SEGUNDOS = 290;
-/** Contatos guardados vencidos relidos por execução; novos e sem contato guardado não têm limite. */
-const RENOVACOES_POR_EXECUCAO = 60;
-/** Mesma página bloqueada por contatos não lidos (limite do RD) mais vezes que isto: segue e relê na próxima passada. */
+/**
+ * Contato de negociação nova que não pôde ser lido (limite de consultas do RD) nesta quantidade de
+ * tentativas da mesma página: a negociação entra com os dados dela mesma e o contato é completado
+ * na leitura seguinte. Nada fica de fora da sincronização.
+ */
 const TENTATIVAS_POR_PAGINA = 3;
 const CHAVE_PROGRESSO = "crm_importacao_progresso";
 
@@ -711,7 +713,6 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     const vistas = new Set<string>(progresso.noLimite ?? []);
     const jaVistas = vistas.size;
     let adiadas = 0;
-    let renovacoes = RENOVACOES_POR_EXECUCAO;
     // Itens gravados DURANTE a execução: se a função for interrompida no meio, o que já foi
     // feito continua visível (antes, 914 vendas ficaram sem nenhum item — docs/DIAGNOSTICO-RD).
     let gravados = 0;
@@ -724,7 +725,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     };
 
     /** Processa uma página. Devolve falso se contatos de negociações NOVAS ficaram sem leitura (a página é relida). */
-    const processarPagina = async (pagina: Json[]) => {
+    const processarPagina = async (pagina: Json[], semEsperarContato = false) => {
       let anonimo = 0;
       const lidas = pagina.filter((d) => {
         const id = stringValue(d.id) || `__sem_id_${vistas.size}_${anonimo++}`;
@@ -748,8 +749,9 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
         else if (!cache || stringValue(cache.dados.id) !== idContato) semCache.push(idContato);
         else if (Date.parse(cache.lidoEm) < Date.now() - CONTATO_VALIDADE_MS) vencidos.push({ id: idContato, lidoEm: cache.lidoEm });
       }
-      const renovar = vencidos.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).slice(0, Math.max(0, renovacoes)).map((x) => x.id);
-      renovacoes -= renovar.length;
+      // Sem cota: todos os guardados vencidos são relidos (os mais antigos primeiro). O que não couber
+      // no tempo desta execução é relido na próxima; a venda mantém os dados enquanto isso.
+      const renovar = vencidos.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).map((x) => x.id);
       const pedir = [...new Set([...novos, ...semCache, ...renovar])];
       const leitura: LeituraContatos = fontes.contatos
         ? (pedir.length ? await fontes.contatos(pedir, Math.max(5_000, prazo - relogio())) : { contatos: new Map(), falhas: new Set() })
@@ -792,7 +794,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
           const idC = snapshot.rdContactId;
           const contatoIndisponivel = Boolean(idC && !contato && leitura.falhas.has(idC));
           const contatoAdiado = Boolean(idC && !contato && !contatoIndisponivel);
-          if (contatoAdiado && !indice.vendaPorRd.has(snapshot.rdStationId)) {
+          if (contatoAdiado && !indice.vendaPorRd.has(snapshot.rdStationId) && !semEsperarContato) {
             // Não lida agora (limite do RD): sai de `vistas` para entrar quando a página for relida.
             vistas.delete(snapshot.rdStationId);
             adiadas++;
@@ -833,9 +835,10 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       }
       if (!pagina.length) { proximoSegmento(); await salvarProgresso(db, progresso); continue; }
       const antes = vistas.size;
-      const completa = await processarPagina(pagina);
+      const completa = await processarPagina(pagina, progresso.tentativas >= TENTATIVAS_POR_PAGINA - 1);
       progresso.lidas += vistas.size - antes;
-      if (!completa && ++progresso.tentativas < TENTATIVAS_POR_PAGINA) {
+      if (!completa) {
+        progresso.tentativas++;
         // A mesma página é relida na próxima execução; as já processadas dela não contam de novo.
         if (!progresso.semFiltroData) progresso.noLimite = pagina.map((d) => stringValue(d.id)).filter((id) => id && vistas.has(id));
         await salvarProgresso(db, progresso);

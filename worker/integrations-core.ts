@@ -9,7 +9,7 @@ import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
-import { importacaoAgendadaSeDevida, importarCrm, passadaEmAndamento, reprocessarNegociacao } from "./crm-importacao";
+import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
 import { avancarContagens } from "./crm-contagens";
 import { atualizarCatalogoSeVencido } from "./crm-catalogo";
 import { pendenciasApi } from "./integracao-pendencias";
@@ -405,16 +405,23 @@ async function cronIntegracoes(request: Request, env: Env, ctx?: BackgroundConte
  * Rodada curta (pg_cron a cada 5 min, migration_118): só continua uma importação do CRM feita em
  * etapas que ainda não terminou. Sem passada em andamento, não lê nada no RD.
  */
+/** Margem abaixo dos 300 s da hospedagem para a rodada terminar e gravar a posição. */
+const LIMITE_EXECUCAO_MS = 260_000;
+
 async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
-  // Primeiro a importação; sem importação em andamento, avança a contagem dos funis (as duas não
-  // disputam o limite de 120 consultas/min do RD).
-  const tarefa = importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => ({
-    crm,
-    contagens: (await passadaEmAndamento(createServiceSupabaseClient(env)))
-      ? { executada: false, motivo: "importacao_em_andamento" }
-      : await avancarContagens(env).catch(() => ({ executada: false, motivo: "falha" })),
-  }));
+  // Primeiro a importação; depois, no tempo que sobra desta execução (a hospedagem encerra em 300 s),
+  // a contagem dos funis. Uma depois da outra: nunca disputam o limite de 120 consultas/min do RD.
+  const inicio = Date.now();
+  const tarefa = importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => {
+    const restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
+    return {
+      crm,
+      contagens: restante < 20_000
+        ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
+        : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" })),
+    };
+  });
   if (ctx?.waitUntil) {
     ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
     return json({ crm: { agendada: true, processamento: "segundo_plano" } });
