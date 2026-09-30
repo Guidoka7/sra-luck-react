@@ -10,6 +10,7 @@ import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
+import { avancarOrigemAmpliada } from "./crm-origem-ampliada";
 import { avancarContagens } from "./crm-contagens";
 import { atualizarCatalogoSeVencido } from "./crm-catalogo";
 import { pendenciasApi } from "./integracao-pendencias";
@@ -414,13 +415,16 @@ async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundCo
   // a contagem dos funis. Uma depois da outra: nunca disputam o limite de 120 consultas/min do RD.
   const inicio = Date.now();
   const tarefa = importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => {
-    const restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
-    return {
-      crm,
-      contagens: restante < 20_000
-        ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
-        : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" })),
-    };
+    let restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
+    const contagens = restante < 20_000
+      ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
+      : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" }));
+    // Por último, no tempo que sobra: a busca da origem em outros cadastros do mesmo e-mail/telefone.
+    restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
+    const origem = restante < 30_000
+      ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
+      : await avancarOrigemAmpliada(env, { orcamentoMs: Math.min(200_000, restante - 20_000) }).catch(() => ({ executada: false, motivo: "falha" }));
+    return { crm, contagens, origem };
   });
   if (ctx?.waitUntil) {
     ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));

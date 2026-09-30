@@ -26,8 +26,10 @@ export type AbaDrawer = "process" | "profile" | "finance" | "journey";
 type Central = { estagio: EstagioDrawer; cartao: CartaoCliente };
 type OrigemCliente = {
   fonte: string | null; campanha: string | null; comoFicouSabendo: string | null; influencer: string | null;
+  cupom?: string | null; landingPage?: boolean;
   situacao: string; negociacoesAnalisadas: number; checadoEm: string;
-  evidencias: { rotulo: string; valor: string; funil: string | null; criadaEm: string | null; propria: boolean }[];
+  ampliada?: { em: string | null; contatos: number; negociacoes: number } | null;
+  evidencias: { rotulo: string; valor: string; funil: string | null; criadaEm: string | null; propria: boolean; outroContato?: "email" | "telefone" | null }[];
 };
 type OrigemCrmBadge = { funil: string | null; etapa: string | null; campos?: { rotulo: string; valor: string | null; situacao: string }[]; origemCliente?: OrigemCliente | null };
 
@@ -42,6 +44,8 @@ const dataCurta = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-
 /** De onde a cliente veio: só o que está registrado no RD, com a negociação de onde cada dado saiu. */
 function OrigemDaCliente({ o }: { o: OrigemCliente }) {
   const linhas: [string, string | null][] = [["Fonte", o.fonte], ["Campanha", o.campanha], ["Como ficou sabendo", o.comoFicouSabendo], ["Influencer", o.influencer]];
+  if (o.cupom) linhas.push(["Cupom", o.cupom]);
+  if (o.landingPage) linhas.push(["Landing page", "Veio pelo formulário do site"]);
   return <details open={o.situacao !== "encontrada"} style={{ marginTop: 8, fontSize: 12 }}>
     <summary style={{ cursor: "pointer", opacity: 0.85 }}>De onde ela veio · {SITUACAO_ORIGEM[o.situacao] ?? o.situacao}</summary>
     <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) 1fr", gap: "4px 12px", margin: "6px 0 0" }}>
@@ -51,9 +55,12 @@ function OrigemDaCliente({ o }: { o: OrigemCliente }) {
       </Fragment>)}
     </dl>
     {o.evidencias.length ? <ul style={{ margin: "6px 0 0", paddingLeft: 16, opacity: 0.8 }}>
-      {o.evidencias.map((e, i) => <li key={i}>{e.rotulo}: <strong>{e.valor}</strong> — {e.propria ? "nesta negociação" : `negociação${e.funil ? ` do funil ${e.funil}` : ""}`}{e.criadaEm ? ` de ${dataCurta(e.criadaEm)}` : ""}</li>)}
+      {o.evidencias.map((e, i) => <li key={i}>{e.rotulo}: <strong>{e.valor}</strong> — {e.propria ? "nesta negociação" : `negociação${e.funil ? ` do funil ${e.funil}` : ""}`}{e.criadaEm ? ` de ${dataCurta(e.criadaEm)}` : ""}{e.outroContato ? ` (outro cadastro no RD com o mesmo ${e.outroContato === "email" ? "e-mail" : "telefone"})` : ""}</li>)}
     </ul> : null}
     <div style={{ marginTop: 4, opacity: 0.6 }}>{o.negociacoesAnalisadas} negociação(ões) desta cliente conferidas no RD em {dataCurta(o.checadoEm)}.</div>
+    {o.ampliada?.em ? <div style={{ marginTop: 2, opacity: 0.6 }}>
+      Busca por outros cadastros com o mesmo e-mail/telefone em {dataCurta(o.ampliada.em)}: {o.ampliada.contatos ? `${o.ampliada.contatos} cadastro(s) e ${o.ampliada.negociacoes} negociação(ões) encontrados` : "nenhum outro cadastro"}.
+    </div> : o.situacao !== "encontrada" ? <div style={{ marginTop: 2, opacity: 0.6 }}>A busca por outros cadastros com o mesmo e-mail/telefone ainda vai rodar.</div> : null}
   </details>;
 }
 
