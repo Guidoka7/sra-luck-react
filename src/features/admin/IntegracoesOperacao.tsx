@@ -158,12 +158,16 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
               <input type="checkbox" checked={ativo} onChange={(e) => atualizarFunil(funil.id, e.target.checked)} />
               <strong>{funil.nome}</strong>
             </span>
+            <ResumoContagemFunil funil={funil} contagem={opcoes?.contagens?.porFunil?.[funil.id] ?? null} atualizadoEm={opcoes?.contagens?.atualizadoEm ?? null} />
             {ativo && <>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {(funil.etapas ?? []).map((etapa: Json) => <span key={etapa.id} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontWeight: 500 }}>
-                  <input type="checkbox" checked={etapas.includes(etapa.id)} onChange={(e) => atualizarFunil(funil.id, true, (x) => ({ ...x, etapas: e.target.checked ? [...etapas, etapa.id] : etapas.filter((id) => id !== etapa.id) }))} />
-                  {etapa.nome}
-                </span>)}
+                {(funil.etapas ?? []).map((etapa: Json) => {
+                  const qtd = (opcoes?.contagens?.porFunil?.[funil.id]?.etapas as Json[] | undefined)?.find((x) => x.chave === etapa.id)?.negociacoes;
+                  return <span key={etapa.id} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontWeight: 500 }}>
+                    <input type="checkbox" checked={etapas.includes(etapa.id)} onChange={(e) => atualizarFunil(funil.id, true, (x) => ({ ...x, etapas: e.target.checked ? [...etapas, etapa.id] : etapas.filter((id) => id !== etapa.id) }))} />
+                    {etapa.nome}{opcoes?.contagens?.porFunil?.[funil.id] ? <span style={muted}>({numero(qtd)})</span> : null}
+                  </span>;
+                })}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(110px,1fr) 1.4fr", gap: 5, alignItems: "center", fontWeight: 500 }}>
                 {(c.itens ?? []).map((it) => <FragmentoLinha key={it.chave} rotulo={it.rotulo} valor={mapa[it.chave] ?? "auto"} opcoes={fontesMapeamento} onChange={(v) => atualizarFunil(funil.id, true, (x) => ({ ...x, mapeamento: { ...(x.mapeamento ?? valores.mapeamento ?? {}), [it.chave]: v } }))} />)}
@@ -180,6 +184,33 @@ export function FormularioFuncao({ provedor, funcao }: { provedor: string; funca
       <button style={btnPrim} disabled={salvando} onClick={() => void salvar()}>{salvando ? "Salvando…" : "Salvar configuração"}</button>
     </div>
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
+  </div>;
+}
+
+const numero = (v: unknown) => Number(v ?? 0).toLocaleString("pt-BR");
+const STATUS_RD: Record<string, string> = { won: "ganhas", ongoing: "em andamento", lost: "perdidas", paused: "pausadas" };
+
+/**
+ * Quantas negociações o funil tem no RD: total exato (catálogo) e a contagem de todas as negociações
+ * por status, responsável e mês (varredura do Sra Luck). Sem contagem, não mostra número nenhum.
+ */
+function ResumoContagemFunil({ funil, contagem, atualizadoEm }: { funil: Json; contagem: Json | null; atualizadoEm: string | null }) {
+  const total = contagem?.total ?? (funil.total?.exato ? funil.total.negociacoes : null);
+  if (total == null) return null;
+  const status = contagem ? Object.entries(STATUS_RD).filter(([k]) => contagem.status?.[k]).map(([k, rotulo]) => `${numero(contagem.status[k])} ${rotulo}`).join(" · ") : "";
+  const lista = (itens: Json[], rotulo: (x: Json) => string) => <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, maxHeight: 200, overflow: "auto" }}>
+    {itens.map((x, i) => <li key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "2px 0", borderBottom: "1px dashed var(--line)" }}><span>{rotulo(x)}</span><strong>{numero(x.negociacoes)}</strong></li>)}
+  </ul>;
+  return <div style={{ fontSize: 10.5 }}>
+    <span style={muted}><strong>{numero(total)}</strong> negociações no RD{status ? ` · ${status}` : ""}</span>
+    {contagem && <details style={{ marginTop: 4 }}>
+      <summary style={{ cursor: "pointer", ...muted }}>Ver por responsável e por mês</summary>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginTop: 6 }}>
+        <div><strong>Por responsável</strong>{lista((contagem.responsaveis ?? []) as Json[], (x) => String(x.nome))}</div>
+        <div><strong>Por mês de criação</strong>{lista(((contagem.meses ?? []) as Json[]).slice().reverse(), (x) => String(x.mes))}</div>
+      </div>
+      {atualizadoEm && <span style={muted}>Contagem de todas as negociações do funil, feita em {dataHora(atualizadoEm)}.</span>}
+    </details>}
   </div>;
 }
 
