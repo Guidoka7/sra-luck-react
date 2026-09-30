@@ -54,6 +54,27 @@ function textoOrigens(o?: { encontrada?: number; parcial?: number; sem_registro_
   return com + sem ? ` · origem: ${com} com registro no RD, ${sem} sem registro` : "";
 }
 
+/** Fonte e campanha das vendas do RD: o que foi achado, o que o RD não registra e a busca em outros cadastros. */
+function CoberturaOrigens({ c }: { c: Json }) {
+  const s = c.porSituacao ?? {};
+  const r = c.ultimaRodada as Json | null;
+  return <>
+    <div style={titulo}>Origem das clientes (fonte e campanha)</div>
+    <div style={{ ...caixa, lineHeight: 1.6 }}>
+      <strong>{s.encontrada ?? 0}</strong> de {c.total ?? 0} com fonte e campanha registradas no RD · <strong>{s.parcial ?? 0}</strong> com o canal registrado
+      (orgânico, indicação ou tráfego pago sem campanha no RD) · <strong>{(s.sem_registro_no_rd ?? 0) + (s.sem_contato ?? 0)}</strong> sem nenhum registro de origem no RD
+      {s.nao_verificada ? <> · {s.nao_verificada} ainda não conferidas</> : null}.<br />
+      <span style={muted}>
+        Sem registro, o Admin mostra o que o RD tem (ex.: “Orgânico — sem campanha paga”, “Não registrada no RD”), nunca um dado inventado
+        {c.colunasEmBranco ? ` · ${c.colunasEmBranco} venda(s) ainda com a coluna em branco (preenchidas na próxima passada)` : ""}.<br />
+        Busca em outros cadastros do RD com o mesmo e-mail/telefone: {c.buscaAmpliadaFeita ?? 0} conferida(s), {c.buscaAmpliadaPendente ?? 0} na fila
+        {r?.em ? ` · última rodada ${dataHora(r.em)}: ${r.analisadas ?? 0} analisada(s), ${r.comOutrosContatos ?? 0} com outro cadastro, ${r.melhoradas ?? 0} completada(s)` : ""}
+        {r?.erro ? ` · ${r.erro}` : ""}.
+      </span>
+    </div>
+  </>;
+}
+
 // ------------------------------------------------------------------ formulário genérico por função
 
 export function FormularioFuncao({ provedor, funcao }: { provedor: string; funcao: string }) {
@@ -297,6 +318,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
     {revisao.length > 0 && <><div style={titulo}>Aguardando revisão ({revisao.length})</div><div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{revisao.map((it) => <ItemImportacao key={it.id} it={it} onAcao={(id, a) => void revisar(id, a)} />)}</div></>}
     <ResponsaveisRd onMsg={setMsg} />
+    {imps?.origens ? <CoberturaOrigens c={imps.origens} /> : null}
     <div style={titulo}>Histórico de importações</div>
     {imps && !imps.disponivel && <div style={{ ...caixa, color: "var(--gold)" }}>Estrutura de histórico ainda não aplicada (migration_091).</div>}
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

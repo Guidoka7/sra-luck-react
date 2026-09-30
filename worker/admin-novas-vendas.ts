@@ -60,10 +60,15 @@ function origemDaCliente(snapshot: unknown) {
   const txt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 240) : null);
   return {
     fonte: txt(o.fonte), campanha: txt(o.campanha), comoFicouSabendo: txt(o.comoFicouSabendo), influencer: txt(o.influencer),
+    cupom: txt(o.cupom), landingPage: Boolean(o.landingPage),
     situacao: String(o.situacao ?? ""), negociacoesAnalisadas: Number(o.negociacoesAnalisadas ?? 0), checadoEm: String(o.checadoEm),
+    ampliada: o.ampliada && typeof o.ampliada === "object"
+      ? { em: txt(o.ampliada.em), contatos: Array.isArray(o.ampliada.contatos) ? o.ampliada.contatos.length : 0, negociacoes: Number(o.ampliada.negociacoes ?? 0) }
+      : null,
     evidencias: (Array.isArray(o.evidencias) ? o.evidencias : []).slice(0, 20).map((e: any) => ({
       rotulo: txt(e?.rotulo) ?? "", valor: txt(e?.valor) ?? "",
       funil: txt(e?.negociacao?.funil), criadaEm: txt(e?.negociacao?.criadaEm), propria: Boolean(e?.negociacao?.propria),
+      outroContato: e?.negociacao?.outroContato?.via === "email" ? "email" : e?.negociacao?.outroContato?.via === "telefone" ? "telefone" : null,
     })),
   };
 }

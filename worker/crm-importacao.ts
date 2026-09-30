@@ -21,7 +21,7 @@ import { createServiceSupabaseClient, type Env } from "./supabase";
 import { codigoErroExecucao, registrarPendencia, registrarPendenciasDoItem } from "./integracao-pendencias";
 import { catalogoCrm } from "./crm-catalogo";
 import { contagensParaTela, lerContagens } from "./crm-contagens";
-import { agruparPorContato, montarOrigem, origemParaColunas, type OrigemCliente } from "./crm-origem";
+import { agruparPorContato, manterAmpliada, montarOrigem, origemParaColunas, valorDescritivoDeOrigem, valorNaoInformativo, type OrigemCliente } from "./crm-origem";
 
 /**
  * Contato guardado vale 24 h. TODOS os contatos dos funis configurados são lidos, sem cota; como o RD
@@ -60,7 +60,7 @@ export type ValoresVenda = {
 
 // ------------------------------------------------------------------ filtro RDQL
 
-function funisConfigurados(config: ConfigCrm): ConfigCrmFunil[] {
+export function funisConfigurados(config: ConfigCrm): ConfigCrmFunil[] {
   if (Array.isArray(config.funis) && config.funis.length) return config.funis;
   if (config.pipelineId) {
     return [{
@@ -416,9 +416,12 @@ function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<strin
   for (const [campo, coluna] of COLUNAS_PREENCHIDAS) {
     if (editadas?.has(coluna)) continue;
     const novo = valores[campo];
+    const atual = v.linha[coluna];
     // Nunca troca um dado preenchido por vazio: a sincronização não apaga nada.
     if (vazio(novo) && !(limparVendedoraVazia && coluna === "vendedora_responsavel" && !soVazias)) continue;
-    if (soVazias && (!vazio(v.linha[coluna]) || vazio(novo))) continue;
+    // Nem troca um dado real por "não registrada no RD" (origem/campanha); o contrário, sim.
+    if (valorDescritivoDeOrigem(novo) && !vazio(atual) && !valorDescritivoDeOrigem(atual)) continue;
+    if (soVazias && ((!vazio(atual) && !valorDescritivoDeOrigem(atual)) || vazio(novo))) continue;
     if ((v.linha[coluna] ?? null) === (novo ?? null)) continue;
     patch[coluna] = novo ?? null;
   }
@@ -426,13 +429,16 @@ function patchLocal(v: VendaIndexada, valores: ValoresVenda, editadas: Set<strin
 }
 
 /**
- * Origem e campanha vazias na própria negociação: completa com o registro real encontrado nas
- * outras negociações da mesma cliente (crm-origem). Campo marcado "ignorar" no Console fica vazio.
+ * Origem e campanha vazias (ou só "Desconhecido") na própria negociação: completa com o registro
+ * real encontrado nas outras negociações da mesma cliente (crm-origem); sem registro, grava o que o
+ * RD mostra ("Orgânico — sem campanha paga", "Não registrada no RD"), nunca em branco.
+ * Campo marcado "ignorar" no Console fica vazio.
  */
-function completarOrigem(valores: ValoresVenda, origem: OrigemCliente, mapa: Partial<Record<CampoCrm, string>>) {
+export function completarOrigem(valores: ValoresVenda, origem: OrigemCliente, mapa: Partial<Record<CampoCrm, string>>) {
   const doRd = origemParaColunas(origem);
-  if (!valores.origem && mapa.origem !== "ignorar" && doRd.origem) valores.origem = doRd.origem.slice(0, 240);
-  if (!valores.campanha && mapa.campanha !== "ignorar" && doRd.campanha) valores.campanha = doRd.campanha.slice(0, 240);
+  const semDado = (v: unknown) => vazio(v) || valorNaoInformativo(String(v)) || valorDescritivoDeOrigem(v);
+  if (semDado(valores.origem) && mapa.origem !== "ignorar" && !(valorNaoInformativo(doRd.origem) && !vazio(valores.origem))) valores.origem = doRd.origem.slice(0, 240);
+  if (semDado(valores.campanha) && mapa.campanha !== "ignorar" && !(valorNaoInformativo(doRd.campanha) && !vazio(valores.campanha))) valores.campanha = doRd.campanha.slice(0, 240);
 }
 
 export async function processarNegociacao(db: Db, entrada: {
@@ -454,7 +460,9 @@ export async function processarNegociacao(db: Db, entrada: {
   const cacheContato: ContatoEmCache | null = contato && entrada.contatoLidoEm
     ? { dados: contatoParaCache(contato), lidoEm: entrada.contatoLidoEm }
     : cacheAnterior;
-  const origem = entrada.origem ?? (existenteIdx ? indice.vendaPorId?.get(existenteIdx.id)?.origem ?? null : null);
+  const origemGuardada = existenteIdx ? indice.vendaPorId?.get(existenteIdx.id)?.origem ?? null : null;
+  // Recalculada agora só com o próprio contato: mantém o que a busca ampliada (e-mail/telefone) achou.
+  const origem = entrada.origem ? manterAmpliada(entrada.origem, origemGuardada) : origemGuardada;
   if (origem) completarOrigem(valores, origem, funilParaSnapshot(s, config)?.mapeamento ?? config.mapeamento);
   const snapshotSelecionado = { ...s, raw: { ...s.raw, _sra_mapeamento: { pipelineId: s.rdPipelineId, campos: camposSelecionados, valores }, ...(cacheContato ? { _sra_contato: cacheContato } : {}), ...(origem ? { _sra_origem: origem } : {}) } };
   const dados = { ...valores, camposSelecionados, rdStatus: s.rdStatus, rdPipelineId: s.rdPipelineId, rdStageId: s.rdStageId, dataVenda: s.dataVenda, origemSituacao: origem?.situacao ?? null };
@@ -1010,7 +1018,33 @@ export async function listarImportacoes(db: Db, limite = 30, incluirWebhook = fa
   const { data, error } = await q;
   if (error) return { disponivel: false, importacoes: [] };
   const aguardando = await itensDaImportacao(db, null, true);
-  return { disponivel: true, importacoes: data ?? [], aguardandoRevisao: aguardando.length };
+  return { disponivel: true, importacoes: data ?? [], aguardandoRevisao: aguardando.length, origens: await coberturaOrigens(db).catch(() => null) };
+}
+
+/**
+ * Quantas vendas do RD têm fonte e campanha registradas, e o andamento da busca em outros
+ * cadastros (mesmo e-mail/telefone). Para o Admin acompanhar sem abrir cliente por cliente.
+ */
+export async function coberturaOrigens(db: Db) {
+  const linhas = await todasAsLinhas<Json>((de, ate) => db.from("novas_vendas")
+    .select("id,situacao:rd_snapshot->_sra_origem->>situacao,ampliada:rd_snapshot->_sra_origem->ampliada->>em,origem_venda,campanha_local")
+    .not("rd_station_id", "is", null).order("id").range(de, ate));
+  const porSituacao: Record<string, number> = { encontrada: 0, parcial: 0, sem_registro_no_rd: 0, sem_contato: 0, nao_verificada: 0 };
+  let buscaAmpliadaFeita = 0, buscaAmpliadaPendente = 0, colunasEmBranco = 0;
+  for (const l of linhas) {
+    const situacao = stringValue(l.situacao) || "nao_verificada";
+    porSituacao[situacao in porSituacao ? situacao : "nao_verificada"]++;
+    if (situacao !== "encontrada" && situacao !== "nao_verificada") {
+      if (l.ampliada) buscaAmpliadaFeita++; else buscaAmpliadaPendente++;
+    }
+    if (vazio(l.origem_venda) || vazio(l.campanha_local)) colunasEmBranco++;
+  }
+  const { data } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", "crm_origem_ampliada").maybeSingle();
+  const estado = objectValue((data as Json | null)?.dados);
+  return {
+    total: linhas.length, porSituacao, colunasEmBranco, buscaAmpliadaFeita, buscaAmpliadaPendente,
+    ultimaRodada: estado.ultimaRodada ?? null, formas: estado.formas ?? null,
+  };
 }
 
 const RESULTADOS_REVISAO = ["duplicada", "cliente_existente"];

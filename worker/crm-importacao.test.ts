@@ -487,7 +487,8 @@ describe("importação", () => {
     expect(o1).toMatchObject({ origem_venda: "Redes Sociais", campanha_local: "Black Friday" });
     expect(o1.rd_snapshot._sra_origem).toMatchObject({ situacao: "encontrada", evidencias: [expect.objectContaining({ negociacao: expect.objectContaining({ id: "LEAD-O1", funil: "Vendas" }) }), expect.anything()] });
     const o2 = tabela("novas_vendas").find((v) => v.rd_station_id === "O2")!;
-    expect(o2).toMatchObject({ origem_venda: null, campanha_local: null });
+    // Sem registro em nenhuma negociação: nunca em branco, e nada inventado.
+    expect(o2).toMatchObject({ origem_venda: "Não registrada no RD", campanha_local: "Não registrada no RD" });
     expect(o2.rd_snapshot._sra_origem).toMatchObject({ situacao: "sem_registro_no_rd" });
     // Falha na consulta das outras negociações: mantém a origem já guardada.
     const falha = { ...f, dealsDosContatos: async () => { throw new Error("RD_HTTP_500"); } };
