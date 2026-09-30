@@ -82,7 +82,11 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_121_logs_entidade_id_texto.sql` troca `logs_alteracoes.entidade_id` de uuid para texto. O App grava o identificador das integrações ("rd_station", "web_push", "gemini"…) e o banco recusava em silêncio: nenhum teste de conexão, importação do RD, OAuth ou chave VAPID ficava no histórico ("conexão nunca verificada" no Dev Console). Rollback: `supabase/rollback/migration_121_rollback.sql`.
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `122`.
+### 122: espelho somente-leitura do RD
+
+`migration_122_crm_espelho_rd.sql` cria `crm_rd_negociacoes` e `crm_rd_contatos`: cópia de todas as negociações (os 15 funis) e contatos do RD, regravada pela varredura de 6 h, com a fonte/campanha resolvida de cada negociação. Alimenta a cobertura de origem por funil no Console; não cria vendas nem clientes (a importação continua só com os funis marcados). RLS ligado, sem políticas. Rollback: `supabase/rollback/migration_122_rollback.sql`.
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `123`.
 
 ## Campos históricos importantes
 

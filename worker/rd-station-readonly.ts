@@ -3,6 +3,7 @@ import { obterCredencial, obterCredencialParaValidacao, salvarCredencialInterna 
 import { getCookie, verificarTokenAdmin } from "./session";
 import { createServiceSupabaseClient, type Env } from "./supabase";
 import { atualizarCatalogoCrm } from "./crm-catalogo";
+import { listarNegociacoesDoFunil } from "./crm-origem-geral";
 import { descartarRevisao, importarCrm, importarDoWebhook, importarMesmoAssim, itensDaImportacao, listarImportacoes, opcoesCrm, usarPerfilDaDuplicata } from "./crm-importacao";
 
 const RD_CRM_BASE = "https://api.rd.services/crm/v2";
@@ -542,6 +543,17 @@ export async function paginaDeals(env: Env, filtro: string, desde: string | null
   return arrayValue(resposta.data).map(objectValue);
 }
 
+/** Uma página de contatos em ordem de criação, a partir de `desde` (inclusivo); mesma lógica de paginaDeals. */
+export async function paginaContatos(env: Env, desde: string | null, pagina: number, ordenar = true): Promise<Json[]> {
+  const q = new URLSearchParams();
+  q.set("page[number]", String(pagina));
+  q.set("page[size]", String(PAGE_SIZE));
+  if (ordenar) q.set("sort[created_at]", "asc");
+  if (desde) q.set("filter", `created_at:>="${desde}"`);
+  const resposta = await rdGet(env, `/contacts?${q.toString()}`);
+  return arrayValue(resposta.data).map(objectValue);
+}
+
 /**
  * Todas as negociações (qualquer funil) dos contatos informados, em lotes de 25 contatos por
  * consulta (`contact_id:(…)`). Usado para achar a origem da cliente na negociação de entrada.
@@ -852,6 +864,12 @@ async function sincronizar(request: Request, env: Env, adminId: string, ctx?: Ba
 async function rotasCrm(request: Request, env: Env, adminId: string, path: string): Promise<Response | null> {
   const db = createServiceSupabaseClient(env);
   const url = new URL(request.url);
+  if (path.endsWith("/origens/negociacoes") && request.method === "GET") {
+    const url = new URL(request.url);
+    const funil = stringValue(url.searchParams.get("funil"));
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(funil)) return json({ erro: "Informe o funil." }, 400);
+    return json(await listarNegociacoesDoFunil(db, funil, { pagina: Number(url.searchParams.get("pagina") || 1), situacao: url.searchParams.get("situacao") }));
+  }
   if (path.endsWith("/opcoes") && request.method === "GET") {
     try { return json(await opcoesCrm(env)); } catch (error) { return json(erroOpcoesRd(error), 502); }
   }
