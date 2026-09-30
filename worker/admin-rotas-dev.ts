@@ -19,6 +19,8 @@ const OPERACAO_EQUIPE: readonly { metodo: "GET" | "POST"; rota: RegExp }[] = [
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/revisao$/ },
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/[0-9a-f-]{36}\/itens$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/itens\/[0-9a-f-]{36}\/(importar|descartar|usar-perfil)$/ },
+  // Revisão em lote ("Selecionar todos"): as mesmas ações, para vários itens.
+  { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/importacoes\/itens\/lote$/ },
   { metodo: "POST", rota: /^\/api\/admin\/integrations\/rd-station\/importar$/ },
   // Vínculo responsável do RD ↔ pessoa da equipe (cadastro de equipe, não conexão).
   { metodo: "GET", rota: /^\/api\/admin\/integrations\/rd-station\/responsaveis$/ },
