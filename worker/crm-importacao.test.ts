@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bancoFalso } from "./banco-falso.testutil";
 import {
-  aplicarMapeamento, chaveTelefone, filtroRdql, importacaoAgendadaSeDevida, importarCrm, importarDoWebhook, importarMesmoAssim, passaNoFiltro, usarPerfilDaDuplicata,
+  aplicarMapeamento, chaveTelefone, filtroRdql, importacaoAgendadaSeDevida, importarCrm, importarDoWebhook, importarMesmoAssim, passaNoFiltro, revisarEmLote, usarPerfilDaDuplicata,
 } from "./crm-importacao";
 import { PADRAO_CRM, validarConfigCrm, type ConfigCrm } from "./integracoes-registro";
 import { normalizarDealRd } from "./rd-station-readonly";
@@ -274,6 +274,23 @@ describe("importação", () => {
     expect(tabela("logs_alteracoes").find((l) => l.acao === "usou_perfil_duplicata_crm")).toMatchObject({ entidade_id: "nv-1", detalhes: { antes: { nome_completo: "Caio Pendente", email: null } } });
     expect(tabela("integracao_importacao_itens")[0]).toMatchObject({ revisado_por: "admin:2" });
     expect(await usarPerfilDaDuplicata(db, item.id, "admin:2")).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("revisão em lote: \"perfil mais completo\" decide item a item; itens já revisados voltam como falha, sem repetir", async () => {
+    const { db, tabela } = cenario();
+    await importarCrm(env, { origem: "manual", ator: "admin:1" }, {
+      db, config: config(),
+      fontes: fontes([deal("TEL", { total_price: 7000 })], [contato("TEL", "Caio de Novo", "(61) 8888-7777", "caio@x.com", "52998224725")]),
+    });
+    const maisCompleta = tabela("integracao_importacao_itens")[0];
+    // Segunda duplicata, menos completa que a venda pendente: fica a venda pendente.
+    tabela("integracao_importacao_itens").push({ id: "11111111-1111-4111-8111-111111111111", external_id: "POBRE", resultado: "duplicada", revisado_em: null, dados: { completude: 1 }, correspondencias: [{ tipo: "venda", id: "nv-1", completude: 2 }] });
+    const r = await revisarEmLote(db, "mais-completo", [maisCompleta.id, "11111111-1111-4111-8111-111111111111", maisCompleta.id], "admin:2");
+    expect(r).toMatchObject({ total: 2, feitos: 2, usarPerfil: 1, mesmaPessoa: 1, importadas: 0, falhas: [] });
+    expect(tabela("novas_vendas").find((v) => v.id === "nv-1")).toMatchObject({ nome_completo: "Caio de Novo", email: "caio@x.com" });
+    expect(tabela("integracao_importacao_itens").every((i) => i.revisado_por === "admin:2")).toBe(true);
+    const de_novo = await revisarEmLote(db, "descartar", [maisCompleta.id], "admin:3");
+    expect(de_novo).toMatchObject({ feitos: 0, falhas: [{ id: maisCompleta.id, erro: expect.stringMatching(/não está aguardando/) }] });
   });
 
   it("venda pendente reflete o preenchimento do Console a cada sincronização; edição feita no Admin é preservada", async () => {
