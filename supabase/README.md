@@ -86,7 +86,11 @@ Opcional para o App funcionar: sem ela o catálogo fica em memória de cada inst
 
 `migration_122_crm_espelho_rd.sql` cria `crm_rd_negociacoes` e `crm_rd_contatos`: cópia de todas as negociações (os 15 funis) e contatos do RD, regravada pela varredura de 6 h, com a fonte/campanha resolvida de cada negociação. Alimenta a cobertura de origem por funil no Console; não cria vendas nem clientes (a importação continua só com os funis marcados). RLS ligado, sem políticas. Rollback: `supabase/rollback/migration_122_rollback.sql`.
 
-- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `123`.
+### 123: contato completo no espelho
+
+`migration_123_crm_espelho_contato_dados.sql` adiciona `crm_rd_contatos.dados` (o contato no formato do cache da venda). A importação usa o espelho em vez de consultar o RD uma vez por cliente nova: com todos os funis marcados, a passada levava horas. Rollback: `supabase/rollback/migration_123_rollback.sql`.
+
+- A `114` está reservada ao modelo de conciliação da Conta Azul (`docs/INTEGRACOES-CONSOLE-CONCILIACAO.md`). A próxima livre é a `124`.
 
 ## Campos históricos importantes
 

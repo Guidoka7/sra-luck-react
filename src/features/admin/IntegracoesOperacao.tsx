@@ -40,10 +40,15 @@ function Aviso({ texto, tipo }: { texto: string | null; tipo: "ok" | "bad" }) {
 }
 
 /** Importação em etapas: quanto da passada atual já foi lido no RD. */
-function textoPassada(p?: { concluida?: boolean; lidas?: number } | null) {
+/** Andamento da passada inteira (a execução de cada 5 min lê uma parte; o total só cresce). */
+function textoPassada(p?: { concluida?: boolean; lidas?: number; total?: number | null } | null) {
   if (!p) return "";
-  const lidas = Number(p.lidas ?? 0).toLocaleString("pt-BR");
-  return p.concluida ? ` · leitura completa do RD (${lidas} negociações)` : ` · leitura em etapas: ${lidas} negociações até agora, continua sozinha a cada 5 min`;
+  const lidas = Number(p.lidas ?? 0);
+  const total = typeof p.total === "number" && p.total > 0 ? p.total : null;
+  const de = total ? ` de ${total.toLocaleString("pt-BR")} (${Math.min(100, Math.floor((lidas / total) * 100))}%)` : "";
+  return p.concluida
+    ? ` · leitura completa do RD (${lidas.toLocaleString("pt-BR")} negociações)`
+    : ` · passada em andamento: ${lidas.toLocaleString("pt-BR")}${de} negociações lidas até agora, continua sozinha a cada 5 min`;
 }
 
 /** Origem das clientes conferida no RD nesta execução (fonte/campanha/como ficou sabendo). */

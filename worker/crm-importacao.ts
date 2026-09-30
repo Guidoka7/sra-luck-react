@@ -536,7 +536,42 @@ type Fontes = {
   pagina?: (filtro: string, desde: string | null, pagina: number) => Promise<Json[]>;
   /** Todas as negociações (qualquer funil) destes contatos: origem da cliente. Sem esta fonte, só a própria negociação. */
   dealsDosContatos?: (idsContato: string[]) => Promise<Json[]>;
+  /** Espelho do RD (crm-espelho): contatos já lidos pela varredura e origem resolvida com os outros cadastros da pessoa. */
+  espelho?: EspelhoImportacao | null;
 };
+
+export type EspelhoImportacao = {
+  contatos: (ids: string[]) => Promise<Map<string, Json>>;
+  origens: (idsNegociacao: string[]) => Promise<Map<string, OrigemCliente>>;
+  /** Grava no espelho os contatos lidos agora do RD (a próxima passada não precisa ler de novo). */
+  guardarContatos: (contatos: Json[]) => Promise<void>;
+};
+
+/** Espelho no banco. Falha de leitura nunca trava a importação: volta vazio e o RD é consultado. */
+export function espelhoDoBanco(db: Db): EspelhoImportacao {
+  return {
+    contatos: async (ids) => {
+      const out = new Map<string, Json>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await db.from("crm_rd_contatos").select("id,dados").in("id", ids.slice(i, i + 200)).not("dados", "is", null);
+        for (const c of (data ?? []) as Json[]) if (c.dados) out.set(String(c.id), { ...objectValue(c.dados), id: String(c.id) });
+      }
+      return out;
+    },
+    origens: async (ids) => {
+      const out = new Map<string, OrigemCliente>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await db.from("crm_rd_negociacoes").select("id,origem").in("id", ids.slice(i, i + 200)).not("origem", "is", null);
+        for (const n of (data ?? []) as Json[]) {
+          const { assinatura: _a, ...origem } = objectValue(n.origem);
+          if (origem.situacao) out.set(String(n.id), origem as OrigemCliente);
+        }
+      }
+      return out;
+    },
+    guardarContatos: async (contatos) => { await gravarContatos(db, contatos, new Date().toISOString()).catch(() => undefined); },
+  };
+}
 
 
 function fontesRd(env: Env): Fontes {
@@ -649,6 +684,22 @@ async function salvarProgresso(db: Db, p: ProgressoImportacao) {
   await db.from("integracao_catalogos").upsert({ provedor: "rd_station", chave: CHAVE_PROGRESSO, dados: p, atualizado_em: new Date().toISOString() }, { onConflict: "provedor,chave" });
 }
 
+/**
+ * Total de negociações que a passada lê (soma dos funis no catálogo, contagem exata). Só quando o
+ * filtro é o funil inteiro (sem etapa nem status): com filtro, o total real é menor e não é mostrado.
+ */
+export async function totalDaPassada(db: Db, config: ConfigCrm): Promise<number | null> {
+  if (config.status && config.status !== "qualquer") return null;
+  const { data } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", "crm_funis").maybeSingle();
+  const funis = arrayValue(objectValue((data as Json | null)?.dados).funis).map(objectValue);
+  if (!funis.length) return null;
+  const configurados = config.todosFunis ? null : funisConfigurados(config);
+  if (configurados?.some((f) => f.etapas?.length)) return null;
+  const alvo = configurados ? funis.filter((f) => configurados.some((c) => c.pipelineId === stringValue(f.id))) : funis;
+  if (!alvo.length || alvo.some((f) => typeof objectValue(f.total).negociacoes !== "number")) return null;
+  return alvo.reduce((soma, f) => soma + Number(objectValue(f.total).negociacoes), 0);
+}
+
 /** Passada começada e não terminada: o agendador continua sem esperar a frequência. */
 export async function passadaEmAndamento(db: Db) {
   const p = await lerProgresso(db);
@@ -688,6 +739,7 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
   const importacaoId = String((imp as Json).id);
   await marcarExecucoesInterrompidas(db, importacaoId);
   const fontes = deps.fontes ?? fontesRd(env);
+  const espelho = fontes.espelho !== undefined ? fontes.espelho : deps.fontes ? null : espelhoDoBanco(db);
   const lerPagina = fontes.pagina ?? paginadorEmMemoria(fontes.deals);
   try {
     const [r, indice, anterior] = await Promise.all([fontes.refs(), carregarIndice(db), lerProgresso(db)]);
@@ -742,10 +794,16 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       // Sem cota: todos os guardados vencidos são relidos (os mais antigos primeiro). O que não couber
       // no tempo desta execução é relido na próxima; a venda mantém os dados enquanto isso.
       const renovar = vencidos.sort((a, b) => a.lidoEm.localeCompare(b.lidoEm)).map((x) => x.id);
-      const pedir = [...new Set([...novos, ...semCache, ...renovar])];
+      const pedirTodos = [...new Set([...novos, ...semCache, ...renovar])];
+      // Contatos que a varredura do espelho já leu (até 6 h) não gastam consulta ao RD:
+      // antes, cada cliente nova custava uma consulta e uma passada com todos os funis levava horas.
+      const doEspelho = espelho && pedirTodos.length ? await espelho.contatos(pedirTodos).catch(() => new Map<string, Json>()) : new Map<string, Json>();
+      const pedir = pedirTodos.filter((id) => !doEspelho.has(id));
       const leitura: LeituraContatos = fontes.contatos
         ? (pedir.length ? await fontes.contatos(pedir, Math.max(5_000, prazo - relogio())) : { contatos: new Map(), falhas: new Set() })
         : { contatos: mapById(r.contatos), falhas: new Set() };
+      if (espelho && leitura.contatos.size) await espelho.guardarContatos([...leitura.contatos.values()]);
+      for (const [id, c] of doEspelho) leitura.contatos.set(id, c);
       const contatosLidos = leitura.contatos;
       const contatosTodos = new Map<string, Json>([...[...cachePorContato].map(([id, c]) => [id, c.dados] as [string, Json]), ...contatosLidos]);
       const refs = { contatos: contatosTodos, usuarios, campanhas, fontes: fontesRef };
@@ -756,10 +814,17 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
       if (fontes.dealsDosContatos && idsContatos.length) {
         try { porContato = agruparPorContato(await fontes.dealsDosContatos(idsContatos)); } catch { porContato = null; }
       }
+      // Origem já resolvida no espelho (com os outros cadastros da mesma pessoa, crm-origem-geral).
+      const origensEspelho = espelho && lidas.length
+        ? await espelho.origens(lidas.map((d) => stringValue(d.id)).filter(Boolean)).catch(() => new Map<string, OrigemCliente>())
+        : new Map<string, OrigemCliente>();
       const origemDe = (d: Json): OrigemCliente | undefined => {
-        if (!porContato) return undefined;
+        const doEspelho = origensEspelho.get(stringValue(d.id));
+        if (!porContato) return doEspelho;
         const ct = idsContatoDaNegociacao(d)[0];
-        return montarOrigem(d, ct ? porContato.get(ct) ?? [] : [], { fontes: fontesRef, campanhas, funis: nomesFunis }, { semContato: !ct, agora: agoraIso });
+        const fresca = montarOrigem(d, ct ? porContato.get(ct) ?? [] : [], { fontes: fontesRef, campanhas, funis: nomesFunis }, { semContato: !ct, agora: agoraIso });
+        // O que está no RD agora (própria negociação e mesmo contato) + o que veio de outros cadastros.
+        return doEspelho ? manterAmpliada(fresca, doEspelho) : fresca;
       };
       // Entre negociações novas com o mesmo telefone, a mais completa é gravada primeiro; as demais
       // viram duplicatas dela. Negociações já importadas mantêm a ordem.
@@ -858,6 +923,8 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
     const passada = {
       concluida, iniciadaEm: progresso.iniciadaEm, lidas: progresso.lidas, execucoes: progresso.execucoes,
       lidoAte: progresso.desde, funil: Math.min(progresso.indice + 1, progresso.segmentos.length), funis: progresso.segmentos.length,
+      // Quantas negociações a passada tem no total (catálogo exato), para a tela mostrar "X de Y".
+      total: await totalDaPassada(db, config).catch(() => null),
     };
     const resumo = { ...totais(itens, vistas.size - jaVistas), adiadas, somenteLeitura: true, passada, origens };
     const status = resumo.erros ? "parcial" : "concluida";

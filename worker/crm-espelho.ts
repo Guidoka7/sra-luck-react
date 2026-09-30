@@ -5,7 +5,7 @@
  * e em qualquer cadastro da mesma pessoa (crm-origem-geral).
  */
 import { createServiceSupabaseClient } from "./supabase";
-import { arrayValue, objectValue, stringValue } from "./rd-station-readonly";
+import { arrayValue, contatoParaCache, objectValue, stringValue } from "./rd-station-readonly";
 import { chaveTelefone } from "./crm-chaves";
 import { camposDeOrigem, emailsValidos } from "./crm-origem";
 
@@ -48,6 +48,8 @@ export function contatoParaEspelho(c: Json, vistoEm: string) {
     telefones: [...new Set(telefones)],
     criado_em: data(c.created_at),
     visto_em: vistoEm,
+    // O que a importação usa do contato (mesmo formato do cache da venda): a importação não relê no RD.
+    dados: contatoParaCache(c),
   };
 }
 

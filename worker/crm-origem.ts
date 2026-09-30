@@ -194,7 +194,8 @@ export function ampliarOrigem(base: OrigemCliente, encontradas: { deal: Json; co
  * busca ampliada achou, as evidências de outros contatos guardadas antes são somadas de novo.
  */
 export function manterAmpliada(nova: OrigemCliente, anterior: OrigemCliente | null | undefined): OrigemCliente {
-  if (!anterior?.ampliada) return nova;
+  // A nova já veio com os outros cadastros (espelho): nada a somar.
+  if (!anterior?.ampliada || nova.ampliada) return nova;
   const jaVistas = new Set(nova.evidencias.map((e) => e.negociacao.id));
   const deOutros = (anterior.evidencias ?? []).filter((e) => deOutroContato(e) && !jaVistas.has(e.negociacao.id));
   return resumirOrigem([...nova.evidencias, ...deOutros], {
