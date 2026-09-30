@@ -182,6 +182,9 @@ export function diferencas(b: BoletoConc, l: Pick<Lancamento, "valor" | "vencime
   };
 }
 
+/** Ordem das sugestões: valor diferente pesa meio mês; cada 30 dias de distância pesa um. */
+const proximidade = (d: ReturnType<typeof diferencas>) => (d.valor ? 0.5 : 0) + Math.abs(d.diasVencimento ?? 3650) / 30;
+
 /**
  * Separa em: já vinculadas, correspondências (valor e vencimento idênticos, par único),
  * divergências (candidatas com mesmo valor e vencimento diferente, ou mesmo vencimento e valor
@@ -219,11 +222,13 @@ export function conciliar(boletos: BoletoConc[], vinculos: VinculoConc[], lancam
   for (const b of livresSra.filter((x) => !casados.has(x.id))) {
     const candidatos = livresCa.filter((l) => !usados.has(l.id) && (centavos(l.valor) === centavos(b.valor) || l.vencimento === b.vencimento))
       .map((l) => ({ lancamento: l, diferencas: diferencas(b, l) }))
-      .sort((x, y) => Number(x.diferencas.valor) - Number(y.diferencas.valor) || Math.abs(x.diferencas.diasVencimento ?? 9999) - Math.abs(y.diferencas.diasVencimento ?? 9999))
+      .sort((x, y) => proximidade(x.diferencas) - proximidade(y.diferencas))
       .slice(0, 5);
     if (candidatos.length) divergencias.push({ boleto: b, candidatos }); else somenteSra.push(b);
   }
-  const somenteContaAzul = livresCa.filter((l) => !usados.has(l.id));
+  // Candidato de alguma divergência não é "só na Conta Azul": aparece lá, para escolha.
+  const candidatos = new Set(divergencias.flatMap((d) => d.candidatos.map((c) => c.lancamento.id)));
+  const somenteContaAzul = livresCa.filter((l) => !usados.has(l.id) && !candidatos.has(l.id));
   return {
     vinculadas, correspondencias, divergencias, somenteSra, somenteContaAzul,
     totais: { parcelasSra: boletos.length, lancamentosConta: lancamentos.length, vinculadas: vinculadas.length, correspondencias: correspondencias.length, divergencias: divergencias.length, somenteSra: somenteSra.length, somenteContaAzul: somenteContaAzul.length },
@@ -375,30 +380,34 @@ export async function previaImportacao(d: Deps, clienteId: string) {
 }
 
 /**
- * Importa exatamente o que a equipe viu na prévia: recalcula no servidor e exige o mesmo conjunto
- * de parcelas (se a Conta Azul mudou no meio, pede nova conferência). Uma transação no banco.
+ * Importa o que a equipe marcou na prévia: recalcula no servidor e exige que cada lançamento
+ * escolhido continue importável (se a Conta Azul mudou no meio, pede nova conferência). A
+ * numeração segue o vencimento das escolhidas. Uma transação no banco.
  */
 export async function importarFinanceiro(env: Env, clienteId: string, idsConfirmados: string[], ator: string, parcial: Partial<Deps> = {}) {
   const d = depsPadrao(env, parcial);
   const previa = await previaImportacao(d, clienteId);
   if (!previa.ok) return previa;
-  const esperados = [...previa.parcelas.map((p) => p.caParcelaId)].sort().join(",");
-  if (!previa.parcelas.length) return { ok: false as const, status: 409, erro: "Nenhuma parcela importável na Conta Azul." };
-  if ([...(idsConfirmados ?? [])].map(String).sort().join(",") !== esperados) return { ok: false as const, status: 409, erro: "Os lançamentos mudaram na Conta Azul desde a prévia. Revise de novo antes de importar." };
+  // A equipe pode desmarcar lançamentos que não são parcelas do plano (ex.: uma taxa avulsa).
+  // Cada ID escolhido precisa continuar importável na leitura feita agora no servidor.
+  const escolhidos = new Set((idsConfirmados ?? []).map(String));
+  const selecionadas = previa.parcelas.filter((p) => escolhidos.has(p.caParcelaId));
+  if (!escolhidos.size) return { ok: false as const, status: 400, erro: "Escolha ao menos uma parcela para importar." };
+  if (selecionadas.length !== escolhidos.size) return { ok: false as const, status: 409, erro: "Os lançamentos mudaram na Conta Azul desde a prévia. Revise de novo antes de importar." };
   const { data, error } = await d.db.rpc("conta_azul_importar_financeiro", {
     p_cliente_id: clienteId, p_ca_pessoa_id: String(previa.pessoa.id_externo), p_usuario: ator,
-    p_parcelas: previa.parcelas.map((p) => ({ caParcelaId: p.caParcelaId, caEventoId: p.caEventoId, caVersao: p.caVersao, valor: p.valor, vencimento: p.vencimento, ca: p.ca, pago: p.pago, dataPagamento: p.dataPagamento, juros: p.juros, multa: p.multa, desconto: p.desconto, forma: p.forma, caBaixaId: p.caBaixaId })),
+    p_parcelas: selecionadas.map((p) => ({ caParcelaId: p.caParcelaId, caEventoId: p.caEventoId, caVersao: p.caVersao, valor: p.valor, vencimento: p.vencimento, ca: p.ca, pago: p.pago, dataPagamento: p.dataPagamento, juros: p.juros, multa: p.multa, desconto: p.desconto, forma: p.forma, caBaixaId: p.caBaixaId })),
   });
   if (error) {
     const msg = String(error.message || "");
     return { ok: false as const, status: 409, erro: /ja possui financeiro/i.test(msg) ? "A cliente já tem financeiro no Sra Luck." : /vinculo confirmado/i.test(msg) ? "Vínculo com a pessoa da Conta Azul não confirmado." : "Não foi possível importar (nada foi gravado)." };
   }
   // Recebimento parcial na Conta Azul: o Sra Luck não tem baixa parcial → conferência humana.
-  for (const p of previa.parcelas.filter((x) => x.parcial)) {
+  for (const p of selecionadas.filter((x) => x.parcial)) {
     const { data: v } = await d.db.from("conta_azul_vinculos").select("id,boleto_id").eq("ca_parcela_id", p.caParcelaId).maybeSingle();
     if (v) await abrirConflito(d.db, { referencia: String((v as Json).boleto_id), vinculoId: String((v as Json).id), tipo: "recebido_parcial", descricao: `Importada em aberto: recebimento parcial na Conta Azul (${p.ca.valorPago.toFixed(2)} de ${p.valor.toFixed(2)}).`, dadosExternos: p.ca });
   }
-  return { ok: true as const, resultado: data, naoImportadas: previa.naoImportadas.length };
+  return { ok: true as const, resultado: data, naoImportadas: previa.naoImportadas.length, deixadasDeFora: previa.parcelas.length - selecionadas.length };
 }
 
 // ------------------------------------------------------------------ central técnica (Dev Console)

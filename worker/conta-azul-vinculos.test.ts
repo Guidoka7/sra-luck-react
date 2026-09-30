@@ -93,7 +93,11 @@ describe("conciliação (não grava nada)", () => {
     expect(r.divergencias[0]).toMatchObject({ boleto: { id: "s3" } });
     expect(r.divergencias[0].candidatos[0]).toMatchObject({ lancamento: { id: "c3" }, diferencas: { vencimento: true, valor: false, diasVencimento: 5 } });
     expect(r.somenteSra.map((x) => x.id)).toEqual(["s4"]);
-    expect(r.somenteContaAzul.map((x) => x.id)).toEqual(["c3", "c9"]);
+    expect(r.somenteContaAzul.map((x) => x.id)).toEqual(["c9"]);
+  });
+  it("valor diferente no mesmo vencimento vem antes de mesmo valor com um mês de distância", () => {
+    const r = conciliar([b("s9", 9, 500, "2026-11-15")], [], [l("c8", 500, "2026-10-20"), l("c9", 520, "2026-11-15")]);
+    expect(r.divergencias[0].candidatos.map((c) => c.lancamento.id)).toEqual(["c9", "c8"]);
   });
   it("dois lançamentos idênticos para uma parcela: não sugere par automático", () => {
     const r = conciliar([b("s1", 1, 500, "2026-10-15")], [], [l("c1", 500, "2026-10-15"), l("c2", 500, "2026-10-15")]);
@@ -178,8 +182,13 @@ describe("financeiro que nasce da Conta Azul", () => {
 
   it("importa só o que foi conferido; se a Conta Azul mudou, pede nova conferência", async () => {
     const m = montar(rotasImport(), { cliente_vinculos_externos: [pessoaAtiva] });
-    expect(await importarFinanceiro(env, CLIENTE, ["P1"], "col-1", m.deps)).toMatchObject({ ok: false, status: 409 });
+    expect(await importarFinanceiro(env, CLIENTE, ["P1", "P3"], "col-1", m.deps)).toMatchObject({ ok: false, status: 409 });
+    expect(await importarFinanceiro(env, CLIENTE, [], "col-1", m.deps)).toMatchObject({ ok: false, status: 400 });
     expect(m.rpcArgs.importar).toBeUndefined();
+    // Lançamento avulso desmarcado pela equipe fica de fora.
+    expect(await importarFinanceiro(env, CLIENTE, ["P2"], "col-1", m.deps)).toMatchObject({ ok: true, deixadasDeFora: 1 });
+    expect(m.rpcArgs.importar[0].p_parcelas.map((p: any) => p.caParcelaId)).toEqual(["P2"]);
+    m.rpcArgs.importar.length = 0;
     expect(await importarFinanceiro(env, CLIENTE, ["P2", "P1"], "col-1", m.deps)).toMatchObject({ ok: true, resultado: { parcelas: 2, pagas: 1 } });
     expect(m.rpcArgs.importar[0]).toMatchObject({ p_cliente_id: CLIENTE, p_ca_pessoa_id: "PESSOA", p_usuario: "col-1" });
     expect(m.rpcArgs.importar[0].p_parcelas[0]).toMatchObject({ caParcelaId: "P1", pago: true, juros: 20, multa: 10, caBaixaId: "BX1", valor: 500 });

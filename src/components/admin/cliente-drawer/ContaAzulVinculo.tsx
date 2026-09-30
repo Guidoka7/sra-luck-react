@@ -62,6 +62,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
   const [escolhaDiv, setEscolhaDiv] = useState<Record<string, string>>({});
   const [previa, setPrevia] = useState<Previa | null>(null);
+  const [importarIds, setImportarIds] = useState<Set<string>>(new Set());
   const cpfValido = cpf.replace(/\D/g, "").length === 11;
 
   async function carregar() {
@@ -90,10 +91,13 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
     const r = await api<Conciliacao>(`${BASE}/${clienteId}/conciliacao`);
     setConc(r); setMarcadas(new Set(r.correspondencias.map((c) => c.boleto.id))); setEscolhaDiv({});
   });
-  const verPrevia = () => executar("previa", async () => setPrevia(await api<Previa>(`${BASE}/${clienteId}/importacao`)));
+  const verPrevia = () => executar("previa", async () => {
+    const r = await api<Previa>(`${BASE}/${clienteId}/importacao`);
+    setPrevia(r); setImportarIds(new Set(r.parcelas.map((p) => p.caParcelaId)));
+  });
   const importar = () => executar("importar", async () => {
     if (!previa) return;
-    const r = await api<Json>(`${BASE}/${clienteId}/importar`, { caParcelaIds: previa.parcelas.map((p) => p.caParcelaId) });
+    const r = await api<Json>(`${BASE}/${clienteId}/importar`, { caParcelaIds: previa.parcelas.filter((p) => importarIds.has(p.caParcelaId)).map((p) => p.caParcelaId) });
     toast.success(`Financeiro montado: ${r.resultado?.parcelas ?? 0} parcela(s), ${r.resultado?.pagas ?? 0} já paga(s).`);
     setPrevia(null); onAlterado?.(); await conferir();
   });
@@ -106,6 +110,15 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
   });
 
   const lancamentos = useMemo(() => conc?.lancamentos ?? [], [conc]);
+  const marcadasPrevia = useMemo(() => {
+    const lista = (previa?.parcelas ?? []).filter((p) => importarIds.has(p.caParcelaId));
+    const hoje = new Date().toISOString().slice(0, 10);
+    return {
+      total: lista.length, pagas: lista.filter((p) => p.pago).length, abertas: lista.filter((p) => !p.pago).length,
+      vencidas: lista.filter((p) => !p.pago && p.vencimento < hoje).length,
+      valor: lista.reduce((t, p) => t + p.valor, 0), recebido: lista.filter((p) => p.pago).reduce((t, p) => t + p.valor + p.juros + p.multa - p.desconto, 0),
+    };
+  }, [previa, importarIds]);
 
   if (pessoa === undefined) return <article className={`${styles.card} ${styles.financeCard}`}><div className={styles.cardBody}><span className={styles.muted}>Consultando vínculo com a Conta Azul…</span></div></article>;
 
@@ -128,7 +141,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
       {!pessoa && busca && <div className={styles.banner}>
         <div className={styles.kicker}>{busca.situacao === "nao_encontrada" ? "Nenhuma pessoa com este CPF" : busca.situacao === "mais_de_uma" ? "Mais de uma pessoa com este CPF: escolha" : "Pessoa encontrada"}</div>
         {busca.situacao === "nao_encontrada" ? <span className={styles.muted}>Cadastre a cliente na Conta Azul com o CPF {formatarCpf(cpf)} e busque de novo.</span> : <>
-          {busca.pessoas.map((p) => <label key={p.id} className={styles.miniRow} style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: p.vinculadaA ? "not-allowed" : "pointer", opacity: p.vinculadaA ? 0.6 : 1 }}>
+          {busca.pessoas.map((p) => <label key={p.id} className={styles.miniRow} style={{ display: "flex", gap: 8, alignItems: "flex-start", justifyContent: "flex-start", textAlign: "left", cursor: p.vinculadaA ? "not-allowed" : "pointer", opacity: p.vinculadaA ? 0.6 : 1 }}>
             <input type="radio" name={`ca-pessoa-${clienteId}`} checked={escolhida === p.id} disabled={Boolean(p.vinculadaA)} onChange={() => { setEscolhida(p.id); setConfirmo(false); }} />
             <span><b>{p.nome}</b> · CPF {formatarCpf(p.documento)}{p.email ? ` · ${p.email}` : ""}{p.tipo ? ` · ${p.tipo}` : ""}
               {p.vinculadaA ? <><br /><small className={styles.muted}>Já vinculada a {p.vinculadaA.nome ?? "outra cliente"}.</small></> : null}</span>
@@ -146,21 +159,23 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
       {previa && <div className={styles.banner}>
         <div className={styles.kicker}>Prévia — nada foi gravado ainda</div>
         <div className={styles.summary}>
-          <div className={styles.kpi}><span className={styles.kpiLabel}>Parcelas</span><strong className={styles.kpiValue}>{previa.totais.parcelas}</strong><span className={styles.kpiSub}>{previa.totais.pagas} paga(s) · {previa.totais.abertas} em aberto · {previa.totais.vencidas} vencida(s)</span></div>
-          <div className={styles.kpi}><span className={styles.kpiLabel}>Valor do plano</span><strong className={styles.kpiValue}>{formatCurrency(previa.totais.valorTotal)}</strong><span className={styles.kpiSub}>recebido {formatCurrency(previa.totais.recebido)}</span></div>
+          <div className={styles.kpi}><span className={styles.kpiLabel}>Parcelas marcadas</span><strong className={styles.kpiValue}>{marcadasPrevia.total} de {previa.totais.parcelas}</strong><span className={styles.kpiSub}>{marcadasPrevia.pagas} paga(s) · {marcadasPrevia.abertas} em aberto · {marcadasPrevia.vencidas} vencida(s)</span></div>
+          <div className={styles.kpi}><span className={styles.kpiLabel}>Valor do plano</span><strong className={styles.kpiValue}>{formatCurrency(marcadasPrevia.valor)}</strong><span className={styles.kpiSub}>recebido {formatCurrency(marcadasPrevia.recebido)} (com juros e multa)</span></div>
         </div>
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Nº</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Pagamento (composição)</th></tr></thead>
-          <tbody>{previa.parcelas.map((p, i) => <tr key={p.caParcelaId}>
-            <td>{i + 1}/{previa.parcelas.length}</td><td>{formatDate(p.vencimento)}</td><td>{formatCurrency(p.valor)}</td>
+          <thead><tr><th>Importar</th><th>Vencimento</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Pagamento (composição)</th></tr></thead>
+          <tbody>{previa.parcelas.map((p) => <tr key={p.caParcelaId} style={importarIds.has(p.caParcelaId) ? undefined : { opacity: 0.45 }}>
+            <td><input type="checkbox" aria-label={`Importar lançamento de ${formatDate(p.vencimento)}`} checked={importarIds.has(p.caParcelaId)} onChange={(e) => setImportarIds((m) => { const n = new Set(m); if (e.target.checked) n.add(p.caParcelaId); else n.delete(p.caParcelaId); return n; })} /></td>
+            <td>{formatDate(p.vencimento)}</td><td>{p.descricao || "—"}</td><td>{formatCurrency(p.valor)}</td>
             <td>{p.pago ? <StatusCa s="QUITADO" /> : p.parcial ? <StatusCa s="RECEBIDO_PARCIAL" /> : <StatusCa s="PENDENTE" />}</td>
-            <td>{p.pago ? `${formatDate(p.dataPagamento)} · ${formatCurrency(p.valor)}${p.juros ? ` + juros ${formatCurrency(p.juros)}` : ""}${p.multa ? ` + multa ${formatCurrency(p.multa)}` : ""}${p.desconto ? ` − desc. ${formatCurrency(p.desconto)}` : ""}` : p.parcial ? "Recebimento parcial: vai para revisão" : "—"}</td>
+            <td style={{ whiteSpace: "normal" }}>{p.pago ? `${formatDate(p.dataPagamento)} · ${formatCurrency(p.valor)}${p.juros ? ` + juros ${formatCurrency(p.juros)}` : ""}${p.multa ? ` + multa ${formatCurrency(p.multa)}` : ""}${p.desconto ? ` − desc. ${formatCurrency(p.desconto)}` : ""}` : p.parcial ? "Recebimento parcial: vai para revisão" : "—"}</td>
           </tr>)}</tbody>
         </table></div>
+        <span className={styles.muted}>Desmarque lançamentos que não são parcelas do plano (ex.: uma taxa avulsa). As marcadas viram as parcelas 1 a {importarIds.size}, pela ordem de vencimento.</span>
         {previa.naoImportadas.length ? <div className={styles.warning}><b>Não entram ({previa.naoImportadas.length}):</b> {previa.naoImportadas.map((n) => `${formatDate(n.vencimento)} ${formatCurrency(n.valor)} — ${n.motivo}`).join(" · ")}</div> : null}
         <div className={styles.bannerActions}>
           <button type="button" className={styles.modalBtn} onClick={() => setPrevia(null)}>Cancelar</button>
-          <button type="button" className={`${styles.modalBtn} ${styles.primary}`} disabled={!previa.parcelas.length || ocupado === "importar"} onClick={() => void importar()}>{ocupado === "importar" ? "Importando…" : `Importar ${previa.parcelas.length} parcela(s)`}</button>
+          <button type="button" className={`${styles.modalBtn} ${styles.primary}`} disabled={!importarIds.size || ocupado === "importar"} onClick={() => { if (window.confirm(`Criar ${importarIds.size} parcela(s) no Financeiro desta cliente a partir da Conta Azul?`)) void importar(); }}>{ocupado === "importar" ? "Importando…" : `Importar ${importarIds.size} parcela(s)`}</button>
         </div>
       </div>}
 
@@ -199,7 +214,7 @@ export function ContaAzulVinculo({ clienteId, cpf, temFinanceiro, modo, onAltera
             <span className={styles.label}>Divergências — escolha a correspondência de cada parcela</span>
             {conc.divergencias.map((dv) => <div key={dv.boleto.id} className={styles.banner}>
               <div className={styles.kicker}>Parcela {String(dv.boleto.numero).padStart(2, "0")} Sra. Luck — {formatDate(dv.boleto.vencimento)} — {formatCurrency(dv.boleto.valor)} · <StatusSra s={dv.boleto.status} /></div>
-              {dv.candidatos.map((c) => <label key={c.lancamento.id} className={styles.miniRow} style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              {dv.candidatos.map((c) => <label key={c.lancamento.id} className={styles.miniRow} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-start", textAlign: "left", cursor: "pointer" }}>
                 <input type="radio" name={`div-${dv.boleto.id}`} checked={escolhaDiv[dv.boleto.id] === c.lancamento.id} onChange={() => setEscolhaDiv((m) => ({ ...m, [dv.boleto.id]: c.lancamento.id }))} />
                 <span>Conta Azul — {formatCurrency(c.lancamento.valor)} — {formatDate(c.lancamento.vencimento)} <StatusCa s={c.lancamento.status} />{c.lancamento.descricao ? <small className={styles.muted}> · {c.lancamento.descricao}</small> : null}
                   <br /><small style={{ color: "#9A6A13", fontWeight: 700 }}>⚠ {dif(c.diferencas).join(" · ")}</small></span>
