@@ -285,6 +285,61 @@ function ItemImportacao({ it, onAcao, selecionado, onSelecionar }: { it: Json; o
   </div>;
 }
 
+type AbaCrm = "revisao" | "historico" | "origem" | "responsaveis";
+type FiltroRevisao = "todas" | "novo" | "pendente" | "cliente";
+const POR_PAGINA_REVISAO = 50;
+
+/** Comparação de completude de um item da revisão (a regra "perfil mais completo"). */
+function comparacao(it: Json) {
+  const minha = typeof it.dados?.completude === "number" ? it.dados.completude as number : null;
+  const venda = (it.correspondencias ?? []).find((c: Json) => c.tipo === "venda");
+  const deles = typeof venda?.completude === "number" ? venda.completude as number : null;
+  const tipo: Exclude<FiltroRevisao, "todas"> = it.resultado === "cliente_existente" ? "cliente" : minha != null && deles != null && minha > deles ? "novo" : "pendente";
+  return { minha, deles, venda, tipo };
+}
+
+const segmento = (ativo: boolean): React.CSSProperties => ({
+  height: 28, padding: "0 11px", borderRadius: 8, border: "1px solid " + (ativo ? "var(--bg)" : "var(--line)"),
+  background: ativo ? "var(--bg)" : "transparent", color: ativo ? "var(--on-accent)" : "var(--ink)", fontSize: 10.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+});
+const kpi: React.CSSProperties = { ...caixa, padding: "6px 9px", display: "flex", flexDirection: "column", gap: 1, minWidth: 0 };
+const kpiValor: React.CSSProperties = { fontSize: 13, fontWeight: 800, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+
+/** Uma linha por item da revisão: seleção, nome, contato, comparação e ação; clique abre os detalhes. */
+function LinhaRevisao({ it, selecionado, onSelecionar, onAcao, ocupado }: { it: Json; selecionado: boolean; onSelecionar: (id: string, m: boolean) => void; onAcao: (id: string, a: AcaoRevisao) => void; ocupado: boolean }) {
+  const [aberta, setAberta] = useState(false);
+  const { minha, deles, venda, tipo } = comparacao(it);
+  const [r, k] = RESULTADO[it.resultado] ?? [it.resultado, "neutral"];
+  const contato = [it.dados?.telefone, it.dados?.email].filter(Boolean).join(" · ") || "Sem contato";
+  return <div style={{ borderBottom: "1px solid var(--line)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "22px minmax(0,1fr) auto auto", gap: 8, alignItems: "center", padding: "6px 4px" }}>
+      <input type="checkbox" aria-label={`Selecionar ${it.dados?.nome ?? "item"}`} checked={selecionado} onChange={(e) => onSelecionar(String(it.id), e.target.checked)} />
+      <button type="button" onClick={() => setAberta(!aberta)} style={{ all: "unset", cursor: "pointer", minWidth: 0 }} aria-expanded={aberta}>
+        <div style={{ fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.dados?.nome ?? it.externalId}</div>
+        <div style={{ ...muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{contato}</div>
+      </button>
+      <span title={minha != null && deles != null ? `Esta negociação: ${minha} dado(s) · venda pendente: ${deles}` : r}
+        style={chip(tipo === "novo" ? "ok" : tipo === "cliente" ? "warn" : k)}>
+        {tipo === "cliente" ? "Cliente já existe" : minha != null && deles != null ? `${minha} × ${deles} dados` : r}
+      </span>
+      <select aria-label={`Ação para ${it.dados?.nome ?? "item"}`} value="" disabled={ocupado} onChange={(e) => { const a = e.target.value as AcaoRevisao; if (a) onAcao(String(it.id), a); }}
+        style={{ ...input, width: 118, height: 28 }}>
+        <option value="">Ação…</option>
+        <option value="descartar">Mesma pessoa (manter pendente)</option>
+        {it.resultado === "duplicada" && venda && <option value="usar-perfil">Usar este perfil</option>}
+        <option value="importar">Importar mesmo assim</option>
+      </select>
+    </div>
+    {aberta && <div style={{ ...muted, padding: "0 4px 8px 34px", display: "flex", flexDirection: "column", gap: 2 }}>
+      {it.dados?.cpf && <span>CPF {it.dados.cpf}</span>}
+      {it.motivo && <span>{it.motivo}</span>}
+      {(it.correspondencias ?? []).map((c: Json) => <span key={`${c.tipo}${c.id}`}>↳ {c.tipo === "cliente" ? "Cliente" : "Venda pendente"} {c.nome ?? c.id} (mesmo {(c.por ?? []).join(", ")}){typeof c.completude === "number" ? ` · ${c.completude} dado(s)` : ""}</span>)}
+      {minha != null && deles != null && <span>{tipo === "novo" ? "Esta negociação é a mais completa: \"Manter o perfil mais completo\" aplica o perfil dela na venda pendente." : "A venda pendente é a mais completa (ou igual): \"Manter o perfil mais completo\" mantém a venda pendente."}</span>}
+      {it.repeticoes > 1 && <span>Vista em {it.repeticoes} execuções da importação.</span>}
+    </div>}
+  </div>;
+}
+
 /** modo "equipe": só importar e revisar (a configuração da importação é do Dev). */
 export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe" } = {}) {
   const [imps, setImps] = useState<Json | null>(null);
@@ -295,6 +350,10 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
   const [ocupado, setOcupado] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [lote, setLote] = useState<{ feitos: number; total: number } | null>(null);
+  const [aba, setAba] = useState<AbaCrm>("revisao");
+  const [filtro, setFiltro] = useState<FiltroRevisao>("todas");
+  const [busca, setBusca] = useState("");
+  const [pagina, setPagina] = useState(1);
 
   const carregar = useCallback(async () => {
     try {
@@ -306,6 +365,7 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); }
   }, []);
   useEffect(() => { void carregar(); }, [carregar]);
+  useEffect(() => { setPagina(1); }, [filtro, busca]);
 
   async function importar() {
     setOcupado(true); setMsg(null);
@@ -315,8 +375,19 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
       await carregar();
     } catch (e) { setMsg({ t: (e as Error).message, ok: false }); } finally { setOcupado(false); }
   }
-  const revisaveis = revisao.filter((it) => !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado));
-  const todosMarcados = revisaveis.length > 0 && revisaveis.every((it) => selecionados.has(String(it.id)));
+  const revisaveis = useMemo(() => revisao.filter((it) => !it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado)), [revisao]);
+  const contagem = useMemo(() => {
+    const c = { todas: revisaveis.length, novo: 0, pendente: 0, cliente: 0 };
+    for (const it of revisaveis) c[comparacao(it).tipo]++;
+    return c;
+  }, [revisaveis]);
+  const termo = busca.trim().toLocaleLowerCase("pt-BR");
+  const filtrados = useMemo(() => revisaveis.filter((it) => (filtro === "todas" || comparacao(it).tipo === filtro)
+    && (!termo || [it.dados?.nome, it.dados?.telefone, it.dados?.email, it.dados?.cpf].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR").includes(termo))), [revisaveis, filtro, termo]);
+  const paginas = Math.max(1, Math.ceil(filtrados.length / POR_PAGINA_REVISAO));
+  const paginaAtual = Math.min(pagina, paginas);
+  const visiveis = filtrados.slice((paginaAtual - 1) * POR_PAGINA_REVISAO, paginaAtual * POR_PAGINA_REVISAO);
+  const todosMarcados = filtrados.length > 0 && filtrados.every((it) => selecionados.has(String(it.id)));
   function selecionar(id: string, marcado: boolean) {
     setSelecionados((atual) => { const n = new Set(atual); if (marcado) n.add(id); else n.delete(id); return n; });
   }
@@ -355,45 +426,96 @@ export function CrmOperacao({ modo = "completo" }: { modo?: "completo" | "equipe
     const sucesso = acao === "importar" ? "Venda criada em Aguardando cadastro."
       : acao === "usar-perfil" ? "Perfil aplicado na venda pendente; os valores anteriores ficaram registrados no histórico."
       : "Marcada como a mesma pessoa; nada foi criado.";
+    setOcupado(true);
     try { await api(`/api/admin/integrations/rd-station/importacoes/itens/${id}/${acao}`, { method: "POST" }); setMsg({ t: sucesso, ok: true }); await carregar(); }
     catch (e) { setMsg({ t: (e as Error).message, ok: false }); }
+    finally { setOcupado(false); }
   }
+
+  const ultima = (imps?.importacoes ?? [])[0] as Json | undefined;
+  const passada = ultima?.totais?.passada as Json | undefined;
+  const pct = passada?.total ? Math.min(100, Math.floor((Number(passada.lidas ?? 0) / Number(passada.total)) * 100)) : null;
+  const abas: [AbaCrm, string][] = [["revisao", `Revisão${revisaveis.length ? ` (${revisaveis.length})` : ""}`], ["historico", "Histórico"], ["origem", "Origem"], ["responsaveis", "Responsáveis"]];
 
   return <div>
     {modo === "completo" && <><div style={titulo}>Importação configurável</div>
     <FormularioFuncao provedor="rd_station" funcao="importacao" /></>}
-    <div style={titulo}>Importar e revisar</div>
-    <div style={{ ...caixa, lineHeight: 1.5 }}>Toda cliente nova entra em <strong>Aguardando cadastro</strong>. A importação nunca cria cliente nem encaminha ao Financeiro; a venda só avança quando a cliente tem parcelas e acesso ao app liberado.</div>
-    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button style={btnPrim} disabled={ocupado} onClick={() => void importar()}>{ocupado ? "Importando…" : "Importar agora"}</button></div>
-    <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
-    {revisao.length > 0 && <><div style={titulo}>Aguardando revisão ({revisao.length})</div>
-      {revisaveis.length > 0 && <div style={{ ...caixa, position: "sticky", top: 0, zIndex: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700 }}>
-          <input type="checkbox" checked={todosMarcados} onChange={(e) => setSelecionados(e.target.checked ? new Set(revisaveis.map((it) => String(it.id))) : new Set())} />
-          Selecionar todos ({revisaveis.length})
-        </label>
-        <span style={muted}>{selecionados.size} selecionado(s){lote ? ` · revisando ${lote.feitos} de ${lote.total}…` : ""}</span>
-        <span style={{ flex: 1 }} />
-        <button style={btnPrim} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("mais-completo")}>Manter o perfil mais completo</button>
-        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("descartar")}>É a mesma pessoa</button>
-        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("usar-perfil")}>Usar o perfil novo</button>
-        <button style={btn} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("importar")}>Importar mesmo assim</button>
-      </div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{revisao.map((it) => <ItemImportacao key={it.id} it={it} onAcao={(id, a) => void revisar(id, a)} selecionado={selecionados.has(String(it.id))} onSelecionar={!it.revisadoEm && ["duplicada", "cliente_existente"].includes(it.resultado) ? selecionar : undefined} />)}</div></>}
-    <ResponsaveisRd onMsg={setMsg} />
-    {imps?.origens ? <CoberturaOrigens c={imps.origens} /> : null}
-    <div style={titulo}>Histórico de importações</div>
-    {imps && !imps.disponivel && <div style={{ ...caixa, color: "var(--gold)" }}>Estrutura de histórico ainda não aplicada (migration_091).</div>}
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {(imps?.importacoes ?? []).map((i: Json) => <div key={i.id}>
-        <button onClick={() => void abrir(i.id)} style={{ ...caixa, width: "100%", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <span><strong>{dataHora(i.iniciado_em)}</strong> · {i.origem}<br /><span style={muted}>{i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){textoPassada(i.totais?.passada)}{textoOrigens(i.totais?.origens)}{i.erro ? ` · ${i.erro}` : ""}</span></span>
-          <span style={chip(i.status === "concluida" ? "ok" : i.status === "erro" ? "bad" : "warn")}>{i.status}</span>
-        </button>
-        {aberta === i.id && <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "6px 0 4px 10px" }}>{itens.length ? itens.map((it) => <ItemImportacao key={it.id} it={it} />) : <span style={muted}>Sem itens (negociações só atualizadas não aparecem).</span>}</div>}
-      </div>)}
-      {imps?.disponivel && !(imps.importacoes ?? []).length && <span style={muted}>Nenhuma importação ainda.</span>}
+
+    {/* Resumo: o que importa num relance + a ação principal. */}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr)) auto", gap: 6, alignItems: "stretch", marginTop: modo === "completo" ? 14 : 0 }}>
+      <div style={kpi}><span style={muted}>Em revisão</span><span style={kpiValor}>{revisaveis.length.toLocaleString("pt-BR")}</span></div>
+      <div style={kpi}><span style={muted}>Importação</span><span style={kpiValor}>{passada?.concluida ? "Completa" : pct != null ? `${pct}%` : "—"}</span>
+        {passada && !passada.concluida && <span style={muted}>{Number(passada.lidas ?? 0).toLocaleString("pt-BR")}{passada.total ? ` de ${Number(passada.total).toLocaleString("pt-BR")}` : ""}</span>}</div>
+      <div style={kpi}><span style={muted}>Última etapa</span><span style={kpiValor}>{ultima ? new Date(ultima.iniciado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+        {ultima && <span style={muted}>{ultima.totais?.criadas ?? 0} nova(s)</span>}</div>
+      <button style={{ ...btnPrim, height: "auto", minHeight: 44, alignSelf: "stretch" }} disabled={ocupado} onClick={() => void importar()}>{ocupado && !lote ? "Importando…" : "Importar agora"}</button>
     </div>
+    <div style={{ ...muted, marginTop: 5 }}>Toda venda nova entra em Aguardando cadastro; a importação nunca cria cliente nem encaminha ao Financeiro. Continua sozinha a cada 5 min.</div>
+    <Aviso texto={msg?.t ?? null} tipo={msg?.ok ? "ok" : "bad"} />
+
+    <div role="tablist" aria-label="Importações do RD" style={{ display: "flex", gap: 6, margin: "12px 0 8px", flexWrap: "wrap" }}>
+      {abas.map(([k, l]) => <button key={k} role="tab" aria-selected={aba === k} type="button" style={segmento(aba === k)} onClick={() => setAba(k)}>{l}</button>)}
+    </div>
+
+    {aba === "revisao" && (revisaveis.length === 0
+      ? <div style={caixa}>Nenhuma duplicidade aguardando revisão.</div>
+      : <>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+          {([["todas", "Todas"], ["novo", "Novo mais completo"], ["pendente", "Pendente mais completa"], ["cliente", "Cliente já existe"]] as [FiltroRevisao, string][]).map(([k, l]) =>
+            <button key={k} type="button" style={{ ...segmento(filtro === k), height: 26, fontSize: 10 }} onClick={() => setFiltro(k)}>{l} ({contagem[k]})</button>)}
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar nome, telefone, e-mail…" aria-label="Buscar na revisão" style={{ ...input, height: 26, flex: "1 1 160px", width: "auto" }} />
+        </div>
+        <div style={{ ...caixa, position: "sticky", top: 0, zIndex: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "6px 8px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 700 }}>
+            <input type="checkbox" checked={todosMarcados} onChange={(e) => setSelecionados((atual) => {
+              const n = new Set(atual);
+              for (const it of filtrados) { if (e.target.checked) n.add(String(it.id)); else n.delete(String(it.id)); }
+              return n;
+            })} />
+            Selecionar {filtro === "todas" && !termo ? "todos" : "os filtrados"} ({filtrados.length})
+          </label>
+          <span style={muted}>{selecionados.size} selecionado(s){lote ? ` · revisando ${lote.feitos} de ${lote.total}…` : ""}</span>
+          <span style={{ flex: 1 }} />
+          <button style={btnPrim} disabled={ocupado || !selecionados.size} onClick={() => void revisarSelecionados("mais-completo")} title="Aplica a regra item a item: fica o perfil com mais dados">Manter o mais completo</button>
+          <select aria-label="Outras ações em lote" value="" disabled={ocupado || !selecionados.size} style={{ ...input, width: 150, height: 30 }}
+            onChange={(e) => { const a = e.target.value as "descartar" | "usar-perfil" | "importar"; if (a) void revisarSelecionados(a); }}>
+            <option value="">Outras ações…</option>
+            <option value="descartar">É a mesma pessoa</option>
+            <option value="usar-perfil">Usar o perfil novo</option>
+            <option value="importar">Importar mesmo assim</option>
+          </select>
+        </div>
+        <div style={{ ...caixa, padding: "0 6px", marginTop: 6 }}>
+          {visiveis.length ? visiveis.map((it) => <LinhaRevisao key={it.id} it={it} ocupado={ocupado} selecionado={selecionados.has(String(it.id))} onSelecionar={selecionar} onAcao={(id, a) => void revisar(id, a)} />)
+            : <div style={{ padding: 10, ...muted }}>Nada com este filtro.</div>}
+        </div>
+        {paginas > 1 && <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", marginTop: 6 }}>
+          <button style={btn} disabled={paginaAtual <= 1} onClick={() => setPagina(paginaAtual - 1)}>Anterior</button>
+          <span style={muted}>Página {paginaAtual} de {paginas}</span>
+          <button style={btn} disabled={paginaAtual >= paginas} onClick={() => setPagina(paginaAtual + 1)}>Próxima</button>
+        </div>}
+      </>)}
+
+    {aba === "historico" && <>
+      {imps && !imps.disponivel && <div style={{ ...caixa, color: "var(--gold)" }}>Estrutura de histórico ainda não aplicada (migration_091).</div>}
+      <div style={{ ...caixa, padding: "0 6px" }}>
+        {(imps?.importacoes ?? []).map((i: Json) => <div key={i.id} style={{ borderBottom: "1px solid var(--line)" }}>
+          <button onClick={() => void abrir(i.id)} aria-expanded={aberta === i.id} style={{ all: "unset", cursor: "pointer", display: "grid", gridTemplateColumns: "92px minmax(0,1fr) auto", gap: 8, alignItems: "center", width: "100%", padding: "6px 2px", boxSizing: "border-box" }}>
+            <span style={{ fontWeight: 700, fontSize: 10.5 }}>{new Date(i.iniciado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+            <span style={{ ...muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.origem} · {i.totais?.totalRd ?? 0} lida(s) · {i.totais?.criadas ?? 0} nova(s) · {(i.totais?.duplicadas ?? 0) + (i.totais?.clienteExistente ?? 0)} duplicidade(s){i.erro ? ` · ${i.erro}` : ""}</span>
+            <span style={chip(i.status === "concluida" ? "ok" : i.status === "erro" ? "bad" : "warn")}>{i.status}</span>
+          </button>
+          {aberta === i.id && <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "0 0 8px 8px" }}>
+            <span style={muted}>{textoPassada(i.totais?.passada).replace(/^ · /, "")}{textoOrigens(i.totais?.origens)}</span>
+            {itens.length ? itens.map((it) => <ItemImportacao key={it.id} it={it} />) : <span style={muted}>Sem itens (negociações só atualizadas não aparecem).</span>}
+          </div>}
+        </div>)}
+        {imps?.disponivel && !(imps.importacoes ?? []).length && <div style={{ padding: 10, ...muted }}>Nenhuma importação ainda.</div>}
+      </div>
+    </>}
+
+    {aba === "origem" && (imps?.origens ? <CoberturaOrigens c={imps.origens} /> : <div style={caixa}>Carregando…</div>)}
+    {aba === "responsaveis" && <ResponsaveisRd onMsg={setMsg} aberto />}
   </div>;
 }
 
@@ -425,7 +547,7 @@ const ACOES: Record<string, { rotulo: string; acoes: [string, string][] }> = {
  * (migration_116): sem vínculo a venda entra e conta normalmente, com o nome do responsável do RD;
  * o vínculo só liga a venda à pessoa da equipe.
  */
-function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | null) => void }) {
+function ResponsaveisRd({ onMsg, aberto = false }: { onMsg: (m: { t: string; ok: boolean } | null) => void; aberto?: boolean }) {
   const [dados, setDados] = useState<Json | null>(null);
   const [escolha, setEscolha] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState<string | null>(null);
@@ -434,7 +556,8 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
     try { setDados(await api("/api/admin/integrations/rd-station/responsaveis")); } catch { setDados({ indisponivel: true }); }
   }, []);
   useEffect(() => { void carregar(); }, [carregar]);
-  if (!dados || dados.indisponivel) return null;
+  if (!dados) return aberto ? <div style={caixa}>Carregando…</div> : null;
+  if (dados.indisponivel) return aberto ? <div style={caixa}>Vínculo de responsáveis indisponível no momento.</div> : null;
   const sem = (dados.responsaveis as Json[] ?? []).filter((r) => !r.colaboradorId);
   const equipe = dados.equipe as Json[] ?? [];
   const nomeDe = (id: string) => equipe.find((c) => c.id === id)?.nome ?? "—";
@@ -459,8 +582,8 @@ function ResponsaveisRd({ onMsg }: { onMsg: (m: { t: string; ok: boolean } | nul
     } finally { setSalvando(null); }
   }
   return <>
-    <details style={{ marginTop: 12 }}>
-    <summary style={{ ...titulo, cursor: "pointer" }}>Vincular responsáveis do RD à equipe · opcional ({sem.length} sem vínculo)</summary>
+    <details style={{ marginTop: aberto ? 0 : 12 }} open={aberto || undefined}>
+    <summary style={{ ...titulo, cursor: "pointer", marginTop: aberto ? 0 : undefined }}>Vincular responsáveis do RD à equipe · opcional ({sem.length} sem vínculo)</summary>
     <div style={{ ...caixa, marginBottom: 6 }}>Opcional. Sem vínculo, a venda é importada e conta normalmente, com o nome do responsável que vem do RD. Vincule só quem você quer ligar a uma pessoa da equipe.</div>
     {aviso?.ok && <div role="status"><Aviso texto={aviso.texto} tipo="ok" /></div>}
     {sem.length === 0 ? <div style={caixa}>Todos os responsáveis do RD estão vinculados a uma pessoa da equipe.</div>
