@@ -269,6 +269,7 @@ function completudeDaLinha(linha: Json) {
 type Registro = { tipo: "cliente" | "venda"; id: string; nome: string | null; rdId?: string | null };
 /** Contato lido do RD guardado junto da venda (rd_snapshot._sra_contato): evita reler a cada sincronização. */
 export type ContatoEmCache = { dados: Json; lidoEm: string };
+/** contato/origem `undefined` = ainda não lidos do banco (índice leve; ver completarCaches). */
 type VendaIndexada = { id: string; status: string; clienteId: string | null; linha: Json; contato?: ContatoEmCache | null; origem?: OrigemCliente | null };
 export type IndiceDedupe = {
   porCpf: Map<string, Registro[]>; porTelefone: Map<string, Registro[]>; porEmail: Map<string, Registro[]>;
@@ -309,12 +310,36 @@ async function todasAsLinhas<T>(consulta: (de: number, ate: number) => PromiseLi
 }
 
 const COLUNAS_VENDA = `id,rd_station_id,cliente_id,status,contato_cache:rd_snapshot->_sra_contato,origem_cache:rd_snapshot->_sra_origem,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
+/**
+ * Índice leve: só colunas simples. Ler rd_snapshot (contato e origem guardados) de TODAS as vendas
+ * a cada etapa e a cada evento do webhook travou o banco com 10 mil+ vendas (30/09/2026): os dados
+ * guardados são lidos só das vendas que a etapa/evento vai processar (completarCaches).
+ */
+const COLUNAS_INDICE = `id,rd_station_id,cliente_id,status,${COLUNAS_PREENCHIDAS.map(([, c]) => c).join(",")}`;
+
+/** Contato e origem guardados (rd_snapshot) só das vendas informadas, em lotes. */
+export async function completarCaches(db: Db, indice: IndiceDedupe, idsVenda: string[]) {
+  const faltam = [...new Set(idsVenda)].filter((id) => { const v = indice.vendaPorId?.get(id); return v && v.contato === undefined; });
+  for (let i = 0; i < faltam.length; i += 200) {
+    const { data } = await db.from("novas_vendas").select("id,contato_cache:rd_snapshot->_sra_contato,origem_cache:rd_snapshot->_sra_origem").in("id", faltam.slice(i, i + 200));
+    const lidos = new Map(((data ?? []) as Json[]).map((l) => [String(l.id), l]));
+    for (const id of faltam.slice(i, i + 200)) {
+      const v = indice.vendaPorId?.get(id);
+      if (!v) continue;
+      const l = lidos.get(id);
+      const cache = objectValue(l?.contato_cache);
+      v.contato = cache.dados && cache.lidoEm ? { dados: objectValue(cache.dados), lidoEm: String(cache.lidoEm) } : null;
+      const origemCache = objectValue(l?.origem_cache);
+      v.origem = origemCache.checadoEm ? origemCache as OrigemCliente : null;
+    }
+  }
+}
 
 export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   const indice = indiceVazio();
   const [clientes, vendas, edicoes] = await Promise.all([
     todasAsLinhas<Json>((de, ate) => db.from("clientes").select("id,nome_completo,cpf,telefone,email,arquivado_em").order("id").range(de, ate)),
-    todasAsLinhas<Json>((de, ate) => db.from("novas_vendas").select(COLUNAS_VENDA).order("id").range(de, ate)),
+    todasAsLinhas<Json>((de, ate) => db.from("novas_vendas").select(COLUNAS_INDICE).order("id").range(de, ate)),
     todasAsLinhas<Json>((de, ate) => db.from("logs_alteracoes").select("entidade_id,detalhes").eq("acao", "editou_venda_local_sem_sync_rd").order("entidade_id").range(de, ate)).catch(() => [] as Json[]),
   ]);
   for (const c of clientes) {
@@ -323,10 +348,12 @@ export async function carregarIndice(db: Db): Promise<IndiceDedupe> {
   }
   for (const v of vendas) {
     if (v.rd_station_id) indice.vendaPorRd.set(String(v.rd_station_id), { id: v.id, status: v.status });
+    // Contato/origem guardados: `undefined` = ainda não lidos (completarCaches lê sob demanda).
+    const temCache = v.contato_cache !== undefined || v.origem_cache !== undefined || v.rd_snapshot !== undefined;
     const cache = objectValue(v.contato_cache ?? objectValue(v.rd_snapshot)._sra_contato);
-    const contato = cache.dados && cache.lidoEm ? { dados: objectValue(cache.dados), lidoEm: String(cache.lidoEm) } : null;
+    const contato = temCache ? (cache.dados && cache.lidoEm ? { dados: objectValue(cache.dados), lidoEm: String(cache.lidoEm) } : null) : undefined;
     const origemCache = objectValue(v.origem_cache ?? objectValue(v.rd_snapshot)._sra_origem);
-    const origem = origemCache.checadoEm ? origemCache as OrigemCliente : null;
+    const origem = temCache ? (origemCache.checadoEm ? origemCache as OrigemCliente : null) : undefined;
     indice.vendaPorId!.set(String(v.id), { id: String(v.id), status: String(v.status), clienteId: v.cliente_id ?? null, linha: v, contato, origem });
     if (!v.cliente_id) indexar(indice, { tipo: "venda", id: v.id, nome: v.nome_completo ?? null, rdId: v.rd_station_id ?? null }, v);
   }
@@ -775,6 +802,8 @@ export async function importarCrm(env: Env, opcoes: { origem: Exclude<Origem, "w
         vistas.add(id);
         return true;
       });
+      // Contato/origem guardados só das vendas desta página (o índice é leve).
+      await completarCaches(db, indice, lidas.map((d) => indice.vendaPorRd.get(stringValue(d.id))?.id).filter(Boolean) as string[]);
       // O RD aceita 120 consultas/min: o contato é lido para toda negociação nova e venda sem
       // contato guardado; os guardados vencidos são relidos aos poucos. O resto usa o cache.
       const cachePorContato = new Map<string, ContatoEmCache>();
@@ -991,6 +1020,7 @@ export async function importarDoWebhook(env: Env, db: Db, dealEvento: Json, tran
   const indice = await carregarIndice(db);
   // Limite do RD: usa o contato guardado da venda, se houver.
   const vendaIdx = indice.vendaPorRd.get(stringValue(deal.id));
+  if (vendaIdx) await completarCaches(db, indice, [vendaIdx.id]);
   const cache = vendaIdx ? indice.vendaPorId?.get(vendaIdx.id)?.contato : null;
   const contatos = new Map(leitura.contatos);
   if (idContato && !contatos.has(idContato) && cache && stringValue(cache.dados.id) === idContato) contatos.set(idContato, cache.dados);
@@ -1082,7 +1112,16 @@ export async function listarImportacoes(db: Db, limite = 30, incluirWebhook = fa
  * Quantas vendas do RD têm fonte e campanha registradas, e o andamento da busca em outros
  * cadastros (mesmo e-mail/telefone). Para o Admin acompanhar sem abrir cliente por cliente.
  */
+let coberturaCache: { expiraEm: number; valor: Awaited<ReturnType<typeof calcularCoberturaOrigens>> } | null = null;
+/** Lê todas as vendas: guardada 10 min (a tela de importações abre muitas vezes). */
 export async function coberturaOrigens(db: Db) {
+  if (coberturaCache && coberturaCache.expiraEm > Date.now()) return coberturaCache.valor;
+  const valor = await calcularCoberturaOrigens(db);
+  coberturaCache = { expiraEm: Date.now() + 10 * 60_000, valor };
+  return valor;
+}
+
+async function calcularCoberturaOrigens(db: Db) {
   const linhas = await todasAsLinhas<Json>((de, ate) => db.from("novas_vendas")
     .select("id,situacao:rd_snapshot->_sra_origem->>situacao,ampliada:rd_snapshot->_sra_origem->ampliada->>em,origem_venda,campanha_local")
     .not("rd_station_id", "is", null).order("id").range(de, ate));
@@ -1254,6 +1293,8 @@ export async function reprocessarNegociacao(env: Env, db: Db, externalId: string
     if (!snapshot) return { ok: false, erro: "O RD não devolveu a negociação." };
     const config = await configDaFuncao<ConfigCrm>(env, "rd_station", "importacao", { db });
     const indice = await carregarIndice(db);
+    const existente = indice.vendaPorRd.get(snapshot.rdStationId);
+    if (existente) await completarCaches(db, indice, [existente.id]);
     const item = await processarNegociacao(db, { deal: lido.deal, snapshot, contato: lido.contato, config, indice, importacaoId: null });
     if (item.resultado === "criada" || item.resultado === "atualizada") {
       // Primeiro registra que foi a pessoa que reprocessou; depois o recálculo avalia a venda.
