@@ -11,6 +11,7 @@ import { testarGemini } from "./frase-do-dia";
 import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
 import { avancarOrigemGeral } from "./crm-origem-geral";
+import { carregarContatosDoEspelho } from "./crm-espelho";
 import { avancarContagens } from "./crm-contagens";
 import { atualizarCatalogoSeVencido } from "./crm-catalogo";
 import { pendenciasApi } from "./integracao-pendencias";
@@ -411,20 +412,25 @@ const LIMITE_EXECUCAO_MS = 260_000;
 
 async function cronContinuacaoCrm(request: Request, env: Env, ctx?: BackgroundContext) {
   if (!(await rotinaAgendadaAutorizada(request, env))) return json({ erro: "Não autorizado." }, 401);
-  // Primeiro a importação; depois, no tempo que sobra desta execução (a hospedagem encerra em 300 s),
-  // a contagem dos funis. Uma depois da outra: nunca disputam o limite de 120 consultas/min do RD.
+  // Carga única dos contatos; depois a importação; no tempo que sobra (a hospedagem encerra em 300 s),
+  // a contagem dos funis e a origem. Uma depois da outra: nunca disputam o limite de 120 consultas/min do RD.
   const inicio = Date.now();
-  const tarefa = importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => {
-    let restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
-    const contagens = restante < 20_000
-      ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
-      : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" }));
-    // Por último, no tempo que sobra: fonte e campanha de todas as negociações (espelho do RD) e das vendas.
-    restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
-    const origem = restante < 30_000
-      ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
-      : await avancarOrigemGeral(env, { orcamentoMs: Math.min(200_000, restante - 20_000) }).catch(() => ({ executada: false, motivo: "falha" }));
-    return { crm, contagens, origem };
+  // Antes de tudo, a carga única dos contatos do RD no espelho (100 por consulta): enquanto ela não
+  // termina, a importação gastaria uma consulta por cliente nova. Termina em poucas rodadas e não volta.
+  const tarefa = carregarContatosDoEspelho(env, { orcamentoMs: 200_000 }).catch(() => ({ executada: false, concluida: true, lidos: 0 })).then(async (carga) => {
+    if (carga.executada && !carga.concluida) return { carga };
+    return importacaoAgendadaSeDevida(env, { somenteContinuacao: true }).then(async (crm) => {
+      let restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
+      const contagens = restante < 20_000
+        ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
+        : await avancarContagens(env, { orcamentoMs: Math.min(150_000, restante) }).catch(() => ({ executada: false, motivo: "falha" }));
+      // Por último, no tempo que sobra: fonte e campanha de todas as negociações (espelho do RD) e das vendas.
+      restante = LIMITE_EXECUCAO_MS - (Date.now() - inicio);
+      const origem = restante < 30_000
+        ? { executada: false, motivo: "sem_tempo_nesta_rodada" }
+        : await avancarOrigemGeral(env, { orcamentoMs: Math.min(200_000, restante - 20_000) }).catch(() => ({ executada: false, motivo: "falha" }));
+      return { carga, crm, contagens, origem };
+    });
   });
   if (ctx?.waitUntil) {
     ctx.waitUntil(tarefa.then(() => undefined).catch(() => undefined));
