@@ -27,14 +27,16 @@ Preview → *branch*), para o Preview **não** herdar as de produção:
 
 ## 2. App de Desenvolvimento da Conta Azul
 
-No Portal do Desenvolvedor, o App de Desenvolvimento usa a Redirect URI `https://www.contaazul.com`.
+No Portal do Desenvolvedor, o App de Desenvolvimento (ex.: `DEV-Sra-1790792215267`) usa a Redirect URI `https://contaazul.com`
+(conferido no portal em 30/09/2026; a documentação cita `www.contaazul.com`). O navegador pode terminar em
+`https://www.contaazul.com/?code=…`: o Concluir conexão aceita os dois, e a troca usa a Redirect URI cadastrada, exata.
 O retorno do login não chega ao Sra Luck, por isso o Dev Console tem **Concluir conexão**: cole o
 endereço completo da barra do navegador (`?code=…&state=…`) em até 3 minutos. O state é validado contra
 a sessão que gerou o link e o code é trocado no backend; nem o code nem os tokens são gravados em log.
 
 Dev Console → Integrações → Conta Azul → **Central**:
 
-1. Configuração do App: Client ID, Client Secret, Redirect URI (`https://www.contaazul.com`), ambiente
+1. Configuração do App: Client ID, Client Secret, Redirect URI (`https://contaazul.com`, igual ao portal), ambiente
    Teste e as URLs oficiais → Salvar configuração (só máscaras voltam para a tela).
 2. Conectar (OAuth) → entrar com o usuário do ERP de teste → copiar o endereço → Concluir conexão.
 3. Testar conexão (empresa conectada), Renovar token agora (refresh), Validar e ativar.

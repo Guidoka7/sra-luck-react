@@ -272,9 +272,11 @@ describe("OAuth do App de Desenvolvimento (endereço colado) e diagnóstico real
   it("troca o code do endereço colado, valida state e redirect, e não guarda o code", async () => {
     const { criarState } = await import("./rd-station-readonly");
     const state = await criarState("dev-console:owner", ENV.CLIENTE_SESSION_SECRET!);
-    const m = montar([["POST https://api-v2.contaazul.com/oauth/token", (c) => { expect(String(c.corpo)).toContain("redirect_uri=https%3A%2F%2Fwww.contaazul.com"); return [200, { access_token: "novo-access", refresh_token: "novo-refresh", expires_in: 3600 }]; }]]);
-    m.mapa.set("redirect_uri", "https://www.contaazul.com");
+    // Redirect do App de Desenvolvimento: https://contaazul.com; o navegador pode parar em www.
+    const m = montar([["POST https://api-v2.contaazul.com/oauth/token", (c) => { expect(String(c.corpo)).toMatch(/redirect_uri=https%3A%2F%2Fcontaazul\.com(&|$)/); return [200, { access_token: "novo-access", refresh_token: "novo-refresh", expires_in: 3600 }]; }]]);
+    m.mapa.set("redirect_uri", "https://contaazul.com");
     const colado = `https://www.contaazul.com/?code=CODIGO-SECRETO&state=${encodeURIComponent(state)}`;
+    expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, `https://evil-contaazul.com/?code=x&state=${encodeURIComponent(state)}`, "dev-console:owner")).toMatchObject({ ok: false, status: 400 });
     expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, "https://outro.site/?code=x&state=" + encodeURIComponent(state), "dev-console:owner")).toMatchObject({ ok: false, status: 400 });
     expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, colado, "dev-console:outra-pessoa")).toMatchObject({ ok: false, status: 400 });
     expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, colado, "dev-console:owner")).toMatchObject({ ok: true });

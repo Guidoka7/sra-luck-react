@@ -467,7 +467,7 @@ export async function desconectar(d: Deps, ator: string) {
 
 /**
  * OAuth do App de Desenvolvimento: a Conta Azul redireciona para o endereço cadastrado no app
- * (para apps de desenvolvimento, https://www.contaazul.com), fora do Sra Luck. O Dev cola o
+ * (no App de Desenvolvimento, a Redirect URI do portal, ex.: https://contaazul.com), fora do Sra Luck. O Dev cola o
  * endereço de retorno; o state é validado contra quem gerou o link e o code (válido por 3 min)
  * é trocado aqui, no backend. O code nunca é gravado nem registrado em log.
  */
@@ -486,7 +486,12 @@ export async function concluirOAuthColado(env: Env, d: Deps, urlColada: string, 
   if (!redirect) return { ok: false as const, status: 409, erro: "Cadastre a Redirect URI do app (a mesma do Portal do Desenvolvedor)." };
   let esperado: URL;
   try { esperado = new URL(redirect); } catch { return { ok: false as const, status: 409, erro: "Redirect URI cadastrada é inválida." }; }
-  if (u.origin !== esperado.origin || u.pathname.replace(/\/$/, "") !== esperado.pathname.replace(/\/$/, "")) return { ok: false as const, status: 400, erro: "O endereço colado não é a Redirect URI cadastrada." };
+  // O site da Conta Azul pode levar https://contaazul.com para https://www.contaazul.com (mantendo
+  // ?code&state): aceita o retorno com ou sem "www.", mas a troca usa a Redirect URI cadastrada, exata.
+  const semWww = (h: string) => h.replace(/^www\./, "");
+  const mesmoDestino = u.protocol === esperado.protocol && semWww(u.hostname) === semWww(esperado.hostname) && u.port === esperado.port
+    && u.pathname.replace(/\/$/, "") === esperado.pathname.replace(/\/$/, "");
+  if (!mesmoDestino) return { ok: false as const, status: 400, erro: "O endereço colado não é a Redirect URI cadastrada." };
   try {
     const t = await pedirToken(d, { grant_type: "authorization_code", code, redirect_uri: redirect });
     await gravarTokens(d, t, adminId);
