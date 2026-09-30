@@ -4,8 +4,8 @@
  * para o Console ver cada funil inteiro e para achar a origem de cada cliente em qualquer funil
  * e em qualquer cadastro da mesma pessoa (crm-origem-geral).
  */
-import { createServiceSupabaseClient } from "./supabase";
-import { arrayValue, contatoParaCache, objectValue, stringValue } from "./rd-station-readonly";
+import { createServiceSupabaseClient, type Env } from "./supabase";
+import { arrayValue, contatoParaCache, dataRdql, objectValue, paginaContatos, stringValue, TAMANHO_PAGINA_RD } from "./rd-station-readonly";
 import { chaveTelefone } from "./crm-chaves";
 import { camposDeOrigem, emailsValidos } from "./crm-origem";
 
@@ -71,4 +71,66 @@ export async function gravarContatos(db: Db, contatos: Json[], vistoEm: string) 
 export async function limparEspelho(db: Db, iniciadaEm: string, opcoes: { contatos: boolean }) {
   await db.from("crm_rd_negociacoes").delete().lt("vista_em", iniciadaEm);
   if (opcoes.contatos) await db.from("crm_rd_contatos").delete().lt("visto_em", iniciadaEm);
+}
+
+// ------------------------------------------------------------------ carga única dos contatos
+
+const CHAVE_CARGA = "crm_espelho_contatos_carga";
+
+export type EstadoCarga = { desde: string | null; pagina: number; noLimite: string[]; lidos: number; concluidaEm: string | null; semFiltroData?: boolean; semOrdem?: boolean; incompleta?: boolean; iniciadaEm: string };
+
+/**
+ * Carga de TODOS os contatos do RD com o contato completo (100 por consulta), uma única vez.
+ * Sem ela, cada cliente nova da importação custava uma consulta ao RD e trazer os 15 funis levava
+ * horas. Depois de concluída não roda mais: a varredura de 6 h mantém o espelho em dia.
+ */
+export async function carregarContatosDoEspelho(env: Env, deps: {
+  db?: Db; relogio?: () => number; orcamentoMs?: number;
+  pagina?: (desde: string | null, pagina: number, ordenar?: boolean) => Promise<Json[]>;
+} = {}) {
+  const db = deps.db ?? createServiceSupabaseClient(env);
+  const relogio = deps.relogio ?? Date.now;
+  const prazo = relogio() + (deps.orcamentoMs ?? 150_000);
+  const { data: lida } = await db.from("integracao_catalogos").select("dados").eq("provedor", "rd_station").eq("chave", CHAVE_CARGA).maybeSingle();
+  const salvo = objectValue((lida as Json | null)?.dados);
+  if (salvo.concluidaEm) return { executada: false, concluida: true, lidos: Number(salvo.lidos ?? 0) };
+  const { data: trava } = await db.rpc("integracao_tentar_trava", { p_nome: "crm_espelho_contatos", p_segundos: 290 });
+  if (trava === false) return { executada: false, concluida: false, motivo: "em_andamento" };
+  const e: EstadoCarga = typeof salvo.iniciadaEm === "string"
+    ? salvo as EstadoCarga
+    : { desde: null, pagina: 1, noLimite: [], lidos: 0, concluidaEm: null, iniciadaEm: new Date(relogio()).toISOString() };
+  const ler = deps.pagina ?? ((d: string | null, p: number, o?: boolean) => paginaContatos(env, d, p, o));
+  const salvar = () => db.from("integracao_catalogos").upsert({ provedor: "rd_station", chave: CHAVE_CARGA, dados: e, atualizado_em: new Date().toISOString() }, { onConflict: "provedor,chave" });
+  try {
+    while (!e.concluidaEm && relogio() < prazo) {
+      let pagina: Json[];
+      try {
+        pagina = await ler(e.semFiltroData ? null : e.desde, e.pagina, !e.semOrdem);
+      } catch (erro) {
+        const recusado = erro instanceof Error && /^RD_HTTP_(400|422)$/.test(erro.message);
+        if (recusado && !e.semFiltroData && e.desde) { e.semFiltroData = true; e.desde = null; e.pagina = 1; e.noLimite = []; continue; }
+        if (recusado && !e.semOrdem) { e.semOrdem = true; e.semFiltroData = true; e.desde = null; e.pagina = 1; e.noLimite = []; continue; }
+        if (recusado) { e.incompleta = true; e.concluidaEm = new Date(relogio()).toISOString(); break; }
+        throw erro;
+      }
+      const vistos = new Set(e.noLimite);
+      const novos = pagina.filter((c) => { const id = stringValue(c.id); if (!id || vistos.has(id)) return false; vistos.add(id); return true; });
+      await gravarContatos(db, novos, new Date(relogio()).toISOString());
+      e.lidos += novos.length;
+      if (pagina.length < TAMANHO_PAGINA_RD) {
+        e.concluidaEm = new Date(relogio()).toISOString();
+      } else if (e.semFiltroData) {
+        if (e.pagina >= 100) { e.incompleta = true; e.concluidaEm = new Date(relogio()).toISOString(); } else e.pagina++;
+      } else {
+        const ultima = dataRdql(pagina[pagina.length - 1].created_at);
+        if (ultima && ultima !== e.desde) { e.desde = ultima; e.pagina = 1; } else e.pagina++;
+        e.noLimite = [...vistos].filter((id) => pagina.some((c) => stringValue(c.id) === id && dataRdql(c.created_at) === e.desde));
+      }
+      await salvar();
+    }
+    await salvar();
+    return { executada: true, concluida: Boolean(e.concluidaEm), lidos: e.lidos };
+  } finally {
+    await db.rpc("integracao_liberar_trava", { p_nome: "crm_espelho_contatos" });
+  }
 }
