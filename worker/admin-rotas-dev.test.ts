@@ -23,6 +23,7 @@ describe("áreas exclusivas do Dev", () => {
       ["/api/admin/integrations/status", "GET"],
       ["/api/admin/integrations/rd-station/importacoes", "GET"], ["/api/admin/integrations/rd-station/importacoes/revisao", "GET"],
       [`/api/admin/integrations/rd-station/importacoes/${ID}/itens`, "GET"], [`/api/admin/integrations/rd-station/importacoes/itens/${ID}/importar`, "POST"],
+      ["/api/admin/integrations/rd-station/importacoes/itens/lote", "POST"],
       ["/api/admin/integrations/rd-station/importar", "POST"],
       ["/api/admin/integrations/rd-station/responsaveis", "GET"], ["/api/admin/integrations/rd-station/responsaveis", "POST"],
       ["/api/admin/integrations/conta-azul/painel", "GET"], ["/api/admin/integrations/conta-azul/conflitos", "GET"],
