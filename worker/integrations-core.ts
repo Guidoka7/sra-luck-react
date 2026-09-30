@@ -8,7 +8,7 @@ import { garantirWebhooksRd, rdStationReadonlyApi } from "./rd-station-readonly"
 import { validarConfiguracaoVapid, webPushConfigApi } from "./web-push-config";
 import { pseudonymizeActorId, requestLogger } from "./logger";
 import { testarGemini } from "./frase-do-dia";
-import { caRequest, contaAzulApi, depsPadrao, ErroContaAzul, sincronizarContaAzul } from "./conta-azul";
+import { caRequest, contaAzulApi, contaAzulBloqueadaNoAmbiente, depsPadrao, ErroContaAzul, MENSAGEM_PREVIEW_BLOQUEADO, sincronizarContaAzul } from "./conta-azul";
 import { contaAzulVinculosApi } from "./conta-azul-vinculos";
 import { importacaoAgendadaSeDevida, importarCrm, reprocessarNegociacao } from "./crm-importacao";
 import { avancarOrigemGeral } from "./crm-origem-geral";
@@ -473,6 +473,28 @@ async function salvarConfigApi(request: Request, env: Env) {
   return json(r);
 }
 
+const ROTAS_GERAIS_DE_INTEGRACAO = new Set([
+  "/api/admin/integrations/credenciais",
+  "/api/admin/integrations/config",
+  "/api/admin/integrations/testar-conexao",
+  "/api/admin/integrations/estado",
+]);
+
+/**
+ * Conta Azul desligada no ambiente (Production sem autorização): as telas gerais de integração
+ * não gravam credencial, configuração nem ativação da Conta Azul. Remover e desativar continuam
+ * permitidos, porque só devolvem o ambiente ao estado seguro.
+ */
+export async function contaAzulTravadaNasRotasGerais(request: Request, env: Env, path: string): Promise<Response | null> {
+  if (request.method !== "POST" || !ROTAS_GERAIS_DE_INTEGRACAO.has(path) || !contaAzulBloqueadaNoAmbiente(env)) return null;
+  const body = await request.clone().json().catch(() => ({})) as { provedor?: unknown; remover?: unknown; ativo?: unknown; chave?: unknown };
+  if (body.provedor !== "conta_azul") return null;
+  const voltaAoSeguro = (path.endsWith("/credenciais") && (body.remover === true || (!body.chave && body.ativo === false)))
+    || (path.endsWith("/estado") && body.ativo === false);
+  if (voltaAoSeguro) return null;
+  return json({ erro: MENSAGEM_PREVIEW_BLOQUEADO, codigo: "CONTA_AZUL_AMBIENTE_DESLIGADO" }, 503);
+}
+
 export async function integrationsApi(request: Request, env: Env, ctx?: BackgroundContext): Promise<Response | null> {
   // Fila de pendências antes das rotas do RD (que devolvem 404 para caminhos que não conhecem).
   const pendencias = await pendenciasApi(request, env, {
@@ -488,6 +510,8 @@ export async function integrationsApi(request: Request, env: Env, ctx?: Backgrou
   const rd = await rdStationReadonlyApi(request, env, ctx);
   if (rd) return rd;
   const path = new URL(request.url).pathname;
+  const travaContaAzul = await contaAzulTravadaNasRotasGerais(request, env, path);
+  if (travaContaAzul) return travaContaAzul;
   if (path === "/api/integrations/mercado-pago/webhook" && request.method === "POST") return handleMercadoPagoWebhook(request, env);
   if (path === "/api/cliente/payments/mercado-pago/preference" && request.method === "POST") return createMercadoPagoPreference(request, env);
   if (path === "/api/admin/integrations/credenciais") return credenciaisApi(request, env);

@@ -518,7 +518,7 @@ export function contaAzulBloqueadaNoAmbiente(env: Env) {
   if (env.VERCEL_ENV === "production") return env.CONTA_AZUL_PRODUCAO_PERMITIDA !== "1";
   return false;
 }
-export const MENSAGEM_PREVIEW_BLOQUEADO = "Conta Azul desligada neste ambiente (Production só com autorização; Preview só no banco de teste).";
+export const MENSAGEM_PREVIEW_BLOQUEADO = "Conta Azul — Produção: DESATIVADA / NÃO CONFIGURADA. Nada da Conta Azul é gravado aqui; as credenciais do App de Desenvolvimento pertencem ao ambiente de desenvolvimento.";
 
 export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" | "agendada"; ator: string }, parcial: Partial<Deps> = {}) {
   if (contaAzulBloqueadaNoAmbiente(env)) return { executada: false, motivo: "ambiente_desligado" };
