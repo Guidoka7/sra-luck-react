@@ -63,6 +63,16 @@ function statusClass(status: StatusContratoCliente | undefined) {
   return "";
 }
 function tempo(v: string | null | undefined) { const t = v ? new Date(v).getTime() : 0; return Number.isFinite(t) ? t : 0; }
+const TAMANHO_PAGINA_CRM = 100;
+/** Início do período (horário local) para o filtro no servidor; "all" = sem filtro. */
+function periodoDesde(periodo: PeriodMode): string | null {
+  if (periodo === "all") return null;
+  const agora = new Date();
+  const inicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  if (periodo !== "today") inicio.setDate(inicio.getDate() - Number(periodo));
+  return inicio.toISOString();
+}
+
 function noPeriodo(criadoEm: string | null | undefined, periodo: PeriodMode) {
   if (periodo === "all") return true;
   if (!criadoEm) return false;
@@ -102,7 +112,10 @@ export default function ClientesPage() {
   const [novasVendas, setNovasVendas] = useState<NovaVenda[]>([]);
   const [totaisClientes, setTotaisClientes] = useState<TotaisClientes | null>(null);
   const [totalNovasVendas, setTotalNovasVendas] = useState<number | null>(null);
-  const [escopoRd, setEscopoRd] = useState<"atual" | "historico">("atual");
+  // Aguardando cadastro: paginada no servidor (dezenas de milhares de vendas do RD).
+  const [paginaCrm, setPaginaCrm] = useState(1);
+  const [buscaServidor, setBuscaServidor] = useState("");
+  const [totalCrmGeral, setTotalCrmGeral] = useState<number | null>(null);
   const carregarSeq = useRef(0);
   const [carregando, setCarregando] = useState(true);
   const [funil, setFunil] = useState<Funil>("cadastradas");
@@ -118,7 +131,9 @@ export default function ClientesPage() {
   async function carregar(force = false) {
     const seq = ++carregarSeq.current;
     const clientesUrl = "/api/admin/clientes";
-    const crmUrl = `/api/admin/novas-vendas?status=aguardando_cadastro${escopoRd === "atual" ? "&escopo=funil_atual" : ""}`;
+    const desde = periodoDesde(periodo);
+    const filtroAtivo = Boolean(buscaServidor || desde);
+    const crmUrl = `/api/admin/novas-vendas?${new URLSearchParams({ pagina: String(paginaCrm), tamanho: String(TAMANHO_PAGINA_CRM), ordem: ordenacao, ...(buscaServidor ? { busca: buscaServidor } : {}), ...(desde ? { desde } : {}) })}`;
     // A lista do RD já está persistida no nosso banco. Mostra o último snapshot
     // instantaneamente ao entrar/atualizar a página e revalida em paralelo.
     const cachedClientes = getInstantCache<{ clientes?: Cliente[]; totais?: TotaisClientes }>(clientesUrl, 24 * 60 * 60 * 1000);
@@ -129,7 +144,7 @@ export default function ClientesPage() {
     }
     if (cachedCrm) {
       setNovasVendas(cachedCrm.vendas ?? []);
-      if (typeof cachedCrm.total === "number") setTotalNovasVendas(cachedCrm.total);
+      if (typeof cachedCrm.total === "number") { setTotalNovasVendas(cachedCrm.total); if (!filtroAtivo) setTotalCrmGeral(cachedCrm.total); }
     }
     if (!cachedClientes && !cachedCrm) setCarregando(true);
     else setCarregando(false);
@@ -150,7 +165,9 @@ export default function ClientesPage() {
 
     if (resultadoCrm.status === "fulfilled") {
       setNovasVendas(resultadoCrm.value.vendas ?? []);
-      setTotalNovasVendas(typeof resultadoCrm.value.total === "number" ? resultadoCrm.value.total : null);
+      const totalCrm = typeof resultadoCrm.value.total === "number" ? resultadoCrm.value.total : null;
+      setTotalNovasVendas(totalCrm);
+      if (!filtroAtivo && totalCrm != null) setTotalCrmGeral(totalCrm);
     } else if (!cachedCrm) toast.error(resultadoCrm.reason instanceof Error ? resultadoCrm.reason.message : "Falha ao carregar vendas do RD.");
     // Se o RD/API estiver momentaneamente lento, mantém o snapshot já exibido.
     setCarregando(false);
@@ -160,7 +177,10 @@ export default function ClientesPage() {
     if (termoInicial) setBusca(termoInicial);
   }, []);
 
-  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => { window.clearInterval(intervalo); carregarSeq.current++; }; }, [escopoRd]);
+  // Busca no servidor depois de uma pausa na digitação; filtro novo volta para a página 1.
+  useEffect(() => { const t = window.setTimeout(() => setBuscaServidor(busca.trim()), 400); return () => window.clearTimeout(t); }, [busca]);
+  useEffect(() => { setPaginaCrm(1); }, [buscaServidor, periodo, ordenacao]);
+  useEffect(() => { void carregar(); const intervalo = window.setInterval(() => void carregar(true), 30000); return () => { window.clearInterval(intervalo); carregarSeq.current++; }; }, [paginaCrm, buscaServidor, periodo, ordenacao]);
 
   useEffect(() => {
     if (!menuId) return;
@@ -199,12 +219,13 @@ export default function ClientesPage() {
   }), ordenacao, (v) => v.nome_completo ?? "", (v) => v.created_at), [novas, termo, periodo, ordenacao]);
 
   const counts: Record<Funil, number | null> = {
-    aguardando: totalNovasVendas != null && totaisClientes ? totalNovasVendas + totaisClientes.aguardandoCadastroFinanceiro : null,
+    aguardando: totalCrmGeral != null && totaisClientes ? totalCrmGeral + totaisClientes.aguardandoCadastroFinanceiro : null,
     cadastradas: totaisClientes?.cadastradas ?? null,
     canceladas: totaisClientes?.canceladas ?? null,
   };
   const countAtual = counts[funil];
   const total = ehAguardando ? vendasFiltradas.length + filtradas.length : filtradas.length;
+  const paginasCrm = Math.max(1, Math.ceil((totalNovasVendas ?? 0) / TAMANHO_PAGINA_CRM));
 
   function limparFiltros() { setBusca(""); setBanco("all"); setStatus("all"); setPeriodo("all"); }
   function abrir(cliente: Cliente | null, aba: AbaDrawer, id: string | null = cliente?.id ?? null) { setMenuId(null); setDrawer({ id, cliente, venda: null, aba }); }
@@ -278,12 +299,11 @@ export default function ClientesPage() {
       <header className={styles.cardHead}>
         <div>
           <div className={styles.cardTitleLine}><span className={styles.cardTitle}>{TAB_LABEL[funil]}</span><span className={styles.cardCount}>{countAtual ?? "—"} {countAtual === 1 ? "cliente" : "clientes"}</span></div>
-          <div className={styles.cardSub}>{total} nesta página</div>
+          <div className={styles.cardSub}>{ehAguardando && totalNovasVendas != null
+            ? `${total} nesta página · página ${paginaCrm} de ${paginasCrm}${buscaServidor || periodo !== "all" ? ` · ${totalNovasVendas} encontrada(s)` : ""}`
+            : `${total} nesta página`}</div>
         </div>
         <div className={styles.cardTools}>
-          {ehAguardando && <button className={styles.clearBtn} type="button" onClick={() => { setNovasVendas([]); setTotalNovasVendas(null); setEscopoRd(escopoRd === "atual" ? "historico" : "atual"); }}>
-            {escopoRd === "atual" ? "Ver histórico anterior" : "Ver todos os funis sincronizados"}
-          </button>}
           <span className={styles.orderLabel}>Ordenar por</span>
           <label className={styles.smallSelect}>
             <select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as SortMode)} aria-label="Ordenar clientes">
@@ -321,6 +341,13 @@ export default function ClientesPage() {
                 </tr>)}
               </tbody>
             </table>
+            {paginasCrm > 1 && <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", padding: "12px 16px" }}>
+              <button className={styles.clearBtn} type="button" disabled={paginaCrm <= 1} onClick={() => setPaginaCrm(1)}>Primeira</button>
+              <button className={styles.clearBtn} type="button" disabled={paginaCrm <= 1} onClick={() => setPaginaCrm((p) => Math.max(1, p - 1))}>Anterior</button>
+              <span className={styles.cardSub}>Página {paginaCrm} de {paginasCrm}</span>
+              <button className={styles.clearBtn} type="button" disabled={paginaCrm >= paginasCrm} onClick={() => setPaginaCrm((p) => Math.min(paginasCrm, p + 1))}>Próxima</button>
+              <button className={styles.clearBtn} type="button" disabled={paginaCrm >= paginasCrm} onClick={() => setPaginaCrm(paginasCrm)}>Última</button>
+            </div>}
           </div>
         : view === "list" ? <div className={styles.tableWrap}>
             <table className={styles.table}>

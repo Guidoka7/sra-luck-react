@@ -153,6 +153,35 @@ export async function adminNovasVendas(request: Request, env: Env): Promise<Resp
     return json({ origem: data ? await origemCrmDaVenda(env, data as Record<string, any>) : null });
   }
 
+  if (path === "/api/admin/novas-vendas" && request.method === "GET" && url.searchParams.has("pagina")) {
+    // Lista paginada no servidor (Clientes > Aguardando cadastro). Mesma regra da Visão geral:
+    // TODAS as vendas aguardando cadastro, sem filtro de funil nem de data de sincronização
+    // (o filtro por "última execução" fazia a lista subir e descer a cada etapa da importação).
+    const tamanho = Math.min(200, Math.max(10, Number(url.searchParams.get("tamanho")) || 100));
+    const pagina = Math.max(1, Math.min(100_000, Math.floor(Number(url.searchParams.get("pagina")) || 1)));
+    const ordem = url.searchParams.get("ordem") ?? "recent";
+    const busca = (url.searchParams.get("busca") ?? "").trim().replace(/[%_,()*\\]/g, " ").replace(/\s+/g, " ").slice(0, 80);
+    const desde = url.searchParams.get("desde");
+    let query = db.from("novas_vendas")
+      .select("id,rd_station_id,cliente_id,nome_completo,cpf,telefone,email,data_venda,vendedora_responsavel,valor_contrato,quantidade_parcelas,valor_parcela,taxa_administrativa,tipo_venda,origem_venda,campanha_local,status,created_at,updated_at,vendedora_id", { count: "exact" })
+      .eq("status", "aguardando_cadastro").is("cliente_id", null);
+    if (busca) {
+      const termo = `%${busca}%`;
+      const digitos = busca.replace(/\D/g, "");
+      query = query.or([
+        `nome_completo.ilike.${termo}`, `vendedora_responsavel.ilike.${termo}`, `origem_venda.ilike.${termo}`, `campanha_local.ilike.${termo}`, `email.ilike.${termo}`,
+        ...(digitos.length >= 3 ? [`cpf.ilike.%${digitos}%`, `telefone.ilike.%${digitos}%`] : []),
+      ].join(","));
+    }
+    if (desde && /^\d{4}-\d{2}-\d{2}/.test(desde)) query = query.gte("created_at", desde);
+    query = ordem === "az" || ordem === "za"
+      ? query.order("nome_completo", { ascending: ordem === "az" }).order("id", { ascending: true })
+      : query.order("created_at", { ascending: ordem === "old" }).order("id", { ascending: true });
+    const { data, error, count } = await query.range((pagina - 1) * tamanho, pagina * tamanho - 1);
+    if (error) return json({ erro: publicError(error) }, 500);
+    return json({ vendas: data ?? [], total: count ?? 0, pagina, tamanho });
+  }
+
   if (path === "/api/admin/novas-vendas" && request.method === "GET") {
     const status = url.searchParams.get("status");
     const escopoAtual = url.searchParams.get("escopo") === "funil_atual";
