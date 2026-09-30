@@ -23,10 +23,11 @@
  */
 import { PERMISSOES_ADMIN } from "./admin-auth";
 import {
-  abrirConflito, agoraIso, aberta, caAtual, caRequest, centavos, composicaoDasBaixas, conexaoCa, credenciaisDeConfiguracao, depsPadrao, dia,
-  ErroContaAzul, exigir, json, lerParcela, marcadorDe, quitada, registrarEvento, renovarToken, sameOrigin, sraAtual,
+  abrirConflito, agoraIso, aberta, caRequest, caRequestComCabecalhos, centavos, composicaoDasBaixas, conexaoCa, credenciaisDeConfiguracao, depsPadrao, dia,
+  contaAzulBloqueadaNoAmbiente, ErroContaAzul, exigir, gravarTokens, MENSAGEM_PREVIEW_BLOQUEADO, horaSaoPaulo, json, lerParcela, marcadorDe, pedirToken, quitada, registrarEvento, renovarToken, sameOrigin, sraAtual,
   type CaParcela, type Deps,
 } from "./conta-azul";
+import { validarState } from "./rd-station-readonly";
 import { isDevConsoleSyntheticAdminId } from "./dev-console-auth";
 import type { Env } from "./supabase";
 
@@ -464,6 +465,111 @@ export async function desconectar(d: Deps, ator: string) {
   return { ok: true as const, revogadaNaContaAzul: revogada, motivo };
 }
 
+/**
+ * OAuth do App de Desenvolvimento: a Conta Azul redireciona para o endereço cadastrado no app
+ * (para apps de desenvolvimento, https://www.contaazul.com), fora do Sra Luck. O Dev cola o
+ * endereço de retorno; o state é validado contra quem gerou o link e o code (válido por 3 min)
+ * é trocado aqui, no backend. O code nunca é gravado nem registrado em log.
+ */
+export async function concluirOAuthColado(env: Env, d: Deps, urlColada: string, adminId: string) {
+  if (!env.CLIENTE_SESSION_SECRET) return { ok: false as const, status: 503, erro: "Segredo de sessão não configurado." };
+  let u: URL;
+  try { u = new URL(String(urlColada || "").trim()); } catch { return { ok: false as const, status: 400, erro: "Cole o endereço completo para onde a Conta Azul te levou." }; }
+  const params = new URLSearchParams(u.search);
+  // Algumas telas devolvem os parâmetros depois do # (SPA).
+  if (!params.get("code") && u.hash.includes("?")) new URLSearchParams(u.hash.slice(u.hash.indexOf("?") + 1)).forEach((v, k) => params.set(k, v));
+  const code = params.get("code") || "", state = params.get("state") || "";
+  if (!code || !state) return { ok: false as const, status: 400, erro: "O endereço não tem code e state. Autorize de novo e cole o endereço logo em seguida." };
+  const dono = await validarState(state, env.CLIENTE_SESSION_SECRET);
+  if (!dono || dono !== adminId) return { ok: false as const, status: 400, erro: "Autorização expirada ou gerada por outra sessão. Clique em Conectar de novo." };
+  const redirect = await d.credenciais.obter("redirect_uri");
+  if (!redirect) return { ok: false as const, status: 409, erro: "Cadastre a Redirect URI do app (a mesma do Portal do Desenvolvedor)." };
+  let esperado: URL;
+  try { esperado = new URL(redirect); } catch { return { ok: false as const, status: 409, erro: "Redirect URI cadastrada é inválida." }; }
+  if (u.origin !== esperado.origin || u.pathname.replace(/\/$/, "") !== esperado.pathname.replace(/\/$/, "")) return { ok: false as const, status: 400, erro: "O endereço colado não é a Redirect URI cadastrada." };
+  try {
+    const t = await pedirToken(d, { grant_type: "authorization_code", code, redirect_uri: redirect });
+    await gravarTokens(d, t, adminId);
+    await registrarEvento(d, "oauth_conectado", "processado", { origem: "endereco_colado", ator: adminId, expiraEmSegundos: t.expiresIn });
+    await d.db.from("logs_alteracoes").insert({ usuario: adminId, acao: "autorizou_oauth_conta_azul", entidade: "integracoes", entidade_id: PROVEDOR, detalhes: { origem: "dev_console_endereco_colado" } });
+    return { ok: true as const, expiraEm: await d.credenciais.obter("token_expires_at") };
+  } catch (e) {
+    const erro = e instanceof ErroContaAzul ? e : new ErroContaAzul("oauth", "Falha ao trocar o código.");
+    await registrarEvento(d, "oauth_falhou", "erro", { codigo: erro.codigo, status: erro.status, ator: adminId }, erro.message);
+    return { ok: false as const, status: 502, erro: erro.message };
+  }
+}
+
+// ------------------------------------------------------------------ diagnóstico real (Fase 1)
+
+/** Campos cujo valor pode aparecer no diagnóstico (conta de teste; nada pessoal). */
+const VALOR_VISIVEL = /^(status|versao|indice|data_[a-z_]+|valor[a-z_]*|total|pago|nao_pago|juros|multa|desconto|taxa|metodo_pagamento|tipo_pessoa|itens_totais|conciliado|baixa_agendada|tipo)$/;
+
+/** Estrutura (chaves e tipos) de uma resposta real, com valores só de campos não pessoais. */
+export function descreverFormato(v: unknown, chave = "", nivel = 0): unknown {
+  if (v === null || v === undefined) return null;
+  if (Array.isArray(v)) return v.length ? { lista: v.length, item: descreverFormato(v[0], chave, nivel + 1) } : { lista: 0 };
+  if (typeof v === "object") {
+    if (nivel > 3) return "objeto";
+    return Object.fromEntries(Object.entries(v as Json).map(([k, x]) => [k, descreverFormato(x, k, nivel + 1)]));
+  }
+  if (VALOR_VISIVEL.test(chave) && (typeof v === "number" || typeof v === "boolean" || typeof v === "string")) return v;
+  return typeof v;
+}
+
+export type EtapaDiagnostico = { etapa: string; ok: boolean; ms: number; status?: number; formato?: unknown; observacao?: string; erro?: string; cabecalhos?: Record<string, string> };
+
+/**
+ * Chamadas reais, só leitura, contra a conta conectada: registra a estrutura de cada resposta
+ * para ajustar o adapter ao formato real (evidência da Fase 1). Não grava nada no financeiro.
+ */
+export async function diagnosticoApi(d: Deps, entrada: { cpf?: string | null; ator: string }) {
+  const etapas: EtapaDiagnostico[] = [];
+  const rodar = async (etapa: string, f: () => Promise<{ dados: any; status: number; cabecalhos: Record<string, string> }>, obs?: (dados: any) => string) => {
+    const t0 = Date.now();
+    try {
+      const r = await f();
+      etapas.push({ etapa, ok: true, ms: Date.now() - t0, status: r.status, formato: descreverFormato(r.dados), observacao: obs?.(r.dados), cabecalhos: r.cabecalhos });
+      return r.dados;
+    } catch (e) {
+      const erro = e as ErroContaAzul;
+      etapas.push({ etapa, ok: false, ms: Date.now() - t0, status: erro.status, erro: erro.message });
+      return null;
+    }
+  };
+  const get = (caminho: string) => () => caRequestComCabecalhos(d, "GET", caminho);
+  await rodar("conta_conectada", get("/v1/pessoas/conta-conectada"), (x) => `id_empresa ${x?.id_empresa ? "presente" : "ausente"}`);
+  const cpf = soDigitos(entrada.cpf);
+  let pessoaId: string | null = null;
+  if (cpf.length === 11) {
+    const lista = await rodar("pessoas_por_cpf", get(`/v1/pessoas?${new URLSearchParams({ pagina: "1", tamanho_pagina: "10", documentos: cpf })}`), (x) => {
+      const itens = itensDe(x);
+      return `${itens.length} item(ns); ${itens.filter((p) => soDigitos(p.documento) === cpf).length} com documento idêntico; envelope: ${Array.isArray(x) ? "lista" : Object.keys(x ?? {}).join(",")}`;
+    });
+    pessoaId = itensDe(lista).find((p) => soDigitos(p.documento) === cpf)?.id ?? null;
+    if (pessoaId) await rodar("pessoa_por_id", get(`/v1/pessoas/${encodeURIComponent(pessoaId)}`), (x) => `documento ${soDigitos(x?.documento) === cpf ? "confere" : "NÃO confere"}`);
+  }
+  const hoje = d.agora();
+  let primeira: string | null = null;
+  if (pessoaId) {
+    const amplo = await rodar("receitas_da_pessoa_intervalo_amplo", get(`/v1/financeiro/eventos-financeiros/contas-a-receber/buscar?${new URLSearchParams({ pagina: "1", tamanho_pagina: "100", data_vencimento_de: "2015-01-01", data_vencimento_ate: `${hoje.getUTCFullYear() + 10}-12-31`, ids_clientes: pessoaId })}`),
+      (x) => { const it = itensDe(x); return `${it.length} item(ns) na página; itens_totais=${x?.itens_totais ?? "—"}; status vistos: ${[...new Set(it.map((i) => i.status))].join(",") || "—"}`; });
+    const itens = itensDe(amplo);
+    if (!amplo) await rodar("receitas_da_pessoa_um_ano", get(`/v1/financeiro/eventos-financeiros/contas-a-receber/buscar?${new URLSearchParams({ pagina: "1", tamanho_pagina: "100", data_vencimento_de: `${hoje.getUTCFullYear()}-01-01`, data_vencimento_ate: `${hoje.getUTCFullYear()}-12-31`, ids_clientes: pessoaId })}`));
+    primeira = itens.find((i) => String(i.status).toUpperCase() === "RECEBIDO")?.id ?? itens[0]?.id ?? null;
+  }
+  if (primeira) {
+    await rodar("parcela_por_id", get(`/v1/financeiro/eventos-financeiros/parcelas/${encodeURIComponent(primeira)}`),
+      (x) => `versao=${x?.versao ?? "ausente"}; baixas=${Array.isArray(x?.baixas) ? x.baixas.length : "—"}; anexos=${Array.isArray(x?.anexos) ? x.anexos.length : "—"}; evento.id ${x?.evento?.id ? "presente" : "ausente"}`);
+  }
+  const fim = hoje, ini = new Date(hoje.getTime() - 24 * 3600_000);
+  await rodar("alteracoes_24h", get(`/v1/financeiro/eventos-financeiros/alteracoes?${new URLSearchParams({ pagina: "1", tamanho_pagina: "100", data_inicio: horaSaoPaulo(ini), data_fim: horaSaoPaulo(fim) })}`),
+    (x) => `${itensDe(x).length} evento(s) alterado(s) em 24 h; itens_totais=${x?.itens_totais ?? "—"}`);
+  const resumo = { ok: etapas.every((e) => e.ok), etapas, em: agoraIso(d) };
+  await registrarEvento(d, "diagnostico_api", resumo.ok ? "processado" : "erro", { etapas: etapas.map((e) => ({ etapa: e.etapa, ok: e.ok, status: e.status ?? null, ms: e.ms, observacao: e.observacao ?? null, formato: e.formato ?? null, cabecalhos: e.cabecalhos ?? null })), ator: entrada.ator }, resumo.ok ? null : etapas.filter((e) => !e.ok).map((e) => `${e.etapa}: ${e.erro}`).join(" | "));
+  return resumo;
+}
+
 const WEBHOOKS = {
   disponivel: false,
   motivo: "A API oficial da Conta Azul não oferece webhooks (developers.contaazul.com: “a API não suporta webhooks… será preciso implementar polling”).",
@@ -513,6 +619,31 @@ export async function statusCentral(env: Env, d: Deps) {
 // ------------------------------------------------------------------ rotas
 
 /**
+ * Vínculo avulso de UMA parcela (painel de operação): mesmas regras da conferência da cliente —
+ * a pessoa precisa estar confirmada e o lançamento precisa ser dela. Nunca só por ID digitado.
+ */
+async function vincularAvulso(request: Request, env: Env) {
+  if (!sameOrigin(request)) return json({ erro: "Requisição de origem não autorizada." }, 403);
+  const auth = await exigir(request, env, [PERMISSOES_ADMIN.INTEGRACOES_OPERAR_FINANCEIRO, PERMISSOES_ADMIN.FINANCEIRO_BAIXA_MANUAL]);
+  if (auth instanceof Response) return auth;
+  if (isDevConsoleSyntheticAdminId(auth.adminId)) return json({ erro: "Operações da Conta Azul são feitas no Admin do Sra Luck." }, 403);
+  const body = await request.json().catch(() => ({})) as Json;
+  const boletoId = String(body.boletoId || ""), caParcelaId = String(body.contaAzulParcelaId || "");
+  if (!UUID.test(boletoId) || !caParcelaId) return json({ erro: "Informe a parcela e o lançamento da Conta Azul." }, 400);
+  const d = depsPadrao(env);
+  const { data: boleto } = await d.db.from("boletos").select("cliente_id").eq("id", boletoId).maybeSingle();
+  if (!boleto) return json({ erro: "Parcela não encontrada." }, 404);
+  try {
+    const r = await confirmarVinculos(env, String((boleto as Json).cliente_id), [{ boletoId, caParcelaId, aceitarDivergencias: body.aceitarDivergencias === true }], auth.colaboradorId);
+    if (!r.ok) return json({ erro: r.erro }, r.status);
+    const x = r.resultados[0];
+    return x.ok ? json({ ok: true, vinculado: !x.conflito, conflito: Boolean(x.conflito), divergencias: x.divergencias ?? [] }) : json({ erro: x.erro, divergencias: x.divergencias ?? [] }, 409);
+  } catch (e) {
+    return json({ erro: e instanceof ErroContaAzul ? e.message : "Falha ao falar com a Conta Azul." }, 502);
+  }
+}
+
+/**
  * /api/admin/integrations/conta-azul/clientes/{id}/…  (equipe no Admin, sessão humana)
  * /api/admin/integrations/conta-azul/central/…        (Dev Console: saúde, teste, renovar, desconectar)
  */
@@ -520,9 +651,11 @@ export async function contaAzulVinculosApi(request: Request, env: Env): Promise<
   const url = new URL(request.url);
   const base = "/api/admin/integrations/conta-azul/";
   if (!url.pathname.startsWith(base)) return null;
+  if (contaAzulBloqueadaNoAmbiente(env)) return json({ erro: MENSAGEM_PREVIEW_BLOQUEADO, codigo: "CONTA_AZUL_PREVIEW_BLOQUEADO" }, 503);
   const rota = url.pathname.slice(base.length);
-  const central = rota.match(/^central\/(status|testar-conexao|renovar-token|desconectar)$/);
+  const central = rota.match(/^central\/(status|testar-conexao|renovar-token|desconectar|concluir-oauth|diagnostico)$/);
   const cliente = rota.match(/^clientes\/([0-9a-f-]{36})\/(conta-azul|pessoas|pessoa|pessoa\/desvincular|conciliacao|vinculos|importacao|importar)$/);
+  if (rota === "vincular" && request.method === "POST") return vincularAvulso(request, env);
   if (!central && !cliente) return null;
 
   if (central) {
@@ -537,6 +670,9 @@ export async function contaAzulVinculosApi(request: Request, env: Env): Promise<
       if (acao === "status") return json(await statusCentral(env, d));
       if (acao === "testar-conexao") { const r = await testarConexaoCa(d, auth.adminId); return r.ok ? json(r) : json(r, r.status); }
       if (acao === "renovar-token") { const r = await renovarAgora(d, auth.adminId); return r.ok ? json(r) : json(r, r.status); }
+      const body = await request.json().catch(() => ({})) as Json;
+      if (acao === "concluir-oauth") { const r = await concluirOAuthColado(env, d, String(body.url || ""), auth.adminId); return r.ok ? json(r) : json({ erro: r.erro }, r.status); }
+      if (acao === "diagnostico") return json(await diagnosticoApi(d, { cpf: typeof body.cpf === "string" ? body.cpf : null, ator: auth.adminId }));
       return json(await desconectar(d, auth.adminId));
     } catch (e) {
       return json({ erro: e instanceof ErroContaAzul ? e.message : "Falha na central da Conta Azul." }, 502);

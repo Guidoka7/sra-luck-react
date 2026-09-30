@@ -108,7 +108,7 @@ function basic(clientId: string, clientSecret: string) {
   return `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
 }
 
-async function pedirToken(d: Deps, params: Record<string, string>) {
+export async function pedirToken(d: Deps, params: Record<string, string>) {
   const clientId = await d.credenciais.obter("client_id");
   const clientSecret = await d.credenciais.obter("client_secret");
   if (!clientId || !clientSecret) throw new ErroContaAzul("cliente_oauth_ausente", "Configure Client ID e Client Secret da Conta Azul no cofre.");
@@ -132,7 +132,7 @@ async function pedirToken(d: Deps, params: Record<string, string>) {
   return { access, refresh, expiresIn: Number(corpo.expires_in || 3600) };
 }
 
-async function gravarTokens(d: Deps, t: { access: string; refresh: string; expiresIn: number }, ator: string) {
+export async function gravarTokens(d: Deps, t: { access: string; refresh: string; expiresIn: number }, ator: string) {
   // O refresh primeiro: se a gravação do access falhar, o próximo ciclo ainda renova.
   await d.credenciais.salvar("refresh_token", t.refresh, ator);
   await d.credenciais.salvar("access_token", t.access, ator);
@@ -195,6 +195,13 @@ export async function urlDeAutorizacao(env: Env, adminId: string, d: Deps) {
 // ------------------------------------------------------------------ cliente HTTP
 
 export async function caRequest(d: Deps, metodo: "GET" | "POST" | "PATCH" | "DELETE", caminho: string, corpo?: unknown): Promise<Json | Json[] | null> {
+  return (await caRequestComCabecalhos(d, metodo, caminho, corpo)).dados;
+}
+
+/** Cabeçalhos de limite/paginação que interessam ao diagnóstico (nunca Authorization). */
+const CABECALHOS_UTEIS = /^(x-ratelimit|ratelimit|retry-after|x-rate-limit|x-total|x-request-id)/i;
+
+export async function caRequestComCabecalhos(d: Deps, metodo: "GET" | "POST" | "PATCH" | "DELETE", caminho: string, corpo?: unknown): Promise<{ dados: any; status: number; cabecalhos: Record<string, string> }> {
   let token = await tokenAtual(d);
   const { apiBaseUrl } = await conexaoCa(d);
   const executar = (t: string) => comPrazo(d, `${apiBaseUrl}${caminho}`, {
@@ -215,7 +222,9 @@ export async function caRequest(d: Deps, metodo: "GET" | "POST" | "PATCH" | "DEL
   const texto = await resposta.text();
   let dados: any = null;
   try { dados = texto ? JSON.parse(texto) : null; } catch { dados = null; }
-  if (resposta.ok) return dados;
+  const cabecalhos: Record<string, string> = {};
+  resposta.headers?.forEach?.((v, k) => { if (CABECALHOS_UTEIS.test(k)) cabecalhos[k.toLowerCase()] = v; });
+  if (resposta.ok) return { dados, status: resposta.status, cabecalhos };
   const detalhe = typeof dados?.message === "string" ? dados.message.slice(0, 200) : typeof dados?.error === "string" ? dados.error.slice(0, 200) : "";
   if (resposta.status === 404) throw new ErroContaAzul("nao_encontrado", "Registro não encontrado na Conta Azul.", false, 404);
   if (resposta.status === 429 || resposta.status >= 500) throw new ErroContaAzul("provedor_indisponivel", `Conta Azul HTTP ${resposta.status}. ${detalhe}`.trim(), true, resposta.status);
@@ -532,8 +541,18 @@ async function opBaixar(env: Env, d: Deps, op: Json): Promise<Resultado> {
     metodo_pagamento: (comp.forma && METODO_POR_FORMA[comp.forma]) || config.metodoPagamento,
     observacao: `Sra Luck ${v.marcador} baixa`,
   }) as Json;
-  await atualizarVinculo(d, v.id, { ca_baixa_id: resposta?.id ?? null, baixa_origem: "sra", ca_snapshot: { ...ca, status: "QUITADO" }, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: pagoEm }, ultima_sincronizacao_em: agoraIso(d) });
-  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "enviou_baixa_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { caBaixaId: resposta?.id ?? null, dataPagamento: pagoEm, principal: comp.principal, juros: comp.juros, multa: comp.multa, desconto: comp.desconto, fonteComposicao: comp.fonte } });
+  // 2xx não basta: relê a parcela e confere a baixa gravada (composição e data).
+  const depois = await lerParcela(d, v.ca_parcela_id);
+  const gravada = depois.baixas.find((b) => (resposta?.id && b.id === String(resposta.id)) || b.observacao.includes(v.marcador)) ?? null;
+  const confere = gravada && gravada.dataPagamento === pagoEm && [
+    [gravada.valor, comp.principal], [gravada.juros, comp.juros], [gravada.multa, comp.multa], [gravada.desconto, comp.desconto],
+  ].every(([a, b]) => centavos(a) === centavos(b));
+  await atualizarVinculo(d, v.id, { ca_baixa_id: gravada?.id ?? (resposta?.id ? String(resposta.id) : null), baixa_origem: "sra", ca_snapshot: depois, ca_versao: depois.versao, sra_snapshot: { ...(v.sra_snapshot ?? {}), status: "pago", dataPagamento: pagoEm }, ultima_sincronizacao_em: agoraIso(d) });
+  await d.db.from("logs_alteracoes").insert({ usuario: "sistema:conta_azul", acao: "enviou_baixa_conta_azul", entidade: "boletos", entidade_id: v.boleto_id, detalhes: { caBaixaId: gravada?.id ?? resposta?.id ?? null, dataPagamento: pagoEm, principal: comp.principal, juros: comp.juros, multa: comp.multa, desconto: comp.desconto, fonteComposicao: comp.fonte, conferidaNaContaAzul: Boolean(confere), statusDepois: depois.status, camposResposta: resposta && typeof resposta === "object" ? Object.keys(resposta).slice(0, 30) : null } });
+  if (!confere) {
+    await abrirConflito(d.db, { referencia: v.boleto_id, vinculoId: v.id, tipo: "baixa_divergente_apos_envio", descricao: gravada ? "A baixa foi aceita, mas relida na Conta Azul está com composição ou data diferente da enviada." : "A Conta Azul respondeu, mas a baixa não aparece na parcela relida.", dadosSra: { ...comp, dataPagamento: pagoEm }, dadosExternos: depois });
+    return { nota: "Baixa enviada, mas a releitura não confere: conflito aberto." };
+  }
   return { nota: `Baixa ${resposta?.id ?? ""} registrada na Conta Azul (principal ${comp.principal.toFixed(2)} + juros ${comp.juros.toFixed(2)} + multa ${comp.multa.toFixed(2)} − desconto ${comp.desconto.toFixed(2)}).` };
 }
 
@@ -752,7 +771,18 @@ export async function lerMudancasContaAzul(env: Env, d: Deps, prazo: number) {
 
 // ------------------------------------------------------------------ execução completa
 
+/**
+ * Trava de ambiente: num Preview da Vercel a Conta Azul só funciona com CONTA_AZUL_PREVIEW_PERMITIDO=1,
+ * definido apenas no Preview ligado ao banco de TESTE. Evita que um Preview que herdou as variáveis
+ * de produção fale com a Conta Azul usando dados reais.
+ */
+export function contaAzulBloqueadaNoAmbiente(env: Env) {
+  return env.VERCEL_ENV === "preview" && env.CONTA_AZUL_PREVIEW_PERMITIDO !== "1";
+}
+export const MENSAGEM_PREVIEW_BLOQUEADO = "Conta Azul desligada neste Preview: só funciona no Preview do banco de teste (CONTA_AZUL_PREVIEW_PERMITIDO=1).";
+
 export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" | "agendada"; ator: string }, parcial: Partial<Deps> = {}) {
+  if (contaAzulBloqueadaNoAmbiente(env)) return { executada: false, motivo: "preview_sem_permissao" };
   const d = depsPadrao(env, parcial);
   const prazo = Date.now() + ORCAMENTO_MS;
   const config = await configCa(env, d);
@@ -780,25 +810,16 @@ export async function sincronizarContaAzul(env: Env, opcoes: { origem: "manual" 
 
 // ------------------------------------------------------------------ ações do Admin
 
-async function pessoaPorCpf(d: Deps, cpf: string) {
-  const r = await caRequest(d, "GET", `/v1/pessoas?${new URLSearchParams({ pagina: "1", tamanho_pagina: "10", documentos: cpf })}`) as Json;
-  const itens: Json[] = Array.isArray(r) ? r : Array.isArray(r?.itens) ? r.itens : Array.isArray(r?.items) ? r.items : [];
-  return itens.filter((p) => String(p.documento || "").replace(/\D/g, "") === cpf);
-}
-
 export async function enviarParcelasCliente(env: Env, clienteId: string, ator: string, parcial: Partial<Deps> = {}) {
   const d = depsPadrao(env, parcial);
   const config = await configCa(env, d);
   if (!config.contaFinanceiraId) return { ok: false as const, status: 409, erro: "Escolha a conta financeira da Conta Azul antes de enviar." };
   const { data: cliente } = await d.db.from("clientes").select("id,nome_completo,cpf").eq("id", clienteId).maybeSingle();
   if (!cliente) return { ok: false as const, status: 404, erro: "Cliente não encontrada." };
-  const cpf = String((cliente as Json).cpf || "").replace(/\D/g, "");
-  if (cpf.length !== 11) return { ok: false as const, status: 409, erro: "Cliente sem CPF válido: não dá para achar a pessoa na Conta Azul." };
-  let pessoas: Json[];
-  try { pessoas = await pessoaPorCpf(d, cpf); } catch (e) { return { ok: false as const, status: 502, erro: (e as Error).message }; }
-  if (pessoas.length === 0) return { ok: false as const, status: 409, erro: "Não há pessoa com esse CPF na Conta Azul. Cadastre a cliente lá e tente de novo." };
-  if (pessoas.length > 1) return { ok: false as const, status: 409, erro: "Há mais de uma pessoa com esse CPF na Conta Azul. Resolva a duplicidade lá antes." };
-  const contato = String(pessoas[0].id);
+  // Só com a pessoa confirmada pela equipe (vínculo pelo CPF no drawer da cliente).
+  const { data: pessoa } = await d.db.from("cliente_vinculos_externos").select("id_externo").eq("provedor", PROVEDOR).eq("cliente_id", clienteId).eq("estado", "vinculado").maybeSingle();
+  if (!pessoa) return { ok: false as const, status: 409, erro: "Vincule a cliente à pessoa da Conta Azul primeiro (busca pelo CPF, com confirmação)." };
+  const contato = String((pessoa as Json).id_externo);
   const { data: boletos } = await d.db.from("boletos").select("id,status").eq("cliente_id", clienteId);
   const { data: existentes } = await d.db.from("conta_azul_vinculos").select("boleto_id").eq("cliente_id", clienteId);
   const ja = new Set(((existentes ?? []) as Json[]).map((x) => x.boleto_id));
@@ -810,31 +831,6 @@ export async function enviarParcelasCliente(env: Env, clienteId: string, ator: s
   await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "enviou_parcelas_conta_azul", entidade: "clientes", entidade_id: clienteId, detalhes: { parcelas: novos.length, jaVinculadas: ja.size, pagasNaoEnviadas: ((boletos ?? []) as Json[]).filter((b) => b.status === "pago" && !ja.has(b.id)).length } });
   const fila = novos.length ? await processarFila(env, d, 12) : null;
   return { ok: true as const, enfileiradas: novos.length, jaVinculadas: ja.size, fila };
-}
-
-export async function vincularExistente(env: Env, boletoId: string, caParcelaId: string, ator: string, parcial: Partial<Deps> = {}) {
-  const d = depsPadrao(env, parcial);
-  if (!/^[0-9a-f-]{36}$/i.test(caParcelaId)) return { ok: false as const, status: 400, erro: "ID da parcela na Conta Azul inválido." };
-  const { data: boleto } = await d.db.from("boletos").select("id,cliente_id,valor,data_vencimento,status,data_pagamento").eq("id", boletoId).maybeSingle();
-  if (!boleto) return { ok: false as const, status: 404, erro: "Parcela não encontrada." };
-  const { data: usado } = await d.db.from("conta_azul_vinculos").select("id,boleto_id").or(`boleto_id.eq.${boletoId},ca_parcela_id.eq.${caParcelaId}`).limit(1);
-  if (usado && usado.length) return { ok: false as const, status: 409, erro: "Esta parcela (ou o lançamento da Conta Azul) já tem vínculo." };
-  let ca: CaParcela;
-  try { ca = await lerParcela(d, caParcelaId); } catch (e) { return { ok: false as const, status: 502, erro: (e as Error).message }; }
-  const b = boleto as Json, s = sraAtual(b);
-  const bate = centavos(ca.valorBruto) === centavos(s.valor) && ca.vencimento === s.vencimento;
-  // Base = o que a Conta Azul tem: a diferença de status (ex.: pago só no Sra Luck) é enviada no próximo ciclo.
-  const base: SraParcela = { valor: ca.valorBruto, vencimento: ca.vencimento, status: quitada(ca) ? "pago" : "nao_pago", dataPagamento: ca.baixas.at(-1)?.dataPagamento ?? null };
-  const { data: v, error } = await d.db.from("conta_azul_vinculos").insert({
-    boleto_id: boletoId, cliente_id: b.cliente_id, marcador: marcadorDe(boletoId), estado: bate ? "vinculado" : "conflito",
-    ca_parcela_id: caParcelaId, ca_evento_id: ca.eventoId, ca_versao: ca.versao, ca_snapshot: ca, sra_snapshot: base,
-    ca_baixa_id: quitada(ca) ? ca.baixas.at(-1)?.id ?? null : null, baixa_origem: quitada(ca) ? "conta_azul" : null,
-    ultima_sincronizacao_em: agoraIso(d), criado_por: ator,
-  }).select("id").single();
-  if (error || !v) return { ok: false as const, status: 409, erro: "Não foi possível gravar o vínculo." };
-  if (!bate) await abrirConflito(d.db, { referencia: boletoId, vinculoId: (v as Json).id, tipo: "vinculo_divergente", descricao: "Vínculo manual com valor ou vencimento diferentes. Nada foi enviado.", dadosSra: s, dadosExternos: ca });
-  await d.db.from("logs_alteracoes").insert({ usuario: ator, acao: "vinculou_lancamento_existente_conta_azul", entidade: "boletos", entidade_id: boletoId, detalhes: { caParcelaId, bate } });
-  return { ok: true as const, vinculado: bate, conflito: !bate };
 }
 
 export const ACOES_CONFLITO = ["aplicar_sra", "aplicar_baixa_conta_azul", "estornar_no_sra", "manter", "desvincular"] as const;
@@ -989,8 +985,9 @@ export async function exigir(request: Request, env: Env, permissoes: string[]) {
 export async function contaAzulApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   const path = url.pathname;
+  if (!path.startsWith("/api/admin/integrations/conta-azul/") && path !== "/api/integrations/conta-azul/oauth/callback") return null;
+  if (contaAzulBloqueadaNoAmbiente(env)) return json({ erro: MENSAGEM_PREVIEW_BLOQUEADO, codigo: "CONTA_AZUL_PREVIEW_BLOQUEADO" }, 503);
   if (path === "/api/integrations/conta-azul/oauth/callback" && request.method === "GET") return oauthCallback(request, env);
-  if (!path.startsWith("/api/admin/integrations/conta-azul/")) return null;
   const rota = path.slice("/api/admin/integrations/conta-azul/".length);
   const d = depsPadrao(env);
 
@@ -1025,10 +1022,6 @@ export async function contaAzulApi(request: Request, env: Env): Promise<Response
 
   if (rota === "enviar-cliente") {
     const r = await enviarParcelasCliente(env, String(body.clienteId || ""), ator);
-    return r.ok ? json(r) : json({ erro: r.erro }, r.status);
-  }
-  if (rota === "vincular") {
-    const r = await vincularExistente(env, String(body.boletoId || ""), String(body.contaAzulParcelaId || ""), ator);
     return r.ok ? json(r) : json({ erro: r.erro }, r.status);
   }
   const resolver = rota.match(/^conflitos\/([0-9a-f-]{36})\/resolver$/);

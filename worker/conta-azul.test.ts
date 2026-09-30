@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { bancoFalso } from "./banco-falso.testutil";
 import {
   avaliarParcelaCa, caAtual, detectarMudancasSra, lerMudancasContaAzul, enviarParcelasCliente, horaSaoPaulo, marcadorDe, processarFila, resolverConflito,
-  tokenAtual, vincularExistente, vinculoSeguroParaBaixa, type Deps,
+  tokenAtual, vinculoSeguroParaBaixa, type Deps,
 } from "./conta-azul";
 import { PADRAO_CONTA_AZUL, validarConfigContaAzul, type ConfigContaAzul } from "./integracoes-registro";
 import type { Env } from "./supabase";
@@ -109,13 +109,12 @@ describe("OAuth", () => {
 });
 
 describe("criação e vínculo", () => {
-  it("envia as parcelas em aberto, localiza pelo marcador e vincula", async () => {
+  it("envia as parcelas em aberto (pessoa confirmada), localiza pelo marcador e vincula", async () => {
     const m = montar([
-      ["GET https://api-v2.contaazul.com/v1/pessoas?", () => [200, { itens: [{ id: "PESSOA", documento: "123.456.789-09" }] }]],
       ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber", () => [202, { protocolo: "PROT", status: "PENDING" }]],
       ["contas-a-receber/buscar", () => [200, { itens: [{ id: "P1", descricao: `Parcela 1/3 · Ana · ${marcadorDe(BOLETO)}` }] }]],
       ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, parcelaCa()]],
-    ]);
+    ], { cliente_vinculos_externos: [{ provedor: "conta_azul", cliente_id: CLIENTE, id_externo: "PESSOA", estado: "vinculado" }] });
     const r = await enviarParcelasCliente(env, CLIENTE, "col-1", m.deps);
     expect(r).toMatchObject({ ok: true, enfileiradas: 1 });
     const post = m.chamadas.find((c) => c.metodo === "POST" && c.url.endsWith("contas-a-receber"))!;
@@ -128,19 +127,19 @@ describe("criação e vínculo", () => {
     expect(m.tabela("conta_azul_vinculos")[0]).toMatchObject({ estado: "vinculado", ca_parcela_id: "P1", ca_evento_id: "E1", ca_versao: 3 });
   });
 
-  it("sem pessoa na Conta Azul não cria nada", async () => {
-    const m = montar([["/v1/pessoas?", () => [200, { itens: [] }]]]);
+  it("sem pessoa confirmada pelo CPF não cria nada (nem procura por conta própria)", async () => {
+    const m = montar([["/v1/pessoas?", () => [200, { itens: [{ id: "PESSOA", documento: "12345678909" }] }]]]);
     expect(await enviarParcelasCliente(env, CLIENTE, "col-1", m.deps)).toMatchObject({ ok: false, status: 409 });
     expect(m.tabela("conta_azul_vinculos")).toHaveLength(0);
+    expect(m.chamadas).toHaveLength(0);
   });
 
   it("falha de rede no envio não reenvia: procura pelo marcador", async () => {
     let posts = 0;
     const m = montar([
-      ["/v1/pessoas?", () => [200, { itens: [{ id: "PESSOA", documento: "12345678909" }] }]],
       ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber", () => { posts++; return [503, {}]; }],
       ["contas-a-receber/buscar", () => [200, { itens: [] }]],
-    ]);
+    ], { cliente_vinculos_externos: [{ provedor: "conta_azul", cliente_id: CLIENTE, id_externo: "PESSOA", estado: "vinculado" }] });
     await enviarParcelasCliente(env, CLIENTE, "col-1", m.deps);
     m.tabela("integracao_fila").forEach((o) => { o.proxima_tentativa_em = AGORA.toISOString(); });
     await processarFila(env, m.deps);
@@ -149,11 +148,6 @@ describe("criação e vínculo", () => {
     expect(m.tabela("integracao_fila").find((o) => o.operacao === "localizar")).toMatchObject({ estado: "pendente", tentativas: 1 });
   });
 
-  it("vincular existente: só vira vínculo seguro se valor e vencimento baterem", async () => {
-    const m = montar([["parcelas/9986f173-f531-4660-96ae-04b71c879264", () => [200, parcelaCa({ id: "9986f173-f531-4660-96ae-04b71c879264", valor_composicao: { valor_bruto: 90 } })]]]);
-    expect(await vincularExistente(env, BOLETO, "9986f173-f531-4660-96ae-04b71c879264", "col-1", m.deps)).toMatchObject({ ok: true, vinculado: false, conflito: true });
-    expect(m.tabela("integracao_conflitos")[0]).toMatchObject({ tipo: "vinculo_divergente", estado: "aberto" });
-  });
 });
 
 describe("Sra Luck → Conta Azul", () => {
@@ -182,10 +176,11 @@ describe("Sra Luck → Conta Azul", () => {
     expect(m.tabela("conta_azul_vinculos")[0].estado).toBe("conflito");
   });
 
-  it("baixa no Sra Luck: envia a composição registrada (principal + juros + multa), uma vez só", async () => {
+  it("baixa no Sra Luck: envia a composição registrada (principal + juros + multa), confere relendo, uma vez só", async () => {
+    let gravada: any = null;
     const m = montar([
-      ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, parcelaCa()]],
-      ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1/baixa", () => [200, { id: "BX1", versao: 1 }]],
+      ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, gravada ? parcelaCa({ status: "QUITADO", valor_pago: 130, nao_pago: 0, baixas: [gravada] }) : parcelaCa()]],
+      ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1/baixa", (c) => { gravada = { id: "BX1", data_pagamento: c.corpo.data_pagamento, observacao: c.corpo.observacao, metodo_pagamento: c.corpo.metodo_pagamento, valor_composicao: c.corpo.composicao_valor }; return [200, { id: "BX1", versao: 1 }]; }],
     ], {
       conta_azul_vinculos: [vinculo()],
       financeiro_recebimentos: [{ boleto_id: BOLETO, valor_original: 100, juros: 20, multa: 10, desconto: 0, forma_pagamento: "pix", data_pagamento: "2026-09-20", origem: "manual", status_validacao: "validado" }],
@@ -197,7 +192,48 @@ describe("Sra Luck → Conta Azul", () => {
     expect(baixa.corpo).toMatchObject({ data_pagamento: "2026-09-20", conta_financeira: CONTA, metodo_pagamento: "PIX_PAGAMENTO_INSTANTANEO", composicao_valor: { valor_bruto: 100, juros: 20, multa: 10, desconto: 0 } });
     expect(baixa.corpo.observacao).toContain(marcadorDe(BOLETO));
     expect(m.tabela("conta_azul_vinculos")[0]).toMatchObject({ ca_baixa_id: "BX1", baixa_origem: "sra" });
+    expect(m.tabela("integracao_conflitos")).toHaveLength(0);
+    expect(m.tabela("logs_alteracoes").find((l) => l.acao === "enviou_baixa_conta_azul")?.detalhes).toMatchObject({ conferidaNaContaAzul: true, statusDepois: "QUITADO" });
     expect(await detectarMudancasSra(env, m.deps)).toMatchObject({ enfileiradas: 0 });
+  });
+
+  it("baixa aceita (2xx) mas diferente na releitura: conflito, não sucesso", async () => {
+    let gravada: any = null;
+    const m = montar([
+      ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => [200, gravada ? parcelaCa({ status: "QUITADO", baixas: [gravada] }) : parcelaCa()]],
+      ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1/baixa", (c) => { gravada = { id: "BX1", data_pagamento: c.corpo.data_pagamento, observacao: c.corpo.observacao, valor_composicao: { valor_bruto: 100, juros: 0, multa: 0 } }; return [200, { id: "BX1" }]; }],
+    ], {
+      conta_azul_vinculos: [vinculo()],
+      financeiro_recebimentos: [{ boleto_id: BOLETO, valor_original: 100, juros: 20, multa: 10, desconto: 0, forma_pagamento: "pix", data_pagamento: "2026-09-20", origem: "manual", status_validacao: "validado" }],
+    });
+    Object.assign(m.tabela("boletos")[0], { status: "pago", data_pagamento: "2026-09-20" });
+    await detectarMudancasSra(env, m.deps);
+    await processarFila(env, m.deps);
+    expect(m.tabela("integracao_conflitos")[0]).toMatchObject({ tipo: "baixa_divergente_apos_envio" });
+  });
+
+  it("Conta Azul fora do ar: o pagamento local continua válido, a baixa fica pendente e o retry não duplica", async () => {
+    let fora = true, posts = 0, gravada: any = null;
+    const m = montar([
+      ["GET https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1", () => fora ? [503, {}] : [200, gravada ? parcelaCa({ status: "QUITADO", baixas: [gravada] }) : parcelaCa()]],
+      ["POST https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/parcelas/P1/baixa", (c) => { posts++; gravada = { id: "BX1", data_pagamento: c.corpo.data_pagamento, observacao: c.corpo.observacao, valor_composicao: c.corpo.composicao_valor }; return [200, { id: "BX1" }]; }],
+    ], { conta_azul_vinculos: [vinculo()] });
+    Object.assign(m.tabela("boletos")[0], { status: "pago", data_pagamento: "2026-09-20" });
+    await detectarMudancasSra(env, m.deps);
+    await processarFila(env, m.deps);
+    expect(m.tabela("boletos")[0].status).toBe("pago");
+    expect(m.tabela("integracao_fila")[0]).toMatchObject({ operacao: "registrar_baixa", estado: "pendente", tentativas: 1 });
+    // Nova detecção não enfileira de novo (chave de idempotência).
+    expect(await detectarMudancasSra(env, m.deps)).toMatchObject({ enfileiradas: 0 });
+    fora = false;
+    m.tabela("integracao_fila").forEach((o) => { o.proxima_tentativa_em = AGORA.toISOString(); });
+    await processarFila(env, m.deps);
+    expect(posts).toBe(1);
+    expect(m.tabela("integracao_fila")[0].estado).toBe("concluida");
+    // Mais uma rodada: nada novo.
+    await detectarMudancasSra(env, m.deps);
+    await processarFila(env, m.deps);
+    expect(posts).toBe(1);
   });
 
   it("baixa já criada numa tentativa anterior (marcador) não duplica", async () => {

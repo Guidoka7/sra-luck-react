@@ -209,6 +209,18 @@ describe("baixas sem loop", () => {
   });
 });
 
+describe("trava de ambiente", () => {
+  it("Preview sem permissão explícita não fala com a Conta Azul", async () => {
+    const { contaAzulBloqueadaNoAmbiente, sincronizarContaAzul } = await import("./conta-azul");
+    expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "preview" } as Env)).toBe(true);
+    expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "preview", CONTA_AZUL_PREVIEW_PERMITIDO: "1" } as Env)).toBe(false);
+    expect(contaAzulBloqueadaNoAmbiente({ VERCEL_ENV: "production" } as Env)).toBe(false);
+    expect(await sincronizarContaAzul({ VERCEL_ENV: "preview" } as Env, { origem: "agendada", ator: "x" })).toMatchObject({ executada: false, motivo: "preview_sem_permissao" });
+    const r = await (await import("./conta-azul-vinculos")).contaAzulVinculosApi(new Request("https://p.vercel.app/api/admin/integrations/conta-azul/central/status"), { VERCEL_ENV: "preview" } as Env);
+    expect(r?.status).toBe(503);
+  });
+});
+
 describe("resiliência e central técnica", () => {
   afterEach(() => { vi.useRealTimers(); });
 
@@ -252,5 +264,41 @@ describe("resiliência e central técnica", () => {
     const texto = JSON.stringify(r);
     for (const segredo of ["tok-secreto", "refresh-secreto", "csec-secreto"]) expect(texto).not.toContain(segredo);
     expect(r.urls.apiBaseUrl).toBe(API);
+  });
+});
+
+describe("OAuth do App de Desenvolvimento (endereço colado) e diagnóstico real", () => {
+  const ENV = { CLIENTE_SESSION_SECRET: "segredo-de-teste-com-32-caracteres!!" } as Env;
+  it("troca o code do endereço colado, valida state e redirect, e não guarda o code", async () => {
+    const { criarState } = await import("./rd-station-readonly");
+    const state = await criarState("dev-console:owner", ENV.CLIENTE_SESSION_SECRET!);
+    const m = montar([["POST https://api-v2.contaazul.com/oauth/token", (c) => { expect(String(c.corpo)).toContain("redirect_uri=https%3A%2F%2Fwww.contaazul.com"); return [200, { access_token: "novo-access", refresh_token: "novo-refresh", expires_in: 3600 }]; }]]);
+    m.mapa.set("redirect_uri", "https://www.contaazul.com");
+    const colado = `https://www.contaazul.com/?code=CODIGO-SECRETO&state=${encodeURIComponent(state)}`;
+    expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, "https://outro.site/?code=x&state=" + encodeURIComponent(state), "dev-console:owner")).toMatchObject({ ok: false, status: 400 });
+    expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, colado, "dev-console:outra-pessoa")).toMatchObject({ ok: false, status: 400 });
+    expect(await (await import("./conta-azul-vinculos")).concluirOAuthColado(ENV, m.deps, colado, "dev-console:owner")).toMatchObject({ ok: true });
+    expect(m.mapa.get("refresh_token")).toBe("novo-refresh");
+    const gravado = JSON.stringify([m.tabela("integracao_eventos"), m.tabela("logs_alteracoes")]);
+    for (const segredo of ["CODIGO-SECRETO", "novo-access", "novo-refresh"]) expect(gravado).not.toContain(segredo);
+  });
+
+  it("diagnóstico registra a estrutura real sem dados pessoais", async () => {
+    const { diagnosticoApi } = await import("./conta-azul-vinculos");
+    const m = montar([
+      ["/v1/pessoas/conta-conectada", () => [200, { id_empresa: "EMP", razao_social: "Empresa Teste" }]],
+      ["/v1/pessoas?", () => [200, { itens: [{ id: "PESSOA", nome: "Ana Souza", documento: "123.456.789-09", email: "ana@x.com" }] }]],
+      ["/v1/pessoas/PESSOA", () => [200, { id: "PESSOA", nome: "Ana Souza", documento: "12345678909" }]],
+      buscar([{ id: "P1", status: "RECEBIDO", data_vencimento: "2026-09-15", total: 500, pago: 500, nao_pago: 0 }]),
+      ["parcelas/P1", () => [200, parcelaCa("P1", { status: "QUITADO", baixas: [{ id: "BX", valor_composicao: { valor_bruto: 500, juros: 20 } }] })]],
+      ["eventos-financeiros/alteracoes?", () => [200, { itens_totais: 0, itens: [] }]],
+    ]);
+    const r = await diagnosticoApi(m.deps, { cpf: "123.456.789-09", ator: "dev-console:owner" });
+    expect(r.ok).toBe(true);
+    expect(r.etapas.map((e) => e.etapa)).toEqual(["conta_conectada", "pessoas_por_cpf", "pessoa_por_id", "receitas_da_pessoa_intervalo_amplo", "parcela_por_id", "alteracoes_24h"]);
+    const texto = JSON.stringify(m.tabela("integracao_eventos"));
+    expect(texto).toContain('"status":"RECEBIDO"');
+    expect(texto).toContain('"juros":20');
+    for (const pessoal of ["Ana Souza", "12345678909", "123.456.789-09", "ana@x.com", "Empresa Teste"]) expect(texto).not.toContain(pessoal);
   });
 });
