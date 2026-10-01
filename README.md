@@ -9,7 +9,7 @@ A Sra. Luck atua como **facilitadora/intermediadora financeira** para clientes q
 - **React + Vite** — frontend SPA;
 - **Cloudflare Workers** — backend/API, autenticação, regras protegidas e integrações;
 - **Supabase** — PostgreSQL, Storage, Realtime, RPCs e persistência;
-- **Vercel Preview** — validação rápida de interface por branch/commit;
+- **Vercel** — produção no projeto `sraluckapp` (publica o `main`); os ramos `claude/*` não geram pré-visualização e o projeto duplicado `sra-luck-react` pula o build (`vercel.json`), para não gastar a cota de deploys do plano;
 - **GitHub Actions** — CI e validações.
 
 O repositório `Guidoka7/sra-luck-pwa`, branch `main`, é a **baseline funcional histórica**. Ele deve ser consultado para preservar comportamentos aprovados enquanto o React reconstrói e evolui o produto.
